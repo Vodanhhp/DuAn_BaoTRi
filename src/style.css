@@ -46,3 +46,42 @@
   .mobile-more-menu button{width:100%;display:flex;align-items:center;gap:10px;border:0;background:white;padding:12px 9px;color:#526a63;text-align:left;font-size:12px;border-top:1px solid #edf1ef}
   .mobile-more-menu button svg:last-child{margin-left:auto}
 }
+
+
+/* Danh mục thiết bị: lọc, sắp xếp, hồ sơ và ảnh */
+.asset-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.asset-filter-menu{position:relative}
+.asset-filter-menu summary{list-style:none;display:flex;align-items:center;gap:6px;border:1px solid #dfe8e4;border-radius:8px;background:#fff;color:#28685b;padding:9px 11px;font-size:11px;font-weight:600;cursor:pointer}
+.asset-filter-menu summary::-webkit-details-marker{display:none}
+.asset-filter-popover{position:absolute;right:0;top:calc(100% + 7px);z-index:10;width:min(290px,calc(100vw - 44px));background:#fff;border:1px solid #e1eae5;border-radius:11px;padding:13px;box-shadow:0 12px 32px #102b2720;display:grid;gap:10px}
+.asset-filter-popover label{display:grid;gap:5px;color:#62776f;font-size:10px}
+.asset-filter-popover select{width:100%;min-width:0;border:1px solid #dfe8e4;border-radius:7px;background:white;padding:8px;color:#29443c;font-size:11px}
+.asset-result-count{font-size:10px;color:#82938d;margin:-5px 0 10px}
+.asset-name-link{display:flex;flex-direction:column;align-items:flex-start;border:0;background:transparent;padding:0;text-align:left}
+.asset-name-link b{color:#176b5c;font-size:11px}
+.asset-name-link small{font-size:10px;color:#52665f;margin-top:4px}
+.asset-name-link:hover b{text-decoration:underline}
+.asset-detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;background:#edf1ef;border:1px solid #edf1ef;border-radius:9px;overflow:hidden}
+.asset-detail-field{background:#fff;padding:11px;min-width:0}
+.asset-detail-field small,.asset-detail-field b{display:block}
+.asset-detail-field small{font-size:9px;color:#82938d;margin-bottom:5px}
+.asset-detail-field b{font-size:11px;color:#29443c;overflow-wrap:anywhere}
+.asset-photo-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:15px}
+.asset-images-field{grid-column:1/-1;display:grid;gap:8px}
+.asset-images-field input[type=file]{width:100%;font-size:10px}
+.asset-photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(105px,1fr));gap:9px;margin-top:12px}
+.asset-photo-thumb{border:1px solid #e2ebe6;border-radius:8px;background:#f8faf9;padding:6px;display:flex;flex-direction:column;gap:5px;min-width:0}
+button.asset-photo-thumb{text-align:left}
+.asset-photo-thumb img{width:100%;height:92px;object-fit:cover;border-radius:5px}
+.asset-photo-thumb span{font-size:9px;color:#52665f}
+.photo-lightbox{position:fixed;inset:0;z-index:35;background:#071b18ed;display:flex;align-items:center;justify-content:center;padding:35px}
+.photo-lightbox img{max-width:100%;max-height:100%;object-fit:contain}
+.photo-lightbox .icon-btn{position:absolute;right:18px;top:18px}
+@media(max-width:680px){
+  .panel-head{flex-wrap:wrap}
+  .asset-toolbar{width:100%;justify-content:space-between}
+  .asset-detail-grid{grid-template-columns:1fr}
+  .asset-photo-actions{justify-content:stretch}
+  .asset-photo-actions>*{flex:1}
+  .asset-filter-popover{right:auto;left:0}
+}
