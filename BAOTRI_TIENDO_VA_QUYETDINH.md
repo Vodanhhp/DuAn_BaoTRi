@@ -1,6 +1,6 @@
 # BAOTRI – Tiến độ và các quyết định đã chốt
 
-Cập nhật: 15/11/2026
+Cập nhật: 15/11/2026 (đã bổ sung tiến độ giao diện)
 
 Tài liệu này ghi lại các quyết định kiến trúc và tiến độ thực tế để tiếp tục dự án ở những cuộc làm việc sau. Khi thay đổi quyết định hoặc hoàn thành chức năng, phải cập nhật tài liệu này.
 
@@ -16,12 +16,12 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 
 ### 2.1 Giao diện
 - Giữ phong cách giao diện hiện tại: menu bên trái, tông xanh, bố cục quản lý kỹ thuật.
-- Chỉnh sửa từng mục; bắt đầu từ khung giao diện tổng quan (Dashboard).
-- Thiết kế responsive: máy tính và điện thoại dùng chung một ứng dụng, tự điều chỉnh bố cục.
-- Trên điện thoại ưu tiên thao tác hiện trường: quét QR, chụp/tải ảnh, nhập thông số, cập nhật công việc.
-- Trên máy tính ưu tiên quản lý danh mục, kế hoạch, kho và báo cáo.
-- Bổ sung vị trí tài khoản người dùng, tên đơn vị và menu tài khoản (mẫu giao diện trước, chưa cần đăng nhập thật).
-- Có thể thu gọn menu trái trên máy tính; trên điện thoại dùng menu gọn/nút menu.
+- Chỉnh sửa từng mục; giữ phong cách xanh đậm hiện tại, không thiết kế lại toàn bộ.
+- Máy tính: giữ menu điều hướng bên trái.
+- Điện thoại: dùng thanh điều hướng cố định phía dưới gồm Tổng quan, Thiết bị, Kho, Bảo trì và Thêm; Nhật ký, Báo cáo, Cài đặt đặt trong mục Thêm.
+- Thanh trên có vùng tên đơn vị và tài khoản mẫu; chưa kết nối đăng nhập thật.
+- Trên điện thoại ưu tiên thao tác hiện trường: quét QR, nhập thông số, cập nhật công việc; ảnh sẽ bổ sung ở giai đoạn chức năng hồ sơ.
+- Không hiển thị nhãn Offline-first vì không còn phù hợp với định hướng.
 
 ### 2.2 Người dùng và doanh nghiệp
 - Giai đoạn đầu: một người dùng cá nhân.
@@ -53,8 +53,12 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - [x] Đã xem ảnh giao diện tổng quan do người dùng cung cấp qua GitHub.
 - [x] Đã thống nhất giữ phong cách hiện tại và cải tiến từng phần.
 - [x] Đã thống nhất ưu tiên một người dùng, giải pháp miễn phí và không làm offline-first phức tạp.
-- [ ] Chưa rà soát mã nguồn thực tế của toàn bộ dự án.
-- [ ] Chưa sửa code giao diện.
+- [x] Đã rà soát sơ bộ `src/App.tsx`, `src/style.css`, `vite.config.ts` và `README.md` trên GitHub.
+- [x] Đã cập nhật khung điều hướng desktop/mobile trong `src/App.tsx` và `src/style.css`.
+- [x] Đã thêm vùng tên đơn vị và tài khoản mẫu trên thanh trên.
+- [x] Đã bỏ nhãn Offline-first khỏi thanh trên; thông tin dữ liệu cục bộ vẫn được ghi rõ trong sidebar/cài đặt.
+- [ ] Chưa chạy build hoặc kiểm thử trực tiếp sau thay đổi giao diện.
+- [ ] Chưa kiểm thử giao diện trên điện thoại thực tế.
 - [ ] Chưa triển khai đăng nhập thật.
 - [ ] Chưa kết nối database tập trung.
 - [ ] Chưa triển khai lưu trữ ảnh/tài liệu lên máy chủ.
@@ -71,8 +75,8 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
    - Có tên đơn vị (ban đầu có thể là “Cá nhân” hoặc tên cấu hình).
    - Có khu vực tài khoản: tên/ảnh đại diện, vai trò mẫu, thông tin tài khoản, đăng xuất mẫu.
 3. Menu:
-   - Thu gọn được trên máy tính.
-   - Có menu phù hợp màn hình điện thoại.
+   - Desktop giữ sidebar bên trái.
+   - Mobile dùng thanh điều hướng dưới; mục phụ mở qua nút “Thêm”.
 4. Responsive:
    - Thẻ thống kê xếp lại theo chiều rộng màn hình.
    - Bảng dữ liệu có cách hiển thị phù hợp trên điện thoại (cuộn ngang hoặc dạng thẻ, tùy từng màn hình).
@@ -80,14 +84,17 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 
 ## 5. Lộ trình gần nhất
 
-### Bước 1 – Khung giao diện
-- Kiểm tra mã nguồn hiện tại trên GitHub.
-- Xác định component/layout gốc và CSS hiện có.
-- Thêm vùng tên đơn vị và menu tài khoản dạng mẫu.
-- Chỉnh menu responsive cho máy tính/điện thoại.
-- Không làm hỏng các phân hệ đang có.
+### Bước 1 – Khung giao diện (đã cập nhật code, chờ kiểm thử)
+- Đã rà soát component/layout gốc và CSS hiện có.
+- Đã thêm vùng tên đơn vị và tài khoản mẫu.
+- Đã thêm thanh điều hướng dưới trên mobile; mục Nhật ký/Báo cáo/Cài đặt ở menu “Thêm”.
+- Đã giữ sidebar trên desktop và bỏ nhãn Offline-first.
+- Chưa xác nhận build thành công hoặc kiểm thử trên thiết bị thật.
 
-### Bước 2 – Dashboard
+### Bước 2 – Kiểm thử khung giao diện và Dashboard
+- Đồng bộ mã nguồn mới nhất về máy chạy thử.
+- Kiểm tra desktop, mobile, điều hướng các mục và menu “Thêm”.
+- Sau đó mới chỉnh Dashboard.
 - Chỉnh bố cục tổng quan.
 - Kiểm tra dữ liệu thống kê lấy từ đâu; phân biệt dữ liệu thật và dữ liệu mẫu.
 - Không để số liệu giả tạo cảm giác chức năng đã hoàn thiện.
