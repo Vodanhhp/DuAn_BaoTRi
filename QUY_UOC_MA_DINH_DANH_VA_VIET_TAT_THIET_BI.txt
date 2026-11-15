@@ -96,7 +96,7 @@ QH      Quạt hút
 QC      Quạt cấp
 QTT     Quạt thông trần
 QK      Quạt hướng trục
-QTL     Quạt ly tâm
+QLT     Quạt ly tâm
 QCT     Quạt tháp giải nhiệt
 
 B. Điện lạnh và điều hòa không khí
@@ -142,7 +142,6 @@ ACB     Máy cắt không khí
 CT      Biến dòng điện
 VT      Biến điện áp
 MPD     Máy phát điện
-CHL     (Không dùng cho thiết bị điện; CHL đã dành cho Chiller)
 
 E. Nhiệt, hơi và xử lý nước
 NH      Nồi hơi
