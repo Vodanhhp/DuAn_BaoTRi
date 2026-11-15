@@ -173,8 +173,8 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
   - Mỗi thiết bị là một dòng dữ liệu; cột Tên thiết bị chứa tên, Hãng và Model trên các dòng riêng trong cùng một ô.
   - Bỏ cột Chu kỳ; giữ các thông tin nhận diện/quản lý cần thiết như mã định danh, nhóm, Serial, vị trí, ngày đưa vào sử dụng, công suất/thông số, tình trạng và ghi chú.
   - Thêm tiêu đề **DANH SÁCH CÁC THIẾT BỊ HIỆN NAY** vào đầu worksheet; thiết lập độ rộng cột, chiều cao dòng, bộ lọc tiêu đề.
-  - **Không tạo nút “In danh sách” riêng.** Chỉ giữ nút **Xuất Excel**; đây là chức năng xuất danh mục để người dùng mở file Excel và in khi cần. Xóa nút in riêng và luồng in trực tiếp trong app để tránh trùng chức năng.
-  - File Excel xuất ra phải có tiêu đề “DANH SÁCH CÁC THIẾT BỊ HIỆN NAY”, đầu mục rõ ràng, chữ tiêu đề 12 pt đậm, nội dung 11 pt; bảng có đường viền hàng/cột, độ rộng cột và chiều cao hàng hợp lý, thiết lập khổ giấy/hướng giấy/vùng in, lặp hàng tiêu đề khi qua trang và đánh số trang “Trang X / Y” khi in.
-  - **Quy chuẩn font cho toàn bộ danh sách/bảng in của ứng dụng:** Tahoma; nội dung 11 pt; tiêu đề báo cáo 12 pt, in đậm. Áp dụng thống nhất cho các màn hình/báo cáo có chức năng in, không chỉ danh sách thiết bị.
+  - Đã bỏ nút **In danh sách** riêng và luồng in danh sách trực tiếp; chỉ còn **Xuất Excel** để tránh trùng chức năng.
+  - Xuất danh mục bằng tệp Excel-compatible `.xls` (HTML workbook) để giữ được định dạng chữ Tahoma 11 pt, tiêu đề 12 pt đậm, đường viền ô, độ rộng cột, A4 ngang và lặp hàng tiêu đề khi in. Dữ liệu vẫn theo danh sách đang lọc; mỗi thiết bị một hàng; Hãng/Model nằm trong cùng ô tên thiết bị.
+  - Quy chuẩn Tahoma 11 pt, tiêu đề 12 pt đậm đã áp dụng cho các biểu mẫu in chi tiết/lịch sử thiết bị hiện có.
 - Đã cập nhật `src/style.css` cho khổ A4 ngang và bố cục in.
-- Đã cập nhật code trên GitHub. **Chưa chạy build, chưa mở thử file Excel và chưa kiểm tra bản in thực tế**. Cần Pull origin, chạy `npm.cmd run build`, sau đó thử xuất Excel và In danh sách với dữ liệu nhiều thiết bị để kiểm tra phân trang.
+- Đã cập nhật code trên GitHub. **Chưa chạy build, chưa mở thử tệp Excel-compatible và chưa kiểm tra bản in thực tế**. Cần Pull origin, chạy `npm.cmd run build`, mở tệp `.xls` bằng Excel và kiểm tra in thử với danh sách dài.
