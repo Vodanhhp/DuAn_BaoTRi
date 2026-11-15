@@ -11,7 +11,12 @@ import * as XLSX from 'xlsx'
 import { db, uid, now, queueChange, type Asset, type InventoryItem, type Task, type Log } from './db'
 
 type Page = 'dashboard' | 'assets' | 'inventory' | 'tasks' | 'logs' | 'reports' | 'settings'
-const today = () => new Date().toISOString().slice(0, 10)
+const xmlText = (value: string) => value.replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[ch] || ch))
+const makeDemoAssetImage = (category: string, code: string, view: number) => {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="960" height="640" viewBox="0 0 960 640"><defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f5f8f7"/><stop offset="1" stop-color="#dce8e3"/></linearGradient><linearGradient id="metal" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#edf3f2"/><stop offset="1" stop-color="#879b98"/></linearGradient></defs><rect width="960" height="640" fill="url(#bg)"/><path d="M0 510H960" stroke="#c5d4ce" stroke-width="3"/><g transform="translate(${view===1?120:165},105)"><ellipse cx="360" cy="405" rx="300" ry="35" fill="#6e8980" opacity=".18"/><rect x="105" y="180" width="510" height="210" rx="28" fill="url(#metal)" stroke="#536d67" stroke-width="9"/><rect x="145" y="215" width="220" height="140" rx="16" fill="${view===1?'#287d70':'#4c789d'}"/><rect x="390" y="215" width="180" height="140" rx="12" fill="#d4dfdc" stroke="#536d67" stroke-width="6"/><circle cx="480" cy="285" r="43" fill="#f8fbfa" stroke="#536d67" stroke-width="8"/><path d="M480 250v70M445 285h70" stroke="#287d70" stroke-width="8"/><rect x="170" y="390" width="45" height="45" rx="7" fill="#344f49"/><rect x="505" y="390" width="45" height="45" rx="7" fill="#344f49"/><path d="M130 180V145h465v35" fill="none" stroke="#536d67" stroke-width="10"/><circle cx="190" cy="245" r="12" fill="#f4c66c"/><circle cx="230" cy="245" r="12" fill="#e8796d"/></g><rect x="42" y="38" width="876" height="564" rx="22" fill="none" stroke="#ffffff" stroke-width="5" opacity=".8"/><text x="58" y="78" font-family="Arial,sans-serif" font-size="25" font-weight="700" fill="#34534b">BAOTRI · ẢNH MINH HỌA THIẾT BỊ</text><text x="58" y="570" font-family="Arial,sans-serif" font-size="22" fill="#526d65">${xmlText(category)} · ${xmlText(code)} · Góc nhìn ${view}</text></svg>`
+  return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg)
+}
+const today =  new Date().toISOString().slice(0, 10)
 const emptyAsset = (): Asset => ({
   id: uid(), code: '', name: '', category: 'Thiết bị điện', brand: '', model: '', serial: '',
   location: '', commissionedAt: '', power: '', cycle: '', status: 'Đang hoạt động',
@@ -38,11 +43,14 @@ export default function App() {
   const [assetLocationFilter, setAssetLocationFilter] = useState('')
   const [assetStatusFilter, setAssetStatusFilter] = useState('')
   const [assetSort, setAssetSort] = useState('code-asc')
+  const [showArchived, setShowArchived] = useState(false)
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null)
   const [editingTask, setEditingTask] = useState<Task | null>(null)
   const [notice, setNotice] = useState('')
   const [mobileMore, setMobileMore] = useState(false)
   const assets = useLiveQuery(() => db.assets.orderBy('name').toArray(), []) ?? []
+  const activeAssets = assets.filter(a => !a.archivedAt)
+  const archivedAssets = assets.filter(a => !!a.archivedAt)
   const inventory = useLiveQuery(() => db.inventory.orderBy('name').toArray(), []) ?? []
   const tasks = useLiveQuery(() => db.tasks.orderBy('dueDate').toArray(), []) ?? []
   const logs = useLiveQuery(() => db.logs.orderBy('date').reverse().toArray(), []) ?? []
@@ -86,19 +94,19 @@ export default function App() {
       const existing = await db.assets.toArray()
       const existingCodes = new Set(existing.map(a => a.code))
       const missing = demoAssets.filter(a => !existingCodes.has(a.code)).map(a => ({
-        ...emptyAsset(), ...a, serial: `DEMO-${a.code}`, images: [],
-        notes: 'DỮ LIỆU MẪU – chỉ dùng thử nghiệm, có thể xóa sau.'
+        ...emptyAsset(), ...a, serial: `DEMO-${a.code}`,
+        images: [makeDemoAssetImage(a.category, a.code, 1), makeDemoAssetImage(a.category, a.code, 2)],
+        notes: 'DỮ LIỆU MẪU – ảnh minh họa kỹ thuật, không phải ảnh thực tế của thiết bị.'
       }))
       if (missing.length) await db.assets.bulkAdd(missing)
-      const originalDemo = existing.filter(a => ['COMP-001', 'KHO-001'].includes(a.code) && !a.notes)
-      if (originalDemo.length) {
-        await db.assets.bulkPut(originalDemo.map(a => ({
-          ...a, serial: a.serial || `DEMO-${a.code}`, images: Array.isArray(a.images) ? a.images : [],
-          notes: 'DỮ LIỆU MẪU – chỉ dùng thử nghiệm, có thể xóa sau.'
-        })))
-      }
-
-      // Bổ sung trường ảnh cho hồ sơ cũ mà không làm mất dữ liệu hiện có.
+      // Bổ sung ảnh minh họa cho hồ sơ demo cũ; không ghi đè ảnh người dùng đã tải lên.
+      const demoRows = (await db.assets.toArray()).filter(a => a.serial?.startsWith('DEMO-') || a.notes?.includes('DỮ LIỆU MẪU'))
+      const demoWithoutPhotos = demoRows.filter(a => !Array.isArray(a.images) || a.images.length === 0)
+      if (demoWithoutPhotos.length) await db.assets.bulkPut(demoWithoutPhotos.map(a => ({
+        ...a,
+        images: [makeDemoAssetImage(a.category, a.code, 1), makeDemoAssetImage(a.category, a.code, 2)],
+        notes: 'DỮ LIỆU MẪU – ảnh minh họa kỹ thuật, không phải ảnh thực tế của thiết bị.'
+      })))
       const legacyAssets = (await db.assets.toArray()).filter(a => !Array.isArray(a.images))
       if (legacyAssets.length) await db.assets.bulkPut(legacyAssets.map(a => ({ ...a, images: [] })))
 
@@ -117,11 +125,11 @@ export default function App() {
     seed()
   }, [])
 
-  const assetCategories = useMemo(() => [...new Set(assets.map(a => a.category).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'vi')), [assets])
-  const assetLocations = useMemo(() => [...new Set(assets.map(a => a.location).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'vi')), [assets])
+  const assetCategories = useMemo(() => [...new Set(activeAssets.map(a => a.category).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'vi')), [activeAssets])
+  const assetLocations = useMemo(() => [...new Set(activeAssets.map(a => a.location).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'vi')), [activeAssets])
   const filteredAssets = useMemo(() => {
     const query = search.trim().toLocaleLowerCase('vi')
-    return assets.filter(a =>
+    return activeAssets.filter(a =>
       [a.code, a.name, a.category, a.location].join(' ').toLocaleLowerCase('vi').includes(query) &&
       (!assetCategoryFilter || a.category === assetCategoryFilter) &&
       (!assetLocationFilter || a.location === assetLocationFilter) &&
@@ -133,7 +141,8 @@ export default function App() {
       if (assetSort === 'date-oldest') return (a.commissionedAt || '').localeCompare(b.commissionedAt || '')
       return a.code.localeCompare(b.code,'vi')
     })
-  }, [assets, search, assetCategoryFilter, assetLocationFilter, assetStatusFilter, assetSort])
+  }, [activeAssets, search, assetCategoryFilter, assetLocationFilter, assetStatusFilter, assetSort])
+  const filteredArchivedAssets = useMemo(() => archivedAssets.filter(a => `${a.code} ${a.name} ${a.category} ${a.location}`.toLocaleLowerCase('vi').includes(search.trim().toLocaleLowerCase('vi'))), [archivedAssets, search])
   const filteredItems = useMemo(() => inventory.filter(a => `${a.code} ${a.name} ${a.group}`.toLowerCase().includes(search.toLowerCase())), [inventory, search])
   const filteredTasks = useMemo(() => tasks.filter(t => `${t.title} ${assets.find(a=>a.id===t.assetId)?.name ?? ''}`.toLowerCase().includes(search.toLowerCase())), [tasks, assets, search])
   const overdue = tasks.filter(t => t.status !== 'Hoàn thành' && t.dueDate < today()).length
@@ -161,9 +170,14 @@ export default function App() {
     })
     await queueChange('tasks', t.id); flash('Đã ghi nhận hoàn thành')
   }
-  const removeAsset = async (a: Asset) => {
-    if (!confirm(`Ngừng hoạt động thiết bị ${a.name}? Hồ sơ và lịch sử vẫn được giữ.`)) return
-    await db.assets.put({ ...a, status: 'Ngừng hoạt động', updatedAt: now() }); await queueChange('assets', a.id); flash('Đã ngừng hoạt động thiết bị')
+  const archiveAsset = async (a: Asset) => {
+    if (!confirm(`Đưa “${a.name}” vào Lưu kho? Hồ sơ, ảnh và lịch sử liên quan vẫn được giữ để tra cứu hoặc khôi phục.`)) return
+    const value = { ...a, archivedAt: now(), updatedAt: now() }
+    await db.assets.put(value); await queueChange('assets', a.id); flash('Đã đưa thiết bị vào Lưu kho')
+  }
+  const restoreAsset = async (a: Asset) => {
+    const value = { ...a, archivedAt: undefined, updatedAt: now() }
+    await db.assets.put(value); await queueChange('assets', a.id); flash('Đã khôi phục thiết bị khỏi Lưu kho')
   }
   const addMovement = async (item: InventoryItem, type: 'Nhập'|'Xuất', qty: number) => {
     if (!qty || qty <= 0) return
@@ -231,21 +245,25 @@ export default function App() {
       </header>
       <div className="content">
         {page!=='dashboard' && page!=='settings' && <div className="searchbar"><Search size={18}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Tìm theo mã, tên hoặc nội dung..."/></div>}
-        {page==='dashboard' && <Dashboard assets={assets} tasks={tasks} dueToday={dueToday} lowStock={lowStock} overdue={overdue} go={setPage} complete={completeTask}/>}
-        {page==='assets' && <section className="panel"><div className="panel-head"><div><h2>Danh mục thiết bị</h2><p>Quản lý lý lịch, mã QR, ảnh và tình trạng thiết bị</p></div><div className="asset-toolbar">
-            <details className="asset-filter-menu"><summary><ChevronDown size={15}/> Lọc & sắp xếp</summary><div className="asset-filter-popover">
+        {page==='dashboard' && <Dashboard assets={activeAssets} tasks={tasks} dueToday={dueToday} lowStock={lowStock} overdue={overdue} go={setPage} complete={completeTask}/>}
+        {page==='assets' && <section className="panel"><div className="panel-head"><div><h2>{showArchived?'Thiết bị đã lưu kho':'Danh mục thiết bị'}</h2><p>{showArchived?'Hồ sơ được giữ lại để tra cứu hoặc khôi phục':'Quản lý lý lịch, mã QR, ảnh và tình trạng thiết bị'}</p></div><div className="asset-toolbar">
+            <button className={!showArchived?'soft-btn':'text-btn'} onClick={()=>setShowArchived(false)}>Đang hoạt động ({activeAssets.length})</button>
+            <button className={showArchived?'soft-btn':'text-btn'} onClick={()=>setShowArchived(true)}><Archive size={15}/> Lưu kho ({archivedAssets.length})</button>
+            {!showArchived&&<details className="asset-filter-menu"><summary><ChevronDown size={15}/> Lọc & sắp xếp</summary><div className="asset-filter-popover">
               <label>Nhóm thiết bị<select value={assetCategoryFilter} onChange={e=>setAssetCategoryFilter(e.target.value)}><option value="">Tất cả nhóm</option>{assetCategories.map(x=><option key={x} value={x}>{x}</option>)}</select></label>
               <label>Vị trí<select value={assetLocationFilter} onChange={e=>setAssetLocationFilter(e.target.value)}><option value="">Tất cả vị trí</option>{assetLocations.map(x=><option key={x} value={x}>{x}</option>)}</select></label>
               <label>Trạng thái<select value={assetStatusFilter} onChange={e=>setAssetStatusFilter(e.target.value)}><option value="">Tất cả trạng thái</option>{['Đang hoạt động','Ngừng hoạt động','Thanh lý'].map(x=><option key={x}>{x}</option>)}</select></label>
               <label>Sắp xếp<select value={assetSort} onChange={e=>setAssetSort(e.target.value)}><option value="code-asc">Mã thiết bị: A → Z</option><option value="code-desc">Mã thiết bị: Z → A</option><option value="name-asc">Tên thiết bị: A → Z</option><option value="date-newest">Ngày sử dụng: mới nhất</option><option value="date-oldest">Ngày sử dụng: cũ nhất</option></select></label>
               <button type="button" className="text-btn" onClick={()=>{setAssetCategoryFilter('');setAssetLocationFilter('');setAssetStatusFilter('');setAssetSort('code-asc')}}>Đặt lại bộ lọc</button>
-            </div></details>
-            <button className="soft-btn" onClick={exportAssets}><Download size={16}/> Xuất Excel</button>
+            </div></details>}
+            {!showArchived&&<button className="soft-btn" onClick={exportAssets}><Download size={16}/> Xuất Excel</button>}
           </div></div>
-          <div className="asset-result-count">Hiển thị {filteredAssets.length}/{assets.length} thiết bị</div>
-          <div className="table-wrap"><table><thead><tr><th>Mã / Tên thiết bị</th><th>Nhóm</th><th>Vị trí</th><th>Ngày sử dụng</th><th>Trạng thái</th><th></th></tr></thead><tbody>
-          {filteredAssets.map(a=><tr key={a.id}><td><button className="asset-name-link" onClick={()=>setDetailAsset(a)}><b>{a.code}</b><small>{a.name}</small></button></td><td>{a.category}</td><td>{a.location||'—'}</td><td>{dateText(a.commissionedAt)}</td><td><span className={'status '+(a.status==='Đang hoạt động'?'green':'gray')}>{a.status}</span></td><td className="actions"><button className="text-btn" onClick={()=>{setEditingAsset({...a,images:a.images??[]});setModal('asset')}}>Sửa / QR</button><button className="icon-btn danger" title="Ngừng hoạt động" onClick={()=>removeAsset(a)}><Trash2 size={15}/></button></td></tr>)}
-          </tbody></table>{filteredAssets.length===0&&<Empty text="Chưa có thiết bị phù hợp."/ >}</div></section>}
+          <div className="asset-result-count">{showArchived?'Đang lưu kho: '+filteredArchivedAssets.length+'/'+archivedAssets.length+' thiết bị':'Hiển thị '+filteredAssets.length+'/'+activeAssets.length+' thiết bị đang hoạt động'}</div>
+          <div className="table-wrap"><table><thead><tr><th>Mã / Tên thiết bị</th><th>Nhóm</th><th>Vị trí</th><th>Ngày sử dụng</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
+          {(showArchived?filteredArchivedAssets:filteredAssets).map(a=><tr key={a.id}><td><button className="asset-name-link" onClick={()=>setDetailAsset(a)}><b>{a.code}</b><small>{a.name}</small></button></td><td>{a.category}</td><td>{a.location||'—'}</td><td>{dateText(a.commissionedAt)}</td><td><span className={'status '+(a.archivedAt?'gray':a.status==='Đang hoạt động'?'green':'gray')}>{a.archivedAt?'Đã lưu kho':a.status}</span></td><td className="actions">{showArchived?<><button className="text-btn success-text" onClick={()=>restoreAsset(a)}>Khôi phục</button><button className="icon-btn danger" title="Chỉ Admin sau khi có xác thực máy chủ" disabled><Trash2 size={15}/></button></>:<><button className="text-btn" onClick={()=>{setEditingAsset({...a,images:a.images??[]});setModal('asset')}}>Sửa / QR</button><button className="icon-btn" title="Lưu kho" onClick={()=>archiveAsset(a)}><Archive size={15}/></button></>}</td></tr>)}
+          </tbody></table>{(showArchived?filteredArchivedAssets:filteredAssets).length===0&&<Empty text={showArchived?'Chưa có thiết bị nào trong Lưu kho.':'Chưa có thiết bị phù hợp.'}/>}</div>
+          {showArchived&&<p className="archive-security-note">Xóa vĩnh viễn sẽ chỉ mở khi BAOTRI có đăng nhập và xác thực Admin ở máy chủ. Bản thử nghiệm lưu cục bộ chưa có bảo mật tài khoản thật.</p>}
+        </section>}
         {page==='inventory' && <section className="panel"><div className="panel-head"><div><h2>Kho vật tư</h2><p>Nhập xuất tồn và cảnh báo mức tồn tối thiểu</p></div><button className="soft-btn" onClick={exportInventory}><Download size={16}/> Xuất Excel</button></div>
           <div className="table-wrap"><table><thead><tr><th>Mã / Tên vật tư</th><th>Nhóm</th><th>Tồn kho</th><th>Tồn tối thiểu</th><th>Vị trí</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
           {filteredItems.map(i=><tr key={i.id}><td><b>{i.code}</b><small>{i.name}</small></td><td>{i.group}</td><td><b>{i.quantity} {i.unit}</b></td><td>{i.minQuantity} {i.unit}</td><td>{i.location||'—'}</td><td><span className={`status ${i.quantity<=i.minQuantity?'red':'green'}`}>{i.quantity<=i.minQuantity?'Sắp hết':'Đủ tồn'}</span></td><td className="actions"><button className="text-btn" onClick={()=>addMovement(i,'Nhập',Number(prompt('Số lượng nhập?','1')))}>Nhập</button><button className="text-btn" onClick={()=>addMovement(i,'Xuất',Number(prompt('Số lượng xuất?','1')))}>Xuất</button><button className="text-btn" onClick={()=>{setEditingItem(i);setModal('item')}}>Sửa</button></td></tr>)}
