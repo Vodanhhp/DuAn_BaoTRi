@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import {
-  Activity, Archive, BarChart3, CalendarDays, Check, ChevronRight, ClipboardList,
-  CloudOff, Download, FileSpreadsheet, HardDrive, LayoutDashboard, Menu, Package,
-  Plus, QrCode, RefreshCw, Search, Settings, ShieldAlert, Trash2, Wrench, X
+  Activity, Archive, BarChart3, Building2, CalendarDays, Check, ChevronRight, ClipboardList,
+  Download, FileSpreadsheet, HardDrive, LayoutDashboard, Menu, MoreHorizontal, Package,
+  Plus, QrCode, Search, Settings, ShieldAlert, Trash2, UserRound, Wrench, X
 } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { Html5QrcodeScanner } from 'html5-qrcode'
@@ -36,6 +36,7 @@ export default function App() {
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null)
   const [editingTask, setEditingTask] = useState<Task | null>(null)
   const [notice, setNotice] = useState('')
+  const [mobileMore, setMobileMore] = useState(false)
   const assets = useLiveQuery(() => db.assets.orderBy('name').toArray(), []) ?? []
   const inventory = useLiveQuery(() => db.inventory.orderBy('name').toArray(), []) ?? []
   const tasks = useLiveQuery(() => db.tasks.orderBy('dueDate').toArray(), []) ?? []
@@ -135,12 +136,23 @@ export default function App() {
       <div className="brand"><div className="brand-icon"><Wrench size={21}/></div><div><b>BAOTRI</b><small>QUẢN LÝ BẢO TRÌ</small></div></div>
       <div className="nav-label">MENU CHÍNH</div>
       {nav.map(([key,label,Icon]) => <button key={key} className={`nav-item ${page===key?'active':''}`} onClick={()=>{setPage(key);setSearch('')}}><Icon size={18}/><span>{label}</span>{key==='tasks' && overdue>0 && <em>{overdue}</em>}</button>)}
-      <div className="sidebar-bottom"><div className="offline-pill"><span className="online-dot"/> Dữ liệu lưu trên thiết bị</div><small>Phiên bản thử nghiệm 0.1</small></div>
+      <div className="sidebar-bottom"><div className="offline-pill"><span className="online-dot"/> Bản thử nghiệm · Dữ liệu lưu cục bộ</div><small>Phiên bản 0.1.0</small></div>
     </aside>
+    <nav className="mobile-nav" aria-label="Điều hướng chính">
+      {([['dashboard','Tổng quan',LayoutDashboard],['assets','Thiết bị',HardDrive],['inventory','Kho',Package],['tasks','Bảo trì',CalendarDays]] as const).map(([key,label,Icon]) =>
+        <button key={key} className={`mobile-nav-item ${page===key?'active':''}`} onClick={()=>{setPage(key);setSearch('');setMobileMore(false)}}><Icon size={19}/><span>{label}</span>{key==='tasks'&&overdue>0&&<i>{overdue}</i>}</button>
+      )}
+      <button className={`mobile-nav-item ${mobileMore||(['logs','reports','settings'] as Page[]).includes(page)?'active':''}`} onClick={()=>setMobileMore(v=>!v)}><MoreHorizontal size={20}/><span>Thêm</span></button>
+    </nav>
     <main className="main">
       <header className="topbar">
-        <div><div className="eyebrow">HỆ THỐNG QUẢN LÝ KỸ THUẬT</div><h1>{nav.find(n=>n[0]===page)?.[1]}</h1></div>
-        <div className="top-actions"><span className="sync-status"><CloudOff size={15}/> Offline-first</span><button className="icon-btn" title="Quét QR" onClick={()=>setModal('scan')}><QrCode size={19}/></button><button className="primary-btn" onClick={()=>{ if(page==='assets'){setEditingAsset(emptyAsset());setModal('asset')} else if(page==='inventory'){setEditingItem(emptyItem());setModal('item')} else if(page==='tasks'){setEditingTask(emptyTask());setModal('task')} else {setPage('assets');setEditingAsset(emptyAsset());setModal('asset')} }}><Plus size={17}/> Thêm mới</button></div>
+        <div className="page-heading"><div className="eyebrow">HỆ THỐNG QUẢN LÝ KỸ THUẬT</div><h1>{nav.find(n=>n[0]===page)?.[1]}</h1></div>
+        <div className="top-actions">
+          <div className="workspace-chip"><Building2 size={16}/><span><b>Đơn vị của tôi</b><small>Không gian cá nhân</small></span></div>
+          <button className="icon-btn" title="Quét QR" onClick={()=>setModal('scan')}><QrCode size={19}/></button>
+          <button className="primary-btn" onClick={()=>{ if(page==='assets'){setEditingAsset(emptyAsset());setModal('asset')} else if(page==='inventory'){setEditingItem(emptyItem());setModal('item')} else if(page==='tasks'){setEditingTask(emptyTask());setModal('task')} else {setPage('assets');setEditingAsset(emptyAsset());setModal('asset')} }}><Plus size={17}/><span>Thêm mới</span></button>
+          <button className="profile-chip" title="Tài khoản mẫu"><span className="avatar"><UserRound size={16}/></span><span className="profile-text"><b>Người dùng</b><small>Quản trị viên</small></span></button>
+        </div>
       </header>
       <div className="content">
         {page!=='dashboard' && page!=='settings' && <div className="searchbar"><Search size={18}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Tìm theo mã, tên hoặc nội dung..."/></div>}
@@ -176,6 +188,10 @@ export default function App() {
         </div>}
       </div>
     </main>
+    {mobileMore&&<div className="mobile-more-backdrop" onClick={()=>setMobileMore(false)}><div className="mobile-more-menu" onClick={e=>e.stopPropagation()}>
+      <div className="mobile-more-title">Chức năng khác</div>
+      {([['logs','Nhật ký',ClipboardList],['reports','Báo cáo',BarChart3],['settings','Cài đặt',Settings]] as const).map(([key,label,Icon])=><button key={key} onClick={()=>{setPage(key);setSearch('');setMobileMore(false)}}><Icon size={18}/>{label}<ChevronRight size={16}/></button>)}
+    </div></div>}
     {notice&&<div className="toast"><Check size={17}/>{notice}</div>}
     {modal==='asset'&&editingAsset&&<AssetModal value={editingAsset} close={()=>{setModal(null);setEditingAsset(null)}} save={saveAsset}/>}
     {modal==='item'&&editingItem&&<ItemModal value={editingItem} close={()=>{setModal(null);setEditingItem(null)}} save={saveItem}/>}
