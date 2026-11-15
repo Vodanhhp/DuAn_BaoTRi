@@ -240,3 +240,10 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Thêm nút **In chi tiết** trong cửa sổ chi tiết vật tư, dùng mẫu trình bày cùng phong cách với phiếu chi tiết thiết bị.
 - Cập nhật kiểu dữ liệu IndexedDB bằng hai trường tùy chọn `partNumber` và `size`, không cần xóa dữ liệu cũ. Xuất Excel bổ sung hai cột tương ứng.
 - Đã cập nhật `src/App.tsx`, `src/db.ts` trên GitHub. Chưa chạy build hoặc kiểm tra in thực tế; cần Pull origin và kiểm tra trên Chrome.
+
+
+### Trạng thái kết thúc buổi làm việc 15/11/2026
+- Người dùng tạm thời chấp nhận hai phân hệ đã làm là **Thiết bị** và **Kho vật tư** ở mức giao diện/chức năng thử nghiệm hiện tại.
+- Phân hệ Kho vật tư vừa được bổ sung: xem chi tiết khi nhấp tên vật tư, sửa hồ sơ, danh sách chọn đơn vị tính, trường Mã số và Kích cỡ/quy cách, in danh sách và in chi tiết.
+- Tạm dừng chỉnh sửa code tại đây; buổi làm việc tiếp theo sẽ tiếp tục từ trạng thái hiện tại, không làm lại hai phân hệ này nếu chưa có yêu cầu.
+- Lưu ý: chưa có xác nhận người dùng đã Pull code mới nhất, chạy build thành công hoặc kiểm tra in thực tế. Khi tiếp tục, đồng bộ GitHub về máy và kiểm tra build/chức năng trước khi mở rộng.
