@@ -45,6 +45,7 @@ export default function App() {
   const [assetStatusFilter, setAssetStatusFilter] = useState('')
   const [assetSort, setAssetSort] = useState('code-asc')
   const [showArchived, setShowArchived] = useState(false)
+  const [printAssetList, setPrintAssetList] = useState(false)
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null)
   const [editingTask, setEditingTask] = useState<Task | null>(null)
   const [editingLog, setEditingLog] = useState<Log | null>(null)
@@ -283,7 +284,33 @@ export default function App() {
     XLSX.utils.book_append_sheet(wb, ws, 'Du lieu')
     XLSX.writeFile(wb, filename)
   }
-  const exportAssets = () => exportRows(assets.map(a => ({ 'Mã thiết bị':a.code,'Tên thiết bị':a.name,'Nhóm':a.category,'Hãng':a.brand,'Model':a.model,'Serial':a.serial,'Vị trí':a.location,'Ngày sử dụng':a.commissionedAt,'Công suất':a.power,'Chu kỳ':a.cycle,'Trạng thái':a.status,'Ghi chú':a.notes })), 'danh-muc-thiet-bi.xlsx')
+  const exportAssets = () => {
+    const rows = filteredAssets.map((a, index) => [
+      index + 1,
+      a.code,
+      [a.name, a.brand ? `Hãng: ${a.brand}` : '', a.model ? `Model: ${a.model}` : ''].filter(Boolean).join('\\n'),
+      a.category,
+      a.serial || '',
+      a.location || '',
+      a.commissionedAt || '',
+      a.power || '',
+      a.status,
+      a.notes || ''
+    ])
+    const ws = XLSX.utils.aoa_to_sheet([
+      ['STT','Mã định danh','Tên thiết bị','Nhóm thiết bị','Serial','Vị trí lắp đặt','Ngày đưa vào sử dụng','Công suất / thông số','Tình trạng','Ghi chú'],
+      ...rows
+    ])
+    ws['!cols'] = [
+      { wch: 6 }, { wch: 25 }, { wch: 38 }, { wch: 22 }, { wch: 18 },
+      { wch: 24 }, { wch: 19 }, { wch: 21 }, { wch: 18 }, { wch: 32 }
+    ]
+    ws['!rows'] = [{ hpt: 28 }, ...rows.map(() => ({ hpt: 48 }))]
+    ws['!autofilter'] = { ref: `A1:J${rows.length + 1}` }
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Danh muc thiet bi')
+    XLSX.writeFile(wb, 'danh-muc-thiet-bi.xlsx')
+  }
   const exportInventory = () => exportRows(inventory.map(i => ({ 'Mã vật tư':i.code,'Tên vật tư':i.name,'Nhóm':i.group,'ĐVT':i.unit,'Tồn':i.quantity,'Tồn tối thiểu':i.minQuantity,'Vị trí':i.location,'Nhà cung cấp':i.supplier,'Đơn giá':i.unitPrice })), 'ton-kho-vat-tu.xlsx')
   const exportTasks = () => exportRows(tasks.map(t => ({ 'Thiết bị':assets.find(a=>a.id===t.assetId)?.name ?? '', 'Công việc':t.title,'Ngày đến hạn':t.dueDate,'Chu kỳ':t.frequency,'Trạng thái':t.status,'Checklist':t.checklist,'Thông số':t.readings,'Ghi chú':t.notes })), 'ke-hoach-bao-tri.xlsx')
   const exportLogs = () => exportRows(logs.map(l => ({ 'Ngày':l.date,'Thiết bị':assets.find(a=>a.id===l.assetId)?.name ?? '', 'Loại':l.kind,'Nội dung':l.description,'Thông số':l.readings,'Vật tư':l.parts,'Người thực hiện':l.performedBy })), 'nhat-ky-bao-tri.xlsx')
@@ -344,7 +371,7 @@ export default function App() {
               <label>Sắp xếp<select value={assetSort} onChange={e=>{setAssetSort(e.target.value);e.currentTarget.closest('details')?.removeAttribute('open')}}><option value="code-asc">Mã thiết bị: A → Z</option><option value="code-desc">Mã thiết bị: Z → A</option><option value="name-asc">Tên thiết bị: A → Z</option><option value="date-newest">Ngày sử dụng: mới nhất</option><option value="date-oldest">Ngày sử dụng: cũ nhất</option></select></label>
               <button type="button" className="text-btn" onClick={e=>{setAssetCategoryFilter('');setAssetLocationFilter('');setAssetStatusFilter('');setAssetSort('code-asc');e.currentTarget.closest('details')?.removeAttribute('open')}}>Đặt lại bộ lọc</button>
             </div></details>}
-            {!showArchived&&<button className="soft-btn" onClick={exportAssets}><Download size={16}/> Xuất Excel</button>}
+            {!showArchived&&<><button className="soft-btn" onClick={()=>setPrintAssetList(true)}><FileSpreadsheet size={16}/> In danh sách</button><button className="soft-btn" onClick={exportAssets}><Download size={16}/> Xuất Excel</button></>}
           </div></div>
           <div className="asset-result-count">{showArchived?'Đang lưu kho: '+filteredArchivedAssets.length+'/'+archivedAssets.length+' thiết bị':'Hiển thị '+filteredAssets.length+'/'+activeAssets.length+' thiết bị đang hoạt động'}</div>
           <div className="table-wrap"><table><thead><tr><th>Mã / Tên thiết bị</th><th>Nhóm</th><th>Vị trí</th><th>Ngày sử dụng</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
@@ -384,12 +411,39 @@ export default function App() {
       {([['logs','Nhật ký',ClipboardList],['reports','Báo cáo',BarChart3],['settings','Cài đặt',Settings]] as const).map(([key,label,Icon])=><button key={key} onClick={()=>{setPage(key);setSearch('');setMobileMore(false)}}><Icon size={18}/>{label}<ChevronRight size={16}/></button>)}
     </div></div>}
     {notice&&<div className="toast"><Check size={17}/>{notice}</div>}
+    {printAssetList&&<AssetListPrint assets={filteredAssets} close={()=>setPrintAssetList(false)}/>}
     {detailAsset&&<AssetDetailModal value={detailAsset} logs={logs.filter(l=>l.assetId===detailAsset.id)} close={()=>setDetailAsset(null)} edit={()=>{setEditingAsset({...detailAsset,images:detailAsset.images??[]});setDetailAsset(null);setModal('asset')}} addLog={()=>{setEditingLog({id:uid(),assetId:detailAsset.id,date:today(),kind:'Sửa chữa',description:'',parts:'',readings:'',result:'',performedBy:''});setModal('log')}}/>}
     {modal==='asset'&&editingAsset&&<AssetModal value={editingAsset} close={()=>{setModal(null);setEditingAsset(null)}} save={saveAsset}/>}
     {modal==='item'&&editingItem&&<ItemModal value={editingItem} close={()=>{setModal(null);setEditingItem(null)}} save={saveItem}/>}
     {modal==='task'&&editingTask&&<TaskModal value={editingTask} assets={assets} close={()=>{setModal(null);setEditingTask(null)}} save={saveTask}/>}
     {modal==='log'&&editingLog&&<LogEntryModal value={editingLog} close={()=>{setModal(null);setEditingLog(null)}} save={saveLog}/>}
     {modal==='scan'&&<ScanModal close={()=>setModal(null)} assets={assets} openAsset={(a: Asset)=>{setEditingAsset(a);setModal('asset')}}/>}
+  </div>
+}
+
+function AssetListPrint({assets,close}: {assets: Asset[]; close: () => void}) {
+  useEffect(() => {
+    const finish = () => close()
+    window.addEventListener('afterprint', finish)
+    const timer = window.setTimeout(() => window.print(), 250)
+    return () => {
+      window.clearTimeout(timer)
+      window.removeEventListener('afterprint', finish)
+    }
+  }, [close])
+  return <div className="asset-list-print-sheet">
+    <h1>DANH SÁCH CÁC THIẾT BỊ HIỆN NAY</h1>
+    <table>
+      <thead><tr><th>STT</th><th>Mã định danh</th><th>Tên thiết bị</th><th>Nhóm thiết bị</th><th>Serial</th><th>Vị trí lắp đặt</th><th>Ngày đưa vào sử dụng</th><th>Công suất / thông số</th><th>Tình trạng</th></tr></thead>
+      <tbody>{assets.map((a, index) => <tr key={a.id}>
+        <td className="asset-list-center">{index + 1}</td>
+        <td>{a.code}</td>
+        <td><strong>{a.name}</strong>{a.brand&&<small>Hãng: {a.brand}</small>}{a.model&&<small>Model: {a.model}</small>}</td>
+        <td>{a.category}</td><td>{a.serial||'—'}</td><td>{a.location||'—'}</td>
+        <td>{dateText(a.commissionedAt)}</td><td>{a.power||'—'}</td><td>{a.status}</td>
+      </tr>)}</tbody>
+    </table>
+    <p className="asset-list-print-total">Tổng số: {assets.length} thiết bị</p>
   </div>
 }
 
