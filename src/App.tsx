@@ -201,31 +201,16 @@ export default function App() {
     const isNew = !a.code
     let code = a.code
     if (isNew) {
-      // Cấp mã tự động theo quy ước ABC-ABXY-xxx-BB-MM-YY.
-      const typeCodes: Record<string, string> = {
-        'Thiết bị điện': 'TBD', 'Máy nén khí': 'MNA', 'Kho lạnh': 'KLA',
-        'Nồi hấp': 'NHA', 'Máy bơm': 'MB', 'Điều hòa': 'ML', 'Khác': 'TBK'
+      if (!ASSET_CATEGORY_CODES[a.category]) {
+        alert('Bạn cần chọn một nhóm thiết bị trong danh mục chuẩn để hệ thống cấp mã định danh.')
+        return
       }
-      const locationCodes: Record<string, string> = {
-        'Phòng máy nén khí': '01', 'Khu sản xuất': '02', 'Phòng bơm tầng hầm': '03',
-        'Dây chuyền 1': '04', 'Khu xử lý bụi': '05', 'Nhà xưởng A': '06',
-        'Khu kỹ thuật': '07', 'Phòng kỹ thuật tầng 1': '08', 'Tầng 2': '09',
-        'Khu vực Chiller': '10', 'Sân kỹ thuật mái': '11', 'Phòng máy phát điện': '12',
-        'Phòng điện tổng': '13', 'Tầng 1': '14', 'Phòng bơm': '15', 'Phòng IT': '16',
-        'Trạm biến áp': '17', 'Nhà lò hơi': '18', 'Xưởng bảo trì': '19',
-        'Sảnh chính': '20', 'Phòng bơm PCCC': '21', 'Đường ống khí nén': '22',
-        'Hố gom tầng hầm': '23'
-      }
-      const typeCode = typeCodes[a.category] ?? 'TBK'
       const existing = await db.assets.toArray()
-      const numbers = existing
-        .map(item => item.code.match(new RegExp('^' + typeCode + '-[^-]+-(\\d+)-'))?.[1])
-        .filter((item): item is string => Boolean(item))
-        .map(Number)
-      const sequence = String(Math.max(0, ...numbers) + 1).padStart(3, '0')
-      const date = a.commissionedAt || today()
-      const locationCode = locationCodes[a.location] ?? '99'
-      code = `${typeCode}-HP01-${sequence}-${locationCode}-${date.slice(5, 7)}-${date.slice(2, 4)}`
+      code = buildAssetCode(a, existing)
+      if (!code) {
+        alert('Không thể tạo mã định danh. Hãy kiểm tra lại nhóm thiết bị.')
+        return
+      }
     }
     const value = { ...a, code, images: a.images ?? [], updatedAt: now() }
     await db.assets.put(value)
@@ -427,7 +412,7 @@ export default function App() {
     </div></div>}
     {notice&&<div className="toast"><Check size={17}/>{notice}</div>}
     {detailAsset&&<AssetDetailModal value={detailAsset} logs={logs.filter(l=>l.assetId===detailAsset.id)} close={()=>setDetailAsset(null)} edit={()=>{setEditingAsset({...detailAsset,images:detailAsset.images??[]});setDetailAsset(null);setModal('asset')}} addLog={()=>{setEditingLog({id:uid(),assetId:detailAsset.id,date:today(),kind:'Sửa chữa',description:'',parts:'',readings:'',result:'',performedBy:''});setModal('log')}}/>}
-    {modal==='asset'&&editingAsset&&<AssetModal value={editingAsset} close={()=>{setModal(null);setEditingAsset(null)}} save={saveAsset}/>}
+    {modal==='asset'&&editingAsset&&<AssetModal value={editingAsset} close={()=>{setModal(null);setEditingAsset(null)}} save={saveAsset} assets={assets}/>}
     {modal==='item'&&editingItem&&<ItemModal value={editingItem} close={()=>{setModal(null);setEditingItem(null)}} save={saveItem}/>}
     {modal==='task'&&editingTask&&<TaskModal value={editingTask} assets={assets} close={()=>{setModal(null);setEditingTask(null)}} save={saveTask}/>}
     {modal==='log'&&editingLog&&<LogEntryModal value={editingLog} close={()=>{setModal(null);setEditingLog(null)}} save={saveLog}/>}
