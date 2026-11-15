@@ -45,15 +45,58 @@ export default function App() {
 
   useEffect(() => {
     const seed = async () => {
-      if (await db.assets.count()) return
-      const a1 = { ...emptyAsset(), code: 'COMP-001', name: 'Máy nén khí số 1', category: 'Máy nén khí', brand: 'Demo', model: 'AC-22', location: 'Phòng máy', commissionedAt: '2023-05-10', power: '22 kW', cycle: 'Hàng tháng' }
-      const a2 = { ...emptyAsset(), code: 'KHO-001', name: 'Kho lạnh số 1', category: 'Kho lạnh', brand: 'Demo', location: 'Khu sản xuất', commissionedAt: '2022-08-01', power: '', cycle: 'Hàng ngày' }
-      await db.assets.bulkPut([a1, a2])
-      const item = { ...emptyItem(), code: 'VT-001', name: 'Lọc dầu máy nén khí', quantity: 3, minQuantity: 5, unit: 'Bộ' }
-      await db.inventory.add(item)
-      const t1 = { ...emptyTask(), assetId: a1.id, title: 'Kiểm tra máy nén khí định kỳ', dueDate: today(), frequency: 'Hàng tháng', checklist: 'Kiểm tra rò rỉ\nKiểm tra áp suất\nKiểm tra nhiệt độ dầu' }
-      const t2 = { ...emptyTask(), assetId: a2.id, title: 'Ghi nhận nhiệt độ kho lạnh', dueDate: today(), frequency: 'Hàng ngày', checklist: 'Ghi nhiệt độ hiển thị\nKiểm tra cửa kho\nKiểm tra tình trạng dàn lạnh' }
-      await db.tasks.bulkPut([t1, t2])
+      // 30 hồ sơ thiết bị mẫu; đối chiếu theo mã để không tạo trùng khi tải lại.
+      const demoAssets = [
+        { code: 'COMP-001', name: 'Máy nén khí trục vít số 1', category: 'Máy nén khí', brand: 'Atlas Copco', model: 'GA22', location: 'Phòng máy nén khí', commissionedAt: '2023-05-10', power: '22 kW', cycle: 'Hàng tháng' },
+        { code: 'KHO-001', name: 'Kho lạnh bảo quản số 1', category: 'Kho lạnh', brand: 'Bitzer', model: 'Cụm lạnh 1', location: 'Khu sản xuất', commissionedAt: '2022-08-01', power: '18 kW', cycle: 'Hàng ngày' },
+        { code: 'BOM-001', name: 'Bơm cấp nước sinh hoạt số 1', category: 'Máy bơm', brand: 'Pentax', model: 'CM 50', location: 'Phòng bơm tầng hầm', commissionedAt: '2022-03-15', power: '5.5 kW', cycle: 'Hàng tháng' },
+        { code: 'BOM-002', name: 'Bơm cấp nước sinh hoạt dự phòng', category: 'Máy bơm', brand: 'Pentax', model: 'CM 50', location: 'Phòng bơm tầng hầm', commissionedAt: '2022-03-15', power: '5.5 kW', cycle: 'Hàng tháng' },
+        { code: 'BOM-003', name: 'Bơm tăng áp khu sản xuất', category: 'Máy bơm', brand: 'Ebara', model: '3M 50-160', location: 'Khu sản xuất', commissionedAt: '2021-11-20', power: '7.5 kW', cycle: 'Hàng tháng' },
+        { code: 'MOT-001', name: 'Động cơ băng tải cấp liệu', category: 'Động cơ điện', brand: 'Siemens', model: '1LE100', location: 'Dây chuyền 1', commissionedAt: '2023-01-12', power: '4 kW', cycle: 'Hàng quý' },
+        { code: 'MOT-002', name: 'Động cơ quạt hút bụi', category: 'Động cơ điện', brand: 'ABB', model: 'M2BAX', location: 'Khu xử lý bụi', commissionedAt: '2022-06-08', power: '11 kW', cycle: 'Hàng quý' },
+        { code: 'FAN-001', name: 'Quạt thông gió nhà xưởng số 1', category: 'Quạt công nghiệp', brand: 'Deton', model: 'DF-600', location: 'Nhà xưởng A', commissionedAt: '2021-09-18', power: '2.2 kW', cycle: 'Hàng quý' },
+        { code: 'FAN-002', name: 'Quạt hút khí khu hóa chất', category: 'Quạt công nghiệp', brand: 'Kruger', model: 'KAT-500', location: 'Khu kỹ thuật', commissionedAt: '2022-02-10', power: '3 kW', cycle: 'Hàng tháng' },
+        { code: 'AHU-001', name: 'AHU cấp gió tầng 1', category: 'Điều hòa thông gió', brand: 'Daikin', model: 'AHU-01', location: 'Phòng kỹ thuật tầng 1', commissionedAt: '2020-07-01', power: '15 kW', cycle: 'Hàng tháng' },
+        { code: 'FCU-001', name: 'FCU khu văn phòng', category: 'Điều hòa thông gió', brand: 'Daikin', model: 'FXFQ', location: 'Tầng 2', commissionedAt: '2021-04-22', power: '2.1 kW', cycle: 'Hàng quý' },
+        { code: 'CHL-001', name: 'Máy làm lạnh nước Chiller', category: 'Chiller', brand: 'Trane', model: 'CGAM', location: 'Khu vực Chiller', commissionedAt: '2020-05-16', power: '110 kW', cycle: 'Hàng tháng' },
+        { code: 'CTW-001', name: 'Tháp giải nhiệt số 1', category: 'Tháp giải nhiệt', brand: 'Liang Chi', model: 'LBC-100', location: 'Sân kỹ thuật mái', commissionedAt: '2020-05-16', power: '5.5 kW', cycle: 'Hàng tháng' },
+        { code: 'GEN-001', name: 'Máy phát điện dự phòng', category: 'Máy phát điện', brand: 'Cummins', model: 'C150D5', location: 'Phòng máy phát điện', commissionedAt: '2019-12-05', power: '150 kVA', cycle: 'Hàng tuần' },
+        { code: 'ATS-001', name: 'Tủ chuyển nguồn tự động ATS', category: 'Tủ điện', brand: 'Schneider', model: 'ATyS', location: 'Phòng điện tổng', commissionedAt: '2019-12-05', power: '400 A', cycle: 'Hàng quý' },
+        { code: 'MDB-001', name: 'Tủ điện phân phối tổng MDB', category: 'Tủ điện', brand: 'Schneider', model: 'Prisma', location: 'Phòng điện tổng', commissionedAt: '2019-12-05', power: '630 A', cycle: 'Hàng quý' },
+        { code: 'DB-001', name: 'Tủ điện phân phối tầng 1', category: 'Tủ điện', brand: 'LS', model: 'DB-01', location: 'Tầng 1', commissionedAt: '2020-01-10', power: '100 A', cycle: '6 tháng' },
+        { code: 'VFD-001', name: 'Biến tần điều khiển bơm nước', category: 'Biến tần', brand: 'INVT', model: 'GD200A', location: 'Phòng bơm', commissionedAt: '2022-10-14', power: '7.5 kW', cycle: 'Hàng quý' },
+        { code: 'VFD-002', name: 'Biến tần điều khiển quạt hút', category: 'Biến tần', brand: 'Mitsubishi', model: 'FR-E800', location: 'Nhà xưởng A', commissionedAt: '2023-02-19', power: '3.7 kW', cycle: 'Hàng quý' },
+        { code: 'UPS-001', name: 'Bộ lưu điện phòng máy chủ', category: 'UPS', brand: 'APC', model: 'Easy UPS', location: 'Phòng IT', commissionedAt: '2021-08-12', power: '6 kVA', cycle: 'Hàng tháng' },
+        { code: 'TRF-001', name: 'Máy biến áp hạ thế', category: 'Máy biến áp', brand: 'THIBIDI', model: '560 kVA', location: 'Trạm biến áp', commissionedAt: '2018-06-30', power: '560 kVA', cycle: 'Hàng năm' },
+        { code: 'CAP-001', name: 'Tủ tụ bù công suất phản kháng', category: 'Tủ điện', brand: 'Mikro', model: 'PFR-12', location: 'Phòng điện tổng', commissionedAt: '2020-09-01', power: '200 kVAr', cycle: '6 tháng' },
+        { code: 'BOI-001', name: 'Nồi hơi cấp nhiệt', category: 'Nồi hơi', brand: 'Cleaver-Brooks', model: 'CB-100', location: 'Nhà lò hơi', commissionedAt: '2019-03-20', power: '1 tấn/giờ', cycle: 'Hàng tháng' },
+        { code: 'DRY-001', name: 'Máy sấy khí nén', category: 'Máy sấy khí', brand: 'Sullair', model: 'SRD-30', location: 'Phòng máy nén khí', commissionedAt: '2023-05-10', power: '1.2 kW', cycle: 'Hàng tháng' },
+        { code: 'FLT-001', name: 'Bộ lọc khí nén đường chính', category: 'Khí nén', brand: 'SMC', model: 'AFF', location: 'Phòng máy nén khí', commissionedAt: '2023-05-10', power: 'DN50', cycle: 'Hàng tháng' },
+        { code: 'WLD-001', name: 'Máy hàn điện bảo trì', category: 'Thiết bị xưởng', brand: 'Jasic', model: 'ARC-250', location: 'Xưởng bảo trì', commissionedAt: '2021-12-02', power: '250 A', cycle: '6 tháng' },
+        { code: 'LFT-001', name: 'Thang máy chở người số 1', category: 'Thang máy', brand: 'Mitsubishi', model: 'NEXIEZ', location: 'Sảnh chính', commissionedAt: '2020-02-15', power: '15 kW', cycle: 'Hàng tháng' },
+        { code: 'FIR-001', name: 'Bơm chữa cháy điện', category: 'Phòng cháy chữa cháy', brand: 'Ebara', model: 'FSA', location: 'Phòng bơm PCCC', commissionedAt: '2020-02-15', power: '30 kW', cycle: 'Hàng tuần' },
+        { code: 'SEN-001', name: 'Cảm biến áp suất đường khí', category: 'Thiết bị đo lường', brand: 'WIKA', model: 'A-10', location: 'Đường ống khí nén', commissionedAt: '2023-05-10', power: '0–10 bar', cycle: 'Hàng quý' },
+        { code: 'PMP-001', name: 'Bơm thoát nước hố gom', category: 'Máy bơm', brand: 'Tsurumi', model: 'PU-series', location: 'Hố gom tầng hầm', commissionedAt: '2021-07-11', power: '1.5 kW', cycle: 'Hàng tháng' }
+      ]
+      const existing = await db.assets.toArray()
+      const existingCodes = new Set(existing.map(a => a.code))
+      const missing = demoAssets.filter(a => !existingCodes.has(a.code)).map(a => ({
+        ...emptyAsset(), ...a, serial: `DEMO-${a.code}`,
+        notes: 'DỮ LIỆU MẪU – chỉ dùng thử nghiệm, có thể xóa sau.'
+      }))
+      if (missing.length) await db.assets.bulkAdd(missing)
+
+      const compressor = await db.assets.where('code').equals('COMP-001').first()
+      const coldStore = await db.assets.where('code').equals('KHO-001').first()
+      if (!(await db.inventory.count())) {
+        const item = { ...emptyItem(), code: 'VT-001', name: 'Lọc dầu máy nén khí', quantity: 3, minQuantity: 5, unit: 'Bộ' }
+        await db.inventory.add(item)
+      }
+      if (!(await db.tasks.count())) {
+        const t1 = { ...emptyTask(), assetId: compressor?.id ?? '', title: 'Kiểm tra máy nén khí định kỳ', dueDate: today(), frequency: 'Hàng tháng', checklist: 'Kiểm tra rò rỉ\\nKiểm tra áp suất\\nKiểm tra nhiệt độ dầu' }
+        const t2 = { ...emptyTask(), assetId: coldStore?.id ?? '', title: 'Ghi nhận nhiệt độ kho lạnh', dueDate: today(), frequency: 'Hàng ngày', checklist: 'Ghi nhiệt độ hiển thị\\nKiểm tra cửa kho\\nKiểm tra tình trạng dàn lạnh' }
+        await db.tasks.bulkPut([t1, t2])
+      }
     }
     seed()
   }, [])
