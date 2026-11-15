@@ -335,3 +335,16 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Bỏ mã ID bị lặp ở khu vực đầu trang/QR; mã định danh chỉ hiển thị một lần trong bảng thông tin bên dưới.
 - Khi triển khai cấu hình doanh nghiệp, chỉ cần thay ảnh logo trong vùng chuẩn; không phải thiết kế lại bố cục in cho từng công ty.
 - Đã cập nhật `src/App.tsx` và `src/style.css` trên GitHub. **Chưa chạy build hoặc kiểm tra bản in thực tế**; cần Pull origin, chạy `npm.cmd run build`, sau đó mở chi tiết thiết bị và chọn In chi tiết để kiểm tra căn lề, kích thước logo, QR và tên thiết bị.
+
+
+### Đợt triển khai – kết quả bảo trì, tem QR và biểu mẫu in thiết bị
+- `src/db.ts`: bổ sung trường tùy chọn `result` cho bản ghi `Log`, nhận hai giá trị **Đạt** hoặc **Không đạt**; không cần nâng version Dexie vì đây là trường dữ liệu bổ sung không làm thay đổi cấu trúc bảng/chỉ mục.
+- `src/App.tsx`:
+  - Biểu mẫu Ghi nhận bảo trì/sửa chữa có lựa chọn một trong hai kết quả **Đạt / Không đạt**; để trống nếu chưa đánh giá.
+  - Kết quả được lưu cùng nhật ký; lịch sử trong chi tiết thiết bị hiển thị kết quả, bản ghi cũ chưa có trường này hiển thị “Chưa đánh giá”.
+  - Bản in lịch sử bổ sung cột **Kết quả** để in cả Đạt/Không đạt.
+  - Tem QR chỉ còn mã QR và mã ID; bỏ tên thiết bị/vị trí, QR thu nhỏ mục tiêu 17 mm và chữ mã ID tăng lên 8.5 pt trên tem 50 x 30 mm.
+  - Biểu mẫu in chi tiết thiết bị giữ bố cục logo bên trái, QR bên phải, tên thiết bị lớn và mã định danh chỉ xuất hiện một lần trong bảng thông tin.
+- `src/style.css`: căn chỉnh kích thước tem QR và kiểu hiển thị lựa chọn kết quả.
+- Logo BAOTRI hiện là logo thử nghiệm dạng chữ/ký hiệu trong vùng giữ chỗ 42 x 24 mm; đây là vị trí chuẩn để sau này thay bằng ảnh logo của từng doanh nghiệp. Chưa có màn hình cấu hình/tải logo riêng; phần đó sẽ cần bổ sung khi làm cấu hình doanh nghiệp.
+- Đã cập nhật code trên GitHub và kiểm tra lại sự hiện diện của các trường/khối giao diện trong source. **Chưa chạy build và chưa kiểm tra bản in vật lý**. Người dùng cần Pull origin, chạy `npm.cmd run build`, rồi kiểm tra form ghi nhận, lịch sử, tem QR và bản in chi tiết.
