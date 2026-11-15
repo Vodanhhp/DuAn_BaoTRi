@@ -97,3 +97,86 @@ button.asset-photo-thumb{text-align:left}
 @media(max-width:640px){.asset-qr-panel{padding:12px;gap:10px}.asset-qr-panel svg{width:88px;height:88px;flex:0 0 88px}.asset-photo-actions{flex-wrap:wrap}.maintenance-history-list article{grid-template-columns:78px 1fr}}
 
 .result-choice{display:flex;align-items:center;gap:24px;min-height:42px}.result-choice label{display:inline-flex;align-items:center;gap:8px;font-weight:650;cursor:pointer}.result-choice input{width:17px;height:17px;accent-color:#176b50}
+
+
+/* In danh muc thiet bi: mau bang A4 ngang, co vien that va phan trang */
+.asset-list-print-sheet{display:none}
+@media print{
+  @page assetlist{
+    size:A4 landscape;
+    margin:12mm 8mm 17mm;
+    @bottom-center{
+      content:"Trang " counter(page) " / " counter(pages);
+      font-family:Arial,sans-serif;
+      font-size:9pt;
+      color:#333;
+    }
+  }
+  .asset-list-print-sheet{
+    page:assetlist;
+    display:block!important;
+    position:absolute;
+    left:0;
+    top:0;
+    width:100%;
+    box-sizing:border-box;
+    padding:0;
+    margin:0;
+    color:#111;
+    background:#fff;
+    font-family:Arial,sans-serif;
+  }
+  .asset-list-print-sheet h1{
+    display:block;
+    text-align:center;
+    font-size:16pt;
+    line-height:1.25;
+    font-weight:800;
+    margin:0 0 7mm;
+    padding:0 0 3mm;
+    border-bottom:1.5px solid #333;
+    letter-spacing:.2pt;
+  }
+  .asset-list-print-sheet table{
+    width:100%;
+    border-collapse:collapse;
+    table-layout:fixed;
+    font-size:8pt;
+    line-height:1.25;
+  }
+  .asset-list-print-sheet thead{display:table-header-group}
+  .asset-list-print-sheet tfoot{display:table-footer-group}
+  .asset-list-print-sheet tr{break-inside:avoid;page-break-inside:avoid}
+  .asset-list-print-sheet th,
+  .asset-list-print-sheet td{
+    border:1px solid #555;
+    padding:4px 5px;
+    text-align:left;
+    vertical-align:top;
+    overflow-wrap:anywhere;
+  }
+  .asset-list-print-sheet th{
+    background:#e9eeeb!important;
+    color:#111!important;
+    font-weight:800;
+    text-align:center;
+    -webkit-print-color-adjust:exact;
+    print-color-adjust:exact;
+  }
+  .asset-list-print-sheet th:nth-child(1){width:4%}
+  .asset-list-print-sheet th:nth-child(2){width:12%}
+  .asset-list-print-sheet th:nth-child(3){width:19%}
+  .asset-list-print-sheet th:nth-child(4){width:11%}
+  .asset-list-print-sheet th:nth-child(5){width:9%}
+  .asset-list-print-sheet th:nth-child(6){width:13%}
+  .asset-list-print-sheet th:nth-child(7){width:10%}
+  .asset-list-print-sheet th:nth-child(8){width:10%}
+  .asset-list-print-sheet th:nth-child(9){width:12%}
+  .asset-list-print-sheet td strong{display:block;font-weight:800}
+  .asset-list-print-sheet td small{display:block;font-size:7.5pt;margin-top:2px}
+  .asset-list-print-sheet .asset-list-center{text-align:center}
+  .asset-list-print-total{margin:4mm 0 0;text-align:right;font-size:9pt;font-weight:800}
+  body *{visibility:hidden!important}
+  .asset-list-print-sheet,.asset-list-print-sheet *{visibility:visible!important}
+  .asset-list-print-sheet{display:block!important}
+}
