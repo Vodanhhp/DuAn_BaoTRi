@@ -244,3 +244,11 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
   - Bundle JS chính khoảng 994.33 kB trước gzip (310.92 kB sau gzip), vượt ngưỡng cảnh báo 500 kB của Vite. Không làm build thất bại; có thể tối ưu code splitting ở đợt sau.
 - **Trạng thái:** xác nhận build production thành công, nhưng chưa đồng nghĩa đã kiểm thử chức năng trên trình duyệt.
 - **Bước kiểm thử tiếp theo:** chạy `npm.cmd run dev`, mở ứng dụng và kiểm tra danh sách thiết bị, lọc/sắp xếp kết hợp, mở chi tiết, gallery ảnh demo, thêm ảnh, Lưu kho và Khôi phục. Không xóa dữ liệu thử nghiệm ở bước này.
+
+
+### Bảng chi tiết thiết bị – in mã QR và quy ước mã định danh
+- Người dùng xác nhận phần hiển thị ảnh trong hồ sơ chi tiết thiết bị đã ổn.
+- Bổ sung yêu cầu có chức năng **In mã QR** ngay trong bảng chi tiết thiết bị.
+- Nội dung in dự kiến gồm mã QR và một số thông tin nhận diện thiết yếu; tối thiểu phải có mã định danh thiết bị. Kích thước tem/giấy và các trường thông tin còn lại sẽ chốt sau khi người dùng cung cấp quy ước.
+- Người dùng sẽ cung cấp các quy ước mã định danh; cần lưu nguyên văn thành tài liệu tham chiếu để áp dụng thống nhất khi thiết kế dữ liệu và chức năng BAOTRI.
+- Đây là yêu cầu ghi nhận; chưa sửa code.
