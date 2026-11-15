@@ -183,10 +183,54 @@ export default function App() {
 
       const compressor = await db.assets.filter(a => a.serial === 'DEMO-COMP-001').first()
       const coldStore = await db.assets.filter(a => a.serial === 'DEMO-KHO-001').first()
-      if (!(await db.inventory.count())) {
-        const item = { ...emptyItem(), code: 'VT-001', name: 'Lọc dầu máy nén khí', quantity: 3, minQuantity: 5, unit: 'Bộ' }
-        await db.inventory.add(item)
-      }
+      // 40 vật tư giả định để thử nghiệm kho; chỉ bổ sung mã còn thiếu, không ghi đè dữ liệu đã sửa.
+      const demoInventory = [
+        { code:'VT-001', name:'Lọc dầu máy nén khí', group:'Khí nén', unit:'Bộ', quantity:3, minQuantity:5, location:'Kho cơ điện - Kệ A1', supplier:'Nhà cung cấp mẫu A', unitPrice:450000 },
+        { code:'VT-002', name:'Lọc tách dầu máy nén khí', group:'Khí nén', unit:'Cái', quantity:2, minQuantity:2, location:'Kho cơ điện - Kệ A1', supplier:'Nhà cung cấp mẫu A', unitPrice:1850000 },
+        { code:'VT-003', name:'Lọc gió máy nén khí', group:'Khí nén', unit:'Cái', quantity:4, minQuantity:2, location:'Kho cơ điện - Kệ A1', supplier:'Nhà cung cấp mẫu A', unitPrice:620000 },
+        { code:'VT-004', name:'Dầu máy nén khí ISO VG 46', group:'Dầu mỡ bôi trơn', unit:'Lít', quantity:25, minQuantity:10, location:'Kho hóa chất - Kệ D1', supplier:'Nhà cung cấp mẫu B', unitPrice:95000 },
+        { code:'VT-005', name:'Dây curoa máy nén khí', group:'Truyền động', unit:'Sợi', quantity:3, minQuantity:2, location:'Kho cơ điện - Kệ A2', supplier:'Nhà cung cấp mẫu A', unitPrice:320000 },
+        { code:'VT-006', name:'Bạc đạn 6204-2RS', group:'Vòng bi - bạc đạn', unit:'Cái', quantity:12, minQuantity:5, location:'Kho cơ điện - Kệ B1', supplier:'Nhà cung cấp mẫu C', unitPrice:85000 },
+        { code:'VT-007', name:'Bạc đạn 6205-2RS', group:'Vòng bi - bạc đạn', unit:'Cái', quantity:8, minQuantity:5, location:'Kho cơ điện - Kệ B1', supplier:'Nhà cung cấp mẫu C', unitPrice:105000 },
+        { code:'VT-008', name:'Bạc đạn 6308-2RS', group:'Vòng bi - bạc đạn', unit:'Cái', quantity:2, minQuantity:2, location:'Kho cơ điện - Kệ B1', supplier:'Nhà cung cấp mẫu C', unitPrice:285000 },
+        { code:'VT-009', name:'Phớt bơm cơ khí 25 mm', group:'Phớt - gioăng', unit:'Cái', quantity:5, minQuantity:3, location:'Kho cơ điện - Kệ B2', supplier:'Nhà cung cấp mẫu C', unitPrice:145000 },
+        { code:'VT-010', name:'Gioăng cao su mặt bích DN50', group:'Phớt - gioăng', unit:'Cái', quantity:20, minQuantity:10, location:'Kho cơ điện - Kệ B2', supplier:'Nhà cung cấp mẫu C', unitPrice:18000 },
+        { code:'VT-011', name:'Contactor 3P 18A cuộn 220VAC', group:'Thiết bị điện', unit:'Cái', quantity:4, minQuantity:2, location:'Kho điện - Kệ C1', supplier:'Nhà cung cấp mẫu D', unitPrice:420000 },
+        { code:'VT-012', name:'Contactor 3P 32A cuộn 220VAC', group:'Thiết bị điện', unit:'Cái', quantity:2, minQuantity:2, location:'Kho điện - Kệ C1', supplier:'Nhà cung cấp mẫu D', unitPrice:680000 },
+        { code:'VT-013', name:'Rơ le nhiệt 9-13A', group:'Thiết bị điện', unit:'Cái', quantity:3, minQuantity:2, location:'Kho điện - Kệ C1', supplier:'Nhà cung cấp mẫu D', unitPrice:235000 },
+        { code:'VT-014', name:'MCB 1P 16A curve C', group:'Thiết bị điện', unit:'Cái', quantity:15, minQuantity:5, location:'Kho điện - Kệ C2', supplier:'Nhà cung cấp mẫu D', unitPrice:78000 },
+        { code:'VT-015', name:'MCCB 3P 100A', group:'Thiết bị điện', unit:'Cái', quantity:1, minQuantity:1, location:'Kho điện - Kệ C2', supplier:'Nhà cung cấp mẫu D', unitPrice:1250000 },
+        { code:'VT-016', name:'Cầu chì ống 10x38 6A', group:'Thiết bị điện', unit:'Cái', quantity:30, minQuantity:10, location:'Kho điện - Kệ C2', supplier:'Nhà cung cấp mẫu D', unitPrice:12000 },
+        { code:'VT-017', name:'Đèn báo pha LED 220VAC', group:'Thiết bị điện', unit:'Cái', quantity:10, minQuantity:5, location:'Kho điện - Kệ C3', supplier:'Nhà cung cấp mẫu D', unitPrice:35000 },
+        { code:'VT-018', name:'Nút nhấn đỏ phi 22', group:'Thiết bị điện', unit:'Cái', quantity:8, minQuantity:5, location:'Kho điện - Kệ C3', supplier:'Nhà cung cấp mẫu D', unitPrice:42000 },
+        { code:'VT-019', name:'Nút nhấn xanh phi 22', group:'Thiết bị điện', unit:'Cái', quantity:8, minQuantity:5, location:'Kho điện - Kệ C3', supplier:'Nhà cung cấp mẫu D', unitPrice:42000 },
+        { code:'VT-020', name:'Cảm biến tiệm cận M18 PNP', group:'Cảm biến - đo lường', unit:'Cái', quantity:2, minQuantity:2, location:'Kho điện tử - Kệ E1', supplier:'Nhà cung cấp mẫu E', unitPrice:390000 },
+        { code:'VT-021', name:'Cảm biến áp suất 0-10 bar', group:'Cảm biến - đo lường', unit:'Cái', quantity:1, minQuantity:1, location:'Kho điện tử - Kệ E1', supplier:'Nhà cung cấp mẫu E', unitPrice:1250000 },
+        { code:'VT-022', name:'Cảm biến nhiệt độ PT100', group:'Cảm biến - đo lường', unit:'Cái', quantity:3, minQuantity:2, location:'Kho điện tử - Kệ E1', supplier:'Nhà cung cấp mẫu E', unitPrice:280000 },
+        { code:'VT-023', name:'Relay trung gian 8 chân 24VDC', group:'Thiết bị điện', unit:'Cái', quantity:10, minQuantity:5, location:'Kho điện - Kệ C4', supplier:'Nhà cung cấp mẫu D', unitPrice:65000 },
+        { code:'VT-024', name:'Nguồn switching 24VDC 5A', group:'Điện tử - nguồn', unit:'Cái', quantity:2, minQuantity:2, location:'Kho điện tử - Kệ E2', supplier:'Nhà cung cấp mẫu E', unitPrice:320000 },
+        { code:'VT-025', name:'Quạt làm mát tủ điện 120 mm', group:'Làm mát tủ điện', unit:'Cái', quantity:4, minQuantity:2, location:'Kho điện - Kệ C4', supplier:'Nhà cung cấp mẫu D', unitPrice:185000 },
+        { code:'VT-026', name:'Ống khí PU phi 8', group:'Khí nén', unit:'Mét', quantity:50, minQuantity:20, location:'Kho cơ điện - Kệ A3', supplier:'Nhà cung cấp mẫu A', unitPrice:8500 },
+        { code:'VT-027', name:'Đầu nối nhanh khí nén PC8-02', group:'Khí nén', unit:'Cái', quantity:20, minQuantity:10, location:'Kho cơ điện - Kệ A3', supplier:'Nhà cung cấp mẫu A', unitPrice:18000 },
+        { code:'VT-028', name:'Van điện từ khí nén 5/2', group:'Khí nén', unit:'Cái', quantity:2, minQuantity:1, location:'Kho cơ điện - Kệ A3', supplier:'Nhà cung cấp mẫu A', unitPrice:480000 },
+        { code:'VT-029', name:'Ống nước PVC DN27', group:'Vật tư đường ống', unit:'Mét', quantity:30, minQuantity:10, location:'Kho vật tư chung - Kệ F1', supplier:'Nhà cung cấp mẫu F', unitPrice:14500 },
+        { code:'VT-030', name:'Van bi đồng DN20', group:'Vật tư đường ống', unit:'Cái', quantity:6, minQuantity:3, location:'Kho vật tư chung - Kệ F1', supplier:'Nhà cung cấp mẫu F', unitPrice:95000 },
+        { code:'VT-031', name:'Băng tan PTFE', group:'Vật tư tiêu hao', unit:'Cuộn', quantity:25, minQuantity:10, location:'Kho vật tư chung - Kệ F2', supplier:'Nhà cung cấp mẫu F', unitPrice:7000 },
+        { code:'VT-032', name:'Keo silicone trung tính', group:'Vật tư tiêu hao', unit:'Tuýp', quantity:8, minQuantity:4, location:'Kho vật tư chung - Kệ F2', supplier:'Nhà cung cấp mẫu F', unitPrice:65000 },
+        { code:'VT-033', name:'Que hàn thép 2.5 mm', group:'Vật tư hàn cắt', unit:'Kg', quantity:12, minQuantity:5, location:'Kho xưởng - Kệ G1', supplier:'Nhà cung cấp mẫu G', unitPrice:38000 },
+        { code:'VT-034', name:'Đá cắt sắt 100 mm', group:'Vật tư hàn cắt', unit:'Viên', quantity:40, minQuantity:20, location:'Kho xưởng - Kệ G1', supplier:'Nhà cung cấp mẫu G', unitPrice:9000 },
+        { code:'VT-035', name:'Mỡ bôi trơn đa dụng', group:'Dầu mỡ bôi trơn', unit:'Kg', quantity:5, minQuantity:3, location:'Kho hóa chất - Kệ D1', supplier:'Nhà cung cấp mẫu B', unitPrice:165000 },
+        { code:'VT-036', name:'Dung dịch vệ sinh tiếp điểm', group:'Điện tử - bảo dưỡng', unit:'Chai', quantity:6, minQuantity:3, location:'Kho điện tử - Kệ E2', supplier:'Nhà cung cấp mẫu E', unitPrice:85000 },
+        { code:'VT-037', name:'Dây điện mềm 2x1.5 mm²', group:'Dây cáp điện', unit:'Mét', quantity:100, minQuantity:30, location:'Kho điện - Kệ C5', supplier:'Nhà cung cấp mẫu D', unitPrice:14500 },
+        { code:'VT-038', name:'Cáp điện CV 1x4 mm²', group:'Dây cáp điện', unit:'Mét', quantity:80, minQuantity:30, location:'Kho điện - Kệ C5', supplier:'Nhà cung cấp mẫu D', unitPrice:12500 },
+        { code:'VT-039', name:'Đầu cos đồng 4 mm²', group:'Dây cáp điện', unit:'Cái', quantity:100, minQuantity:30, location:'Kho điện - Kệ C5', supplier:'Nhà cung cấp mẫu D', unitPrice:1200 },
+        { code:'VT-040', name:'Dây rút nhựa 200 mm', group:'Vật tư tiêu hao', unit:'Bịch', quantity:10, minQuantity:5, location:'Kho vật tư chung - Kệ F2', supplier:'Nhà cung cấp mẫu F', unitPrice:28000 }
+      ]
+      const existingInventoryCodes = new Set((await db.inventory.toArray()).map(item => item.code))
+      const missingInventory = demoInventory
+        .filter(item => !existingInventoryCodes.has(item.code))
+        .map(item => ({ ...emptyItem(), ...item, updatedAt: now() }))
+      if (missingInventory.length) await db.inventory.bulkAdd(missingInventory)
       if (!(await db.tasks.count())) {
         const t1 = { ...emptyTask(), assetId: compressor?.id ?? '', title: 'Kiểm tra máy nén khí định kỳ', dueDate: today(), frequency: 'Hàng tháng', checklist: 'Kiểm tra rò rỉ\\nKiểm tra áp suất\\nKiểm tra nhiệt độ dầu' }
         const t2 = { ...emptyTask(), assetId: coldStore?.id ?? '', title: 'Ghi nhận nhiệt độ kho lạnh', dueDate: today(), frequency: 'Hàng ngày', checklist: 'Ghi nhiệt độ hiển thị\\nKiểm tra cửa kho\\nKiểm tra tình trạng dàn lạnh' }
