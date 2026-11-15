@@ -252,3 +252,15 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Nội dung in dự kiến gồm mã QR và một số thông tin nhận diện thiết yếu; tối thiểu phải có mã định danh thiết bị. Kích thước tem/giấy và các trường thông tin còn lại sẽ chốt sau khi người dùng cung cấp quy ước.
 - Người dùng sẽ cung cấp các quy ước mã định danh; cần lưu nguyên văn thành tài liệu tham chiếu để áp dụng thống nhất khi thiết kế dữ liệu và chức năng BAOTRI.
 - Đây là yêu cầu ghi nhận; chưa sửa code.
+
+
+### Quy ước mã định danh thiết bị – đã nhận từ người dùng
+- Đã tạo tài liệu riêng `QUY_UOC_MA_DINH_DANH_THIET_BI.md` để lưu cấu trúc và ý nghĩa các thành phần mã định danh.
+- Cấu trúc: `ABC-ABXY-xxx-BB-MM-YY`.
+- `ABC`: viết tắt tên/loại thiết bị; ví dụ Quạt Lạnh = QL, Quạt Cắt Gió = QCG, Tủ Lạnh = TL.
+- `ABXY`: mã đơn vị sử dụng; ví dụ công ty có HP01 và HP02.
+- `xxx`: số thứ tự thiết bị cùng loại trong công ty.
+- `BB`: mã vị trí đặt thiết bị trong công ty/phân xưởng; quy ước riêng, có thể sửa đổi sau.
+- `MM`: tháng đưa vào sử dụng; `YY`: năm đưa vào sử dụng.
+- Chưa tự chốt số chữ số của `xxx`, quy tắc đổi mã khi thiết bị chuyển vị trí/đơn vị, hoặc tính bất biến của mã sau khi cấp; chờ người dùng thống nhất.
+- Đây là tài liệu quy ước; chưa sửa code tạo mã hoặc in QR.
