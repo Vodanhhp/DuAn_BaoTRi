@@ -71,6 +71,7 @@ export default function App() {
   const [assetSort, setAssetSort] = useState('code-asc')
   const [showArchived, setShowArchived] = useState(false)
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null)
+  const [detailItem, setDetailItem] = useState<InventoryItem | null>(null)
   const [editingTask, setEditingTask] = useState<Task | null>(null)
   const [editingLog, setEditingLog] = useState<Log | null>(null)
   const [notice, setNotice] = useState('')
@@ -397,7 +398,15 @@ export default function App() {
     printWindow.document.open(); printWindow.document.write(html); printWindow.document.close()
     printWindow.focus(); printWindow.onafterprint = () => printWindow.close(); printWindow.print()
   }
-  const exportInventory = () => exportRows(inventory.map(i => ({ 'Mã vật tư':i.code,'Tên vật tư':i.name,'Nhóm':i.group,'ĐVT':i.unit,'Tồn':i.quantity,'Tồn tối thiểu':i.minQuantity,'Vị trí':i.location,'Nhà cung cấp':i.supplier,'Đơn giá':i.unitPrice })), 'ton-kho-vat-tu.xlsx')
+  const exportInventory = () => exportRows(inventory.map(i => ({ 'Mã vật tư':i.code,'Mã số':i.partNumber??'','Tên vật tư':i.name,'Nhóm':i.group,'Kích cỡ':i.size??'','ĐVT':i.unit,'Tồn':i.quantity,'Tồn tối thiểu':i.minQuantity,'Vị trí':i.location,'Nhà cung cấp':i.supplier,'Đơn giá':i.unitPrice })), 'ton-kho-vat-tu.xlsx')
+  const printInventory = () => {
+    const rows = filteredItems.map((i,index)=>'<tr><td class="center">'+(index+1)+'</td><td>'+htmlEscape(i.code)+'</td><td>'+htmlEscape(i.partNumber||'—')+'</td><td><strong>'+htmlEscape(i.name)+'</strong></td><td>'+htmlEscape(i.group)+'</td><td>'+htmlEscape(i.size||'—')+'</td><td class="center">'+htmlEscape(i.unit)+'</td><td class="num">'+i.quantity+'</td><td class="num">'+i.minQuantity+'</td><td>'+htmlEscape(i.location||'—')+'</td><td>'+htmlEscape(i.supplier||'—')+'</td><td class="num">'+Number(i.unitPrice||0).toLocaleString('vi-VN')+'</td></tr>').join('')
+    const printWindow=window.open('','_blank')
+    if(!printWindow){alert('Trình duyệt đang chặn cửa sổ in. Hãy cho phép cửa sổ bật lên rồi thử lại.');return}
+    const headers=['STT','Mã vật tư','Mã số','Tên vật tư','Nhóm','Kích cỡ','ĐVT','Tồn kho','Tồn tối thiểu','Vị trí lưu kho','Nhà cung cấp','Đơn giá (VNĐ)']
+    const html='<!DOCTYPE html><html lang="vi"><head><meta charset="utf-8"/><title>DANH SÁCH VẬT TƯ</title><style>@page{size:A4 landscape;margin:12mm 8mm 16mm;@bottom-center{content:"Trang " counter(page) " / " counter(pages);font:9pt Tahoma}}*{box-sizing:border-box}body{font-family:Tahoma,sans-serif;font-size:11pt;color:#111;margin:0}h1{text-align:center;font-size:12pt;margin:0 0 12pt}table{width:100%;border-collapse:collapse;table-layout:fixed}thead{display:table-header-group}tr{break-inside:avoid;page-break-inside:avoid}th,td{border:1px solid #333;padding:4pt 3pt;vertical-align:top;overflow-wrap:anywhere;font-size:9pt}th{text-align:center;font-weight:bold;background:#e9eeeb!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.center{text-align:center}.num{text-align:right}.total{text-align:right;font-weight:bold;margin-top:10pt}@media screen{body{padding:16px}}</style></head><body><h1>DANH SÁCH VẬT TƯ</h1><table><colgroup><col style="width:3%"/><col style="width:8%"/><col style="width:8%"/><col style="width:15%"/><col style="width:9%"/><col style="width:8%"/><col style="width:5%"/><col style="width:6%"/><col style="width:7%"/><col style="width:10%"/><col style="width:10%"/><col style="width:11%"/></colgroup><thead><tr>'+headers.map(h=>'<th>'+htmlEscape(h)+'</th>').join('')+'</tr></thead><tbody>'+rows+'</tbody></table><p class="total">Tổng số: '+filteredItems.length+' vật tư</p></body></html>'
+    printWindow.document.open();printWindow.document.write(html);printWindow.document.close();printWindow.focus();printWindow.onafterprint=()=>printWindow.close();printWindow.print()
+  }
   const exportTasks = () => exportRows(tasks.map(t => ({ 'Thiết bị':assets.find(a=>a.id===t.assetId)?.name ?? '', 'Công việc':t.title,'Ngày đến hạn':t.dueDate,'Chu kỳ':t.frequency,'Trạng thái':t.status,'Checklist':t.checklist,'Thông số':t.readings,'Ghi chú':t.notes })), 'ke-hoach-bao-tri.xlsx')
   const exportLogs = () => exportRows(logs.map(l => ({ 'Ngày':l.date,'Thiết bị':assets.find(a=>a.id===l.assetId)?.name ?? '', 'Loại':l.kind,'Nội dung':l.description,'Thông số':l.readings,'Vật tư':l.parts,'Người thực hiện':l.performedBy })), 'nhat-ky-bao-tri.xlsx')
   const backup = async () => {
@@ -465,9 +474,9 @@ export default function App() {
           </tbody></table>{(showArchived?filteredArchivedAssets:filteredAssets).length===0&&<Empty text={showArchived?'Chưa có thiết bị nào trong Lưu kho.':'Chưa có thiết bị phù hợp.'}/>}</div>
           {showArchived&&<p className="archive-security-note">Xóa vĩnh viễn sẽ chỉ mở khi BAOTRI có đăng nhập và xác thực Admin ở máy chủ. Bản thử nghiệm lưu cục bộ chưa có bảo mật tài khoản thật.</p>}
         </section>}
-        {page==='inventory' && <section className="panel"><div className="panel-head"><div><h2>Kho vật tư</h2><p>Nhập xuất tồn và cảnh báo mức tồn tối thiểu</p></div><button className="soft-btn" onClick={exportInventory}><Download size={16}/> Xuất Excel</button></div>
+        {page==='inventory' && <section className="panel"><div className="panel-head"><div><h2>Kho vật tư</h2><p>Nhập xuất tồn và cảnh báo mức tồn tối thiểu</p></div><div className="asset-photo-actions"><button className="soft-btn" onClick={exportInventory}><Download size={16}/> Xuất Excel</button><button className="soft-btn" onClick={printInventory}><Printer size={16}/> In danh sách</button></div></div>
           <div className="table-wrap"><table><thead><tr><th>Mã / Tên vật tư</th><th>Nhóm</th><th>Tồn kho</th><th>Tồn tối thiểu</th><th>Vị trí</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
-          {filteredItems.map(i=><tr key={i.id}><td><b>{i.code}</b><small>{i.name}</small></td><td>{i.group}</td><td><b>{i.quantity} {i.unit}</b></td><td>{i.minQuantity} {i.unit}</td><td>{i.location||'—'}</td><td><span className={`status ${i.quantity<=i.minQuantity?'red':'green'}`}>{i.quantity<=i.minQuantity?'Sắp hết':'Đủ tồn'}</span></td><td className="actions"><button className="text-btn" onClick={()=>addMovement(i,'Nhập',Number(prompt('Số lượng nhập?','1')))}>Nhập</button><button className="text-btn" onClick={()=>addMovement(i,'Xuất',Number(prompt('Số lượng xuất?','1')))}>Xuất</button><button className="text-btn" onClick={()=>{setEditingItem(i);setModal('item')}}>Sửa</button></td></tr>)}
+          {filteredItems.map(i=><tr key={i.id}><td><button type="button" className="inventory-name-link" onClick={()=>setDetailItem(i)}><b>{i.code}</b><small>{i.name}</small></button></td><td>{i.group}</td><td><b>{i.quantity} {i.unit}</b></td><td>{i.minQuantity} {i.unit}</td><td>{i.location||'—'}</td><td><span className={`status ${i.quantity<=i.minQuantity?'red':'green'}`}>{i.quantity<=i.minQuantity?'Sắp hết':'Đủ tồn'}</span></td><td className="actions"><button className="text-btn" onClick={()=>addMovement(i,'Nhập',Number(prompt('Số lượng nhập?','1')))}>Nhập</button><button className="text-btn" onClick={()=>addMovement(i,'Xuất',Number(prompt('Số lượng xuất?','1')))}>Xuất</button><button className="text-btn" onClick={()=>{setEditingItem(i);setModal('item')}}>Sửa</button></td></tr>)}
           </tbody></table>{filteredItems.length===0&&<Empty text="Chưa có vật tư."/ >}</div></section>}
         {page==='tasks' && <section className="panel"><div className="panel-head"><div><h2>Kế hoạch và công việc bảo trì</h2><p>Danh sách công việc, hạn thực hiện và tiến độ</p></div><button className="soft-btn" onClick={exportTasks}><Download size={16}/> Xuất Excel</button></div>
           <div className="table-wrap"><table><thead><tr><th>Ngày đến hạn</th><th>Thiết bị</th><th>Công việc</th><th>Chu kỳ</th><th>Trạng thái</th><th></th></tr></thead><tbody>
@@ -497,6 +506,7 @@ export default function App() {
       {([['logs','Nhật ký',ClipboardList],['reports','Báo cáo',BarChart3],['settings','Cài đặt',Settings]] as const).map(([key,label,Icon])=><button key={key} onClick={()=>{setPage(key);setSearch('');setMobileMore(false)}}><Icon size={18}/>{label}<ChevronRight size={16}/></button>)}
     </div></div>}
     {notice&&<div className="toast"><Check size={17}/>{notice}</div>}
+    {detailItem&&<InventoryDetailModal value={detailItem} close={()=>setDetailItem(null)} edit={()=>{setEditingItem(detailItem);setDetailItem(null);setModal('item')}}/>}
     {detailAsset&&<AssetDetailModal value={detailAsset} logs={logs.filter(l=>l.assetId===detailAsset.id)} close={()=>setDetailAsset(null)} edit={()=>{setEditingAsset({...detailAsset,images:detailAsset.images??[]});setDetailAsset(null);setModal('asset')}} addLog={()=>{setEditingLog({id:uid(),assetId:detailAsset.id,date:today(),kind:'Sửa chữa',description:'',parts:'',readings:'',result:'',performedBy:''});setModal('log')}}/>}
     {modal==='asset'&&editingAsset&&<AssetModal value={editingAsset} close={()=>{setModal(null);setEditingAsset(null)}} save={saveAsset} assets={assets}/>}
     {modal==='item'&&editingItem&&<ItemModal value={editingItem} close={()=>{setModal(null);setEditingItem(null)}} save={saveItem}/>}
@@ -609,14 +619,23 @@ function AssetModal({value,close,save,assets}:any){
 }
 function ItemModal({value,close,save}:any){
   const [v,setV]=useState<InventoryItem>(value); const set=(k:keyof InventoryItem,x:any)=>setV(p=>({...p,[k]:x}))
-  return <Modal title="Thông tin vật tư" close={close}><form className="form-grid" onSubmit={e=>{e.preventDefault();if(!v.code||!v.name)return alert('Nhập mã và tên vật tư');save(v)}}>
-    <Field label="Mã vật tư *"><input required value={v.code} onChange={e=>set('code',e.target.value.toUpperCase())}/></Field><Field label="Tên vật tư *"><input required value={v.name} onChange={e=>set('name',e.target.value)}/></Field>
-    <Field label="Nhóm"><select value={v.group} onChange={e=>set('group',e.target.value)}>{['Vật tư điện','Linh kiện điện tử','Cơ khí','Khí nén','Điện lạnh','Vật tư tiêu hao','Khác'].map(x=><option>{x}</option>)}</select></Field><Field label="Đơn vị tính"><input value={v.unit} onChange={e=>set('unit',e.target.value)}/></Field>
+  const units=['Cái','Con','Cuộn','m','mm','cm','Lít','ml','Kg','g','Bộ','Chai','Hộp','Túi','Thùng','Tấm','Ống','Viên','Đôi','Mét','Cuộn dây','Bao','Thanh','Can']
+  const groups=['Vật tư điện','Linh kiện điện tử','Cơ khí','Khí nén','Điện lạnh','Dầu mỡ bôi trơn','Vòng bi - bạc đạn','Phớt - gioăng','Vật tư đường ống','Vật tư tiêu hao','Vật tư hàn cắt','Dây cáp điện','Khác']
+  return <Modal title="Thông tin vật tư" close={close}><form className="form-grid" onSubmit={e=>{e.preventDefault();if(!v.code||!v.name)return alert('Nhập mã vật tư và tên vật tư');save(v)}}>
+    <Field label="Mã vật tư *"><input required value={v.code} onChange={e=>set('code',e.target.value.toUpperCase())}/></Field><Field label="Mã số"><input value={v.partNumber??''} onChange={e=>set('partNumber',e.target.value)}/></Field>
+    <Field label="Tên vật tư *"><input required value={v.name} onChange={e=>set('name',e.target.value)}/></Field><Field label="Nhóm"><select value={v.group} onChange={e=>set('group',e.target.value)}>{groups.map(x=><option key={x}>{x}</option>)}</select></Field>
+    <Field label="Kích cỡ / quy cách"><input placeholder="Ví dụ: DN50, M10, 6204, 2.5 mm..." value={v.size??''} onChange={e=>set('size',e.target.value)}/></Field>
+    <Field label="Đơn vị tính"><select value={v.unit} onChange={e=>set('unit',e.target.value)}>{!units.includes(v.unit)&&<option value={v.unit}>{v.unit}</option>}{units.map(x=><option key={x} value={x}>{x}</option>)}</select></Field>
     <Field label="Số lượng tồn"><input type="number" min="0" value={v.quantity} onChange={e=>set('quantity',Number(e.target.value))}/></Field><Field label="Tồn tối thiểu"><input type="number" min="0" value={v.minQuantity} onChange={e=>set('minQuantity',Number(e.target.value))}/></Field>
     <Field label="Vị trí lưu kho"><input value={v.location} onChange={e=>set('location',e.target.value)}/></Field><Field label="Nhà cung cấp"><input value={v.supplier} onChange={e=>set('supplier',e.target.value)}/></Field>
     <Field label="Đơn giá tham khảo"><input type="number" min="0" value={v.unitPrice} onChange={e=>set('unitPrice',Number(e.target.value))}/></Field>
     <div className="modal-actions"><button type="button" className="soft-btn" onClick={close}>Hủy</button><button className="primary-btn"><Check size={16}/> Lưu vật tư</button></div>
   </form></Modal>
+}
+function InventoryDetailModal({value,close,edit}:any){
+  const rows=[['Mã vật tư',value.code],['Mã số',value.partNumber],['Tên vật tư',value.name],['Nhóm',value.group],['Kích cỡ / quy cách',value.size],['Đơn vị tính',value.unit],['Số lượng tồn',String(value.quantity)+' '+value.unit],['Tồn tối thiểu',String(value.minQuantity)+' '+value.unit],['Vị trí lưu kho',value.location],['Nhà cung cấp',value.supplier],['Đơn giá tham khảo',Number(value.unitPrice||0).toLocaleString('vi-VN')+' VNĐ'],['Cập nhật lần cuối',value.updatedAt?new Date(value.updatedAt).toLocaleString('vi-VN'):'—']]
+  const print=()=>{window.setTimeout(()=>window.print(),100)}
+  return <Modal title="Chi tiết vật tư" close={close}><div className="asset-detail-grid">{rows.map(([label,val])=><div className="asset-detail-field" key={label}><small>{label}</small><b>{val||'—'}</b></div>)}</div><div className="asset-photo-actions"><button className="soft-btn" onClick={print}><Printer size={16}/> In chi tiết</button><button className="primary-btn" onClick={edit}>Sửa vật tư</button></div><div className="asset-print-sheet print-detail"><div className="asset-print-report"><h1 className="asset-print-form-title">BẢNG CHI TIẾT VẬT TƯ</h1><div className="asset-print-header"><div className="company-logo-placeholder"><span className="company-logo-mark">BT</span><span className="company-logo-wording"><strong>BAOTRI</strong><small>LOGO THỬ NGHIỆM</small></span></div></div><h2 className="asset-print-device-name">{value.name}</h2><table><tbody>{rows.map(([label,val])=><tr key={label}><th>{label}</th><td>{val||'—'}</td></tr>)}</tbody></table></div></div></Modal>
 }
 function TaskModal({value,assets,close,save}:any){
   const [v,setV]=useState<Task>(value); const set=(k:keyof Task,x:any)=>setV(p=>({...p,[k]:x}))
