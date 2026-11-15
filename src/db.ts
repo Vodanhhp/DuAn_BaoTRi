@@ -1,6 +1,6 @@
 import Dexie, { type Table } from 'dexie'
 
-export type AssetStatus = 'Đang hoạt động' | 'Ngừng hoạt động' | 'Thanh lý'
+export type AssetStatus = 'Đang hoạt động' | 'Đang sửa chữa' | 'Ngừng sử dụng' | 'Thanh lý'
 export type TaskStatus = 'Chờ thực hiện' | 'Đang thực hiện' | 'Hoàn thành' | 'Quá hạn'
 
 export interface Asset {
