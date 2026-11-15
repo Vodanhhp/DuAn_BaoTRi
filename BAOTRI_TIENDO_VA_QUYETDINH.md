@@ -42,23 +42,6 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Khi triển khai, người dùng truy cập BAOTRI bằng trình duyệt/PWA trên điện thoại hoặc máy tính; không phải bật máy tính cá nhân hay chạy PowerShell. PowerShell + Vite hiện chỉ dùng trong quá trình phát triển local.
 - PWA có thể giữ để cài ứng dụng trên điện thoại, nhưng PWA không đồng nghĩa với offline-first.
 
-### 2.4 Danh mục nhóm thiết bị và an toàn khi xóa dữ liệu
-- Danh mục nhóm thiết bị phải cho phép người dùng **thêm nhóm mới, sửa tên/thông tin nhóm**; không giới hạn cứng vào một danh sách cố định vì mỗi nhà máy/doanh nghiệp có chủng loại thiết bị khác nhau.
-- Khi sửa hoặc quản lý nhóm, phải giữ liên kết của thiết bị đang thuộc nhóm đó; không làm mất hoặc gán sai nhóm của thiết bị.
-- Nếu muốn xóa một nhóm đang có thiết bị sử dụng, phải cảnh báo và yêu cầu xử lý thiết bị liên quan (chuyển sang nhóm khác hoặc phương án phù hợp); không xóa âm thầm.
-- **Mọi thao tác xóa ở tất cả phân hệ** (thiết bị, nhóm, vật tư, phiếu, công việc, nhật ký và các dữ liệu khác) đều phải có hộp thoại xác nhận riêng trước khi thực hiện.
-- Dùng tên khu vực **Lưu kho** thay cho “Thùng rác”. Đây là nơi chứa các hồ sơ được đưa ra khỏi danh sách đang hoạt động nhưng vẫn được giữ lại để tra cứu và có thể khôi phục.
-- Thao tác **Lưu kho** không đồng nghĩa với thanh lý hoặc xóa dữ liệu. Khi đưa hồ sơ vào Lưu kho, cần giữ nguyên thông tin thiết bị và toàn bộ lịch sử bảo trì/sửa chữa liên quan.
-- Phân biệt rõ trạng thái nghiệp vụ: **Ngừng hoạt động** (tạm thời không sử dụng, có thể đưa vào hoạt động lại), **Thanh lý** (đã loại khỏi sử dụng nhưng giữ hồ sơ/lịch sử), và **Lưu kho** (ẩn khỏi danh sách đang hoạt động, có thể khôi phục).
-- Chỉ cho phép xóa vĩnh viễn khi người dùng chủ động chọn và xác nhận rõ ràng; cần cân nhắc quan hệ dữ liệu và lịch sử bảo trì, không để xóa một hồ sơ làm mất lịch sử liên quan.
-- Thiết kế thao tác an toàn, dễ hiểu trên cả máy tính và điện thoại; tránh dùng `window.confirm()`/`prompt()` làm trải nghiệm cuối cùng nếu có thể thay bằng hộp thoại giao diện thống nhất.
-
-### 2.5 Chi phí
-- Ưu tiên gói miễn phí cho giai đoạn cá nhân; chưa mua hosting hoặc dịch vụ trả phí.
-- Hướng đi dự kiến: GitHub để quản lý mã nguồn và GitHub Pages để host giao diện; Supabase để đánh giá database/backend. Đây là định hướng, chưa phải cấu hình đã triển khai.
-- Trước khi chọn dịch vụ, cần kiểm tra giới hạn miễn phí hiện hành, dung lượng, băng thông, backup, thời gian ngừng do không hoạt động, bảo mật và điều kiện nâng cấp.
-- Khi có khách hàng hoặc nhu cầu thương mại, đánh giá lại hosting, database, lưu trữ ảnh, bảo mật, backup, phân quyền và chi phí vận hành.
-
 ## 3. Tiến độ đã xác nhận
 
 - [x] Đã tải mã nguồn dự án `baotri-pwa-starter/baotri-pwa` về máy Windows.
@@ -80,7 +63,6 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - [ ] Chưa triển khai GitHub Pages; hiện mới là phương án ưu tiên cho giao diện.
 - [ ] Chưa tạo dự án Supabase; hiện mới là phương án ưu tiên để đánh giá cho database/backend.
 - [ ] Chưa triển khai lưu trữ ảnh/tài liệu lên máy chủ.
-- [ ] Chưa kiểm thử giao diện trên điện thoại thực tế.
 
 ## 4. Các vấn đề giao diện cần xử lý
 
@@ -117,9 +99,9 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Kiểm tra dữ liệu thống kê lấy từ đâu; phân biệt dữ liệu thật và dữ liệu mẫu.
 - Không để số liệu giả tạo cảm giác chức năng đã hoàn thiện.
 
-### Bước 3 – Kiểm tra các phân hệ\n- Đã chuẩn bị 30 thiết bị mẫu thuộc nhiều nhóm cơ điện, điện lạnh, điện, PCCC và thiết bị xưởng. Tất cả hồ sơ mới có ghi chú dữ liệu mẫu; cần đồng bộ và xác nhận trên trình duyệt trước khi coi là hoàn tất.
+### Bước 3 – Kiểm tra các phân hệ
+- Đã chuẩn bị 30 thiết bị mẫu thuộc nhiều nhóm cơ điện, điện lạnh, điện, PCCC và thiết bị xưởng. Tất cả hồ sơ mẫu có ghi chú dữ liệu mẫu.
 - Kiểm tra từng thao tác: thêm/sửa/xóa hoặc ngừng sử dụng, nhập/xuất kho, tạo công việc, lưu nhật ký.
-- Kiểm thử riêng việc thêm/sửa nhóm thiết bị, xác nhận trước khi xóa và hoàn tác/khôi phục sau khi xóa ở từng phân hệ.
 - Xác định chức năng nào hoạt động thật, chức năng nào mới là giao diện mẫu.
 - Chỉ sửa từng phân hệ sau khi thống nhất.
 
@@ -142,235 +124,44 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 
 - Mỗi lần làm việc phải ghi rõ: file đã sửa, chức năng đã hoàn thành, cách kiểm thử và kết quả.
 - **Quy trình mặc định: chỉ ghi nhận yêu cầu/quyết định mới vào tệp tiến độ, chưa sửa mã nguồn ngay.** Gom nhiều yêu cầu thành một đợt triển khai hoặc chỉ bắt đầu sửa code khi người dùng yêu cầu rõ ràng.
-- Khi người dùng bổ sung yêu cầu trong lúc thảo luận, cập nhật tệp tiến độ trên GitHub để lưu lại; không tự ý triển khai chức năng nếu chưa đến đợt sửa đã thống nhất.
+- Khi người dùng bổ sung yêu cầu trong lúc thảo luận, cập nhật tệp tiến độ trên GitHub để lưu lại; không tự ý triển khai chức năng nếu chưa đến đợt code đã thống nhất.
 - Chỉ đánh dấu hoàn thành khi đã chạy thử và kiểm tra; code tồn tại không đồng nghĩa chức năng đã hoàn tất.
 - Nếu thay đổi cấu trúc database, ghi rõ migration và ảnh hưởng dữ liệu cũ.
 - Trước khi sửa, kiểm tra phiên bản mới nhất trên GitHub; tránh ghi đè thay đổi mới của người dùng.
 - Không đưa mật khẩu, service-role key, token hoặc bí mật vào repository công khai.
-- Khi kết thúc mỗi phiên làm việc, cập nhật mục 3 và 5 trong tài liệu này.
 
-### Tab Thiết bị – sắp xếp và lọc danh sách
-- Bổ sung một nút chọn dạng xổ xuống (có biểu tượng mũi tên xuống) để thao tác gọn trên cả desktop và mobile.
-- Các tiêu chí cần hỗ trợ:
-  - Sắp xếp theo thứ tự thiết bị.
-  - Lọc theo nhóm thiết bị.
-  - Lọc theo vị trí lắp đặt.
-  - Sắp xếp theo ngày (mới nhất/cũ nhất).
-  - Lọc theo trạng thái thiết bị.
-- Thiết kế phân biệt rõ tiêu chí sắp xếp (thứ tự, ngày) và tiêu chí lọc (nhóm, vị trí, trạng thái), dù có thể gom trong cùng một khu vực xổ xuống.
-- Có lựa chọn bỏ lọc/đặt lại để trở về danh sách đầy đủ.
-- Đây là yêu cầu ghi nhận cho đợt triển khai sau; chưa sửa mã nguồn ở thời điểm cập nhật.
+### Tab Thiết bị – sắp xếp, lọc và xem chi tiết
+- Bộ lọc kết hợp theo nhóm, vị trí và trạng thái; sắp xếp theo mã, tên và ngày đưa vào sử dụng.
+- Có nút đặt lại bộ lọc.
+- Nhấn tên thiết bị mở bảng chi tiết ở chế độ xem; có nút xem ảnh và hỗ trợ nhiều ảnh.
+- Khu vực menu Lọc & sắp xếp và menu Thao tác phải tự đóng ngay sau khi người dùng chọn một dòng/giá trị, không yêu cầu bấm lần thứ hai.
 
-### Tab Thiết bị – lọc, sắp xếp và xem chi tiết
-- Khu vực xổ xuống hỗ trợ đồng thời cả lọc và sắp xếp, không chỉ một trong hai:
-  - Có thể kết hợp nhiều điều kiện lọc: nhóm thiết bị, vị trí lắp đặt, trạng thái.
-  - Có thể chọn cách sắp xếp: thứ tự thiết bị và ngày (mới nhất/cũ nhất).
-  - Có lựa chọn bỏ lọc/đặt lại để trở về danh sách đầy đủ.
-- Nhấn trực tiếp vào tên thiết bị trong danh sách sẽ mở bảng chi tiết thiết bị.
-- Bảng chi tiết có bố cục/trường thông tin gần giống bảng thêm/sửa thiết bị nhưng ở chế độ xem, không tự động bật chế độ chỉnh sửa.
-- Trong bảng chi tiết phải có nút **Xem ảnh** để mở/xem ảnh gắn với hồ sơ thiết bị; hỗ trợ thiết bị có nhiều ảnh nếu cần.
-- Ảnh là thành phần quan trọng của hồ sơ đối với các thiết bị cần nhận diện trực quan. Khi thiết kế biểu mẫu và lưu trữ cần tính đến việc đính kèm ảnh cho thiết bị; chưa mặc định bắt buộc mọi thiết bị phải có ảnh nếu chưa có quy định cụ thể.
-- Thiết kế bảng chi tiết và thao tác xem ảnh phải thuận tiện trên cả desktop và mobile.
-- Đây là yêu cầu ghi nhận cho đợt triển khai sau; chưa sửa mã nguồn ở thời điểm cập nhật.
+### Danh mục thiết bị – vòng đời, QR và lịch sử
+- Phân biệt Đang hoạt động, Đang sửa chữa, Ngừng sử dụng, Lưu kho và Thanh lý.
+- Lưu kho giữ hồ sơ và lịch sử, có thể khôi phục; không đồng nghĩa thanh lý hay xóa.
+- Xóa vĩnh viễn là thao tác riêng, yêu cầu kiểm soát quyền và xác nhận ở backend khi có hệ thống đăng nhập thật.
+- Chi tiết thiết bị có QR và mã định danh; hỗ trợ in tem QR 50 x 30 mm, in chi tiết và in lịch sử bảo trì.
+- Nhật ký liên kết với thiết bị bằng assetId; lưu loại công việc, ngày, nội dung, vật tư/phụ tùng, thông số, kết quả và người thực hiện.
+- Kết quả sau thực hiện có lựa chọn Đạt/Không đạt và phải xuất hiện trong lịch sử/bản in.
 
-### Đợt triển khai – danh mục thiết bị, lọc/sắp xếp và ảnh
-- Đã cập nhật `src/db.ts`: hồ sơ `Asset` có trường `images: string[]`, cho phép lưu nhiều ảnh trên mỗi thiết bị.
-- Đã cập nhật `src/App.tsx`:
-  - Thêm bộ lọc kết hợp theo nhóm, vị trí và trạng thái.
-  - Thêm sắp xếp theo mã tăng/giảm, tên A–Z, ngày đưa vào sử dụng mới nhất/cũ nhất.
-  - Có thao tác đặt lại bộ lọc và hiển thị số thiết bị phù hợp.
-  - Nhấn tên thiết bị mở cửa sổ chi tiết ở chế độ xem; có nút xem ảnh và mở ảnh lớn.
-  - Biểu mẫu thêm/sửa thiết bị cho phép tải nhiều ảnh (tối đa 8 ảnh/hồ sơ), xem trước và xóa ảnh.
-  - Dữ liệu thiết bị cũ được bổ sung `images: []` khi khởi tạo mà không xóa các thông tin hiện có; các hồ sơ demo mới cũng có trường ảnh.
-- Đã cập nhật `src/style.css` cho bộ lọc, chi tiết hồ sơ và thư viện ảnh; có bố cục phù hợp mobile.
-- **Lưu ý dữ liệu mẫu:** repository hiện không có ảnh thực tế tương ứng từng thiết bị; không gán ảnh minh họa không đúng máy. 30 hồ sơ mẫu có trường ảnh rỗng để người dùng bổ sung ảnh thật.
-- **Kiểm thử:** đã kiểm tra lại nội dung các file sau cập nhật trên GitHub; chưa chạy build/test trong môi trường máy người dùng. Cần Pull về máy và chạy `npm.cmd run build` trước khi xác nhận hoàn tất kiểm thử.
-- **Việc còn lại trong backlog:** CRUD nhóm thiết bị; xác nhận xóa/hoàn tác theo yêu cầu trước đó chưa nằm trong đợt code này.
+### Quy ước mã định danh và tự cấp mã
+- Cấu trúc mã: `ABC-ABXY-xxx-BB-MM-YY`; xxx tối thiểu 3 chữ số và tự tăng, không giới hạn độ dài.
+- Thiết bị chuyển từ cơ sở khác đến: đổi ABXY theo cơ sở tiếp nhận và thêm một dấu `*` ở cuối mã.
+- Tài liệu quy chuẩn viết tắt: `QUY_UOC_MA_DINH_DANH_VA_VIET_TAT_THIET_BI.txt`.
+- Khi thêm thiết bị, người dùng không phải nhập mã ID; hệ thống tự cấp mã sau khi lưu và tạo QR từ mã hoàn chỉnh.
+- **Yêu cầu bổ sung cho luồng thêm mới:** trong biểu mẫu thêm thiết bị phải có ô tick **“Thiết bị được chuyển từ cơ sở khác đến”**. Nếu được tick, hệ thống đánh dấu mã định danh bằng đúng một dấu `*` ở cuối; phần ABXY dùng mã cơ sở tiếp nhận hiện tại. Mã QR tạo sau khi lưu phải chứa toàn bộ mã, bao gồm dấu `*`. Không yêu cầu người dùng tự nhập ID. Yêu cầu này đã ghi nhận, chưa triển khai code.
 
+### Biểu mẫu in chi tiết thiết bị
+- Có tiêu đề biểu mẫu rõ ràng **BẢNG CHI TIẾT THIẾT BỊ**.
+- Logo doanh nghiệp ở trái, QR ở phải; tên thiết bị là tiêu đề phụ; mã định danh chỉ xuất hiện một lần trong bảng thông tin.
+- Logo là vùng cấu hình thay thế theo từng doanh nghiệp, không cố định logo BAOTRI.
 
-### Quy ước thuật ngữ – Lưu kho thiết bị
-- Không dùng nhãn hoặc biểu tượng “Thùng rác” cho thao tác đưa thiết bị ra khỏi danh sách đang hoạt động.
-- Dùng thuật ngữ **Lưu kho** cho khu vực lưu các hồ sơ không còn hiển thị trong danh sách hoạt động nhưng vẫn được bảo toàn, tra cứu và khôi phục.
-- Nút thao tác cạnh nút Sửa trong danh sách thiết bị sẽ mang ý nghĩa **Lưu kho** (không phải Thanh lý và không phải Xóa vĩnh viễn); cần có bước xác nhận trước khi lưu kho.
-- Trong khu vực Lưu kho, người dùng có thể xem hồ sơ và chọn khôi phục về danh sách hoạt động. Việc thanh lý/ngừng hoạt động phải được quản lý bằng trạng thái nghiệp vụ riêng, không dùng chung với Lưu kho.
-- Quy ước này mới được ghi nhận trong tài liệu yêu cầu; chưa thay đổi giao diện hoặc mã nguồn. Khi triển khai cần rà soát cả các phân hệ khác để dùng thuật ngữ nhất quán.
-
-
-### Quy định quyền Xóa vĩnh viễn
-- BAOTRI vẫn phải có chức năng **Xóa vĩnh viễn** bên cạnh quy trình Lưu kho/khôi phục; đây là thao tác đặc quyền, không dùng thay cho việc ngừng hoạt động, thanh lý hoặc lưu kho.
-- Mặc định chỉ **Admin** mới có quyền xóa vĩnh viễn. Nhân viên không được thực hiện thao tác này.
-- Trước khi xóa, yêu cầu xác thực lại bằng mật khẩu Admin (hoặc cơ chế xác thực mạnh tương đương khi triển khai đăng nhập thật), sau đó hiển thị xác nhận cuối cùng nêu rõ phạm vi dữ liệu sẽ bị xóa.
-- Khi xóa một thiết bị, phải rà soát và xử lý toàn bộ dữ liệu phụ thuộc thuộc riêng thiết bị đó: hồ sơ, ảnh/tệp đính kèm, tài liệu và các bản ghi lịch sử/công việc liên quan theo chính sách dữ liệu đã thống nhất.
-- Không xóa mù quáng dữ liệu dùng chung hoặc dữ liệu có liên quan tới đối tượng khác. Ví dụ vật tư, phiếu kho hoặc nhà cung cấp có thể được nhiều thiết bị sử dụng; phải giữ lại hoặc xử lý liên kết phù hợp để không làm hỏng dữ liệu của đối tượng còn tồn tại.
-- Cần có bước xem trước phạm vi ảnh hưởng trước khi xác nhận; thao tác xóa vĩnh viễn không có chức năng hoàn tác. Khuyến nghị tạo bản sao lưu trước khi thực hiện.
-- Phân quyền và xác thực phải được kiểm tra ở backend/database khi triển khai thật; không chỉ ẩn nút trên giao diện. Không lưu hoặc kiểm tra mật khẩu Admin bằng mã frontend.
-- Đây là quyết định yêu cầu/thiết kế; chưa triển khai code hoặc kiểm thử chức năng.
-
-
-### Đợt triển khai – Lưu kho thiết bị và ảnh dữ liệu mẫu
-- Đã cập nhật `src/db.ts`:
-  - Bổ sung trường tùy chọn `archivedAt` cho hồ sơ thiết bị.
-  - Nâng Dexie database từ version 1 lên version 2, thêm chỉ mục `archivedAt`; dữ liệu hiện có được giữ nguyên khi nâng phiên bản.
-- Đã cập nhật `src/App.tsx`:
-  - Thay thao tác biểu tượng thùng rác/ngừng hoạt động cạnh nút sửa bằng thao tác **Lưu kho** có bước xác nhận.
-  - Tách danh sách thiết bị đang hoạt động và danh sách **Lưu kho**; có số lượng từng danh sách.
-  - Thiết bị lưu kho được loại khỏi danh sách hoạt động và thống kê Dashboard, nhưng hồ sơ, ảnh và các bản ghi liên quan chưa bị xóa.
-  - Có thao tác **Khôi phục** thiết bị từ Lưu kho về danh sách hoạt động.
-  - Hiển thị nút **Xóa vĩnh viễn** ở trạng thái khóa. Chưa cho phép thực hiện trong bản local vì ứng dụng chưa có đăng nhập/xác thực Admin thật; không dùng mật khẩu giả hoặc kiểm tra quyền ở frontend để tạo cảm giác an toàn sai.
-  - Khi triển khai backend, chức năng xóa vĩnh viễn phải được xác thực Admin ở máy chủ, yêu cầu xác nhận lại và xử lý quan hệ dữ liệu theo phạm vi ảnh hưởng; dữ liệu dùng chung không được xóa dây chuyền ngoài ý muốn.
-- Đã sửa dữ liệu demo thiết bị:
-  - Mỗi hồ sơ demo có 2 ảnh minh họa dạng SVG (hai góc nhìn) để căn chỉnh kích thước ảnh thu nhỏ, gallery và ảnh lớn.
-  - Các hồ sơ demo cũ chưa có ảnh sẽ được bổ sung tự động khi mở ứng dụng; ảnh người dùng đã tải lên không bị ghi đè.
-  - Ghi chú hồ sơ nêu rõ đây là **ảnh minh họa kỹ thuật**, không phải ảnh thực tế của thiết bị.
-- Đã cập nhật `src/style.css` cho thông báo giới hạn bảo mật ở khu vực Lưu kho.
-- **Giới hạn hiện tại:** các ảnh là hình minh họa vector dùng thử giao diện, chưa phải ảnh chụp thực tế theo đúng model máy. Dữ liệu vẫn lưu cục bộ trong IndexedDB.
-- **Kiểm thử:** đã cập nhật mã nguồn trên GitHub; chưa chạy build hoặc kiểm thử trong máy người dùng. Cần Pull origin, chạy `npm.cmd run build`, sau đó mở app kiểm tra danh sách, Lưu kho, Khôi phục và gallery ảnh trước khi xác nhận hoàn tất.
-
-
-### Sửa lỗi TypeScript sau đợt cập nhật Lưu kho/ảnh demo
-- Gắn kiểu `Asset` tường minh cho callback mở thiết bị từ màn hình quét QR để xử lý lỗi TS7006.
-- Thêm `@types/react-dom` vào `devDependencies` để TypeScript nhận diện `react-dom/client`.
-- Thêm `src/vite-env.d.ts` tham chiếu kiểu Vite và `vite-plugin-pwa/client` để nhận diện module ảo `virtual:pwa-register`.
-- Người dùng cần Pull origin và chạy `npm.cmd install` để cập nhật package/lockfile tại máy, sau đó chạy lại `npm.cmd run build`.
-- Chưa xác nhận build thành công cho đến khi người dùng chạy và gửi kết quả.
-
-
-### Kết quả build production lần đầu sau cập nhật Lưu kho/ảnh demo
-- Người dùng đã chạy `npm.cmd install` và `npm.cmd run build` trên máy Windows tại bản mã nguồn đã đồng bộ.
-- **Build thành công:** `tsc -b` không còn báo lỗi; Vite v6.4.6 build production thành công; PWA tạo `dist/sw.js` và precache 5 entries.
-- Cảnh báo còn lại:
-  - npm audit báo 6 vulnerabilities (2 low, 3 moderate, 1 high). Chưa chạy `npm audit fix`; cần xem chi tiết và đánh giá tương thích trước khi nâng dependency.
-  - `esbuild@0.25.12` có install script chưa được approve theo cảnh báo của npm. Chưa approve tự động; cần xem xét nguồn gốc/gói phụ thuộc trước.
-  - Bundle JS chính khoảng 994.33 kB trước gzip (310.92 kB sau gzip), vượt ngưỡng cảnh báo 500 kB của Vite. Không làm build thất bại; có thể tối ưu code splitting ở đợt sau.
-- **Trạng thái:** xác nhận build production thành công, nhưng chưa đồng nghĩa đã kiểm thử chức năng trên trình duyệt.
-- **Bước kiểm thử tiếp theo:** chạy `npm.cmd run dev`, mở ứng dụng và kiểm tra danh sách thiết bị, lọc/sắp xếp kết hợp, mở chi tiết, gallery ảnh demo, thêm ảnh, Lưu kho và Khôi phục. Không xóa dữ liệu thử nghiệm ở bước này.
-
-
-### Bảng chi tiết thiết bị – in mã QR và quy ước mã định danh
-- Người dùng xác nhận phần hiển thị ảnh trong hồ sơ chi tiết thiết bị đã ổn.
-- Bổ sung yêu cầu có chức năng **In mã QR** ngay trong bảng chi tiết thiết bị.
-- Nội dung in dự kiến gồm mã QR và một số thông tin nhận diện thiết yếu; tối thiểu phải có mã định danh thiết bị. Kích thước tem/giấy và các trường thông tin còn lại sẽ chốt sau khi người dùng cung cấp quy ước.
-- Người dùng sẽ cung cấp các quy ước mã định danh; cần lưu nguyên văn thành tài liệu tham chiếu để áp dụng thống nhất khi thiết kế dữ liệu và chức năng BAOTRI.
-- Đây là yêu cầu ghi nhận; chưa sửa code.
-
-
-### Quy ước mã định danh thiết bị – đã nhận từ người dùng
-- Đã tạo tài liệu riêng `QUY_UOC_MA_DINH_DANH_THIET_BI.md` để lưu cấu trúc và ý nghĩa các thành phần mã định danh.
-- Cấu trúc: `ABC-ABXY-xxx-BB-MM-YY`.
-- `ABC`: viết tắt tên/loại thiết bị; ví dụ Quạt Lạnh = QL, Quạt Cắt Gió = QCG, Tủ Lạnh = TL.
-- `ABXY`: mã đơn vị sử dụng; ví dụ công ty có HP01 và HP02.
-- `xxx`: số thứ tự thiết bị cùng loại trong công ty.
-- `BB`: mã vị trí đặt thiết bị trong công ty/phân xưởng; quy ước riêng, có thể sửa đổi sau.
-- `MM`: tháng đưa vào sử dụng; `YY`: năm đưa vào sử dụng.
-- Chưa tự chốt số chữ số của `xxx`, quy tắc đổi mã khi thiết bị chuyển vị trí/đơn vị, hoặc tính bất biến của mã sau khi cấp; chờ người dùng thống nhất.
-- Đây là tài liệu quy ước; chưa sửa code tạo mã hoặc in QR.
-
-
-### Bổ sung quy tắc độ dài số thứ tự thiết bị
-- Người dùng xác nhận thành phần `xxx` có thể tăng độ dài theo số lượng thiết bị thực tế; ví dụ công ty có 1.000 quạt thì phải cấp được số thứ tự `1000`.
-- Quy ước ghi nhận: dùng tối thiểu 3 chữ số (001–999); từ 1.000 trở lên tăng tự nhiên thành 1000, 1001... Không giới hạn cứng ở 3 chữ số, không quay vòng số.
-- Đã cập nhật tài liệu `QUY_UOC_MA_DINH_DANH_THIET_BI.md`. Chưa sửa code tạo mã.
-
-
-### Quy tắc mã định danh khi tiếp nhận thiết bị từ cơ sở khác
-- Người dùng quy định: khi thiết bị được chuyển từ cơ sở khác sang, thành phần `ABXY` trong mã định danh phải đổi theo mã đơn vị/cơ sở tiếp nhận.
-- Đồng thời thêm đúng một ký tự dấu sao `*` ở cuối toàn bộ mã định danh để đánh dấu thiết bị chuyển đến từ cơ sở khác.
-- Ví dụ minh họa: mã sau khi tiếp nhận có dạng `QL-HP02-015-03-05-26*`.
-- Đã cập nhật tài liệu quy ước mã định danh riêng. Chưa sửa code.
-- Chưa có quy tắc cho trường hợp thiết bị tiếp tục chuyển qua cơ sở khác hoặc quay lại cơ sở cũ; cần xác nhận trước khi triển khai các trường hợp đó.
-
-
-### Quy chuẩn mã định danh và danh mục viết tắt thiết bị
-- Tạo tài liệu riêng `QUY_UOC_MA_DINH_DANH_VA_VIET_TAT_THIET_BI.txt` trong thư mục gốc dự án, gồm cấu trúc mã, quy tắc đánh số, ký hiệu thiết bị chuyển cơ sở (*), danh mục viết tắt đề xuất và bảng mã vị trí BB demo.
-- Giữ tài liệu `QUY_UOC_MA_DINH_DANH_THIET_BI.md` đã có như ghi chú lịch sử quy ước người dùng cung cấp; file TXT mới là bản quy chuẩn tổng hợp dễ mở bằng Notepad/Word.
-- Cập nhật `src/App.tsx`: 30 thiết bị mẫu được chuẩn hóa theo cấu trúc `ABC-HP01-xxx-BB-MM-YY`; số thứ tự tăng theo từng ABC trong phạm vi công ty, có thể dài hơn 3 chữ số. Mã loại ABC của bộ demo được ánh xạ từ danh mục viết tắt trong tài liệu.
-- Bảng mã vị trí BB dùng cho demo là mã tạm 01–23; không coi đây là quy ước vị trí chính thức của doanh nghiệp.
-- Migration demo nhận diện bản ghi cũ qua serial `DEMO-...`, cập nhật mã trên chính hồ sơ hiện có, giữ nguyên ID, ảnh, trạng thái Lưu kho và các thông tin đã chỉnh sửa; không chủ động xóa hoặc tạo bản sao cho hồ sơ demo đã nhận diện.
-- Sửa tra cứu thiết bị demo dùng serial bằng Collection.filter, không truy vấn chỉ mục serial chưa được khai báo trong Dexie.
-- **Chưa xác nhận build sau thay đổi này.** Người dùng cần Pull origin, chạy `npm.cmd run build`, sau đó mở app để kiểm tra 30 mã demo đã chuyển chuẩn, ảnh còn nguyên và hai công việc mẫu vẫn liên kết đúng thiết bị.
-- Lưu ý: danh mục ABC và BB trong tài liệu là đề xuất/giá trị thử nghiệm; cần được doanh nghiệp phê duyệt trước khi nhập dữ liệu thật.
-
-
-### Thiết kế lại vòng đời thiết bị, QR và lịch sử bảo trì
-- Tách rõ các trạng thái nghiệp vụ:
-  - **Đang hoạt động:** thiết bị đang vận hành.
-  - **Đang sửa chữa:** thiết bị hỏng/sự cố, đang chờ sửa hoặc đang sửa; vẫn là tài sản đang quản lý.
-  - **Ngừng sử dụng:** tạm dừng khai thác, hồ sơ vẫn ở danh mục quản lý.
-  - **Lưu kho:** thiết bị còn thuộc doanh nghiệp nhưng đã cất kho, không dùng; có thể khôi phục.
-  - **Thanh lý:** đã bán/loại khỏi sử dụng (ví dụ bán ve chai); giữ hồ sơ và lịch sử để truy vết, không phải xóa dữ liệu.
-- Danh sách thiết bị có menu **Thao tác** để đổi trạng thái, đưa vào Lưu kho và đánh dấu Thanh lý. Thanh lý có hộp xác nhận.
-- **Xóa vĩnh viễn** là thao tác khác hoàn toàn với Thanh lý: dự kiến chỉ Admin, xác thực lại và kiểm tra quyền ở backend; nút được thể hiện nhưng khóa trong bản local demo vì chưa có xác thực máy chủ. Không được giả lập bảo mật bằng cách chỉ dựa vào nhãn Admin trên giao diện.
-- Bảng Chi tiết thiết bị hiện QR trực tiếp và mã định danh dạng chữ; có các thao tác In tem QR (khổ mục tiêu 50 x 30 mm), In chi tiết thiết bị và In lịch sử bảo trì/sửa chữa.
-- Lịch sử thiết bị lấy từ bảng nhật ký chung `logs`, liên kết bằng `assetId`; có thể ghi nhận loại công việc, ngày, nội dung, phụ tùng/vật tư thay thế, thông số/kết quả và người thực hiện. Nhật ký thiết bị và trang Nhật ký chung dùng cùng nguồn dữ liệu.
-- Trong bản thử nghiệm hiện tại, dữ liệu nhật ký vẫn lưu trong IndexedDB trên trình duyệt/máy hiện tại; liên kết dùng chung toàn công ty trên nhiều tài khoản/thiết bị chỉ có hiệu lực sau khi triển khai backend/database tập trung và phân quyền.
-- CSS in đã thêm layout tem 50 x 30 mm; kích thước giấy thực tế còn phụ thuộc driver và khả năng chọn khổ tem của máy in.
-- Chưa xác nhận build sau đợt sửa. Cần Pull origin, chạy `npm.cmd run build`, sau đó kiểm tra menu trạng thái, thêm nhật ký, QR hiển thị và ba lệnh in. Không xóa dữ liệu mẫu trong lúc kiểm thử.
-
-
-### Bổ sung kết quả sau thực hiện trong ghi nhận bảo trì/sửa chữa
-- Trong biểu mẫu **Ghi nhận bảo trì/sửa chữa**, bổ sung mục **Kết quả sau thực hiện** đặt cạnh hoặc ngay dưới phần **Thông số**.
-- Mục kết quả có hai lựa chọn dạng ô đánh dấu: **Đạt** và **Không đạt**. Hai lựa chọn loại trừ lẫn nhau; mỗi bản ghi chỉ được chọn một kết quả. Có thể để trống nếu chưa đánh giá/chưa xác định.
-- Kết quả phải được lưu cùng bản ghi nhật ký bảo trì/sửa chữa, không chỉ là nội dung hiển thị tạm thời.
-- Khi xem lịch sử trong chi tiết thiết bị, hiển thị rõ kết quả Đạt/Không đạt của từng lần thực hiện.
-- Khi in lịch sử bảo trì/sửa chữa của thiết bị, phải có cột hoặc mục **Kết quả sau thực hiện** để thể hiện Đạt/Không đạt; không được bỏ trường này khỏi bản in.
-- Khi in chi tiết thiết bị, nếu có phần tóm tắt tình trạng/lịch sử thì không làm mất kết quả đã ghi nhận.
-- Đây là yêu cầu đã chốt cho đợt sửa code tiếp theo; **chưa triển khai và chưa kiểm thử**.
-
-
-### Điều chỉnh thiết kế tem QR thiết bị
-- Tem QR chỉ giữ lại hai thành phần: **mã QR** và **mã ID/mã định danh thiết bị**.
-- Thu nhỏ kích thước mã QR so với bố cục tem hiện tại để dành thêm diện tích cho mã ID.
-- Tăng cỡ chữ mã ID, bảo đảm dễ đọc khi in và dán lên thiết bị.
-- Loại bỏ tên thiết bị, vị trí lắp đặt và các thông số/thông tin phụ khác khỏi tem.
-- Giữ mục tiêu khổ tem 50 x 30 mm; việc căn chỉnh cuối cùng cần kiểm tra bằng lệnh in thực tế.
-- Đây là yêu cầu đã chốt cho đợt sửa code tiếp theo; **chưa triển khai và chưa kiểm thử**.
-
-
-### Thiết kế lại biểu mẫu in chi tiết thiết bị
-- Phần đầu biểu mẫu in được bố trí theo chuẩn nhận diện có thể dùng cho nhiều doanh nghiệp:
-  - **Logo công ty ở bên trái**, đặt trong vùng giữ chỗ có kích thước cố định 42 x 24 mm; logo thật sau này cần thay vào đúng vùng này, hiển thị theo tỷ lệ gốc, không kéo méo.
-  - **Mã QR ở bên phải**, kích thước mục tiêu 25 x 25 mm.
-  - Tạm dùng logo BAOTRI thử nghiệm dạng chữ/ký hiệu để kiểm tra bố cục; đây không phải logo mặc định bắt buộc của khách hàng.
-- Tên thiết bị được đưa thành tiêu đề lớn, dễ nhận biết.
-- Bỏ mã ID bị lặp ở khu vực đầu trang/QR; mã định danh chỉ hiển thị một lần trong bảng thông tin bên dưới.
-- Khi triển khai cấu hình doanh nghiệp, chỉ cần thay ảnh logo trong vùng chuẩn; không phải thiết kế lại bố cục in cho từng công ty.
-- Đã cập nhật `src/App.tsx` và `src/style.css` trên GitHub. **Chưa chạy build hoặc kiểm tra bản in thực tế**; cần Pull origin, chạy `npm.cmd run build`, sau đó mở chi tiết thiết bị và chọn In chi tiết để kiểm tra căn lề, kích thước logo, QR và tên thiết bị.
-
-
-### Đợt triển khai – kết quả bảo trì, tem QR và biểu mẫu in thiết bị
-- `src/db.ts`: bổ sung trường tùy chọn `result` cho bản ghi `Log`, nhận hai giá trị **Đạt** hoặc **Không đạt**; không cần nâng version Dexie vì đây là trường dữ liệu bổ sung không làm thay đổi cấu trúc bảng/chỉ mục.
-- `src/App.tsx`:
-  - Biểu mẫu Ghi nhận bảo trì/sửa chữa có lựa chọn một trong hai kết quả **Đạt / Không đạt**; để trống nếu chưa đánh giá.
-  - Kết quả được lưu cùng nhật ký; lịch sử trong chi tiết thiết bị hiển thị kết quả, bản ghi cũ chưa có trường này hiển thị “Chưa đánh giá”.
-  - Bản in lịch sử bổ sung cột **Kết quả** để in cả Đạt/Không đạt.
-  - Tem QR chỉ còn mã QR và mã ID; bỏ tên thiết bị/vị trí, QR thu nhỏ mục tiêu 17 mm và chữ mã ID tăng lên 8.5 pt trên tem 50 x 30 mm.
-  - Biểu mẫu in chi tiết thiết bị giữ bố cục logo bên trái, QR bên phải, tên thiết bị lớn và mã định danh chỉ xuất hiện một lần trong bảng thông tin.
-- `src/style.css`: căn chỉnh kích thước tem QR và kiểu hiển thị lựa chọn kết quả.
-- Logo BAOTRI hiện là logo thử nghiệm dạng chữ/ký hiệu trong vùng giữ chỗ 42 x 24 mm; đây là vị trí chuẩn để sau này thay bằng ảnh logo của từng doanh nghiệp. Chưa có màn hình cấu hình/tải logo riêng; phần đó sẽ cần bổ sung khi làm cấu hình doanh nghiệp.
-- Đã cập nhật code trên GitHub và kiểm tra lại sự hiện diện của các trường/khối giao diện trong source. **Chưa chạy build và chưa kiểm tra bản in vật lý**. Người dùng cần Pull origin, chạy `npm.cmd run build`, rồi kiểm tra form ghi nhận, lịch sử, tem QR và bản in chi tiết.
-
-
-### Chỉnh sửa biểu mẫu in chi tiết thiết bị – bổ sung tiêu đề biểu mẫu
-- Người dùng phản hồi bản in trước chưa đạt: cần có tiêu đề tên biểu mẫu rõ ràng, không dùng riêng tên thiết bị làm tiêu đề của cả tài liệu.
-- Đã cập nhật phần in chi tiết trong `src/App.tsx`: thêm tiêu đề **BẢNG CHI TIẾT THIẾT BỊ** ở đầu biểu mẫu; tên thiết bị chuyển thành tiêu đề phụ bên dưới phần nhận diện logo/QR.
-- Đã chỉnh `src/style.css`: tiêu đề biểu mẫu căn giữa, in đậm; tên thiết bị giảm cỡ chữ từ 23 pt xuống 18 pt để phân cấp rõ ràng hơn.
-- Giữ nguyên bố cục logo bên trái, QR bên phải và bảng thông tin thiết bị bên dưới.
-- Đã cập nhật code trên GitHub. Chưa chạy build và chưa kiểm tra bản in thực tế; cần Pull origin, chạy `npm.cmd run build`, sau đó chọn **In chi tiết** để đánh giá bố cục trên giấy.
-
-
-### Sửa hành vi tự đóng menu Lọc & sắp xếp và Thao tác
-- Người dùng phản hồi hai menu **Lọc & sắp xếp** và **Thao tác** chưa tự đóng sau khi chọn một dòng; phải bấm thêm lần nữa để ẩn menu.
-- Đã sửa `src/App.tsx`: khi chọn một giá trị lọc/sắp xếp, menu Lọc & sắp xếp tự đóng ngay; nút Đặt lại bộ lọc cũng đóng menu sau khi reset.
-- Với menu **Thao tác** từng thiết bị, khi chọn một hành động (đổi trạng thái, đưa vào Lưu kho hoặc thanh lý), menu tự đóng ngay sau thao tác.
-- Không thay đổi logic lọc, sắp xếp hoặc xử lý trạng thái thiết bị; chỉ sửa hành vi đóng menu.
-- Đã cập nhật code trên GitHub; chưa chạy build trên máy người dùng. Cần Pull origin và chạy `npm.cmd run build` để xác nhận.
-
-
-### Sửa luồng + Thêm thiết bị – tự cấp mã định danh và QR sau khi lưu
-- Người dùng không cần nhập mã ID/mã định danh khi tạo hồ sơ thiết bị; biểu mẫu **Thêm thiết bị** chỉ yêu cầu nhập tên và các thông tin cần quản lý.
-- Đã bỏ trường nhập mã thiết bị và bỏ khối QR khỏi biểu mẫu thêm/sửa. Không hiển thị QR giả khi hồ sơ chưa có mã.
-- Khi lưu một thiết bị mới, hệ thống tự cấp mã theo cấu trúc đã thống nhất: `ABC-HP01-xxx-BB-MM-YY`; số thứ tự lấy tiếp theo số lớn nhất đã dùng của cùng mã loại thiết bị, không cấp lại từ 001.
-- Mã loại thiết bị lấy theo nhóm hiện có (ví dụ MNA, KLA, MB, ML); nhóm chưa có mã riêng tạm dùng TBK/TBD. Mã vị trí lấy theo danh mục vị trí demo, chưa khớp thì tạm dùng 99. Cơ sở thử nghiệm hiện dùng HP01.
-- Ngày MM-YY lấy từ ngày đưa vào sử dụng; nếu người dùng chưa nhập ngày thì tạm lấy ngày hiện tại.
-- Sau khi lưu thành công, ứng dụng mở ngay chi tiết thiết bị để người dùng nhìn thấy mã vừa cấp và QR được tạo từ chính mã đó. Khi sửa hồ sơ, mã đã cấp được giữ nguyên.
-- Đã cập nhật `src/App.tsx` trên GitHub. **Chưa chạy build hoặc kiểm thử trên trình duyệt**; cần Pull origin và chạy `npm.cmd run build`, sau đó thử thêm mới một thiết bị và kiểm tra mã/QR.
+### Báo cáo danh mục thiết bị – chỉnh lại xuất Excel và bản in
+- Đây là **báo cáo danh mục thiết bị**, không phải báo cáo bảo trì. Bố cục phải sáng sủa, dễ đọc, không dàn trải thành nhiều dòng riêng cho một thiết bị.
+- Mỗi thiết bị phải chiếm **một hàng duy nhất** trong bảng báo cáo.
+- Trong cột **Tên thiết bị**, hiển thị tên thiết bị ở dòng đầu; **Hãng** và **Model** đặt ở các dòng tiếp theo bên trong cùng một ô/cột tên thiết bị (không làm phát sinh thêm hàng cho cùng thiết bị).
+- **Bỏ cột Chu kỳ** khỏi báo cáo danh mục thiết bị vì không phù hợp với loại báo cáo này.
+- Bảng Excel và bản in cần có cấu trúc cột rõ ràng, căn chỉnh nhất quán, độ rộng cột hợp lý, tiêu đề dễ phân biệt; tránh nội dung Hãng/Model bị tràn hoặc đẩy thành nhiều hàng.
+- Khi in phải có **đường kẻ hàng và cột rõ ràng** (viền ô/bảng thực sự), không chỉ dựa vào tùy chọn hiển thị gridlines mặc định của Excel vốn có thể không được in.
+- Thiết lập vùng in và lặp lại hàng tiêu đề nếu báo cáo kéo dài nhiều trang; căn trang phù hợp để bảng không bị cắt cột hoặc chữ quá nhỏ.
+- Đây là yêu cầu đã ghi nhận cho đợt sửa báo cáo tiếp theo; **chưa sửa code, chưa xuất thử file và chưa kiểm tra bản in**.
