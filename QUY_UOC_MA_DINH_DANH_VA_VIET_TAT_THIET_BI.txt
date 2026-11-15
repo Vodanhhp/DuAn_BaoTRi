@@ -1,0 +1,247 @@
+QUY ƯỚC MÃ ĐỊNH DANH VÀ VIẾT TẮT THIẾT BỊ – BAOTRI
+Phiên bản: 1.0
+Ngày lập: 15/11/2026
+Phạm vi: Quy chuẩn tham chiếu cho dữ liệu thiết bị, tạo mã tự động và in tem QR trong BAOTRI.
+
+================================================================
+I. CẤU TRÚC MÃ ĐỊNH DANH
+================================================================
+
+Cấu trúc chuẩn:
+ABC-ABXY-xxx-BB-MM-YY
+
+Ví dụ:
+QL-HP01-001-02-05-26
+
+Ý nghĩa từng thành phần:
+
+1. ABC – Mã viết tắt loại thiết bị
+   - Dùng chữ in hoa, không dấu, dễ đọc.
+   - Ví dụ: QL = Quạt lạnh; QCG = Quạt cắt gió; TL = Tủ lạnh.
+   - Danh mục viết tắt đề xuất nằm ở Phần V.
+
+2. ABXY – Mã đơn vị/cơ sở sử dụng
+   - Do doanh nghiệp quy định.
+   - Ví dụ: HP01, HP02.
+   - Mã trong ví dụ thử nghiệm hiện dùng HP01.
+
+3. xxx – Số thứ tự của thiết bị cùng loại trong công ty
+   - Đánh số tăng dần theo từng mã ABC trong phạm vi toàn công ty, không khởi động lại theo từng cơ sở.
+   - Tối thiểu 3 chữ số: 001, 002, ... 999.
+   - Khi vượt 999, tăng độ dài tự nhiên: 1000, 1001, 1002...
+   - Không giới hạn cứng 3 chữ số, không quay vòng về 001.
+   - Không tái sử dụng số đã cấp cho thiết bị khác.
+
+4. BB – Mã vị trí đặt thiết bị
+   - Do công ty hoặc từng phân xưởng lập danh mục.
+   - Trong bộ dữ liệu demo, BB được gán tạm theo bảng vị trí ở Phần VI.
+   - Khi áp dụng thực tế, doanh nghiệp được cấu hình lại danh mục BB.
+   - Cần lưu ý: thay đổi vị trí vật lý không nên tự ý đổi mã định danh đã cấp; phải có quy trình điều chỉnh mã và lưu lịch sử.
+
+5. MM – Tháng đưa thiết bị vào sử dụng
+   - Hai chữ số từ 01 đến 12.
+
+6. YY – Hai chữ số cuối của năm đưa thiết bị vào sử dụng
+   - Ví dụ năm 2026 ghi 26.
+
+================================================================
+II. THIẾT BỊ ĐƯỢC CHUYỂN TỪ CƠ SỞ KHÁC SANG
+================================================================
+
+Khi tiếp nhận thiết bị chuyển từ cơ sở khác:
+- Thay thành phần ABXY bằng mã cơ sở tiếp nhận.
+- Thêm đúng một dấu sao (*) ở cuối toàn bộ mã.
+- Ví dụ: QL-HP02-015-03-05-26*
+
+Dấu * là ký hiệu đánh dấu thiết bị chuyển đến từ cơ sở khác, không phải một thành phần riêng nằm giữa mã.
+
+Quy tắc chuyển tiếp lần thứ hai, chuyển qua cơ sở thứ ba hoặc chuyển đi rồi quay lại cơ sở cũ hiện chưa được quy định. Không tự động xử lý các tình huống này khi chưa có quyết định của người quản trị.
+
+================================================================
+III. NGUYÊN TẮC QUẢN LÝ MÃ
+================================================================
+
+- Mã phải duy nhất trong phạm vi toàn công ty.
+- Mã ABC phải được quản lý bằng danh mục dùng chung, tránh mỗi người tự viết một kiểu.
+- Số thứ tự xxx tăng theo từng ABC trong toàn công ty.
+- ABXY và BB phải lấy từ danh mục cơ sở/vị trí đã được quản trị cấu hình.
+- MM-YY lấy từ ngày đưa thiết bị vào sử dụng, không tự lấy ngày tạo hồ sơ nếu hai ngày khác nhau.
+- Mã đã cấp cần ổn định và không tự thay đổi khi sửa tên, hãng, model hoặc thông số thiết bị.
+- Không dùng lại mã đã cấp kể cả khi thiết bị đã thanh lý hoặc lưu kho.
+- Mọi thay đổi mã phải có kiểm tra trùng và lưu dấu vết.
+- QR phải mã hóa chính xác mã định danh hiện hành; bản in tối thiểu thể hiện mã định danh bằng chữ để có thể đọc khi không quét được QR.
+
+================================================================
+IV. QUY ƯỚC DÙNG TRONG BỘ 30 THIẾT BỊ THỬ NGHIỆM
+================================================================
+
+- Mã cơ sở: HP01.
+- Số thứ tự được đánh tăng dần riêng theo ABC, trong phạm vi công ty.
+- Mã vị trí BB lấy theo bảng demo ở Phần VI.
+- Ngày MM-YY lấy từ ngày đưa vào sử dụng đang có trong từng hồ sơ mẫu.
+- Các thiết bị demo không phải dữ liệu tài sản thật của doanh nghiệp.
+- Khi chạy bản code đã cập nhật, ứng dụng sẽ đổi mã 30 hồ sơ demo cũ sang định dạng mới theo serial DEMO hiện có; giữ nguyên ID hồ sơ, ảnh và các thông tin người dùng đã chỉnh sửa. Thiết bị demo đã có trong cơ sở dữ liệu không bị tạo thêm bản ghi trùng.
+
+================================================================
+V. DANH MỤC VIẾT TẮT THIẾT BỊ ĐỀ XUẤT
+================================================================
+
+Các mã dưới đây là danh mục khởi tạo đề xuất để dùng thống nhất. Doanh nghiệp có thể bổ sung hoặc điều chỉnh trước khi áp dụng dữ liệu thật. Không dùng cùng một ABC cho hai loại thiết bị khác nghĩa trong cùng một hệ thống.
+
+A. Quạt và thông gió
+QL      Quạt lạnh
+QCG     Quạt cắt gió
+QCN     Quạt công nghiệp
+QH      Quạt hút
+QC      Quạt cấp
+QTT     Quạt thông trần
+QK      Quạt hướng trục
+QTL     Quạt ly tâm
+QCT     Quạt tháp giải nhiệt
+
+B. Điện lạnh và điều hòa không khí
+TL      Tủ lạnh
+KLA     Kho lạnh
+DL      Dàn lạnh
+DN      Dàn nóng
+AHU     Air Handling Unit – thiết bị xử lý không khí
+FCU     Fan Coil Unit – dàn trao đổi nhiệt trong phòng
+CHL     Chiller – máy làm lạnh nước
+ML      Máy lạnh/điều hòa cục bộ
+BOM     Bơm nước lạnh (chỉ dùng nếu doanh nghiệp muốn phân biệt với bơm nước thường)
+
+C. Máy và thiết bị cơ khí
+MNA     Máy nén khí
+MSK     Máy sấy khí
+BLK     Bộ lọc khí nén
+MB      Máy bơm
+DCD     Động cơ điện
+HGT     Hộp giảm tốc
+BTA     Băng tải
+MHD     Máy hàn điện
+MCK     Máy cắt
+MKN     Máy khoan
+MTC     Máy tiện
+MFP     Máy phay
+NHO     Máy nghiền
+MTR     Máy trộn
+MAY     Máy ép
+
+D. Thiết bị điện và phân phối điện
+TDT     Tủ điện tổng
+TDP     Tủ điện phân phối
+TDC     Tủ điều khiển
+ATS     Tủ/bộ chuyển nguồn tự động
+BT      Biến tần
+UPS     Bộ lưu điện
+MBA     Máy biến áp
+TCB     Tủ tụ bù
+MCB     Aptomat tép
+MCCB    Aptomat khối
+ACB     Máy cắt không khí
+CT      Biến dòng điện
+VT      Biến điện áp
+MPD     Máy phát điện
+CHL     (Không dùng cho thiết bị điện; CHL đã dành cho Chiller)
+
+E. Nhiệt, hơi và xử lý nước
+NH      Nồi hơi
+BHN     Bình hơi/bình tích hơi
+TGN     Tháp giải nhiệt
+BLC     Bơm làm mát
+BXLN    Bể xử lý nước
+LNF     Lọc nước
+RO      Hệ thống lọc RO
+BHT     Bình hóa chất
+
+F. Phòng cháy chữa cháy và an toàn
+BCC     Bơm chữa cháy
+TBC     Tủ báo cháy
+CBA     Chuông báo cháy
+KBC     Đầu báo khói
+NBC     Đầu báo nhiệt
+BCT     Bình chữa cháy (nếu quản lý từng bình như một tài sản)
+QSC     Quạt tăng áp/sự cố
+
+G. Đo lường, điều khiển và thiết bị khác
+CBAS    Cảm biến áp suất
+CBN     Cảm biến nhiệt độ
+CBL     Cảm biến lưu lượng
+CBM     Cảm biến mức
+CTD     Công tắc dòng chảy
+PLC     Bộ điều khiển PLC
+HMI     Màn hình HMI
+DOL     Bộ khởi động trực tiếp
+KHOA    Khóa liên động an toàn
+TM      Thang máy
+TCT     Tời/cẩu trục
+CAM     Camera giám sát
+SW      Bộ chuyển mạch mạng
+RCK     Tủ rack mạng/máy chủ
+
+Lưu ý danh mục:
+- ABC có thể gồm 2, 3 hoặc nhiều ký tự; không bắt buộc đúng 3 ký tự.
+- Chỉ dùng chữ cái Latin in hoa và chữ số nếu thật sự cần; tránh dấu tiếng Việt, dấu cách và ký tự đặc biệt.
+- Một số mã có thể trùng cách viết tắt thông dụng trong ngành. Trước khi ban hành chính thức, quản trị viên phải kiểm tra trùng nghĩa trong danh mục nội bộ.
+- Danh mục trên là đề xuất khởi tạo, không phải danh mục bắt buộc cho mọi công ty.
+
+================================================================
+VI. DANH MỤC MÃ VỊ TRÍ BB TẠM DÙNG CHO DỮ LIỆU DEMO
+================================================================
+
+01  Phòng máy nén khí
+02  Khu sản xuất
+03  Phòng bơm tầng hầm
+04  Dây chuyền 1
+05  Khu xử lý bụi
+06  Nhà xưởng A
+07  Khu kỹ thuật
+08  Phòng kỹ thuật tầng 1
+09  Tầng 2
+10  Khu vực Chiller
+11  Sân kỹ thuật mái
+12  Phòng máy phát điện
+13  Phòng điện tổng
+14  Tầng 1
+15  Phòng bơm
+16  Phòng IT
+17  Trạm biến áp
+18  Nhà lò hơi
+19  Xưởng bảo trì
+20  Sảnh chính
+21  Phòng bơm PCCC
+22  Đường ống khí nén
+23  Hố gom tầng hầm
+99  Vị trí chưa phân loại (chỉ dùng tạm khi dữ liệu demo thiếu vị trí)
+
+Các mã BB ở trên chỉ là dữ liệu giả lập phục vụ kiểm thử. Khi dùng tại doanh nghiệp, phải thay bằng sơ đồ vị trí thực tế và thống nhất mã giữa các phân xưởng.
+
+================================================================
+VII. VÍ DỤ MÃ
+================================================================
+
+Quạt lạnh, cơ sở HP01, số thứ tự 1, vị trí 02, đưa vào sử dụng tháng 05/2026:
+QL-HP01-001-02-05-26
+
+Quạt cắt gió, cơ sở HP01, số thứ tự 12, vị trí 06, đưa vào sử dụng tháng 11/2025:
+QCG-HP01-012-06-11-25
+
+Tủ lạnh, cơ sở HP02, số thứ tự 1000, vị trí 03, đưa vào sử dụng tháng 05/2026:
+TL-HP02-1000-03-05-26
+
+Thiết bị chuyển từ cơ sở khác đến HP02:
+QL-HP02-015-03-05-26*
+
+================================================================
+VIII. NHỮNG ĐIỂM CẦN CHỐT TRƯỚC KHI DÙNG THỰC TẾ
+================================================================
+
+1. Danh sách mã cơ sở ABXY chính thức.
+2. Danh mục vị trí BB chính thức cho từng cơ sở/phân xưởng.
+3. Phê duyệt danh mục ABC viết tắt, tránh trùng nghĩa.
+4. Quy trình khi thiết bị đổi vị trí sau khi đã cấp mã.
+5. Quy trình khi thiết bị tiếp tục chuyển qua cơ sở khác hoặc quay về cơ sở cũ.
+6. Xác định có giữ nguyên số thứ tự xxx khi thiết bị chuyển cơ sở hay cấp số theo quy tắc tiếp nhận riêng (hiện ví dụ đang giữ số thứ tự).
+7. Quyền tạo, sửa, khóa và cấp lại mã phải được phân quyền trong BAOTRI.
+
+KẾT THÚC TÀI LIỆU
