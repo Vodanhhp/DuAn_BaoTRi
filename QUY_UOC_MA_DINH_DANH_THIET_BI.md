@@ -21,7 +21,7 @@ Mã gồm 6 thành phần, phân tách bằng dấu gạch ngang:
 
 - **ABC:** tên viết tắt của thiết bị/loại thiết bị. Ví dụ: Quạt Lạnh là QL, Quạt Cắt Gió là QCG, Tủ Lạnh là TL.
 - **ABXY:** mã số đơn vị sử dụng thiết bị. Ví dụ công ty có hai đơn vị là HP01 và HP02.
-- **xxx:** số thứ tự của thiết bị cùng một loại trong công ty.
+- **xxx:** số thứ tự của thiết bị cùng một loại trong công ty. Độ dài có thể tăng theo số lượng thực tế; ví dụ 001, 002, ... 999, 1000. Không giới hạn cứng ở 3 chữ số.
 - **BB:** mã vị trí đặt thiết bị trong công ty hoặc phân xưởng. Mã vị trí được quy ước riêng theo từng công ty/phân xưởng, có thể điều chỉnh sau.
 - **MM:** tháng đưa thiết bị vào sử dụng.
 - **YY:** năm đưa thiết bị vào sử dụng.
@@ -32,7 +32,8 @@ Mã gồm 6 thành phần, phân tách bằng dấu gạch ngang:
 - Mã loại thiết bị (ABC), mã đơn vị (ABXY) và mã vị trí (BB) cần được quản lý bằng danh mục/quy ước có thể cấu hình, tránh hard-code cố định.
 - Khi thiết kế chức năng tạo mã tự động, cần bảo đảm số thứ tự `xxx` không bị trùng trong phạm vi cùng loại thiết bị của cùng công ty.
 - Mã định danh cần được lưu ổn định. Nếu thiết bị đổi vị trí hoặc đổi đơn vị quản lý, cần có quy tắc xử lý riêng trước khi tự động thay đổi mã cũ.
-- Các quy tắc bổ sung như số chữ số chính xác của `xxx`, cách xử lý khi chuyển đơn vị/vị trí, và việc mã có được thay đổi sau khi cấp hay không sẽ được chốt tiếp với người dùng; không tự suy diễn thành quy định chính thức.
+- `xxx` dùng tối thiểu 3 chữ số để mã ngắn gọn và đồng nhất ở quy mô nhỏ; khi vượt 999 thì tăng tự nhiên thành 1000, 1001... Không cắt số hoặc quay vòng về 001.
+- Cách xử lý khi chuyển đơn vị/vị trí, và việc mã có được thay đổi sau khi cấp hay không sẽ được chốt tiếp với người dùng; không tự suy diễn thành quy định chính thức.
 
 ## 4. Trạng thái
 
