@@ -270,3 +270,11 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Người dùng xác nhận thành phần `xxx` có thể tăng độ dài theo số lượng thiết bị thực tế; ví dụ công ty có 1.000 quạt thì phải cấp được số thứ tự `1000`.
 - Quy ước ghi nhận: dùng tối thiểu 3 chữ số (001–999); từ 1.000 trở lên tăng tự nhiên thành 1000, 1001... Không giới hạn cứng ở 3 chữ số, không quay vòng số.
 - Đã cập nhật tài liệu `QUY_UOC_MA_DINH_DANH_THIET_BI.md`. Chưa sửa code tạo mã.
+
+
+### Quy tắc mã định danh khi tiếp nhận thiết bị từ cơ sở khác
+- Người dùng quy định: khi thiết bị được chuyển từ cơ sở khác sang, thành phần `ABXY` trong mã định danh phải đổi theo mã đơn vị/cơ sở tiếp nhận.
+- Đồng thời thêm đúng một ký tự dấu sao `*` ở cuối toàn bộ mã định danh để đánh dấu thiết bị chuyển đến từ cơ sở khác.
+- Ví dụ minh họa: mã sau khi tiếp nhận có dạng `QL-HP02-015-03-05-26*`.
+- Đã cập nhật tài liệu quy ước mã định danh riêng. Chưa sửa code.
+- Chưa có quy tắc cho trường hợp thiết bị tiếp tục chuyển qua cơ sở khác hoặc quay lại cơ sở cũ; cần xác nhận trước khi triển khai các trường hợp đó.
