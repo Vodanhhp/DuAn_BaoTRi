@@ -194,3 +194,14 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Nút thao tác cạnh nút Sửa trong danh sách thiết bị sẽ mang ý nghĩa **Lưu kho** (không phải Thanh lý và không phải Xóa vĩnh viễn); cần có bước xác nhận trước khi lưu kho.
 - Trong khu vực Lưu kho, người dùng có thể xem hồ sơ và chọn khôi phục về danh sách hoạt động. Việc thanh lý/ngừng hoạt động phải được quản lý bằng trạng thái nghiệp vụ riêng, không dùng chung với Lưu kho.
 - Quy ước này mới được ghi nhận trong tài liệu yêu cầu; chưa thay đổi giao diện hoặc mã nguồn. Khi triển khai cần rà soát cả các phân hệ khác để dùng thuật ngữ nhất quán.
+
+
+### Quy định quyền Xóa vĩnh viễn
+- BAOTRI vẫn phải có chức năng **Xóa vĩnh viễn** bên cạnh quy trình Lưu kho/khôi phục; đây là thao tác đặc quyền, không dùng thay cho việc ngừng hoạt động, thanh lý hoặc lưu kho.
+- Mặc định chỉ **Admin** mới có quyền xóa vĩnh viễn. Nhân viên không được thực hiện thao tác này.
+- Trước khi xóa, yêu cầu xác thực lại bằng mật khẩu Admin (hoặc cơ chế xác thực mạnh tương đương khi triển khai đăng nhập thật), sau đó hiển thị xác nhận cuối cùng nêu rõ phạm vi dữ liệu sẽ bị xóa.
+- Khi xóa một thiết bị, phải rà soát và xử lý toàn bộ dữ liệu phụ thuộc thuộc riêng thiết bị đó: hồ sơ, ảnh/tệp đính kèm, tài liệu và các bản ghi lịch sử/công việc liên quan theo chính sách dữ liệu đã thống nhất.
+- Không xóa mù quáng dữ liệu dùng chung hoặc dữ liệu có liên quan tới đối tượng khác. Ví dụ vật tư, phiếu kho hoặc nhà cung cấp có thể được nhiều thiết bị sử dụng; phải giữ lại hoặc xử lý liên kết phù hợp để không làm hỏng dữ liệu của đối tượng còn tồn tại.
+- Cần có bước xem trước phạm vi ảnh hưởng trước khi xác nhận; thao tác xóa vĩnh viễn không có chức năng hoàn tác. Khuyến nghị tạo bản sao lưu trước khi thực hiện.
+- Phân quyền và xác thực phải được kiểm tra ở backend/database khi triển khai thật; không chỉ ẩn nút trên giao diện. Không lưu hoặc kiểm tra mật khẩu Admin bằng mã frontend.
+- Đây là quyết định yêu cầu/thiết kế; chưa triển khai code hoặc kiểm thử chức năng.
