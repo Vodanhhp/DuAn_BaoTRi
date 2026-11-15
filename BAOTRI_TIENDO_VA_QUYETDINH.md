@@ -315,3 +315,12 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Khi in lịch sử bảo trì/sửa chữa của thiết bị, phải có cột hoặc mục **Kết quả sau thực hiện** để thể hiện Đạt/Không đạt; không được bỏ trường này khỏi bản in.
 - Khi in chi tiết thiết bị, nếu có phần tóm tắt tình trạng/lịch sử thì không làm mất kết quả đã ghi nhận.
 - Đây là yêu cầu đã chốt cho đợt sửa code tiếp theo; **chưa triển khai và chưa kiểm thử**.
+
+
+### Điều chỉnh thiết kế tem QR thiết bị
+- Tem QR chỉ giữ lại hai thành phần: **mã QR** và **mã ID/mã định danh thiết bị**.
+- Thu nhỏ kích thước mã QR so với bố cục tem hiện tại để dành thêm diện tích cho mã ID.
+- Tăng cỡ chữ mã ID, bảo đảm dễ đọc khi in và dán lên thiết bị.
+- Loại bỏ tên thiết bị, vị trí lắp đặt và các thông số/thông tin phụ khác khỏi tem.
+- Giữ mục tiêu khổ tem 50 x 30 mm; việc căn chỉnh cuối cùng cần kiểm tra bằng lệnh in thực tế.
+- Đây là yêu cầu đã chốt cho đợt sửa code tiếp theo; **chưa triển khai và chưa kiểm thử**.
