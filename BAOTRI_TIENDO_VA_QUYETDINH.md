@@ -99,7 +99,7 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Kiểm tra dữ liệu thống kê lấy từ đâu; phân biệt dữ liệu thật và dữ liệu mẫu.
 - Không để số liệu giả tạo cảm giác chức năng đã hoàn thiện.
 
-### Bước 3 – Kiểm tra các phân hệ
+### Bước 3 – Kiểm tra các phân hệ\n- Đã chuẩn bị 30 thiết bị mẫu thuộc nhiều nhóm cơ điện, điện lạnh, điện, PCCC và thiết bị xưởng. Tất cả hồ sơ mới có ghi chú dữ liệu mẫu; cần đồng bộ và xác nhận trên trình duyệt trước khi coi là hoàn tất.
 - Kiểm tra từng thao tác: thêm/sửa/xóa hoặc ngừng sử dụng, nhập/xuất kho, tạo công việc, lưu nhật ký.
 - Xác định chức năng nào hoạt động thật, chức năng nào mới là giao diện mẫu.
 - Chỉ sửa từng phân hệ sau khi thống nhất.
