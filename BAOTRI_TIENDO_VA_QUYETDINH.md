@@ -324,3 +324,14 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Loại bỏ tên thiết bị, vị trí lắp đặt và các thông số/thông tin phụ khác khỏi tem.
 - Giữ mục tiêu khổ tem 50 x 30 mm; việc căn chỉnh cuối cùng cần kiểm tra bằng lệnh in thực tế.
 - Đây là yêu cầu đã chốt cho đợt sửa code tiếp theo; **chưa triển khai và chưa kiểm thử**.
+
+
+### Thiết kế lại biểu mẫu in chi tiết thiết bị
+- Phần đầu biểu mẫu in được bố trí theo chuẩn nhận diện có thể dùng cho nhiều doanh nghiệp:
+  - **Logo công ty ở bên trái**, đặt trong vùng giữ chỗ có kích thước cố định 42 x 24 mm; logo thật sau này cần thay vào đúng vùng này, hiển thị theo tỷ lệ gốc, không kéo méo.
+  - **Mã QR ở bên phải**, kích thước mục tiêu 25 x 25 mm.
+  - Tạm dùng logo BAOTRI thử nghiệm dạng chữ/ký hiệu để kiểm tra bố cục; đây không phải logo mặc định bắt buộc của khách hàng.
+- Tên thiết bị được đưa thành tiêu đề lớn, dễ nhận biết.
+- Bỏ mã ID bị lặp ở khu vực đầu trang/QR; mã định danh chỉ hiển thị một lần trong bảng thông tin bên dưới.
+- Khi triển khai cấu hình doanh nghiệp, chỉ cần thay ảnh logo trong vùng chuẩn; không phải thiết kế lại bố cục in cho từng công ty.
+- Đã cập nhật `src/App.tsx` và `src/style.css` trên GitHub. **Chưa chạy build hoặc kiểm tra bản in thực tế**; cần Pull origin, chạy `npm.cmd run build`, sau đó mở chi tiết thiết bị và chọn In chi tiết để kiểm tra căn lề, kích thước logo, QR và tên thiết bị.
