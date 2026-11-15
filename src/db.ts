@@ -11,6 +11,7 @@ export interface Asset {
 }
 export interface InventoryItem {
   id: string; code: string; name: string; group: string; unit: string
+  partNumber?: string; size?: string
   quantity: number; minQuantity: number; location: string; supplier: string; unitPrice: number
   updatedAt: string
 }
