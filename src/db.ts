@@ -20,7 +20,7 @@ export interface Task {
 }
 export interface Log {
   id: string; assetId: string; taskId?: string; date: string; kind: string
-  description: string; parts: string; readings: string; performedBy: string
+  description: string; parts: string; readings: string; result?: 'Đạt' | 'Không đạt' | ''; performedBy: string
 }
 export interface Movement {
   id: string; itemId: string; date: string; type: 'Nhập' | 'Xuất' | 'Điều chỉnh'
