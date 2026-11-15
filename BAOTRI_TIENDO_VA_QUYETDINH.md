@@ -190,7 +190,7 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Mở rộng danh mục nhóm thiết bị có mã viết tắt riêng; gồm điện/điện tử, cơ khí, nhiều loại quạt (quạt công nghiệp, hút, cấp, thông gió, làm mát, hướng trục, ly tâm), khí nén, lạnh, nguồn điện và an toàn.
 - Tên thiết bị vẫn nhập tự do; nhóm thiết bị bắt buộc chọn từ danh mục chuẩn. Loại bỏ nhánh tự rơi về mã TBK khi nhóm không hợp lệ.
 - Có cảnh báo kiểm tra chéo tên có từ “quạt” và nhóm quạt; cảnh báo không tự đổi nhóm và không chặn lưu.
-- Thêm xem trước mã định danh trước khi lưu; số thứ tự tự tăng theo mã nhóm và cơ sở tiếp nhận HP01. Vị trí chưa có trong bảng mã hiện dùng mã dự phòng 99.
+- Thêm xem trước mã định danh trước khi lưu; số thứ tự tự tăng theo mã nhóm trong phạm vi toàn công ty, không khởi động lại theo từng cơ sở; mã cơ sở tiếp nhận hiện đang cấu hình thử nghiệm là HP01. Vị trí chưa có trong bảng mã hiện dùng mã dự phòng 99.
 - Thêm ô tick “Thiết bị được chuyển từ cơ sở khác đến”; khi tick, mã tự thêm đúng một dấu * ở cuối. QR sau khi lưu vẫn tạo từ toàn bộ mã.
 - Khi sửa hồ sơ đã cấp mã, khóa nhóm thiết bị để tránh phân loại thay đổi nhưng mã cũ không đổi.
-- Cập nhật src/db.ts để lưu cờ chuyển cơ sở. Chưa chạy build hoặc kiểm thử trên máy; cần kiểm tra mã xem trước so với mã sau lưu, QR, dữ liệu mẫu cũ và giao diện trên điện thoại.
+- Đồng bộ các mã nhóm bổ sung vào tài liệu QUY_UOC_MA_DINH_DANH_VA_VIET_TAT_THIET_BI.txt. Cập nhật src/db.ts để lưu cờ chuyển cơ sở. Chưa chạy build hoặc kiểm thử trên máy; cần kiểm tra mã xem trước so với mã sau lưu, QR, dữ liệu mẫu cũ và giao diện trên điện thoại.
