@@ -205,3 +205,23 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Cần có bước xem trước phạm vi ảnh hưởng trước khi xác nhận; thao tác xóa vĩnh viễn không có chức năng hoàn tác. Khuyến nghị tạo bản sao lưu trước khi thực hiện.
 - Phân quyền và xác thực phải được kiểm tra ở backend/database khi triển khai thật; không chỉ ẩn nút trên giao diện. Không lưu hoặc kiểm tra mật khẩu Admin bằng mã frontend.
 - Đây là quyết định yêu cầu/thiết kế; chưa triển khai code hoặc kiểm thử chức năng.
+
+
+### Đợt triển khai – Lưu kho thiết bị và ảnh dữ liệu mẫu
+- Đã cập nhật `src/db.ts`:
+  - Bổ sung trường tùy chọn `archivedAt` cho hồ sơ thiết bị.
+  - Nâng Dexie database từ version 1 lên version 2, thêm chỉ mục `archivedAt`; dữ liệu hiện có được giữ nguyên khi nâng phiên bản.
+- Đã cập nhật `src/App.tsx`:
+  - Thay thao tác biểu tượng thùng rác/ngừng hoạt động cạnh nút sửa bằng thao tác **Lưu kho** có bước xác nhận.
+  - Tách danh sách thiết bị đang hoạt động và danh sách **Lưu kho**; có số lượng từng danh sách.
+  - Thiết bị lưu kho được loại khỏi danh sách hoạt động và thống kê Dashboard, nhưng hồ sơ, ảnh và các bản ghi liên quan chưa bị xóa.
+  - Có thao tác **Khôi phục** thiết bị từ Lưu kho về danh sách hoạt động.
+  - Hiển thị nút **Xóa vĩnh viễn** ở trạng thái khóa. Chưa cho phép thực hiện trong bản local vì ứng dụng chưa có đăng nhập/xác thực Admin thật; không dùng mật khẩu giả hoặc kiểm tra quyền ở frontend để tạo cảm giác an toàn sai.
+  - Khi triển khai backend, chức năng xóa vĩnh viễn phải được xác thực Admin ở máy chủ, yêu cầu xác nhận lại và xử lý quan hệ dữ liệu theo phạm vi ảnh hưởng; dữ liệu dùng chung không được xóa dây chuyền ngoài ý muốn.
+- Đã sửa dữ liệu demo thiết bị:
+  - Mỗi hồ sơ demo có 2 ảnh minh họa dạng SVG (hai góc nhìn) để căn chỉnh kích thước ảnh thu nhỏ, gallery và ảnh lớn.
+  - Các hồ sơ demo cũ chưa có ảnh sẽ được bổ sung tự động khi mở ứng dụng; ảnh người dùng đã tải lên không bị ghi đè.
+  - Ghi chú hồ sơ nêu rõ đây là **ảnh minh họa kỹ thuật**, không phải ảnh thực tế của thiết bị.
+- Đã cập nhật `src/style.css` cho thông báo giới hạn bảo mật ở khu vực Lưu kho.
+- **Giới hạn hiện tại:** các ảnh là hình minh họa vector dùng thử giao diện, chưa phải ảnh chụp thực tế theo đúng model máy. Dữ liệu vẫn lưu cục bộ trong IndexedDB.
+- **Kiểm thử:** đã cập nhật mã nguồn trên GitHub; chưa chạy build hoặc kiểm thử trong máy người dùng. Cần Pull origin, chạy `npm.cmd run build`, sau đó mở app kiểm tra danh sách, Lưu kho, Khôi phục và gallery ảnh trước khi xác nhận hoàn tất.
