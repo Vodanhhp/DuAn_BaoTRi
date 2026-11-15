@@ -294,46 +294,41 @@ export default function App() {
     XLSX.writeFile(wb, filename)
   }
   const exportAssets = () => {
-    const headers = ['STT','Mã định danh','Tên thiết bị','Nhóm thiết bị','Serial','Vị trí lắp đặt','Ngày đưa vào sử dụng','Công suất / thông số','Tình trạng','Ghi chú']
-    const bodyRows = filteredAssets.map((asset, index) => `<tr>
-      <td class="center">${index + 1}</td>
-      <td>${htmlEscape(asset.code)}</td>
-      <td><strong>${htmlEscape(asset.name)}</strong>${asset.brand ? `<br/><span>Hãng: ${htmlEscape(asset.brand)}</span>` : ''}${asset.model ? `<br/><span>Model: ${htmlEscape(asset.model)}</span>` : ''}</td>
-      <td>${htmlEscape(asset.category)}</td><td>${htmlEscape(asset.serial || '—')}</td>
-      <td>${htmlEscape(asset.location || '—')}</td><td>${htmlEscape(dateText(asset.commissionedAt))}</td>
-      <td>${htmlEscape(asset.power || '—')}</td><td>${htmlEscape(asset.status)}</td><td>${htmlEscape(asset.notes || '—')}</td>
-    </tr>`).join('')
-    const html = `<!DOCTYPE html><html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><head><meta charset="utf-8"/>
-      <!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Danh muc thiet bi</x:Name><x:WorksheetOptions><x:PageSetup><x:Layout x:Orientation="Landscape"/><x:PageMargins x:Bottom="0.45" x:Left="0.25" x:Right="0.25" x:Top="0.45"/></x:PageSetup><x:FitToPage/><x:Print><x:FitWidth>1</x:FitWidth><x:FitHeight>0</x:FitHeight><x:PaperSizeIndex>9</x:PaperSizeIndex></x:Print><x:Print_Titles><x:Row>2:2</x:Row></x:Print_Titles></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
-      <style>
-        @page { size: A4 landscape; margin: 12mm 8mm 15mm; mso-page-orientation: landscape; mso-fit-to-page: yes; mso-footer-data: '&CTrang &P / &N'; }
-        body, table { font-family: Tahoma, sans-serif; font-size: 11pt; color: #111; }
-        h1 { font-family: Tahoma, sans-serif; font-size: 12pt; font-weight: bold; text-align: center; margin: 0 0 12pt; }
-        table { width: 100%; max-width: 100%; border-collapse: collapse; table-layout: fixed; mso-fit-to-page: yes; }
-        thead { display: table-header-group; }
-        tr { page-break-inside: avoid; }
-        th, td { border: 1px solid #555; padding: 4pt 3pt; vertical-align: top; overflow-wrap: anywhere; }
-        th { font-size: 11pt; font-weight: bold; text-align: center; background: #e9eeeb; }
-        td { font-size: 11pt; }
-        td strong { font-weight: bold; }
-        td span { font-size: 10pt; }
-        .center { text-align: center; }
-        .total { text-align: right; font-weight: bold; margin-top: 10pt; }
-        @media screen { body { padding: 16px; } h1 { margin-bottom: 18px; } }
-      </style></head><body>
-      <h1>DANH SÁCH THIẾT BỊ</h1>
-      <table><colgroup><col style="width:4%"/><col style="width:12%"/><col style="width:18%"/><col style="width:10%"/><col style="width:9%"/><col style="width:12%"/><col style="width:10%"/><col style="width:9%"/><col style="width:8%"/><col style="width:8%"/></colgroup>
-      <thead><tr>${headers.map(header => `<th>${htmlEscape(header)}</th>`).join('')}</tr></thead>
-      <tbody>${bodyRows}</tbody></table>
-      <p class="total">Tổng số: ${filteredAssets.length} thiết bị</p>
-      </body></html>`
-    const blob = new Blob(['\ufeff', html], { type: 'application/vnd.ms-excel;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = 'danh-muc-thiet-bi.xls'
-    link.click()
-    URL.revokeObjectURL(url)
+    // Xuất dữ liệu thuần thành tệp XLSX chuẩn để tiếp tục lọc, sắp xếp và xử lý trong Excel.
+    const headers = ['STT','Mã định danh','Tên thiết bị','Nhóm thiết bị','Hãng','Model','Serial','Vị trí lắp đặt','Ngày đưa vào sử dụng','Công suất / thông số','Tình trạng','Ghi chú']
+    const rows = filteredAssets.map((asset, index) => [
+      index + 1,
+      asset.code || '',
+      asset.name || '',
+      asset.category || '',
+      asset.brand || '',
+      asset.model || '',
+      asset.serial || '',
+      asset.location || '',
+      asset.commissionedAt ? dateText(asset.commissionedAt) : '',
+      asset.power || '',
+      asset.status || '',
+      asset.notes || ''
+    ])
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows])
+    ws['!cols'] = [
+      { wch: 6 }, { wch: 23 }, { wch: 30 }, { wch: 22 },
+      { wch: 18 }, { wch: 18 }, { wch: 20 }, { wch: 24 },
+      { wch: 20 }, { wch: 24 }, { wch: 19 }, { wch: 32 }
+    ]
+    if (rows.length > 0) {
+      ws['!autofilter'] = { ref: 'A1:L' + (rows.length + 1) }
+    }
+    ws['!freeze'] = { xSplit: 0, ySplit: 1, topLeftCell: 'A2', activePane: 'bottomLeft', state: 'frozen' }
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Danh sách thiết bị')
+    wb.Props = {
+      Title: 'Danh sách thiết bị',
+      Subject: 'Dữ liệu danh mục thiết bị BAOTRI',
+      Author: 'BAOTRI',
+      CreatedDate: new Date()
+    }
+    XLSX.writeFile(wb, 'danh-sach-thiet-bi.xlsx', { compression: true })
   }
   const printAssets = () => {
     const headers = ['STT','Mã định danh','Tên thiết bị','Nhóm thiết bị','Serial','Vị trí lắp đặt','Ngày đưa vào sử dụng','Công suất / thông số','Tình trạng','Ghi chú']
