@@ -233,3 +233,59 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Thêm `src/vite-env.d.ts` tham chiếu kiểu Vite và `vite-plugin-pwa/client` để nhận diện module ảo `virtual:pwa-register`.
 - Người dùng cần Pull origin và chạy `npm.cmd install` để cập nhật package/lockfile tại máy, sau đó chạy lại `npm.cmd run build`.
 - Chưa xác nhận build thành công cho đến khi người dùng chạy và gửi kết quả.
+
+
+### Kết quả build production lần đầu sau cập nhật Lưu kho/ảnh demo
+- Người dùng đã chạy `npm.cmd install` và `npm.cmd run build` trên máy Windows tại bản mã nguồn đã đồng bộ.
+- **Build thành công:** `tsc -b` không còn báo lỗi; Vite v6.4.6 build production thành công; PWA tạo `dist/sw.js` và precache 5 entries.
+- Cảnh báo còn lại:
+  - npm audit báo 6 vulnerabilities (2 low, 3 moderate, 1 high). Chưa chạy `npm audit fix`; cần xem chi tiết và đánh giá tương thích trước khi nâng dependency.
+  - `esbuild@0.25.12` có install script chưa được approve theo cảnh báo của npm. Chưa approve tự động; cần xem xét nguồn gốc/gói phụ thuộc trước.
+  - Bundle JS chính khoảng 994.33 kB trước gzip (310.92 kB sau gzip), vượt ngưỡng cảnh báo 500 kB của Vite. Không làm build thất bại; có thể tối ưu code splitting ở đợt sau.
+- **Trạng thái:** xác nhận build production thành công, nhưng chưa đồng nghĩa đã kiểm thử chức năng trên trình duyệt.
+- **Bước kiểm thử tiếp theo:** chạy `npm.cmd run dev`, mở ứng dụng và kiểm tra danh sách thiết bị, lọc/sắp xếp kết hợp, mở chi tiết, gallery ảnh demo, thêm ảnh, Lưu kho và Khôi phục. Không xóa dữ liệu thử nghiệm ở bước này.
+
+
+### Bảng chi tiết thiết bị – in mã QR và quy ước mã định danh
+- Người dùng xác nhận phần hiển thị ảnh trong hồ sơ chi tiết thiết bị đã ổn.
+- Bổ sung yêu cầu có chức năng **In mã QR** ngay trong bảng chi tiết thiết bị.
+- Nội dung in dự kiến gồm mã QR và một số thông tin nhận diện thiết yếu; tối thiểu phải có mã định danh thiết bị. Kích thước tem/giấy và các trường thông tin còn lại sẽ chốt sau khi người dùng cung cấp quy ước.
+- Người dùng sẽ cung cấp các quy ước mã định danh; cần lưu nguyên văn thành tài liệu tham chiếu để áp dụng thống nhất khi thiết kế dữ liệu và chức năng BAOTRI.
+- Đây là yêu cầu ghi nhận; chưa sửa code.
+
+
+### Quy ước mã định danh thiết bị – đã nhận từ người dùng
+- Đã tạo tài liệu riêng `QUY_UOC_MA_DINH_DANH_THIET_BI.md` để lưu cấu trúc và ý nghĩa các thành phần mã định danh.
+- Cấu trúc: `ABC-ABXY-xxx-BB-MM-YY`.
+- `ABC`: viết tắt tên/loại thiết bị; ví dụ Quạt Lạnh = QL, Quạt Cắt Gió = QCG, Tủ Lạnh = TL.
+- `ABXY`: mã đơn vị sử dụng; ví dụ công ty có HP01 và HP02.
+- `xxx`: số thứ tự thiết bị cùng loại trong công ty.
+- `BB`: mã vị trí đặt thiết bị trong công ty/phân xưởng; quy ước riêng, có thể sửa đổi sau.
+- `MM`: tháng đưa vào sử dụng; `YY`: năm đưa vào sử dụng.
+- Chưa tự chốt số chữ số của `xxx`, quy tắc đổi mã khi thiết bị chuyển vị trí/đơn vị, hoặc tính bất biến của mã sau khi cấp; chờ người dùng thống nhất.
+- Đây là tài liệu quy ước; chưa sửa code tạo mã hoặc in QR.
+
+
+### Bổ sung quy tắc độ dài số thứ tự thiết bị
+- Người dùng xác nhận thành phần `xxx` có thể tăng độ dài theo số lượng thiết bị thực tế; ví dụ công ty có 1.000 quạt thì phải cấp được số thứ tự `1000`.
+- Quy ước ghi nhận: dùng tối thiểu 3 chữ số (001–999); từ 1.000 trở lên tăng tự nhiên thành 1000, 1001... Không giới hạn cứng ở 3 chữ số, không quay vòng số.
+- Đã cập nhật tài liệu `QUY_UOC_MA_DINH_DANH_THIET_BI.md`. Chưa sửa code tạo mã.
+
+
+### Quy tắc mã định danh khi tiếp nhận thiết bị từ cơ sở khác
+- Người dùng quy định: khi thiết bị được chuyển từ cơ sở khác sang, thành phần `ABXY` trong mã định danh phải đổi theo mã đơn vị/cơ sở tiếp nhận.
+- Đồng thời thêm đúng một ký tự dấu sao `*` ở cuối toàn bộ mã định danh để đánh dấu thiết bị chuyển đến từ cơ sở khác.
+- Ví dụ minh họa: mã sau khi tiếp nhận có dạng `QL-HP02-015-03-05-26*`.
+- Đã cập nhật tài liệu quy ước mã định danh riêng. Chưa sửa code.
+- Chưa có quy tắc cho trường hợp thiết bị tiếp tục chuyển qua cơ sở khác hoặc quay lại cơ sở cũ; cần xác nhận trước khi triển khai các trường hợp đó.
+
+
+### Quy chuẩn mã định danh và danh mục viết tắt thiết bị
+- Tạo tài liệu riêng `QUY_UOC_MA_DINH_DANH_VA_VIET_TAT_THIET_BI.txt` trong thư mục gốc dự án, gồm cấu trúc mã, quy tắc đánh số, ký hiệu thiết bị chuyển cơ sở (*), danh mục viết tắt đề xuất và bảng mã vị trí BB demo.
+- Giữ tài liệu `QUY_UOC_MA_DINH_DANH_THIET_BI.md` đã có như ghi chú lịch sử quy ước người dùng cung cấp; file TXT mới là bản quy chuẩn tổng hợp dễ mở bằng Notepad/Word.
+- Cập nhật `src/App.tsx`: 30 thiết bị mẫu được chuẩn hóa theo cấu trúc `ABC-HP01-xxx-BB-MM-YY`; số thứ tự tăng theo từng ABC trong phạm vi công ty, có thể dài hơn 3 chữ số. Mã loại ABC của bộ demo được ánh xạ từ danh mục viết tắt trong tài liệu.
+- Bảng mã vị trí BB dùng cho demo là mã tạm 01–23; không coi đây là quy ước vị trí chính thức của doanh nghiệp.
+- Migration demo nhận diện bản ghi cũ qua serial `DEMO-...`, cập nhật mã trên chính hồ sơ hiện có, giữ nguyên ID, ảnh, trạng thái Lưu kho và các thông tin đã chỉnh sửa; không chủ động xóa hoặc tạo bản sao cho hồ sơ demo đã nhận diện.
+- Sửa tra cứu thiết bị demo dùng serial bằng Collection.filter, không truy vấn chỉ mục serial chưa được khai báo trong Dexie.
+- **Chưa xác nhận build sau thay đổi này.** Người dùng cần Pull origin, chạy `npm.cmd run build`, sau đó mở app để kiểm tra 30 mã demo đã chuyển chuẩn, ảnh còn nguyên và hai công việc mẫu vẫn liên kết đúng thiết bị.
+- Lưu ý: danh mục ABC và BB trong tài liệu là đề xuất/giá trị thử nghiệm; cần được doanh nghiệp phê duyệt trước khi nhập dữ liệu thật.
