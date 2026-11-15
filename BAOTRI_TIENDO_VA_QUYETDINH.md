@@ -42,7 +42,16 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Khi triển khai, người dùng truy cập BAOTRI bằng trình duyệt/PWA trên điện thoại hoặc máy tính; không phải bật máy tính cá nhân hay chạy PowerShell. PowerShell + Vite hiện chỉ dùng trong quá trình phát triển local.
 - PWA có thể giữ để cài ứng dụng trên điện thoại, nhưng PWA không đồng nghĩa với offline-first.
 
-### 2.4 Chi phí
+### 2.4 Danh mục nhóm thiết bị và an toàn khi xóa dữ liệu
+- Danh mục nhóm thiết bị phải cho phép người dùng **thêm nhóm mới, sửa tên/thông tin nhóm**; không giới hạn cứng vào một danh sách cố định vì mỗi nhà máy/doanh nghiệp có chủng loại thiết bị khác nhau.
+- Khi sửa hoặc quản lý nhóm, phải giữ liên kết của thiết bị đang thuộc nhóm đó; không làm mất hoặc gán sai nhóm của thiết bị.
+- Nếu muốn xóa một nhóm đang có thiết bị sử dụng, phải cảnh báo và yêu cầu xử lý thiết bị liên quan (chuyển sang nhóm khác hoặc phương án phù hợp); không xóa âm thầm.
+- **Mọi thao tác xóa ở tất cả phân hệ** (thiết bị, nhóm, vật tư, phiếu, công việc, nhật ký và các dữ liệu khác) đều phải có hộp thoại xác nhận riêng trước khi thực hiện.
+- Ưu tiên cơ chế **xóa mềm/đưa vào thùng rác** thay vì xóa vĩnh viễn ngay. Sau khi xóa, hiển thị thông báo cho phép Hoàn tác; đồng thời có thể khôi phục từ khu vực đã xóa.
+- Chỉ cho phép xóa vĩnh viễn khi người dùng chủ động chọn và xác nhận rõ ràng; cần cân nhắc quan hệ dữ liệu và lịch sử bảo trì, không để xóa một hồ sơ làm mất lịch sử liên quan.
+- Thiết kế thao tác an toàn, dễ hiểu trên cả máy tính và điện thoại; tránh dùng `window.confirm()`/`prompt()` làm trải nghiệm cuối cùng nếu có thể thay bằng hộp thoại giao diện thống nhất.
+
+### 2.5 Chi phí
 - Ưu tiên gói miễn phí cho giai đoạn cá nhân; chưa mua hosting hoặc dịch vụ trả phí.
 - Hướng đi dự kiến: GitHub để quản lý mã nguồn và GitHub Pages để host giao diện; Supabase để đánh giá database/backend. Đây là định hướng, chưa phải cấu hình đã triển khai.
 - Trước khi chọn dịch vụ, cần kiểm tra giới hạn miễn phí hiện hành, dung lượng, băng thông, backup, thời gian ngừng do không hoạt động, bảo mật và điều kiện nâng cấp.
@@ -108,6 +117,7 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 
 ### Bước 3 – Kiểm tra các phân hệ\n- Đã chuẩn bị 30 thiết bị mẫu thuộc nhiều nhóm cơ điện, điện lạnh, điện, PCCC và thiết bị xưởng. Tất cả hồ sơ mới có ghi chú dữ liệu mẫu; cần đồng bộ và xác nhận trên trình duyệt trước khi coi là hoàn tất.
 - Kiểm tra từng thao tác: thêm/sửa/xóa hoặc ngừng sử dụng, nhập/xuất kho, tạo công việc, lưu nhật ký.
+- Kiểm thử riêng việc thêm/sửa nhóm thiết bị, xác nhận trước khi xóa và hoàn tác/khôi phục sau khi xóa ở từng phân hệ.
 - Xác định chức năng nào hoạt động thật, chức năng nào mới là giao diện mẫu.
 - Chỉ sửa từng phân hệ sau khi thống nhất.
 
