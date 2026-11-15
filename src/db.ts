@@ -6,6 +6,7 @@ export type TaskStatus = 'Chờ thực hiện' | 'Đang thực hiện' | 'Hoàn 
 export interface Asset {
   id: string; code: string; name: string; category: string; brand: string; model: string
   serial: string; location: string; commissionedAt: string; power: string; cycle: string
+  transferredFromOtherFacility?: boolean
   status: AssetStatus; notes: string; images: string[]; archivedAt?: string; createdAt: string; updatedAt: string
 }
 export interface InventoryItem {
