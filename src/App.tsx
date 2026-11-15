@@ -197,8 +197,41 @@ export default function App() {
 
   const flash = (s: string) => { setNotice(s); setTimeout(() => setNotice(''), 2800) }
   const saveAsset = async (a: Asset) => {
-    const value = { ...a, images: a.images ?? [], updatedAt: now() }
-    await db.assets.put(value); await queueChange('assets', value.id); setModal(null); setEditingAsset(null); flash('Đã lưu thiết bị')
+    const isNew = !a.code
+    let code = a.code
+    if (isNew) {
+      // Cấp mã tự động theo quy ước ABC-ABXY-xxx-BB-MM-YY.
+      const typeCodes: Record<string, string> = {
+        'Thiết bị điện': 'TBD', 'Máy nén khí': 'MNA', 'Kho lạnh': 'KLA',
+        'Nồi hấp': 'NHA', 'Máy bơm': 'MB', 'Điều hòa': 'ML', 'Khác': 'TBK'
+      }
+      const locationCodes: Record<string, string> = {
+        'Phòng máy nén khí': '01', 'Khu sản xuất': '02', 'Phòng bơm tầng hầm': '03',
+        'Dây chuyền 1': '04', 'Khu xử lý bụi': '05', 'Nhà xưởng A': '06',
+        'Khu kỹ thuật': '07', 'Phòng kỹ thuật tầng 1': '08', 'Tầng 2': '09',
+        'Khu vực Chiller': '10', 'Sân kỹ thuật mái': '11', 'Phòng máy phát điện': '12',
+        'Phòng điện tổng': '13', 'Tầng 1': '14', 'Phòng bơm': '15', 'Phòng IT': '16',
+        'Trạm biến áp': '17', 'Nhà lò hơi': '18', 'Xưởng bảo trì': '19',
+        'Sảnh chính': '20', 'Phòng bơm PCCC': '21', 'Đường ống khí nén': '22',
+        'Hố gom tầng hầm': '23'
+      }
+      const typeCode = typeCodes[a.category] ?? 'TBK'
+      const existing = await db.assets.toArray()
+      const numbers = existing
+        .map(item => item.code.match(new RegExp('^' + typeCode + '-[^-]+-(\\d+)-'))?.[1])
+        .filter((item): item is string => Boolean(item))
+        .map(Number)
+      const sequence = String(Math.max(0, ...numbers) + 1).padStart(3, '0')
+      const date = a.commissionedAt || today()
+      const locationCode = locationCodes[a.location] ?? '99'
+      code = `${typeCode}-HP01-${sequence}-${locationCode}-${date.slice(5, 7)}-${date.slice(2, 4)}`
+    }
+    const value = { ...a, code, images: a.images ?? [], updatedAt: now() }
+    await db.assets.put(value)
+    await queueChange('assets', value.id)
+    setModal(null); setEditingAsset(null)
+    if (isNew) setDetailAsset(value)
+    flash(isNew ? 'Đã thêm thiết bị và cấp mã định danh' : 'Đã lưu thiết bị')
   }
   const saveItem = async (i: InventoryItem) => {
     const value = { ...i, updatedAt: now() }
@@ -436,8 +469,8 @@ function LogEntryModal({value,close,save}:any){
 function AssetModal({value,close,save}:any){
   const [v,setV]=useState<Asset>(value)
   const set=(k:keyof Asset,x:any)=>setV(p=>({...p,[k]:x}))
-  return <Modal title={value.createdAt===value.updatedAt?'Thêm thiết bị':'Thông tin thiết bị'} close={close}><form onSubmit={e=>{e.preventDefault();if(!v.code||!v.name)return alert('Nhập mã và tên thiết bị');save(v)}} className="form-grid">
-    <Field label="Mã thiết bị *"><input required value={v.code} onChange={e=>set('code',e.target.value.toUpperCase())}/></Field><Field label="Tên thiết bị *"><input required value={v.name} onChange={e=>set('name',e.target.value)}/></Field>
+  return <Modal title={!value.code?'Thêm thiết bị':'Thông tin thiết bị'} close={close}><form onSubmit={e=>{e.preventDefault();if(!v.name.trim())return alert('Nhập tên thiết bị');save(v)}} className="form-grid">
+    <Field label="Tên thiết bị *"><input required value={v.name} onChange={e=>set('name',e.target.value)}/></Field>
     <Field label="Nhóm thiết bị"><select value={v.category} onChange={e=>set('category',e.target.value)}>{['Thiết bị điện','Máy nén khí','Kho lạnh','Nồi hấp','Máy bơm','Điều hòa','Khác'].map(x=><option>{x}</option>)}</select></Field><Field label="Vị trí"><input value={v.location} onChange={e=>set('location',e.target.value)}/></Field>
     <Field label="Hãng"><input value={v.brand} onChange={e=>set('brand',e.target.value)}/></Field><Field label="Model"><input value={v.model} onChange={e=>set('model',e.target.value)}/></Field>
     <Field label="Serial"><input value={v.serial} onChange={e=>set('serial',e.target.value)}/></Field><Field label="Ngày đưa vào sử dụng"><input type="date" value={v.commissionedAt} onChange={e=>set('commissionedAt',e.target.value)}/></Field>
@@ -448,7 +481,6 @@ function AssetModal({value,close,save}:any){
       <div className="asset-photo-grid">{(v.images??[]).map((src:string,i:number)=><div className="asset-photo-thumb" key={i}><img src={src} alt={'Ảnh thiết bị '+(i+1)}/><button type="button" className="text-btn danger" onClick={()=>set('images',(v.images??[]).filter((_:string,index:number)=>index!==i))}>Xóa ảnh</button></div>)}</div>
       <small className="muted">Tối đa 8 ảnh/hồ sơ. Ảnh được lưu cùng dữ liệu thiết bị trong trình duyệt hiện tại; khi chuyển sang máy chủ sẽ cần chuyển ảnh lên kho lưu trữ trực tuyến.</small>
     </div>
-    <div className="qr-box"><QRCodeSVG value={`ASSET:${v.code||'CHUA-CO-MA'}`} size={112}/><div><b>Mã QR thiết bị</b><small>QR phiên bản đầu chứa mã thiết bị. Chức năng mở hồ sơ theo QR sẽ hoàn thiện cùng luồng quét.</small></div></div>
     <div className="modal-actions"><button type="button" className="soft-btn" onClick={close}>Hủy</button><button className="primary-btn"><Check size={16}/> Lưu thiết bị</button></div>
   </form></Modal>
 }
