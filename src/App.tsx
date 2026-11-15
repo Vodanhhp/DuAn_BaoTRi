@@ -3,7 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import {
   Activity, Archive, BarChart3, Building2, CalendarDays, Check, ChevronRight, ClipboardList,
   Download, FileSpreadsheet, HardDrive, LayoutDashboard, Menu, MoreHorizontal, Package,
-  Plus, QrCode, Search, Settings, ShieldAlert, Trash2, UserRound, Wrench, X
+  Plus, QrCode, Search, Settings, ShieldAlert, Trash2, UserRound, Wrench, X, ChevronDown, Image as ImageIcon
 } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { Html5QrcodeScanner } from 'html5-qrcode'
@@ -15,7 +15,7 @@ const today = () => new Date().toISOString().slice(0, 10)
 const emptyAsset = (): Asset => ({
   id: uid(), code: '', name: '', category: 'Thiết bị điện', brand: '', model: '', serial: '',
   location: '', commissionedAt: '', power: '', cycle: '', status: 'Đang hoạt động',
-  notes: '', createdAt: now(), updatedAt: now()
+  notes: '', images: [], createdAt: now(), updatedAt: now()
 })
 const emptyItem = (): InventoryItem => ({
   id: uid(), code: '', name: '', group: 'Vật tư điện', unit: 'Cái', quantity: 0,
@@ -33,6 +33,11 @@ export default function App() {
   const [search, setSearch] = useState('')
   const [modal, setModal] = useState<'asset'|'item'|'task'|'scan'|null>(null)
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null)
+  const [detailAsset, setDetailAsset] = useState<Asset | null>(null)
+  const [assetCategoryFilter, setAssetCategoryFilter] = useState('')
+  const [assetLocationFilter, setAssetLocationFilter] = useState('')
+  const [assetStatusFilter, setAssetStatusFilter] = useState('')
+  const [assetSort, setAssetSort] = useState('code-asc')
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null)
   const [editingTask, setEditingTask] = useState<Task | null>(null)
   const [notice, setNotice] = useState('')
@@ -81,17 +86,21 @@ export default function App() {
       const existing = await db.assets.toArray()
       const existingCodes = new Set(existing.map(a => a.code))
       const missing = demoAssets.filter(a => !existingCodes.has(a.code)).map(a => ({
-        ...emptyAsset(), ...a, serial: `DEMO-${a.code}`,
+        ...emptyAsset(), ...a, serial: `DEMO-${a.code}`, images: [],
         notes: 'DỮ LIỆU MẪU – chỉ dùng thử nghiệm, có thể xóa sau.'
       }))
       if (missing.length) await db.assets.bulkAdd(missing)
       const originalDemo = existing.filter(a => ['COMP-001', 'KHO-001'].includes(a.code) && !a.notes)
       if (originalDemo.length) {
         await db.assets.bulkPut(originalDemo.map(a => ({
-          ...a, serial: a.serial || `DEMO-${a.code}`,
+          ...a, serial: a.serial || `DEMO-${a.code}`, images: Array.isArray(a.images) ? a.images : [],
           notes: 'DỮ LIỆU MẪU – chỉ dùng thử nghiệm, có thể xóa sau.'
         })))
       }
+
+      // Bổ sung trường ảnh cho hồ sơ cũ mà không làm mất dữ liệu hiện có.
+      const legacyAssets = (await db.assets.toArray()).filter(a => !Array.isArray(a.images))
+      if (legacyAssets.length) await db.assets.bulkPut(legacyAssets.map(a => ({ ...a, images: [] })))
 
       const compressor = await db.assets.where('code').equals('COMP-001').first()
       const coldStore = await db.assets.where('code').equals('KHO-001').first()
@@ -108,7 +117,23 @@ export default function App() {
     seed()
   }, [])
 
-  const filteredAssets = useMemo(() => assets.filter(a => `${a.code} ${a.name} ${a.category} ${a.location}`.toLowerCase().includes(search.toLowerCase())), [assets, search])
+  const assetCategories = useMemo(() => [...new Set(assets.map(a => a.category).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'vi')), [assets])
+  const assetLocations = useMemo(() => [...new Set(assets.map(a => a.location).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'vi')), [assets])
+  const filteredAssets = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase('vi')
+    return assets.filter(a =>
+      [a.code, a.name, a.category, a.location].join(' ').toLocaleLowerCase('vi').includes(query) &&
+      (!assetCategoryFilter || a.category === assetCategoryFilter) &&
+      (!assetLocationFilter || a.location === assetLocationFilter) &&
+      (!assetStatusFilter || a.status === assetStatusFilter)
+    ).sort((a,b) => {
+      if (assetSort === 'code-desc') return b.code.localeCompare(a.code,'vi')
+      if (assetSort === 'name-asc') return a.name.localeCompare(b.name,'vi')
+      if (assetSort === 'date-newest') return (b.commissionedAt || '').localeCompare(a.commissionedAt || '')
+      if (assetSort === 'date-oldest') return (a.commissionedAt || '').localeCompare(b.commissionedAt || '')
+      return a.code.localeCompare(b.code,'vi')
+    })
+  }, [assets, search, assetCategoryFilter, assetLocationFilter, assetStatusFilter, assetSort])
   const filteredItems = useMemo(() => inventory.filter(a => `${a.code} ${a.name} ${a.group}`.toLowerCase().includes(search.toLowerCase())), [inventory, search])
   const filteredTasks = useMemo(() => tasks.filter(t => `${t.title} ${assets.find(a=>a.id===t.assetId)?.name ?? ''}`.toLowerCase().includes(search.toLowerCase())), [tasks, assets, search])
   const overdue = tasks.filter(t => t.status !== 'Hoàn thành' && t.dueDate < today()).length
@@ -117,7 +142,7 @@ export default function App() {
 
   const flash = (s: string) => { setNotice(s); setTimeout(() => setNotice(''), 2800) }
   const saveAsset = async (a: Asset) => {
-    const value = { ...a, updatedAt: now() }
+    const value = { ...a, images: a.images ?? [], updatedAt: now() }
     await db.assets.put(value); await queueChange('assets', value.id); setModal(null); setEditingAsset(null); flash('Đã lưu thiết bị')
   }
   const saveItem = async (i: InventoryItem) => {
