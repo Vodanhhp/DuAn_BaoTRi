@@ -131,7 +131,7 @@ export default function App() {
       const updates: Asset[] = []
       const missing: Asset[] = []
       for (const item of normalizedDemoAssets) {
-        const oldDemo = existing.find(a => a.serial === `DEMO-${item.legacyCode}`)
+        const oldDemo = existing.find(a => a.serial === `DEMO-${item.legacyCode}` || a.code === item.legacyCode)
         if (oldDemo) {
           if (oldDemo.code !== item.code) updates.push({ ...oldDemo, code: item.code, updatedAt: now() })
         } else if (!existingCodes.has(item.code)) {
