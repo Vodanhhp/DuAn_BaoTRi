@@ -305,3 +305,13 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Trong bản thử nghiệm hiện tại, dữ liệu nhật ký vẫn lưu trong IndexedDB trên trình duyệt/máy hiện tại; liên kết dùng chung toàn công ty trên nhiều tài khoản/thiết bị chỉ có hiệu lực sau khi triển khai backend/database tập trung và phân quyền.
 - CSS in đã thêm layout tem 50 x 30 mm; kích thước giấy thực tế còn phụ thuộc driver và khả năng chọn khổ tem của máy in.
 - Chưa xác nhận build sau đợt sửa. Cần Pull origin, chạy `npm.cmd run build`, sau đó kiểm tra menu trạng thái, thêm nhật ký, QR hiển thị và ba lệnh in. Không xóa dữ liệu mẫu trong lúc kiểm thử.
+
+
+### Bổ sung kết quả sau thực hiện trong ghi nhận bảo trì/sửa chữa
+- Trong biểu mẫu **Ghi nhận bảo trì/sửa chữa**, bổ sung mục **Kết quả sau thực hiện** đặt cạnh hoặc ngay dưới phần **Thông số**.
+- Mục kết quả có hai lựa chọn dạng ô đánh dấu: **Đạt** và **Không đạt**. Hai lựa chọn loại trừ lẫn nhau; mỗi bản ghi chỉ được chọn một kết quả. Có thể để trống nếu chưa đánh giá/chưa xác định.
+- Kết quả phải được lưu cùng bản ghi nhật ký bảo trì/sửa chữa, không chỉ là nội dung hiển thị tạm thời.
+- Khi xem lịch sử trong chi tiết thiết bị, hiển thị rõ kết quả Đạt/Không đạt của từng lần thực hiện.
+- Khi in lịch sử bảo trì/sửa chữa của thiết bị, phải có cột hoặc mục **Kết quả sau thực hiện** để thể hiện Đạt/Không đạt; không được bỏ trường này khỏi bản in.
+- Khi in chi tiết thiết bị, nếu có phần tóm tắt tình trạng/lịch sử thì không làm mất kết quả đã ghi nhận.
+- Đây là yêu cầu đã chốt cho đợt sửa code tiếp theo; **chưa triển khai và chưa kiểm thử**.
