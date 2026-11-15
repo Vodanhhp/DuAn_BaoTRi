@@ -158,3 +158,15 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Thiết kế phân biệt rõ tiêu chí sắp xếp (thứ tự, ngày) và tiêu chí lọc (nhóm, vị trí, trạng thái), dù có thể gom trong cùng một khu vực xổ xuống.
 - Có lựa chọn bỏ lọc/đặt lại để trở về danh sách đầy đủ.
 - Đây là yêu cầu ghi nhận cho đợt triển khai sau; chưa sửa mã nguồn ở thời điểm cập nhật.
+
+### Tab Thiết bị – lọc, sắp xếp và xem chi tiết
+- Khu vực xổ xuống hỗ trợ đồng thời cả lọc và sắp xếp, không chỉ một trong hai:
+  - Có thể kết hợp nhiều điều kiện lọc: nhóm thiết bị, vị trí lắp đặt, trạng thái.
+  - Có thể chọn cách sắp xếp: thứ tự thiết bị và ngày (mới nhất/cũ nhất).
+  - Có lựa chọn bỏ lọc/đặt lại để trở về danh sách đầy đủ.
+- Nhấn trực tiếp vào tên thiết bị trong danh sách sẽ mở bảng chi tiết thiết bị.
+- Bảng chi tiết có bố cục/trường thông tin gần giống bảng thêm/sửa thiết bị nhưng ở chế độ xem, không tự động bật chế độ chỉnh sửa.
+- Trong bảng chi tiết phải có nút **Xem ảnh** để mở/xem ảnh gắn với hồ sơ thiết bị; hỗ trợ thiết bị có nhiều ảnh nếu cần.
+- Ảnh là thành phần quan trọng của hồ sơ đối với các thiết bị cần nhận diện trực quan. Khi thiết kế biểu mẫu và lưu trữ cần tính đến việc đính kèm ảnh cho thiết bị; chưa mặc định bắt buộc mọi thiết bị phải có ảnh nếu chưa có quy định cụ thể.
+- Thiết kế bảng chi tiết và thao tác xem ảnh phải thuận tiện trên cả desktop và mobile.
+- Đây là yêu cầu ghi nhận cho đợt triển khai sau; chưa sửa mã nguồn ở thời điểm cập nhật.
