@@ -264,3 +264,9 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - `MM`: tháng đưa vào sử dụng; `YY`: năm đưa vào sử dụng.
 - Chưa tự chốt số chữ số của `xxx`, quy tắc đổi mã khi thiết bị chuyển vị trí/đơn vị, hoặc tính bất biến của mã sau khi cấp; chờ người dùng thống nhất.
 - Đây là tài liệu quy ước; chưa sửa code tạo mã hoặc in QR.
+
+
+### Bổ sung quy tắc độ dài số thứ tự thiết bị
+- Người dùng xác nhận thành phần `xxx` có thể tăng độ dài theo số lượng thiết bị thực tế; ví dụ công ty có 1.000 quạt thì phải cấp được số thứ tự `1000`.
+- Quy ước ghi nhận: dùng tối thiểu 3 chữ số (001–999); từ 1.000 trở lên tăng tự nhiên thành 1000, 1001... Không giới hạn cứng ở 3 chữ số, không quay vòng số.
+- Đã cập nhật tài liệu `QUY_UOC_MA_DINH_DANH_THIET_BI.md`. Chưa sửa code tạo mã.
