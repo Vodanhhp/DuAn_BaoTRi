@@ -298,15 +298,17 @@ export default function App() {
       a.notes || ''
     ])
     const ws = XLSX.utils.aoa_to_sheet([
+      ['DANH SÁCH CÁC THIẾT BỊ HIỆN NAY'],
       ['STT','Mã định danh','Tên thiết bị','Nhóm thiết bị','Serial','Vị trí lắp đặt','Ngày đưa vào sử dụng','Công suất / thông số','Tình trạng','Ghi chú'],
       ...rows
     ])
+    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 9 } }]
     ws['!cols'] = [
       { wch: 6 }, { wch: 25 }, { wch: 38 }, { wch: 22 }, { wch: 18 },
       { wch: 24 }, { wch: 19 }, { wch: 21 }, { wch: 18 }, { wch: 32 }
     ]
-    ws['!rows'] = [{ hpt: 28 }, ...rows.map(() => ({ hpt: 48 }))]
-    ws['!autofilter'] = { ref: `A1:J${rows.length + 1}` }
+    ws['!rows'] = [{ hpt: 30 }, { hpt: 26 }, ...rows.map(() => ({ hpt: 48 }))]
+    ws['!autofilter'] = { ref: `A2:J${rows.length + 2}` }
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Danh muc thiet bi')
     XLSX.writeFile(wb, 'danh-muc-thiet-bi.xlsx')
