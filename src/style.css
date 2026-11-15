@@ -120,3 +120,10 @@ button.asset-photo-thumb{text-align:left}
 .warning-hint{background:#fff8e8;border:1px solid #f0dfb4;color:#765b20;font-size:11px;line-height:1.5}
 .field select:disabled{background:#f3f5f4;color:#6e7e77;opacity:1}
 @media(max-width:680px){.asset-transfer-option,.asset-code-preview,.form-hint{grid-column:1}}
+
+
+/* Kho vật tư: tên vật tư có thể nhấp để mở hồ sơ chi tiết */
+.inventory-name-link{display:flex;flex-direction:column;align-items:flex-start;gap:4px;border:0;background:transparent;padding:0;text-align:left;cursor:pointer;max-width:100%}
+.inventory-name-link b{color:#176b5c;font-size:11px}
+.inventory-name-link small{font-size:10px;color:#52665f;white-space:normal}
+.inventory-name-link:hover b{text-decoration:underline}
