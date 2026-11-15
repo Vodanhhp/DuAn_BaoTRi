@@ -289,3 +289,19 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Sửa tra cứu thiết bị demo dùng serial bằng Collection.filter, không truy vấn chỉ mục serial chưa được khai báo trong Dexie.
 - **Chưa xác nhận build sau thay đổi này.** Người dùng cần Pull origin, chạy `npm.cmd run build`, sau đó mở app để kiểm tra 30 mã demo đã chuyển chuẩn, ảnh còn nguyên và hai công việc mẫu vẫn liên kết đúng thiết bị.
 - Lưu ý: danh mục ABC và BB trong tài liệu là đề xuất/giá trị thử nghiệm; cần được doanh nghiệp phê duyệt trước khi nhập dữ liệu thật.
+
+
+### Thiết kế lại vòng đời thiết bị, QR và lịch sử bảo trì
+- Tách rõ các trạng thái nghiệp vụ:
+  - **Đang hoạt động:** thiết bị đang vận hành.
+  - **Đang sửa chữa:** thiết bị hỏng/sự cố, đang chờ sửa hoặc đang sửa; vẫn là tài sản đang quản lý.
+  - **Ngừng sử dụng:** tạm dừng khai thác, hồ sơ vẫn ở danh mục quản lý.
+  - **Lưu kho:** thiết bị còn thuộc doanh nghiệp nhưng đã cất kho, không dùng; có thể khôi phục.
+  - **Thanh lý:** đã bán/loại khỏi sử dụng (ví dụ bán ve chai); giữ hồ sơ và lịch sử để truy vết, không phải xóa dữ liệu.
+- Danh sách thiết bị có menu **Thao tác** để đổi trạng thái, đưa vào Lưu kho và đánh dấu Thanh lý. Thanh lý có hộp xác nhận.
+- **Xóa vĩnh viễn** là thao tác khác hoàn toàn với Thanh lý: dự kiến chỉ Admin, xác thực lại và kiểm tra quyền ở backend; nút được thể hiện nhưng khóa trong bản local demo vì chưa có xác thực máy chủ. Không được giả lập bảo mật bằng cách chỉ dựa vào nhãn Admin trên giao diện.
+- Bảng Chi tiết thiết bị hiện QR trực tiếp và mã định danh dạng chữ; có các thao tác In tem QR (khổ mục tiêu 50 x 30 mm), In chi tiết thiết bị và In lịch sử bảo trì/sửa chữa.
+- Lịch sử thiết bị lấy từ bảng nhật ký chung `logs`, liên kết bằng `assetId`; có thể ghi nhận loại công việc, ngày, nội dung, phụ tùng/vật tư thay thế, thông số/kết quả và người thực hiện. Nhật ký thiết bị và trang Nhật ký chung dùng cùng nguồn dữ liệu.
+- Trong bản thử nghiệm hiện tại, dữ liệu nhật ký vẫn lưu trong IndexedDB trên trình duyệt/máy hiện tại; liên kết dùng chung toàn công ty trên nhiều tài khoản/thiết bị chỉ có hiệu lực sau khi triển khai backend/database tập trung và phân quyền.
+- CSS in đã thêm layout tem 50 x 30 mm; kích thước giấy thực tế còn phụ thuộc driver và khả năng chọn khổ tem của máy in.
+- Chưa xác nhận build sau đợt sửa. Cần Pull origin, chạy `npm.cmd run build`, sau đó kiểm tra menu trạng thái, thêm nhật ký, QR hiển thị và ba lệnh in. Không xóa dữ liệu mẫu trong lúc kiểm thử.
