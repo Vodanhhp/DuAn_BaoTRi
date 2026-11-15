@@ -296,7 +296,7 @@ export default function App() {
     </tr>`).join('')
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
       <style>
-        @page { size: A4 landscape; margin: 12mm 8mm 15mm; }
+        @page { size: A4 landscape; margin: 12mm 8mm 15mm; mso-page-orientation: landscape; mso-footer-data: '&CTrang &P / &N'; }
         body, table { font-family: Tahoma, sans-serif; font-size: 11pt; color: #111; }
         h1 { font-family: Tahoma, sans-serif; font-size: 12pt; font-weight: bold; text-align: center; margin: 0 0 12pt; }
         table { width: 100%; border-collapse: collapse; table-layout: fixed; }
@@ -317,7 +317,7 @@ export default function App() {
       <tbody>${bodyRows}</tbody></table>
       <p class="total">Tổng số: ${filteredAssets.length} thiết bị</p>
       </body></html>`
-    const blob = new Blob(['\\ufeff', html], { type: 'application/vnd.ms-excel;charset=utf-8' })
+    const blob = new Blob(['\ufeff', html], { type: 'application/vnd.ms-excel;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
