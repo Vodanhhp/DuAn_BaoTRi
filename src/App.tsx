@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import {
   Activity, Archive, BarChart3, Building2, CalendarDays, Check, ChevronRight, ClipboardList,
-  Download, FileSpreadsheet, HardDrive, LayoutDashboard, Menu, MoreHorizontal, Package,
+  Download, FileSpreadsheet, Printer, HardDrive, LayoutDashboard, Menu, MoreHorizontal, Package,
   Plus, QrCode, Search, Settings, ShieldAlert, Trash2, UserRound, Wrench, X, ChevronDown, Image as ImageIcon
 } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
@@ -335,6 +335,29 @@ export default function App() {
     link.click()
     URL.revokeObjectURL(url)
   }
+  const printAssets = () => {
+    const headers = ['STT','Mã định danh','Tên thiết bị','Nhóm thiết bị','Serial','Vị trí lắp đặt','Ngày đưa vào sử dụng','Công suất / thông số','Tình trạng','Ghi chú']
+    const bodyRows = filteredAssets.map((asset, index) => '<tr>' +
+      '<td class="center">' + (index + 1) + '</td>' +
+      '<td>' + htmlEscape(asset.code) + '</td>' +
+      '<td><strong>' + htmlEscape(asset.name) + '</strong>' + (asset.brand ? '<br/><span>Hãng: ' + htmlEscape(asset.brand) + '</span>' : '') + (asset.model ? '<br/><span>Model: ' + htmlEscape(asset.model) + '</span>' : '') + '</td>' +
+      '<td>' + htmlEscape(asset.category) + '</td><td>' + htmlEscape(asset.serial || '—') + '</td>' +
+      '<td>' + htmlEscape(asset.location || '—') + '</td><td>' + htmlEscape(dateText(asset.commissionedAt)) + '</td>' +
+      '<td>' + htmlEscape(asset.power || '—') + '</td><td>' + htmlEscape(asset.status) + '</td><td>' + htmlEscape(asset.notes || '—') + '</td></tr>').join('')
+    const printWindow = window.open('', '_blank')
+    if (!printWindow) { alert('Trình duyệt đang chặn cửa sổ in. Hãy cho phép cửa sổ bật lên rồi thử lại.'); return }
+    const html = '<!DOCTYPE html><html lang="vi"><head><meta charset="utf-8"/><title>DANH SÁCH THIẾT BỊ</title>' +
+      '<style>@page{size:A4 landscape;margin:12mm 8mm 16mm;@bottom-center{content:"Trang " counter(page) " / " counter(pages);font-family:Tahoma,sans-serif;font-size:9pt}}' +
+      '*{box-sizing:border-box}body{font-family:Tahoma,sans-serif;font-size:11pt;color:#111;margin:0}h1{font-size:12pt;font-weight:bold;text-align:center;margin:0 0 12pt}' +
+      'table{width:100%;border-collapse:collapse;table-layout:fixed}thead{display:table-header-group}tr{break-inside:avoid;page-break-inside:avoid}' +
+      'th,td{border:1px solid #333;padding:4pt 3pt;vertical-align:top;overflow-wrap:anywhere}th{font-size:10pt;font-weight:bold;text-align:center;background:#e9eeeb!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}' +
+      'td{font-size:10pt}td strong{font-weight:bold}td span{font-size:9pt}.center{text-align:center}.total{text-align:right;font-weight:bold;margin-top:10pt}@media screen{body{padding:16px}}</style></head><body>' +
+      '<h1>DANH SÁCH THIẾT BỊ</h1><table><colgroup><col style="width:4%"/><col style="width:12%"/><col style="width:18%"/><col style="width:10%"/><col style="width:9%"/><col style="width:12%"/><col style="width:10%"/><col style="width:9%"/><col style="width:8%"/><col style="width:8%"/></colgroup>' +
+      '<thead><tr>' + headers.map(header => '<th>' + htmlEscape(header) + '</th>').join('') + '</tr></thead><tbody>' + bodyRows + '</tbody></table>' +
+      '<p class="total">Tổng số: ' + filteredAssets.length + ' thiết bị</p></body></html>'
+    printWindow.document.open(); printWindow.document.write(html); printWindow.document.close()
+    printWindow.focus(); printWindow.onafterprint = () => printWindow.close(); printWindow.print()
+  }
   const exportInventory = () => exportRows(inventory.map(i => ({ 'Mã vật tư':i.code,'Tên vật tư':i.name,'Nhóm':i.group,'ĐVT':i.unit,'Tồn':i.quantity,'Tồn tối thiểu':i.minQuantity,'Vị trí':i.location,'Nhà cung cấp':i.supplier,'Đơn giá':i.unitPrice })), 'ton-kho-vat-tu.xlsx')
   const exportTasks = () => exportRows(tasks.map(t => ({ 'Thiết bị':assets.find(a=>a.id===t.assetId)?.name ?? '', 'Công việc':t.title,'Ngày đến hạn':t.dueDate,'Chu kỳ':t.frequency,'Trạng thái':t.status,'Checklist':t.checklist,'Thông số':t.readings,'Ghi chú':t.notes })), 'ke-hoach-bao-tri.xlsx')
   const exportLogs = () => exportRows(logs.map(l => ({ 'Ngày':l.date,'Thiết bị':assets.find(a=>a.id===l.assetId)?.name ?? '', 'Loại':l.kind,'Nội dung':l.description,'Thông số':l.readings,'Vật tư':l.parts,'Người thực hiện':l.performedBy })), 'nhat-ky-bao-tri.xlsx')
@@ -395,7 +418,7 @@ export default function App() {
               <label>Sắp xếp<select value={assetSort} onChange={e=>{setAssetSort(e.target.value);e.currentTarget.closest('details')?.removeAttribute('open')}}><option value="code-asc">Mã thiết bị: A → Z</option><option value="code-desc">Mã thiết bị: Z → A</option><option value="name-asc">Tên thiết bị: A → Z</option><option value="date-newest">Ngày sử dụng: mới nhất</option><option value="date-oldest">Ngày sử dụng: cũ nhất</option></select></label>
               <button type="button" className="text-btn" onClick={e=>{setAssetCategoryFilter('');setAssetLocationFilter('');setAssetStatusFilter('');setAssetSort('code-asc');e.currentTarget.closest('details')?.removeAttribute('open')}}>Đặt lại bộ lọc</button>
             </div></details>}
-            {!showArchived&&<button className="soft-btn" onClick={exportAssets}><Download size={16}/> Xuất Excel</button>}
+            {!showArchived&&<><button className="soft-btn" onClick={exportAssets}><Download size={16}/> Xuất Excel</button><button className="soft-btn" onClick={printAssets}><Printer size={16}/> In danh sách</button></>}
           </div></div>
           <div className="asset-result-count">{showArchived?'Đang lưu kho: '+filteredArchivedAssets.length+'/'+archivedAssets.length+' thiết bị':'Hiển thị '+filteredAssets.length+'/'+activeAssets.length+' thiết bị đang hoạt động'}</div>
           <div className="table-wrap"><table><thead><tr><th>Mã / Tên thiết bị</th><th>Nhóm</th><th>Vị trí</th><th>Ngày sử dụng</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
