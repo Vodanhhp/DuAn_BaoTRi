@@ -348,3 +348,11 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - `src/style.css`: căn chỉnh kích thước tem QR và kiểu hiển thị lựa chọn kết quả.
 - Logo BAOTRI hiện là logo thử nghiệm dạng chữ/ký hiệu trong vùng giữ chỗ 42 x 24 mm; đây là vị trí chuẩn để sau này thay bằng ảnh logo của từng doanh nghiệp. Chưa có màn hình cấu hình/tải logo riêng; phần đó sẽ cần bổ sung khi làm cấu hình doanh nghiệp.
 - Đã cập nhật code trên GitHub và kiểm tra lại sự hiện diện của các trường/khối giao diện trong source. **Chưa chạy build và chưa kiểm tra bản in vật lý**. Người dùng cần Pull origin, chạy `npm.cmd run build`, rồi kiểm tra form ghi nhận, lịch sử, tem QR và bản in chi tiết.
+
+
+### Chỉnh sửa biểu mẫu in chi tiết thiết bị – bổ sung tiêu đề biểu mẫu
+- Người dùng phản hồi bản in trước chưa đạt: cần có tiêu đề tên biểu mẫu rõ ràng, không dùng riêng tên thiết bị làm tiêu đề của cả tài liệu.
+- Đã cập nhật phần in chi tiết trong `src/App.tsx`: thêm tiêu đề **BẢNG CHI TIẾT THIẾT BỊ** ở đầu biểu mẫu; tên thiết bị chuyển thành tiêu đề phụ bên dưới phần nhận diện logo/QR.
+- Đã chỉnh `src/style.css`: tiêu đề biểu mẫu căn giữa, in đậm; tên thiết bị giảm cỡ chữ từ 23 pt xuống 18 pt để phân cấp rõ ràng hơn.
+- Giữ nguyên bố cục logo bên trái, QR bên phải và bảng thông tin thiết bị bên dưới.
+- Đã cập nhật code trên GitHub. Chưa chạy build và chưa kiểm tra bản in thực tế; cần Pull origin, chạy `npm.cmd run build`, sau đó chọn **In chi tiết** để đánh giá bố cục trên giấy.
