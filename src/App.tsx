@@ -288,7 +288,7 @@ export default function App() {
     const rows = filteredAssets.map((a, index) => [
       index + 1,
       a.code,
-      [a.name, a.brand ? `Hãng: ${a.brand}` : '', a.model ? `Model: ${a.model}` : ''].filter(Boolean).join('\\n'),
+      [a.name, a.brand ? `Hãng: ${a.brand}` : '', a.model ? `Model: ${a.model}` : ''].filter(Boolean).join('\n'),
       a.category,
       a.serial || '',
       a.location || '',
