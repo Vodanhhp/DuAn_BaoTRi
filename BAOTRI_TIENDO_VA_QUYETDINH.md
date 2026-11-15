@@ -194,3 +194,11 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Thêm ô tick “Thiết bị được chuyển từ cơ sở khác đến”; khi tick, mã tự thêm đúng một dấu * ở cuối. QR sau khi lưu vẫn tạo từ toàn bộ mã.
 - Khi sửa hồ sơ đã cấp mã, khóa nhóm thiết bị để tránh phân loại thay đổi nhưng mã cũ không đổi.
 - Đồng bộ các mã nhóm bổ sung vào tài liệu QUY_UOC_MA_DINH_DANH_VA_VIET_TAT_THIET_BI.txt. Cập nhật src/db.ts để lưu cờ chuyển cơ sở. Chưa chạy build hoặc kiểm thử trên máy; cần kiểm tra mã xem trước so với mã sau lưu, QR, dữ liệu mẫu cũ và giao diện trên điện thoại.
+
+
+### Chuẩn hóa xuất Excel danh sách thiết bị (15/11/2026)
+- Đổi tiêu đề hiển thị trong tệp thành “Danh sách các thiết bị”.
+- Thay tệp HTML giả dạng `.xls` bằng workbook `.xlsx` chuẩn Open XML được tạo bằng thư viện SheetJS đang có trong dự án.
+- Bố cục bảng: tiêu đề gộp 10 cột, hàng tiêu đề cột, mỗi thiết bị một hàng; Hãng và Model hiển thị xuống dòng trong ô tên thiết bị; giữ nguyên dữ liệu theo bộ lọc hiện tại.
+- Thiết lập độ rộng cột, bộ lọc tự động, khổ A4 ngang, vừa một trang theo chiều rộng và không ép chiều cao; có dòng tổng số thiết bị.
+- Tên file: `danh-sach-cac-thiet-bi.xlsx`. Chưa chạy build và chưa mở thử bằng Excel trên máy người dùng; cần kiểm tra nội dung, định dạng và Print Preview.
