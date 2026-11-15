@@ -184,3 +184,13 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Tệp xuất danh mục thiết bị được bổ sung thiết lập Excel: A4 ngang, FitToPage, FitWidth = 1, FitHeight = 0 (chỉ co vừa chiều ngang, không ép toàn bộ danh sách dài vào một trang), lặp hàng tiêu đề cột và chân trang Trang X / Y.
 - Khi nhiều thiết bị, Excel tự chia thành nhiều trang theo chiều dọc; mỗi trang giữ chiều ngang A4 và hàng tiêu đề lặp lại.
 - Ứng dụng ghi các thiết lập này vào tệp xuất; Excel áp dụng chúng khi mở/in. Chưa xác nhận thực tế trên máy người dùng, cần mở file bằng Excel và xem Print Preview.
+
+
+### Triển khai lại biểu mẫu thêm mới thiết bị (15/11/2026)
+- Mở rộng danh mục nhóm thiết bị có mã viết tắt riêng; gồm điện/điện tử, cơ khí, nhiều loại quạt (quạt công nghiệp, hút, cấp, thông gió, làm mát, hướng trục, ly tâm), khí nén, lạnh, nguồn điện và an toàn.
+- Tên thiết bị vẫn nhập tự do; nhóm thiết bị bắt buộc chọn từ danh mục chuẩn. Loại bỏ nhánh tự rơi về mã TBK khi nhóm không hợp lệ.
+- Có cảnh báo kiểm tra chéo tên có từ “quạt” và nhóm quạt; cảnh báo không tự đổi nhóm và không chặn lưu.
+- Thêm xem trước mã định danh trước khi lưu; số thứ tự tự tăng theo mã nhóm và cơ sở tiếp nhận HP01. Vị trí chưa có trong bảng mã hiện dùng mã dự phòng 99.
+- Thêm ô tick “Thiết bị được chuyển từ cơ sở khác đến”; khi tick, mã tự thêm đúng một dấu * ở cuối. QR sau khi lưu vẫn tạo từ toàn bộ mã.
+- Khi sửa hồ sơ đã cấp mã, khóa nhóm thiết bị để tránh phân loại thay đổi nhưng mã cũ không đổi.
+- Cập nhật src/db.ts để lưu cờ chuyển cơ sở. Chưa chạy build hoặc kiểm thử trên máy; cần kiểm tra mã xem trước so với mã sau lưu, QR, dữ liệu mẫu cũ và giao diện trên điện thoại.
