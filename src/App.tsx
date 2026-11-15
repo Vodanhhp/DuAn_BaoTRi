@@ -294,15 +294,16 @@ export default function App() {
       <td>${htmlEscape(asset.location || '—')}</td><td>${htmlEscape(dateText(asset.commissionedAt))}</td>
       <td>${htmlEscape(asset.power || '—')}</td><td>${htmlEscape(asset.status)}</td><td>${htmlEscape(asset.notes || '—')}</td>
     </tr>`).join('')
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
+    const html = `<!DOCTYPE html><html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><head><meta charset="utf-8"/>
+      <!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Danh muc thiet bi</x:Name><x:WorksheetOptions><x:PageSetup><x:Layout x:Orientation="Landscape"/><x:PageMargins x:Bottom="0.45" x:Left="0.25" x:Right="0.25" x:Top="0.45"/></x:PageSetup><x:FitToPage/><x:Print><x:FitWidth>1</x:FitWidth><x:FitHeight>0</x:FitHeight><x:PaperSizeIndex>9</x:PaperSizeIndex></x:Print><x:Print_Titles><x:Row>2:2</x:Row></x:Print_Titles></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
       <style>
-        @page { size: A4 landscape; margin: 12mm 8mm 15mm; mso-page-orientation: landscape; mso-footer-data: '&CTrang &P / &N'; }
+        @page { size: A4 landscape; margin: 12mm 8mm 15mm; mso-page-orientation: landscape; mso-fit-to-page: yes; mso-footer-data: '&CTrang &P / &N'; }
         body, table { font-family: Tahoma, sans-serif; font-size: 11pt; color: #111; }
         h1 { font-family: Tahoma, sans-serif; font-size: 12pt; font-weight: bold; text-align: center; margin: 0 0 12pt; }
-        table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+        table { width: 100%; max-width: 100%; border-collapse: collapse; table-layout: fixed; mso-fit-to-page: yes; }
         thead { display: table-header-group; }
         tr { page-break-inside: avoid; }
-        th, td { border: 1px solid #555; padding: 5pt 4pt; vertical-align: top; overflow-wrap: anywhere; }
+        th, td { border: 1px solid #555; padding: 4pt 3pt; vertical-align: top; overflow-wrap: anywhere; }
         th { font-size: 11pt; font-weight: bold; text-align: center; background: #e9eeeb; }
         td { font-size: 11pt; }
         td strong { font-weight: bold; }
