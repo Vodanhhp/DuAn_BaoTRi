@@ -146,3 +146,15 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Trước khi sửa, kiểm tra phiên bản mới nhất trên GitHub; tránh ghi đè thay đổi mới của người dùng.
 - Không đưa mật khẩu, service-role key, token hoặc bí mật vào repository công khai.
 - Khi kết thúc mỗi phiên làm việc, cập nhật mục 3 và 5 trong tài liệu này.
+
+### Tab Thiết bị – sắp xếp và lọc danh sách
+- Bổ sung một nút chọn dạng xổ xuống (có biểu tượng mũi tên xuống) để thao tác gọn trên cả desktop và mobile.
+- Các tiêu chí cần hỗ trợ:
+  - Sắp xếp theo thứ tự thiết bị.
+  - Lọc theo nhóm thiết bị.
+  - Lọc theo vị trí lắp đặt.
+  - Sắp xếp theo ngày (mới nhất/cũ nhất).
+  - Lọc theo trạng thái thiết bị.
+- Thiết kế phân biệt rõ tiêu chí sắp xếp (thứ tự, ngày) và tiêu chí lọc (nhóm, vị trí, trạng thái), dù có thể gom trong cùng một khu vực xổ xuống.
+- Có lựa chọn bỏ lọc/đặt lại để trở về danh sách đầy đủ.
+- Đây là yêu cầu ghi nhận cho đợt triển khai sau; chưa sửa mã nguồn ở thời điểm cập nhật.
