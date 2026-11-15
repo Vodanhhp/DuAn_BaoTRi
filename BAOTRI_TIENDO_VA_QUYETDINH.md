@@ -225,3 +225,11 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Đã cập nhật `src/style.css` cho thông báo giới hạn bảo mật ở khu vực Lưu kho.
 - **Giới hạn hiện tại:** các ảnh là hình minh họa vector dùng thử giao diện, chưa phải ảnh chụp thực tế theo đúng model máy. Dữ liệu vẫn lưu cục bộ trong IndexedDB.
 - **Kiểm thử:** đã cập nhật mã nguồn trên GitHub; chưa chạy build hoặc kiểm thử trong máy người dùng. Cần Pull origin, chạy `npm.cmd run build`, sau đó mở app kiểm tra danh sách, Lưu kho, Khôi phục và gallery ảnh trước khi xác nhận hoàn tất.
+
+
+### Sửa lỗi TypeScript sau đợt cập nhật Lưu kho/ảnh demo
+- Gắn kiểu `Asset` tường minh cho callback mở thiết bị từ màn hình quét QR để xử lý lỗi TS7006.
+- Thêm `@types/react-dom` vào `devDependencies` để TypeScript nhận diện `react-dom/client`.
+- Thêm `src/vite-env.d.ts` tham chiếu kiểu Vite và `vite-plugin-pwa/client` để nhận diện module ảo `virtual:pwa-register`.
+- Người dùng cần Pull origin và chạy `npm.cmd install` để cập nhật package/lockfile tại máy, sau đó chạy lại `npm.cmd run build`.
+- Chưa xác nhận build thành công cho đến khi người dùng chạy và gửi kết quả.
