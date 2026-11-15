@@ -364,3 +364,13 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Với menu **Thao tác** từng thiết bị, khi chọn một hành động (đổi trạng thái, đưa vào Lưu kho hoặc thanh lý), menu tự đóng ngay sau thao tác.
 - Không thay đổi logic lọc, sắp xếp hoặc xử lý trạng thái thiết bị; chỉ sửa hành vi đóng menu.
 - Đã cập nhật code trên GitHub; chưa chạy build trên máy người dùng. Cần Pull origin và chạy `npm.cmd run build` để xác nhận.
+
+
+### Sửa luồng + Thêm thiết bị – tự cấp mã định danh và QR sau khi lưu
+- Người dùng không cần nhập mã ID/mã định danh khi tạo hồ sơ thiết bị; biểu mẫu **Thêm thiết bị** chỉ yêu cầu nhập tên và các thông tin cần quản lý.
+- Đã bỏ trường nhập mã thiết bị và bỏ khối QR khỏi biểu mẫu thêm/sửa. Không hiển thị QR giả khi hồ sơ chưa có mã.
+- Khi lưu một thiết bị mới, hệ thống tự cấp mã theo cấu trúc đã thống nhất: `ABC-HP01-xxx-BB-MM-YY`; số thứ tự lấy tiếp theo số lớn nhất đã dùng của cùng mã loại thiết bị, không cấp lại từ 001.
+- Mã loại thiết bị lấy theo nhóm hiện có (ví dụ MNA, KLA, MB, ML); nhóm chưa có mã riêng tạm dùng TBK/TBD. Mã vị trí lấy theo danh mục vị trí demo, chưa khớp thì tạm dùng 99. Cơ sở thử nghiệm hiện dùng HP01.
+- Ngày MM-YY lấy từ ngày đưa vào sử dụng; nếu người dùng chưa nhập ngày thì tạm lấy ngày hiện tại.
+- Sau khi lưu thành công, ứng dụng mở ngay chi tiết thiết bị để người dùng nhìn thấy mã vừa cấp và QR được tạo từ chính mã đó. Khi sửa hồ sơ, mã đã cấp được giữ nguyên.
+- Đã cập nhật `src/App.tsx` trên GitHub. **Chưa chạy build hoặc kiểm thử trên trình duyệt**; cần Pull origin và chạy `npm.cmd run build`, sau đó thử thêm mới một thiết bị và kiểm tra mã/QR.
