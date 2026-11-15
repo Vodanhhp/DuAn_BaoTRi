@@ -233,3 +233,14 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Thêm `src/vite-env.d.ts` tham chiếu kiểu Vite và `vite-plugin-pwa/client` để nhận diện module ảo `virtual:pwa-register`.
 - Người dùng cần Pull origin và chạy `npm.cmd install` để cập nhật package/lockfile tại máy, sau đó chạy lại `npm.cmd run build`.
 - Chưa xác nhận build thành công cho đến khi người dùng chạy và gửi kết quả.
+
+
+### Kết quả build production lần đầu sau cập nhật Lưu kho/ảnh demo
+- Người dùng đã chạy `npm.cmd install` và `npm.cmd run build` trên máy Windows tại bản mã nguồn đã đồng bộ.
+- **Build thành công:** `tsc -b` không còn báo lỗi; Vite v6.4.6 build production thành công; PWA tạo `dist/sw.js` và precache 5 entries.
+- Cảnh báo còn lại:
+  - npm audit báo 6 vulnerabilities (2 low, 3 moderate, 1 high). Chưa chạy `npm audit fix`; cần xem chi tiết và đánh giá tương thích trước khi nâng dependency.
+  - `esbuild@0.25.12` có install script chưa được approve theo cảnh báo của npm. Chưa approve tự động; cần xem xét nguồn gốc/gói phụ thuộc trước.
+  - Bundle JS chính khoảng 994.33 kB trước gzip (310.92 kB sau gzip), vượt ngưỡng cảnh báo 500 kB của Vite. Không làm build thất bại; có thể tối ưu code splitting ở đợt sau.
+- **Trạng thái:** xác nhận build production thành công, nhưng chưa đồng nghĩa đã kiểm thử chức năng trên trình duyệt.
+- **Bước kiểm thử tiếp theo:** chạy `npm.cmd run dev`, mở ứng dụng và kiểm tra danh sách thiết bị, lọc/sắp xếp kết hợp, mở chi tiết, gallery ảnh demo, thêm ảnh, Lưu kho và Khôi phục. Không xóa dữ liệu thử nghiệm ở bước này.
