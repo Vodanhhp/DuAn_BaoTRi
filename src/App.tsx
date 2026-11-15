@@ -493,22 +493,32 @@ function LogEntryModal({value,close,save}:any){
   </form></Modal>
 }
 
-function AssetModal({value,close,save}:any){
+function AssetModal({value,close,save,assets}:any){
   const [v,setV]=useState<Asset>(value)
+  const isNew=!value.code
   const set=(k:keyof Asset,x:any)=>setV(p=>({...p,[k]:x}))
-  return <Modal title={!value.code?'Thêm thiết bị':'Thông tin thiết bị'} close={close}><form onSubmit={e=>{e.preventDefault();if(!v.name.trim())return alert('Nhập tên thiết bị');save(v)}} className="form-grid">
-    <Field label="Tên thiết bị *"><input required value={v.name} onChange={e=>set('name',e.target.value)}/></Field>
-    <Field label="Nhóm thiết bị"><select value={v.category} onChange={e=>set('category',e.target.value)}>{['Thiết bị điện','Máy nén khí','Kho lạnh','Nồi hấp','Máy bơm','Điều hòa','Khác'].map(x=><option>{x}</option>)}</select></Field><Field label="Vị trí"><input value={v.location} onChange={e=>set('location',e.target.value)}/></Field>
+  const previewCode=isNew&&ASSET_CATEGORY_CODES[v.category]?buildAssetCode(v,assets):''
+  const fanCategories=['Quạt công nghiệp','Quạt hút','Quạt cấp','Quạt thông gió','Quạt làm mát','Quạt hướng trục','Quạt ly tâm']
+  const nameSuggestsFan=/quạt/i.test(v.name)
+  const categoryIsFan=fanCategories.includes(v.category)
+  const showCategoryWarning=Boolean(v.name.trim())&&nameSuggestsFan!==categoryIsFan
+  return <Modal title={isNew?'Thêm thiết bị':'Thông tin thiết bị'} close={close}><form onSubmit={e=>{e.preventDefault();if(!v.name.trim())return alert('Nhập tên thiết bị');if(!ASSET_CATEGORY_CODES[v.category])return alert('Chọn nhóm thiết bị hợp lệ trong danh mục chuẩn');save(v)}} className="form-grid">
+    <Field label="Tên thiết bị *"><input required value={v.name} placeholder="Ví dụ: Quạt hút khu vực đóng gói số 1" onChange={e=>set('name',e.target.value)}/></Field>
+    <Field label="Nhóm thiết bị *"><select required disabled={!isNew} value={v.category} onChange={e=>set('category',e.target.value)}><option value="">-- Chọn nhóm thiết bị --</option>{ASSET_CATEGORY_GROUPS.map(group=><optgroup key={group.label} label={group.label}>{group.items.map(item=><option key={item.name} value={item.name}>{item.name} · {item.code}</option>)}</optgroup>)}</select>{!isNew&&<small className="muted">Nhóm đã khóa sau khi cấp mã để tránh mã định danh không còn đúng loại thiết bị.</small>}</Field>
+    {showCategoryWarning&&<div className="form-hint warning-hint">Tên thiết bị có từ “quạt” nhưng nhóm đang chọn không thuộc danh mục quạt (hoặc ngược lại). Hãy kiểm tra lại; hệ thống không tự đổi nhóm.</div>}
+    <Field label="Vị trí lắp đặt"><input value={v.location} placeholder="Ví dụ: Nhà xưởng A" onChange={e=>set('location',e.target.value)}/></Field>
     <Field label="Hãng"><input value={v.brand} onChange={e=>set('brand',e.target.value)}/></Field><Field label="Model"><input value={v.model} onChange={e=>set('model',e.target.value)}/></Field>
     <Field label="Serial"><input value={v.serial} onChange={e=>set('serial',e.target.value)}/></Field><Field label="Ngày đưa vào sử dụng"><input type="date" value={v.commissionedAt} onChange={e=>set('commissionedAt',e.target.value)}/></Field>
-    <Field label="Công suất / thông số"><input value={v.power} onChange={e=>set('power',e.target.value)}/></Field><Field label="Chu kỳ bảo trì"><select value={v.cycle} onChange={e=>set('cycle',e.target.value)}>{['Hàng ngày','Hàng tuần','Hàng tháng','Hàng quý','6 tháng','Hàng năm','Theo giờ chạy',''].map(x=><option>{x}</option>)}</select></Field>
+    <Field label="Công suất / thông số"><input value={v.power} onChange={e=>set('power',e.target.value)}/></Field><Field label="Chu kỳ bảo trì"><select value={v.cycle} onChange={e=>set('cycle',e.target.value)}>{['Hàng ngày','Hàng tuần','Hàng tháng','Hàng quý','6 tháng','Hàng năm','Theo giờ chạy',''].map(x=><option key={x} value={x}>{x||'Chưa thiết lập'}</option>)}</select></Field>
     <Field label="Tình trạng thiết bị"><select value={v.status} onChange={e=>set('status',e.target.value)}>{['Đang hoạt động','Đang sửa chữa','Ngừng sử dụng','Thanh lý'].map(x=><option key={x}>{x}</option>)}</select></Field>
     <Field label="Ghi chú"><input value={v.notes} onChange={e=>set('notes',e.target.value)}/></Field>
+    {isNew&&<div className="asset-transfer-option"><label><input type="checkbox" checked={!!v.transferredFromOtherFacility} onChange={e=>set('transferredFromOtherFacility',e.target.checked)}/> Thiết bị được chuyển từ cơ sở khác đến</label><small>Cơ sở tiếp nhận hiện tại: {RECEIVING_FACILITY_CODE}. Khi đánh dấu, hệ thống tự thêm đúng một dấu * vào cuối mã định danh.</small></div>}
+    {isNew&&<div className="asset-code-preview"><span>MÃ ĐỊNH DANH DỰ KIẾN</span><strong>{previewCode||'— Chọn nhóm thiết bị để xem mã —'}</strong><small>Mã được cấp chính thức khi lưu thiết bị. QR sẽ được tạo từ toàn bộ mã này.</small></div>}
     <div className="asset-images-field"><label className="field"><span>Ảnh thiết bị (có thể chọn nhiều ảnh)</span><input type="file" accept="image/*" multiple onChange={async e=>{const files=Array.from(e.target.files??[]);const current=v.images??[];const remaining=Math.max(0,8-current.length);const selected=files.slice(0,remaining);const loaded=await Promise.all(selected.map(file=>new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=reject;reader.readAsDataURL(file)})));set('images',[...current,...loaded]);e.target.value=''}}/></label>
       <div className="asset-photo-grid">{(v.images??[]).map((src:string,i:number)=><div className="asset-photo-thumb" key={i}><img src={src} alt={'Ảnh thiết bị '+(i+1)}/><button type="button" className="text-btn danger" onClick={()=>set('images',(v.images??[]).filter((_:string,index:number)=>index!==i))}>Xóa ảnh</button></div>)}</div>
       <small className="muted">Tối đa 8 ảnh/hồ sơ. Ảnh được lưu cùng dữ liệu thiết bị trong trình duyệt hiện tại; khi chuyển sang máy chủ sẽ cần chuyển ảnh lên kho lưu trữ trực tuyến.</small>
     </div>
-    <div className="modal-actions"><button type="button" className="soft-btn" onClick={close}>Hủy</button><button className="primary-btn"><Check size={16}/> Lưu thiết bị</button></div>
+    <div className="modal-actions"><button type="button" className="soft-btn" onClick={close}>Hủy</button><button className="primary-btn" disabled={isNew&&!previewCode}><Check size={16}/> {isNew?'Lưu và tạo mã thiết bị':'Lưu thiết bị'}</button></div>
   </form></Modal>
 }
 function ItemModal({value,close,save}:any){
