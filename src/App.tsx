@@ -11,12 +11,13 @@ import * as XLSX from 'xlsx'
 import { db, uid, now, queueChange, type Asset, type InventoryItem, type Task, type Log } from './db'
 
 type Page = 'dashboard' | 'assets' | 'inventory' | 'tasks' | 'logs' | 'reports' | 'settings'
-const xmlText = (value: string) => value.replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[ch] || ch))
+const xmlEntities: Record<string, string> = {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}
+const xmlText = (value: string) => value.replace(/[&<>"']/g, ch => xmlEntities[ch] ?? ch)
 const makeDemoAssetImage = (category: string, code: string, view: number) => {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="960" height="640" viewBox="0 0 960 640"><defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f5f8f7"/><stop offset="1" stop-color="#dce8e3"/></linearGradient><linearGradient id="metal" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#edf3f2"/><stop offset="1" stop-color="#879b98"/></linearGradient></defs><rect width="960" height="640" fill="url(#bg)"/><path d="M0 510H960" stroke="#c5d4ce" stroke-width="3"/><g transform="translate(${view===1?120:165},105)"><ellipse cx="360" cy="405" rx="300" ry="35" fill="#6e8980" opacity=".18"/><rect x="105" y="180" width="510" height="210" rx="28" fill="url(#metal)" stroke="#536d67" stroke-width="9"/><rect x="145" y="215" width="220" height="140" rx="16" fill="${view===1?'#287d70':'#4c789d'}"/><rect x="390" y="215" width="180" height="140" rx="12" fill="#d4dfdc" stroke="#536d67" stroke-width="6"/><circle cx="480" cy="285" r="43" fill="#f8fbfa" stroke="#536d67" stroke-width="8"/><path d="M480 250v70M445 285h70" stroke="#287d70" stroke-width="8"/><rect x="170" y="390" width="45" height="45" rx="7" fill="#344f49"/><rect x="505" y="390" width="45" height="45" rx="7" fill="#344f49"/><path d="M130 180V145h465v35" fill="none" stroke="#536d67" stroke-width="10"/><circle cx="190" cy="245" r="12" fill="#f4c66c"/><circle cx="230" cy="245" r="12" fill="#e8796d"/></g><rect x="42" y="38" width="876" height="564" rx="22" fill="none" stroke="#ffffff" stroke-width="5" opacity=".8"/><text x="58" y="78" font-family="Arial,sans-serif" font-size="25" font-weight="700" fill="#34534b">BAOTRI · ẢNH MINH HỌA THIẾT BỊ</text><text x="58" y="570" font-family="Arial,sans-serif" font-size="22" fill="#526d65">${xmlText(category)} · ${xmlText(code)} · Góc nhìn ${view}</text></svg>`
   return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg)
 }
-const today =  new Date().toISOString().slice(0, 10)
+const today = () => new Date().toISOString().slice(0, 10)
 const emptyAsset = (): Asset => ({
   id: uid(), code: '', name: '', category: 'Thiết bị điện', brand: '', model: '', serial: '',
   location: '', commissionedAt: '', power: '', cycle: '', status: 'Đang hoạt động',
