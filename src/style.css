@@ -93,90 +93,16 @@ button.asset-photo-thumb{text-align:left}
 .asset-qr-panel{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:16px;margin-bottom:16px;border:1px solid #dce7e2;border-radius:12px;background:#f7faf8}.asset-qr-panel>div{display:grid;gap:5px;min-width:0}.asset-qr-panel small{font-size:10px;letter-spacing:.1em;color:#668078;font-weight:750}.asset-qr-panel b{font-size:16px;overflow-wrap:anywhere}.asset-qr-panel span{font-size:12px;color:#73847e}
 .asset-maintenance-history{margin-top:20px;border-top:1px solid #e5ece9;padding-top:16px}.asset-maintenance-history .panel-head{align-items:center}.asset-maintenance-history h3{margin:0;font-size:15px}.asset-maintenance-history .panel-head p{margin:4px 0 0;font-size:12px;color:#71817b}.maintenance-history-list{display:grid}.maintenance-history-list article{display:grid;grid-template-columns:92px 1fr;gap:12px;padding:12px 0;border-bottom:1px solid #edf1ef}.maintenance-history-list time{font-size:12px;color:#647a72;font-weight:650}.maintenance-history-list article b{font-size:13px}.maintenance-history-list article p{margin:4px 0;font-size:13px;white-space:pre-wrap}.maintenance-history-list article small{display:block;color:#71817b;font-size:11px;margin-top:3px}
 .asset-print-sheet{display:none}
-@media print{@page{size:auto;margin:5mm}@page sticker{size:50mm 30mm;margin:0}.asset-print-sheet.print-sticker{page:sticker}body *{visibility:hidden!important}.asset-print-sheet,.asset-print-sheet *{visibility:visible!important}.asset-print-sheet{display:block!important;position:fixed;inset:0;background:#fff;color:#111;z-index:999999;padding:0;margin:0}.asset-print-sheet.print-sticker{width:50mm;height:30mm;overflow:hidden}.asset-sticker{width:50mm;height:30mm;display:flex;align-items:center;justify-content:center;gap:3mm;padding:1.5mm;box-sizing:border-box;font-family:Arial,sans-serif}.asset-sticker svg{width:17mm!important;height:17mm!important;flex:0 0 17mm}.asset-sticker strong{max-width:27mm;font-size:8.5pt;line-height:1.2;font-weight:800;overflow-wrap:anywhere}.asset-print-report{font-family:Arial,sans-serif;color:#111;padding:8mm}.asset-print-header{display:flex;align-items:center;justify-content:space-between;gap:10mm;min-height:28mm;margin-bottom:5mm}.company-logo-placeholder{width:42mm;height:24mm;box-sizing:border-box;display:flex;align-items:center;gap:3mm;padding:2mm;border:1px dashed #87958f;border-radius:2mm;color:#174b3d;flex:0 0 42mm}.company-logo-mark{width:13mm;height:13mm;display:flex;align-items:center;justify-content:center;border:1.2mm solid #174b3d;border-radius:50%;font-size:13pt;font-weight:800;flex:0 0 13mm}.company-logo-wording{display:flex;flex-direction:column;gap:1mm}.company-logo-wording strong{font-size:15pt;letter-spacing:.5pt}.company-logo-wording small{font-size:6pt;letter-spacing:.3pt;color:#53645e}.asset-print-header-qr{width:25mm!important;height:25mm!important;flex:0 0 25mm}.asset-print-form-title{text-align:center;font-size:16pt;line-height:1.2;font-weight:800;letter-spacing:.4pt;margin:0 0 7mm;padding-bottom:3mm;border-bottom:1px solid #777}.asset-print-device-name{text-align:left;font-size:18pt;line-height:1.2;margin:2mm 0 6mm;font-weight:750;overflow-wrap:anywhere}.asset-print-report table{width:100%;border-collapse:collapse;font-size:9pt}.asset-print-report th,.asset-print-report td{border:1px solid #999;padding:5px;text-align:left;vertical-align:top}.asset-print-report th{background:#f0f0f0}}
+@media print{@page{size:auto;margin:5mm}@page sticker{size:50mm 30mm;margin:0}.asset-print-sheet.print-sticker{page:sticker}body *{visibility:hidden!important}.asset-print-sheet,.asset-print-sheet *{visibility:visible!important}.asset-print-sheet{display:block!important;position:fixed;inset:0;background:#fff;color:#111;z-index:999999;padding:0;margin:0}.asset-print-sheet.print-sticker{width:50mm;height:30mm;overflow:hidden}.asset-sticker{width:50mm;height:30mm;display:flex;align-items:center;justify-content:center;gap:3mm;padding:1.5mm;box-sizing:border-box;font-family:Tahoma,sans-serif}.asset-sticker svg{width:17mm!important;height:17mm!important;flex:0 0 17mm}.asset-sticker strong{max-width:27mm;font-size:8.5pt;line-height:1.2;font-weight:800;overflow-wrap:anywhere}.asset-print-report{font-family:Tahoma,sans-serif;color:#111;padding:8mm;font-size:11pt}.asset-print-header{display:flex;align-items:center;justify-content:space-between;gap:10mm;min-height:28mm;margin-bottom:5mm}.company-logo-placeholder{width:42mm;height:24mm;box-sizing:border-box;display:flex;align-items:center;gap:3mm;padding:2mm;border:1px dashed #87958f;border-radius:2mm;color:#174b3d;flex:0 0 42mm}.company-logo-mark{width:13mm;height:13mm;display:flex;align-items:center;justify-content:center;border:1.2mm solid #174b3d;border-radius:50%;font-size:13pt;font-weight:800;flex:0 0 13mm}.company-logo-wording{display:flex;flex-direction:column;gap:1mm}.company-logo-wording strong{font-size:15pt;letter-spacing:.5pt}.company-logo-wording small{font-size:6pt;letter-spacing:.3pt;color:#53645e}.asset-print-header-qr{width:25mm!important;height:25mm!important;flex:0 0 25mm}.asset-print-form-title{text-align:center;font-family:Tahoma,sans-serif;font-size:12pt;line-height:1.2;font-weight:800;letter-spacing:.4pt;margin:0 0 7mm;padding-bottom:3mm;border-bottom:1px solid #777}.asset-print-device-name{text-align:left;font-family:Tahoma,sans-serif;font-size:12pt;line-height:1.2;margin:2mm 0 6mm;font-weight:750;overflow-wrap:anywhere}.asset-print-report table{width:100%;border-collapse:collapse;font-family:Tahoma,sans-serif;font-size:11pt}.asset-print-report th,.asset-print-report td{border:1px solid #999;padding:5px;text-align:left;vertical-align:top;font-family:Tahoma,sans-serif;font-size:11pt}.asset-print-report th{background:#f0f0f0;font-weight:bold}}
 @media(max-width:640px){.asset-qr-panel{padding:12px;gap:10px}.asset-qr-panel svg{width:88px;height:88px;flex:0 0 88px}.asset-photo-actions{flex-wrap:wrap}.maintenance-history-list article{grid-template-columns:78px 1fr}}
 
 .result-choice{display:flex;align-items:center;gap:24px;min-height:42px}.result-choice label{display:inline-flex;align-items:center;gap:8px;font-weight:650;cursor:pointer}.result-choice input{width:17px;height:17px;accent-color:#176b50}
 
 
-/* In danh muc thiet bi: mau bang A4 ngang, co vien that va phan trang */
-.asset-list-print-sheet{display:none}
-@media print{
-  @page assetlist{
-    size:A4 landscape;
-    margin:12mm 8mm 17mm;
-    @bottom-center{
-      content:"Trang " counter(page) " / " counter(pages);
-      font-family:Arial,sans-serif;
-      font-size:9pt;
-      color:#333;
-    }
-  }
-  .asset-list-print-sheet{
-    page:assetlist;
-    display:block!important;
-    position:absolute;
-    left:0;
-    top:0;
-    width:100%;
-    box-sizing:border-box;
-    padding:0;
-    margin:0;
-    color:#111;
-    background:#fff;
-    font-family:Arial,sans-serif;
-  }
-  .asset-list-print-sheet h1{
-    display:block;
-    text-align:center;
-    font-size:16pt;
-    line-height:1.25;
-    font-weight:800;
-    margin:0 0 7mm;
-    padding:0 0 3mm;
-    border-bottom:1.5px solid #333;
-    letter-spacing:.2pt;
-  }
-  .asset-list-print-sheet table{
-    width:100%;
-    border-collapse:collapse;
-    table-layout:fixed;
-    font-size:8pt;
-    line-height:1.25;
-  }
-  .asset-list-print-sheet thead{display:table-header-group}
-  .asset-list-print-sheet tfoot{display:table-footer-group}
-  .asset-list-print-sheet tr{break-inside:avoid;page-break-inside:avoid}
-  .asset-list-print-sheet th,
-  .asset-list-print-sheet td{
-    border:1px solid #555;
-    padding:4px 5px;
-    text-align:left;
-    vertical-align:top;
-    overflow-wrap:anywhere;
-  }
-  .asset-list-print-sheet th{
-    background:#e9eeeb!important;
-    color:#111!important;
-    font-weight:800;
-    text-align:center;
-    -webkit-print-color-adjust:exact;
-    print-color-adjust:exact;
-  }
-  .asset-list-print-sheet th:nth-child(1){width:4%}
-  .asset-list-print-sheet th:nth-child(2){width:12%}
-  .asset-list-print-sheet th:nth-child(3){width:19%}
-  .asset-list-print-sheet th:nth-child(4){width:11%}
-  .asset-list-print-sheet th:nth-child(5){width:9%}
-  .asset-list-print-sheet th:nth-child(6){width:13%}
-  .asset-list-print-sheet th:nth-child(7){width:10%}
-  .asset-list-print-sheet th:nth-child(8){width:10%}
-  .asset-list-print-sheet th:nth-child(9){width:12%}
-  .asset-list-print-sheet td strong{display:block;font-weight:800}
-  .asset-list-print-sheet td small{display:block;font-size:7.5pt;margin-top:2px}
-  .asset-list-print-sheet .asset-list-center{text-align:center}
-  .asset-list-print-total{margin:4mm 0 0;text-align:right;font-size:9pt;font-weight:800}
-  body *{visibility:hidden!important}
-  .asset-list-print-sheet,.asset-list-print-sheet *{visibility:visible!important}
-  .asset-list-print-sheet{display:block!important}
+/* Quy chuẩn chung cho các biểu mẫu/bảng được in từ ứng dụng */
+@media print {
+  .asset-print-sheet, .asset-print-sheet * { font-family: Tahoma, sans-serif !important; }
+  .asset-print-report { font-size: 11pt !important; }
+  .asset-print-report h1, .asset-print-report h2, .asset-print-form-title, .asset-print-device-name { font-family: Tahoma, sans-serif !important; font-size: 12pt !important; font-weight: bold !important; }
+  .asset-print-report table, .asset-print-report th, .asset-print-report td { font-family: Tahoma, sans-serif !important; font-size: 11pt !important; }
 }
