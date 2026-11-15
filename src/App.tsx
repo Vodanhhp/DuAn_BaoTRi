@@ -37,7 +37,7 @@ const dateText = (s: string) => s ? new Date(s + (s.length === 10 ? 'T00:00:00' 
 export default function App() {
   const [page, setPage] = useState<Page>('dashboard')
   const [search, setSearch] = useState('')
-  const [modal, setModal] = useState<'asset'|'item'|'task'|'scan'|null>(null)
+  const [modal, setModal] = useState<'asset'|'item'|'task'|'log'|'scan'|null>(null)
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null)
   const [detailAsset, setDetailAsset] = useState<Asset | null>(null)
   const [assetCategoryFilter, setAssetCategoryFilter] = useState('')
@@ -47,6 +47,7 @@ export default function App() {
   const [showArchived, setShowArchived] = useState(false)
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null)
   const [editingTask, setEditingTask] = useState<Task | null>(null)
+  const [editingLog, setEditingLog] = useState<Log | null>(null)
   const [notice, setNotice] = useState('')
   const [mobileMore, setMobileMore] = useState(false)
   const assets = useLiveQuery(() => db.assets.orderBy('name').toArray(), []) ?? []
@@ -207,6 +208,10 @@ export default function App() {
     const value = { ...t, updatedAt: now() }
     await db.tasks.put(value); await queueChange('tasks', value.id); setModal(null); setEditingTask(null); flash('Đã lưu công việc')
   }
+  const saveLog = async (entry: Log) => {
+    await db.logs.put(entry); await queueChange('logs', entry.id)
+    setModal(null); setEditingLog(null); flash('Đã ghi nhận lịch sử bảo trì/sửa chữa')
+  }
   const completeTask = async (t: Task) => {
     const completed = { ...t, status: 'Hoàn thành' as const, completedAt: now(), updatedAt: now() }
     await db.transaction('rw', db.tasks, db.logs, async () => {
@@ -223,6 +228,11 @@ export default function App() {
   const restoreAsset = async (a: Asset) => {
     const value = { ...a, archivedAt: undefined, updatedAt: now() }
     await db.assets.put(value); await queueChange('assets', a.id); flash('Đã khôi phục thiết bị khỏi Lưu kho')
+  }
+  const changeAssetStatus = async (a: Asset, status: Asset['status']) => {
+    if (status === 'Thanh lý' && !confirm(`Xác nhận thanh lý “${a.name}”? Hồ sơ và lịch sử vẫn được giữ để tra cứu; đây không phải xóa vĩnh viễn.`)) return
+    const value = { ...a, status, updatedAt: now() }
+    await db.assets.put(value); await queueChange('assets', a.id); flash(`Đã cập nhật trạng thái: ${status}`)
   }
   const addMovement = async (item: InventoryItem, type: 'Nhập'|'Xuất', qty: number) => {
     if (!qty || qty <= 0) return
@@ -292,12 +302,12 @@ export default function App() {
         {page!=='dashboard' && page!=='settings' && <div className="searchbar"><Search size={18}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Tìm theo mã, tên hoặc nội dung..."/></div>}
         {page==='dashboard' && <Dashboard assets={activeAssets} tasks={tasks} dueToday={dueToday} lowStock={lowStock} overdue={overdue} go={setPage} complete={completeTask}/>}
         {page==='assets' && <section className="panel"><div className="panel-head"><div><h2>{showArchived?'Thiết bị đã lưu kho':'Danh mục thiết bị'}</h2><p>{showArchived?'Hồ sơ được giữ lại để tra cứu hoặc khôi phục':'Quản lý lý lịch, mã QR, ảnh và tình trạng thiết bị'}</p></div><div className="asset-toolbar">
-            <button className={!showArchived?'soft-btn':'text-btn'} onClick={()=>setShowArchived(false)}>Đang hoạt động ({activeAssets.length})</button>
+            <button className={!showArchived?'soft-btn':'text-btn'} onClick={()=>setShowArchived(false)}>Đang quản lý ({activeAssets.length})</button>
             <button className={showArchived?'soft-btn':'text-btn'} onClick={()=>setShowArchived(true)}><Archive size={15}/> Lưu kho ({archivedAssets.length})</button>
             {!showArchived&&<details className="asset-filter-menu"><summary><ChevronDown size={15}/> Lọc & sắp xếp</summary><div className="asset-filter-popover">
               <label>Nhóm thiết bị<select value={assetCategoryFilter} onChange={e=>setAssetCategoryFilter(e.target.value)}><option value="">Tất cả nhóm</option>{assetCategories.map(x=><option key={x} value={x}>{x}</option>)}</select></label>
               <label>Vị trí<select value={assetLocationFilter} onChange={e=>setAssetLocationFilter(e.target.value)}><option value="">Tất cả vị trí</option>{assetLocations.map(x=><option key={x} value={x}>{x}</option>)}</select></label>
-              <label>Trạng thái<select value={assetStatusFilter} onChange={e=>setAssetStatusFilter(e.target.value)}><option value="">Tất cả trạng thái</option>{['Đang hoạt động','Ngừng hoạt động','Thanh lý'].map(x=><option key={x}>{x}</option>)}</select></label>
+              <label>Trạng thái<select value={assetStatusFilter} onChange={e=>setAssetStatusFilter(e.target.value)}><option value="">Tất cả trạng thái</option>{['Đang hoạt động','Đang sửa chữa','Ngừng sử dụng','Thanh lý'].map(x=><option key={x}>{x}</option>)}</select></label>
               <label>Sắp xếp<select value={assetSort} onChange={e=>setAssetSort(e.target.value)}><option value="code-asc">Mã thiết bị: A → Z</option><option value="code-desc">Mã thiết bị: Z → A</option><option value="name-asc">Tên thiết bị: A → Z</option><option value="date-newest">Ngày sử dụng: mới nhất</option><option value="date-oldest">Ngày sử dụng: cũ nhất</option></select></label>
               <button type="button" className="text-btn" onClick={()=>{setAssetCategoryFilter('');setAssetLocationFilter('');setAssetStatusFilter('');setAssetSort('code-asc')}}>Đặt lại bộ lọc</button>
             </div></details>}
@@ -305,7 +315,7 @@ export default function App() {
           </div></div>
           <div className="asset-result-count">{showArchived?'Đang lưu kho: '+filteredArchivedAssets.length+'/'+archivedAssets.length+' thiết bị':'Hiển thị '+filteredAssets.length+'/'+activeAssets.length+' thiết bị đang hoạt động'}</div>
           <div className="table-wrap"><table><thead><tr><th>Mã / Tên thiết bị</th><th>Nhóm</th><th>Vị trí</th><th>Ngày sử dụng</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
-          {(showArchived?filteredArchivedAssets:filteredAssets).map(a=><tr key={a.id}><td><button className="asset-name-link" onClick={()=>setDetailAsset(a)}><b>{a.code}</b><small>{a.name}</small></button></td><td>{a.category}</td><td>{a.location||'—'}</td><td>{dateText(a.commissionedAt)}</td><td><span className={'status '+(a.archivedAt?'gray':a.status==='Đang hoạt động'?'green':'gray')}>{a.archivedAt?'Đã lưu kho':a.status}</span></td><td className="actions">{showArchived?<><button className="text-btn success-text" onClick={()=>restoreAsset(a)}>Khôi phục</button><button className="text-btn danger" title="Chỉ Admin sau khi có xác thực máy chủ" disabled><Trash2 size={14}/> Xóa vĩnh viễn</button></>:<><button className="text-btn" onClick={()=>{setEditingAsset({...a,images:a.images??[]});setModal('asset')}}>Sửa / QR</button><button className="icon-btn" title="Lưu kho" onClick={()=>archiveAsset(a)}><Archive size={15}/></button></>}</td></tr>)}
+          {(showArchived?filteredArchivedAssets:filteredAssets).map(a=><tr key={a.id}><td><button className="asset-name-link" onClick={()=>setDetailAsset(a)}><b>{a.code}</b><small>{a.name}</small></button></td><td>{a.category}</td><td>{a.location||'—'}</td><td>{dateText(a.commissionedAt)}</td><td><span className={'status '+(a.archivedAt?'gray':a.status==='Đang hoạt động'?'green':'gray')}>{a.archivedAt?'Đã lưu kho':a.status}</span></td><td className="actions">{showArchived?<><button className="text-btn success-text" onClick={()=>restoreAsset(a)}>Khôi phục</button><button className="text-btn danger" title="Chỉ Admin sau khi có đăng nhập và xác thực máy chủ" disabled><Trash2 size={14}/> Xóa vĩnh viễn</button></>:<><button className="text-btn" onClick={()=>{setEditingAsset({...a,images:a.images??[]});setModal('asset')}}>Sửa</button><details className="asset-row-menu"><summary>Thao tác</summary><div><button onClick={()=>changeAssetStatus(a,'Đang hoạt động')}>Đánh dấu đang hoạt động</button><button onClick={()=>changeAssetStatus(a,'Đang sửa chữa')}>Đang sửa chữa / hỏng</button><button onClick={()=>changeAssetStatus(a,'Ngừng sử dụng')}>Ngừng sử dụng</button><button onClick={()=>archiveAsset(a)}>Đưa vào Lưu kho</button><button onClick={()=>changeAssetStatus(a,'Thanh lý')}>Thanh lý / bán ve chai</button><button className="danger" disabled title="Chờ đăng nhập Admin và xác thực máy chủ">Xóa vĩnh viễn (Admin)</button></div></details></>}</td></tr>)}
           </tbody></table>{(showArchived?filteredArchivedAssets:filteredAssets).length===0&&<Empty text={showArchived?'Chưa có thiết bị nào trong Lưu kho.':'Chưa có thiết bị phù hợp.'}/>}</div>
           {showArchived&&<p className="archive-security-note">Xóa vĩnh viễn sẽ chỉ mở khi BAOTRI có đăng nhập và xác thực Admin ở máy chủ. Bản thử nghiệm lưu cục bộ chưa có bảo mật tài khoản thật.</p>}
         </section>}
@@ -341,10 +351,11 @@ export default function App() {
       {([['logs','Nhật ký',ClipboardList],['reports','Báo cáo',BarChart3],['settings','Cài đặt',Settings]] as const).map(([key,label,Icon])=><button key={key} onClick={()=>{setPage(key);setSearch('');setMobileMore(false)}}><Icon size={18}/>{label}<ChevronRight size={16}/></button>)}
     </div></div>}
     {notice&&<div className="toast"><Check size={17}/>{notice}</div>}
-    {detailAsset&&<AssetDetailModal value={detailAsset} close={()=>setDetailAsset(null)} edit={()=>{setEditingAsset({...detailAsset,images:detailAsset.images??[]});setDetailAsset(null);setModal('asset')}}/>}
+    {detailAsset&&<AssetDetailModal value={detailAsset} logs={logs.filter(l=>l.assetId===detailAsset.id)} close={()=>setDetailAsset(null)} edit={()=>{setEditingAsset({...detailAsset,images:detailAsset.images??[]});setDetailAsset(null);setModal('asset')}} addLog={()=>{setEditingLog({id:uid(),assetId:detailAsset.id,date:today(),kind:'Sửa chữa',description:'',parts:'',readings:'',performedBy:''});setModal('log')}}/>}
     {modal==='asset'&&editingAsset&&<AssetModal value={editingAsset} close={()=>{setModal(null);setEditingAsset(null)}} save={saveAsset}/>}
     {modal==='item'&&editingItem&&<ItemModal value={editingItem} close={()=>{setModal(null);setEditingItem(null)}} save={saveItem}/>}
     {modal==='task'&&editingTask&&<TaskModal value={editingTask} assets={assets} close={()=>{setModal(null);setEditingTask(null)}} save={saveTask}/>}
+    {modal==='log'&&editingLog&&<LogEntryModal value={editingLog} close={()=>{setModal(null);setEditingLog(null)}} save={saveLog}/>}
     {modal==='scan'&&<ScanModal close={()=>setModal(null)} assets={assets} openAsset={(a: Asset)=>{setEditingAsset(a);setModal('asset')}}/>}
   </div>
 }
@@ -379,18 +390,49 @@ function ReportCard({icon,title,desc,action}:any){return <div className="panel r
 
 function Modal({title,children,close}:any){return <div className="modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&close()}><div className="modal"><div className="modal-head"><h2>{title}</h2><button className="icon-btn" onClick={close}><X/></button></div>{children}</div></div>}
 function Field({label,children}:any){return <label className="field"><span>{label}</span>{children}</label>}
-function AssetDetailModal({value,close,edit}:any){
+function AssetDetailModal({value,logs,close,edit,addLog}:any){
   const [showPhotos,setShowPhotos]=useState(false)
   const [activePhoto,setActivePhoto]=useState<string|null>(null)
+  const [printMode,setPrintMode]=useState<null|'sticker'|'detail'|'history'>(null)
   const photos: string[] = value.images ?? []
-  const rows = [['Mã thiết bị',value.code],['Tên thiết bị',value.name],['Nhóm',value.category],['Vị trí',value.location],['Hãng',value.brand],['Model',value.model],['Serial',value.serial],['Ngày đưa vào sử dụng',dateText(value.commissionedAt)],['Công suất / thông số',value.power],['Chu kỳ bảo trì',value.cycle],['Trạng thái',value.status],['Ghi chú',value.notes]]
-  return <Modal title="Chi tiết thiết bị" close={close}>
+  const rows = [['Mã định danh',value.code],['Tên thiết bị',value.name],['Nhóm',value.category],['Vị trí',value.location],['Hãng',value.brand],['Model',value.model],['Serial',value.serial],['Ngày đưa vào sử dụng',dateText(value.commissionedAt)],['Công suất / thông số',value.power],['Chu kỳ bảo trì',value.cycle],['Tình trạng',value.status],['Ghi chú',value.notes]]
+  const print = (mode:'sticker'|'detail'|'history') => { setPrintMode(mode); window.setTimeout(()=>window.print(),180) }
+  return <Modal title="Chi tiết thiết bị" close={()=>{setPrintMode(null);close()}}>
+    <div className="asset-qr-panel"><div><small>MÃ QR THIẾT BỊ</small><b>{value.code}</b><span>Quét mã để tra cứu hồ sơ thiết bị</span></div><QRCodeSVG value={value.code} size={116} level="M" includeMargin/></div>
     <div className="asset-detail-grid">{rows.map(([label,val])=><div className="asset-detail-field" key={label}><small>{label}</small><b>{val||'—'}</b></div>)}</div>
-    <div className="asset-photo-actions"><button type="button" className="soft-btn" onClick={()=>setShowPhotos(v=>!v)}><ImageIcon size={16}/> {showPhotos?'Ẩn ảnh':'Xem ảnh ('+photos.length+')'}</button><button type="button" className="primary-btn" onClick={edit}>Sửa hồ sơ</button></div>
+    <div className="asset-photo-actions">
+      <button type="button" className="soft-btn" onClick={()=>setShowPhotos(v=>!v)}><ImageIcon size={16}/> {showPhotos?'Ẩn ảnh':'Xem ảnh ('+photos.length+')'}</button>
+      <button type="button" className="soft-btn" onClick={()=>print('sticker')}><QrCode size={16}/> In tem QR</button>
+      <button type="button" className="soft-btn" onClick={()=>print('detail')}><Download size={16}/> In chi tiết</button>
+      <button type="button" className="primary-btn" onClick={addLog}><Wrench size={16}/> Ghi nhận bảo trì / sửa chữa</button>
+      <button type="button" className="primary-btn" onClick={edit}>Sửa hồ sơ</button>
+    </div>
+    <section className="asset-maintenance-history"><div className="panel-head"><div><h3>Lịch sử bảo trì – sửa chữa</h3><p>{logs.length} lần ghi nhận của thiết bị</p></div><button type="button" className="soft-btn" disabled={!logs.length} onClick={()=>print('history')}><Download size={15}/> In quá trình</button></div>
+      {logs.length?<div className="maintenance-history-list">{logs.slice().sort((a:any,b:any)=>b.date.localeCompare(a.date)).map((entry:any)=><article key={entry.id}><time>{dateText(entry.date)}</time><div><b>{entry.kind}</b><p>{entry.description||'Không có mô tả'}</p>{entry.parts&&<small>Vật tư/phụ tùng: {entry.parts}</small>}{entry.readings&&<small>Thông số: {entry.readings}</small>}<small>Người thực hiện: {entry.performedBy||'—'}</small></div></article>)}</div>:<p className="muted">Chưa có lịch sử. Hãy chọn “Ghi nhận bảo trì / sửa chữa” sau khi thực hiện công việc.</p>}
+    </section>
     {showPhotos&&<div className="asset-photo-grid">{photos.length?photos.map((src:string,i:number)=><button type="button" className="asset-photo-thumb" key={i} onClick={()=>setActivePhoto(src)}><img src={src} alt={'Ảnh '+(i+1)+' của '+value.name}/><span>Ảnh {i+1}</span></button>):<p className="muted">Thiết bị này chưa có ảnh. Chọn “Sửa hồ sơ” để bổ sung ảnh.</p>}</div>}
     {activePhoto&&<div className="photo-lightbox" onClick={()=>setActivePhoto(null)}><button type="button" className="icon-btn" onClick={()=>setActivePhoto(null)}><X/></button><img src={activePhoto} alt={'Ảnh thiết bị '+value.name}/></div>}
+    {printMode&&<div className={'asset-print-sheet print-'+printMode}>
+      {printMode==='sticker'&&<div className="asset-sticker"><QRCodeSVG value={value.code} size={100} level="M"/><div><strong>{value.code}</strong><b>{value.name}</b><small>{value.location}</small></div></div>}
+      {printMode==='detail'&&<div className="asset-print-report"><h1>HỒ SƠ THIẾT BỊ</h1><h2>{value.name}</h2><div className="asset-print-qr"><QRCodeSVG value={value.code} size={130}/><b>{value.code}</b></div><table><tbody>{rows.map(([label,val])=><tr key={label}><th>{label}</th><td>{val||'—'}</td></tr>)}</tbody></table></div>}
+      {printMode==='history'&&<div className="asset-print-report"><h1>LỊCH SỬ BẢO TRÌ – SỬA CHỮA</h1><h2>{value.name}</h2><b>Mã thiết bị: {value.code}</b><table><thead><tr><th>Ngày</th><th>Loại</th><th>Nội dung</th><th>Phụ tùng</th><th>Thông số</th><th>Người thực hiện</th></tr></thead><tbody>{logs.map((entry:any)=><tr key={entry.id}><td>{dateText(entry.date)}</td><td>{entry.kind}</td><td>{entry.description}</td><td>{entry.parts||'—'}</td><td>{entry.readings||'—'}</td><td>{entry.performedBy||'—'}</td></tr>)}</tbody></table></div>}
+    </div>}
   </Modal>
 }
+function LogEntryModal({value,close,save}:any){
+  const [v,setV]=useState<Log>(value)
+  const set=(key:keyof Log,val:string)=>setV(p=>({...p,[key]:val}))
+  return <Modal title="Ghi nhận bảo trì / sửa chữa" close={close}><form className="form-grid" onSubmit={e=>{e.preventDefault();if(!v.description.trim())return alert('Nhập nội dung công việc');save(v)}}>
+    <Field label="Ngày thực hiện"><input type="date" value={v.date} onChange={e=>set('date',e.target.value)}/></Field>
+    <Field label="Loại công việc"><select value={v.kind} onChange={e=>set('kind',e.target.value)}>{['Bảo trì định kỳ','Sửa chữa','Thay thế phụ tùng','Kiểm tra','Hiệu chuẩn','Khác'].map(x=><option key={x}>{x}</option>)}</select></Field>
+    <Field label="Nội dung thực hiện *"><textarea required value={v.description} onChange={e=>set('description',e.target.value)}/></Field>
+    <Field label="Vật tư / phụ tùng thay thế"><textarea value={v.parts} onChange={e=>set('parts',e.target.value)}/></Field>
+    <Field label="Thông số / kết quả sau thực hiện"><textarea value={v.readings} onChange={e=>set('readings',e.target.value)}/></Field>
+    <Field label="Người thực hiện"><input value={v.performedBy} onChange={e=>set('performedBy',e.target.value)}/></Field>
+    <div className="form-actions"><button type="button" className="soft-btn" onClick={close}>Hủy</button><button type="submit" className="primary-btn">Lưu lịch sử</button></div>
+  </form></Modal>
+}
+
 function AssetModal({value,close,save}:any){
   const [v,setV]=useState<Asset>(value)
   const set=(k:keyof Asset,x:any)=>setV(p=>({...p,[k]:x}))
