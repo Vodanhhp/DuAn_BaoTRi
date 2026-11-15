@@ -207,3 +207,10 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 ### Điều chỉnh lại xuất Excel theo đúng phạm vi yêu cầu (15/11/2026)
 - Khôi phục nguyên cách xuất Excel-compatible `.xls` (HTML workbook) đã dùng trước đó, giữ nguyên định dạng Tahoma, đường viền, độ rộng cột, A4 ngang, tự chia trang và lặp hàng tiêu đề.
 - Chỉ thay nội dung tiêu đề thành **DANH SÁCH THIẾT BỊ**. Không thay sang `.xlsx` và không thay đổi cấu trúc/dàn trang khác.
+
+
+### Tách riêng xuất Excel và in danh sách thiết bị (15/11/2026)
+- **Xuất Excel**: giữ nguyên luồng xuất `.xls` dạng dữ liệu bảng để người dùng tiếp tục xử lý trong Excel; không thêm tiêu đề trình bày hoặc dàn trang in.
+- **In danh sách**: bổ sung nút riêng cạnh nút Xuất Excel. Bản in lấy theo danh sách thiết bị đang lọc, có tiêu đề **DANH SÁCH THIẾT BỊ**, Tahoma, tiêu đề 12 pt đậm, bảng kẻ viền rõ ràng, A4 ngang, lặp hàng tiêu đề khi sang trang, tránh ngắt một dòng thiết bị giữa hai trang và đánh số trang dạng Trang X / Y.
+- Bản in mở cửa sổ riêng và gọi hộp thoại in của trình duyệt; không sửa dữ liệu và không tác động đến file Excel xuất ra.
+- Đã cập nhật `src/App.tsx` trên GitHub. Chưa chạy build và chưa kiểm tra bản in thực tế; cần Pull origin, chạy build, sau đó thử in/xem trước khi in trên Chrome.
