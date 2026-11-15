@@ -35,20 +35,25 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Không triển khai offline-first hoặc cơ chế đồng bộ offline phức tạp trong giai đoạn hiện tại.
 - Khi mất mạng: người dùng có thể chụp ảnh bằng camera và giữ ảnh trong thư viện điện thoại; khi có mạng thì mở BAOTRI để tải ảnh lên và cập nhật thông số.
 - Không cam kết ứng dụng có thể ghi trực tiếp dữ liệu nghiệp vụ khi offline.
-- Kiến trúc mục tiêu khi triển khai dữ liệu tập trung: PostgreSQL cho dữ liệu nghiệp vụ và dịch vụ lưu trữ tệp cho ảnh/PDF/tài liệu.
-- Supabase là một phương án có thể xem xét vì có gói miễn phí, nhưng **chưa chốt nhà cung cấp và chưa tạo dự án database**.
-- Website/frontend có thể lưu trữ ở nơi khác với database; chưa cần mua hosting ngay.
+- Kiến trúc mục tiêu: giao diện web tĩnh được build từ React/Vite; dữ liệu nghiệp vụ lưu trong database trực tuyến; ảnh/PDF/tài liệu dùng dịch vụ lưu trữ tệp phù hợp.
+- **Ưu tiên thử GitHub Pages để lưu trữ giao diện BAOTRI miễn phí** sau khi hoàn thiện và build được bản production. GitHub Pages chỉ phục vụ giao diện tĩnh, không thay thế backend hoặc database.
+- **Supabase là phương án ưu tiên để đánh giá cho database PostgreSQL, đăng nhập và lưu trữ tệp**, nhưng chưa tạo dự án và chưa chốt chính thức cho đến khi kiểm tra giới hạn miễn phí, bảo mật, backup và nhu cầu thực tế.
+- Tạm thời **không dùng 123HOST cho BAOTRI** để tránh phải tự cấu hình PHP/MySQL/API khi chưa cần; không mua hosting ở giai đoạn hiện tại.
+- Khi triển khai, người dùng truy cập BAOTRI bằng trình duyệt/PWA trên điện thoại hoặc máy tính; không phải bật máy tính cá nhân hay chạy PowerShell. PowerShell + Vite hiện chỉ dùng trong quá trình phát triển local.
 - PWA có thể giữ để cài ứng dụng trên điện thoại, nhưng PWA không đồng nghĩa với offline-first.
 
 ### 2.4 Chi phí
-- Ưu tiên gói miễn phí cho giai đoạn cá nhân.
-- Trước khi chọn dịch vụ, cần kiểm tra giới hạn miễn phí hiện hành, giới hạn dung lượng, băng thông, backup, thời gian ngừng do không hoạt động và điều kiện nâng cấp.
+- Ưu tiên gói miễn phí cho giai đoạn cá nhân; chưa mua hosting hoặc dịch vụ trả phí.
+- Hướng đi dự kiến: GitHub để quản lý mã nguồn và GitHub Pages để host giao diện; Supabase để đánh giá database/backend. Đây là định hướng, chưa phải cấu hình đã triển khai.
+- Trước khi chọn dịch vụ, cần kiểm tra giới hạn miễn phí hiện hành, dung lượng, băng thông, backup, thời gian ngừng do không hoạt động, bảo mật và điều kiện nâng cấp.
 - Khi có khách hàng hoặc nhu cầu thương mại, đánh giá lại hosting, database, lưu trữ ảnh, bảo mật, backup, phân quyền và chi phí vận hành.
 
 ## 3. Tiến độ đã xác nhận
 
 - [x] Đã tải mã nguồn dự án `baotri-pwa-starter/baotri-pwa` về máy Windows.
-- [x] Đã chạy được ứng dụng bằng Vite tại địa chỉ local `http://localhost:5173/`.
+- [x] Đã chạy được ứng dụng bằng Vite tại địa chỉ local `http://localhost:5173/` từ bản clone mới trong `E:\\DuAnBaoTri\\DuAn_BaoTRi`.
+- [x] Đã cài dependencies bằng `npm.cmd install` và khởi động Vite thành công trên máy Windows.
+- [x] Người dùng đã xem giao diện ở chế độ mô phỏng điện thoại bằng Chrome DevTools và đánh giá hiển thị ổn; chưa kiểm thử hoàn chỉnh trên điện thoại thật.
 - [x] Đã mở và xem giao diện Kho vật tư.
 - [x] Đã xem ảnh giao diện tổng quan do người dùng cung cấp qua GitHub.
 - [x] Đã thống nhất giữ phong cách hiện tại và cải tiến từng phần.
@@ -61,6 +66,8 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - [ ] Chưa kiểm thử giao diện trên điện thoại thực tế.
 - [ ] Chưa triển khai đăng nhập thật.
 - [ ] Chưa kết nối database tập trung.
+- [ ] Chưa triển khai GitHub Pages; hiện mới là phương án ưu tiên cho giao diện.
+- [ ] Chưa tạo dự án Supabase; hiện mới là phương án ưu tiên để đánh giá cho database/backend.
 - [ ] Chưa triển khai lưu trữ ảnh/tài liệu lên máy chủ.
 - [ ] Chưa kiểm thử giao diện trên điện thoại thực tế.
 
@@ -104,15 +111,19 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Xác định chức năng nào hoạt động thật, chức năng nào mới là giao diện mẫu.
 - Chỉ sửa từng phân hệ sau khi thống nhất.
 
-### Bước 4 – Dữ liệu tập trung
-- Chọn dịch vụ có gói miễn phí phù hợp (có thể đánh giá Supabase).
-- Thiết kế schema và backup trước khi đưa dữ liệu sử dụng thật.
-- Kết nối máy tính và điện thoại vào cùng database.
-- Thiết kế lưu ảnh/tài liệu tập trung.
+### Bước 4 – Đưa ứng dụng lên Internet và dữ liệu tập trung
+- Build giao diện production và thử triển khai lên GitHub Pages; chưa cần mua hosting.
+- Đánh giá Supabase cho PostgreSQL, đăng nhập, API và lưu trữ tệp; kiểm tra giới hạn gói miễn phí trước khi chốt.
+- Thiết kế schema, phân quyền/cách ly dữ liệu và backup trước khi đưa dữ liệu sử dụng thật.
+- Kết nối máy tính và điện thoại vào cùng database để dùng chung dữ liệu.
+- Thiết kế lưu ảnh/tài liệu tập trung; không đưa khóa bí mật/service-role key vào frontend hoặc repository.
+- Không triển khai trên 123HOST ở giai đoạn hiện tại.
 
-### Bước 5 – Mở rộng sau này
+### Bước 5 – Làm sạch dữ liệu và mở rộng sau này
+- Trước khi sử dụng thật: sao lưu nếu cần, xóa toàn bộ dữ liệu thử nghiệm (thiết bị, vật tư, phiếu nhập/xuất, công việc, nhật ký và dữ liệu demo khác), kiểm tra dữ liệu nghiệp vụ trở về 0; giữ nguyên mã nguồn, cấu trúc database và cấu hình nền.
+- Tạo đơn vị/tài khoản sử dụng thật và nhập dữ liệu thật sau khi xác nhận reset thành công.
 - Đăng nhập thật, quản lý người dùng, vai trò và phân quyền.
-- Multi-tenant và cách ly dữ liệu doanh nghiệp.
+- Multi-tenant và cách ly dữ liệu doanh nghiệp ở backend/database.
 - Đánh giá gói hosting/database trả phí khi có khách hàng hoặc vượt giới hạn miễn phí.
 
 ## 6. Quy tắc làm việc và cập nhật tiến độ
