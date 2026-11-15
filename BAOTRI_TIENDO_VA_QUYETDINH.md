@@ -214,3 +214,11 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - **In danh sách**: bổ sung nút riêng cạnh nút Xuất Excel. Bản in lấy theo danh sách thiết bị đang lọc, có tiêu đề **DANH SÁCH THIẾT BỊ**, Tahoma, tiêu đề 12 pt đậm, bảng kẻ viền rõ ràng, A4 ngang, lặp hàng tiêu đề khi sang trang, tránh ngắt một dòng thiết bị giữa hai trang và đánh số trang dạng Trang X / Y.
 - Bản in mở cửa sổ riêng và gọi hộp thoại in của trình duyệt; không sửa dữ liệu và không tác động đến file Excel xuất ra.
 - Đã cập nhật `src/App.tsx` trên GitHub. Chưa chạy build và chưa kiểm tra bản in thực tế; cần Pull origin, chạy build, sau đó thử in/xem trước khi in trên Chrome.
+
+
+### Chốt định dạng xuất Excel chuẩn (15/11/2026)
+- Chức năng **Xuất Excel** dùng tệp `.xlsx` chuẩn Open XML qua SheetJS, không dùng HTML đổi đuôi `.xls`.
+- Xuất dữ liệu thuần theo danh sách đang lọc; mỗi thiết bị một dòng; các trường Hãng và Model tách thành cột riêng để thuận tiện lọc/sắp xếp/xử lý.
+- Có hàng tiêu đề, độ rộng cột hợp lý, bộ lọc Excel và cố định hàng tiêu đề khi cuộn. Không chèn tiêu đề báo cáo, tổng số hay dàn trang in vào dữ liệu.
+- Nút **In danh sách** là chức năng độc lập, tạo bản in trình bày riêng với tiêu đề **DANH SÁCH THIẾT BỊ**, bảng có viền, A4 ngang và đánh số trang.
+- Đã kiểm tra nội dung hiện tại của `src/App.tsx` trên GitHub: hai chức năng được tách riêng như trên. Chưa chạy build hoặc kiểm tra thao tác thực tế trên máy người dùng.
