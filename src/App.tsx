@@ -421,7 +421,7 @@ function AssetDetailModal({value,logs,close,edit,addLog}:any){
 }
 function LogEntryModal({value,close,save}:any){
   const [v,setV]=useState<Log>(value)
-  const set=(key:keyof Log,val:string)=>setV(p=>({...p,[key]:val}))
+  const set = <K extends keyof Log,>(key: K, val: Log[K]) => setV(p => ({ ...p, [key]: val }))
   return <Modal title="Ghi nhận bảo trì / sửa chữa" close={close}><form className="form-grid" onSubmit={e=>{e.preventDefault();if(!v.description.trim())return alert('Nhập nội dung công việc');save(v)}}>
     <Field label="Ngày thực hiện"><input type="date" value={v.date} onChange={e=>set('date',e.target.value)}/></Field>
     <Field label="Loại công việc"><select value={v.kind} onChange={e=>set('kind',e.target.value)}>{['Bảo trì định kỳ','Sửa chữa','Thay thế phụ tùng','Kiểm tra','Hiệu chuẩn','Khác'].map(x=><option key={x}>{x}</option>)}</select></Field>
