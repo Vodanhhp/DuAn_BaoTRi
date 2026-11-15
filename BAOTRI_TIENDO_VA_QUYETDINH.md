@@ -356,3 +356,11 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Đã chỉnh `src/style.css`: tiêu đề biểu mẫu căn giữa, in đậm; tên thiết bị giảm cỡ chữ từ 23 pt xuống 18 pt để phân cấp rõ ràng hơn.
 - Giữ nguyên bố cục logo bên trái, QR bên phải và bảng thông tin thiết bị bên dưới.
 - Đã cập nhật code trên GitHub. Chưa chạy build và chưa kiểm tra bản in thực tế; cần Pull origin, chạy `npm.cmd run build`, sau đó chọn **In chi tiết** để đánh giá bố cục trên giấy.
+
+
+### Sửa hành vi tự đóng menu Lọc & sắp xếp và Thao tác
+- Người dùng phản hồi hai menu **Lọc & sắp xếp** và **Thao tác** chưa tự đóng sau khi chọn một dòng; phải bấm thêm lần nữa để ẩn menu.
+- Đã sửa `src/App.tsx`: khi chọn một giá trị lọc/sắp xếp, menu Lọc & sắp xếp tự đóng ngay; nút Đặt lại bộ lọc cũng đóng menu sau khi reset.
+- Với menu **Thao tác** từng thiết bị, khi chọn một hành động (đổi trạng thái, đưa vào Lưu kho hoặc thanh lý), menu tự đóng ngay sau thao tác.
+- Không thay đổi logic lọc, sắp xếp hoặc xử lý trạng thái thiết bị; chỉ sửa hành vi đóng menu.
+- Đã cập nhật code trên GitHub; chưa chạy build trên máy người dùng. Cần Pull origin và chạy `npm.cmd run build` để xác nhận.
