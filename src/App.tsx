@@ -13,6 +13,7 @@ import { db, uid, now, queueChange, type Asset, type InventoryItem, type Task, t
 type Page = 'dashboard' | 'assets' | 'inventory' | 'tasks' | 'logs' | 'reports' | 'settings'
 const xmlEntities: Record<string, string> = {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}
 const xmlText = (value: string) => value.replace(/[&<>"']/g, ch => xmlEntities[ch] ?? ch)
+const htmlEscape = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch] ?? ch))
 const makeDemoAssetImage = (category: string, code: string, view: number) => {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="960" height="640" viewBox="0 0 960 640"><defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f5f8f7"/><stop offset="1" stop-color="#dce8e3"/></linearGradient><linearGradient id="metal" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#edf3f2"/><stop offset="1" stop-color="#879b98"/></linearGradient></defs><rect width="960" height="640" fill="url(#bg)"/><path d="M0 510H960" stroke="#c5d4ce" stroke-width="3"/><g transform="translate(${view===1?120:165},105)"><ellipse cx="360" cy="405" rx="300" ry="35" fill="#6e8980" opacity=".18"/><rect x="105" y="180" width="510" height="210" rx="28" fill="url(#metal)" stroke="#536d67" stroke-width="9"/><rect x="145" y="215" width="220" height="140" rx="16" fill="${view===1?'#287d70':'#4c789d'}"/><rect x="390" y="215" width="180" height="140" rx="12" fill="#d4dfdc" stroke="#536d67" stroke-width="6"/><circle cx="480" cy="285" r="43" fill="#f8fbfa" stroke="#536d67" stroke-width="8"/><path d="M480 250v70M445 285h70" stroke="#287d70" stroke-width="8"/><rect x="170" y="390" width="45" height="45" rx="7" fill="#344f49"/><rect x="505" y="390" width="45" height="45" rx="7" fill="#344f49"/><path d="M130 180V145h465v35" fill="none" stroke="#536d67" stroke-width="10"/><circle cx="190" cy="245" r="12" fill="#f4c66c"/><circle cx="230" cy="245" r="12" fill="#e8796d"/></g><rect x="42" y="38" width="876" height="564" rx="22" fill="none" stroke="#ffffff" stroke-width="5" opacity=".8"/><text x="58" y="78" font-family="Arial,sans-serif" font-size="25" font-weight="700" fill="#34534b">BAOTRI · ẢNH MINH HỌA THIẾT BỊ</text><text x="58" y="570" font-family="Arial,sans-serif" font-size="22" fill="#526d65">${xmlText(category)} · ${xmlText(code)} · Góc nhìn ${view}</text></svg>`
   return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg)
@@ -45,7 +46,6 @@ export default function App() {
   const [assetStatusFilter, setAssetStatusFilter] = useState('')
   const [assetSort, setAssetSort] = useState('code-asc')
   const [showArchived, setShowArchived] = useState(false)
-  const [printAssetList, setPrintAssetList] = useState(false)
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null)
   const [editingTask, setEditingTask] = useState<Task | null>(null)
   const [editingLog, setEditingLog] = useState<Log | null>(null)
@@ -285,33 +285,45 @@ export default function App() {
     XLSX.writeFile(wb, filename)
   }
   const exportAssets = () => {
-    const rows = filteredAssets.map((a, index) => [
-      index + 1,
-      a.code,
-      [a.name, a.brand ? `Hãng: ${a.brand}` : '', a.model ? `Model: ${a.model}` : ''].filter(Boolean).join('\n'),
-      a.category,
-      a.serial || '',
-      a.location || '',
-      a.commissionedAt || '',
-      a.power || '',
-      a.status,
-      a.notes || ''
-    ])
-    const ws = XLSX.utils.aoa_to_sheet([
-      ['DANH SÁCH CÁC THIẾT BỊ HIỆN NAY'],
-      ['STT','Mã định danh','Tên thiết bị','Nhóm thiết bị','Serial','Vị trí lắp đặt','Ngày đưa vào sử dụng','Công suất / thông số','Tình trạng','Ghi chú'],
-      ...rows
-    ])
-    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 9 } }]
-    ws['!cols'] = [
-      { wch: 6 }, { wch: 25 }, { wch: 38 }, { wch: 22 }, { wch: 18 },
-      { wch: 24 }, { wch: 19 }, { wch: 21 }, { wch: 18 }, { wch: 32 }
-    ]
-    ws['!rows'] = [{ hpt: 30 }, { hpt: 26 }, ...rows.map(() => ({ hpt: 48 }))]
-    ws['!autofilter'] = { ref: `A2:J${rows.length + 2}` }
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Danh muc thiet bi')
-    XLSX.writeFile(wb, 'danh-muc-thiet-bi.xlsx')
+    const headers = ['STT','Mã định danh','Tên thiết bị','Nhóm thiết bị','Serial','Vị trí lắp đặt','Ngày đưa vào sử dụng','Công suất / thông số','Tình trạng','Ghi chú']
+    const bodyRows = filteredAssets.map((asset, index) => `<tr>
+      <td class="center">${index + 1}</td>
+      <td>${htmlEscape(asset.code)}</td>
+      <td><strong>${htmlEscape(asset.name)}</strong>${asset.brand ? `<br/><span>Hãng: ${htmlEscape(asset.brand)}</span>` : ''}${asset.model ? `<br/><span>Model: ${htmlEscape(asset.model)}</span>` : ''}</td>
+      <td>${htmlEscape(asset.category)}</td><td>${htmlEscape(asset.serial || '—')}</td>
+      <td>${htmlEscape(asset.location || '—')}</td><td>${htmlEscape(dateText(asset.commissionedAt))}</td>
+      <td>${htmlEscape(asset.power || '—')}</td><td>${htmlEscape(asset.status)}</td><td>${htmlEscape(asset.notes || '—')}</td>
+    </tr>`).join('')
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
+      <style>
+        @page { size: A4 landscape; margin: 12mm 8mm 15mm; }
+        body, table { font-family: Tahoma, sans-serif; font-size: 11pt; color: #111; }
+        h1 { font-family: Tahoma, sans-serif; font-size: 12pt; font-weight: bold; text-align: center; margin: 0 0 12pt; }
+        table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+        thead { display: table-header-group; }
+        tr { page-break-inside: avoid; }
+        th, td { border: 1px solid #555; padding: 5pt 4pt; vertical-align: top; overflow-wrap: anywhere; }
+        th { font-size: 11pt; font-weight: bold; text-align: center; background: #e9eeeb; }
+        td { font-size: 11pt; }
+        td strong { font-weight: bold; }
+        td span { font-size: 10pt; }
+        .center { text-align: center; }
+        .total { text-align: right; font-weight: bold; margin-top: 10pt; }
+        @media screen { body { padding: 16px; } h1 { margin-bottom: 18px; } }
+      </style></head><body>
+      <h1>DANH SÁCH CÁC THIẾT BỊ HIỆN NAY</h1>
+      <table><colgroup><col style="width:4%"/><col style="width:12%"/><col style="width:18%"/><col style="width:10%"/><col style="width:9%"/><col style="width:12%"/><col style="width:10%"/><col style="width:9%"/><col style="width:8%"/><col style="width:8%"/></colgroup>
+      <thead><tr>${headers.map(header => `<th>${htmlEscape(header)}</th>`).join('')}</tr></thead>
+      <tbody>${bodyRows}</tbody></table>
+      <p class="total">Tổng số: ${filteredAssets.length} thiết bị</p>
+      </body></html>`
+    const blob = new Blob(['\\ufeff', html], { type: 'application/vnd.ms-excel;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'danh-muc-thiet-bi.xls'
+    link.click()
+    URL.revokeObjectURL(url)
   }
   const exportInventory = () => exportRows(inventory.map(i => ({ 'Mã vật tư':i.code,'Tên vật tư':i.name,'Nhóm':i.group,'ĐVT':i.unit,'Tồn':i.quantity,'Tồn tối thiểu':i.minQuantity,'Vị trí':i.location,'Nhà cung cấp':i.supplier,'Đơn giá':i.unitPrice })), 'ton-kho-vat-tu.xlsx')
   const exportTasks = () => exportRows(tasks.map(t => ({ 'Thiết bị':assets.find(a=>a.id===t.assetId)?.name ?? '', 'Công việc':t.title,'Ngày đến hạn':t.dueDate,'Chu kỳ':t.frequency,'Trạng thái':t.status,'Checklist':t.checklist,'Thông số':t.readings,'Ghi chú':t.notes })), 'ke-hoach-bao-tri.xlsx')
@@ -373,7 +385,7 @@ export default function App() {
               <label>Sắp xếp<select value={assetSort} onChange={e=>{setAssetSort(e.target.value);e.currentTarget.closest('details')?.removeAttribute('open')}}><option value="code-asc">Mã thiết bị: A → Z</option><option value="code-desc">Mã thiết bị: Z → A</option><option value="name-asc">Tên thiết bị: A → Z</option><option value="date-newest">Ngày sử dụng: mới nhất</option><option value="date-oldest">Ngày sử dụng: cũ nhất</option></select></label>
               <button type="button" className="text-btn" onClick={e=>{setAssetCategoryFilter('');setAssetLocationFilter('');setAssetStatusFilter('');setAssetSort('code-asc');e.currentTarget.closest('details')?.removeAttribute('open')}}>Đặt lại bộ lọc</button>
             </div></details>}
-            {!showArchived&&<><button className="soft-btn" onClick={()=>setPrintAssetList(true)}><FileSpreadsheet size={16}/> In danh sách</button><button className="soft-btn" onClick={exportAssets}><Download size={16}/> Xuất Excel</button></>}
+            {!showArchived&&<button className="soft-btn" onClick={exportAssets}><Download size={16}/> Xuất Excel</button>}
           </div></div>
           <div className="asset-result-count">{showArchived?'Đang lưu kho: '+filteredArchivedAssets.length+'/'+archivedAssets.length+' thiết bị':'Hiển thị '+filteredAssets.length+'/'+activeAssets.length+' thiết bị đang hoạt động'}</div>
           <div className="table-wrap"><table><thead><tr><th>Mã / Tên thiết bị</th><th>Nhóm</th><th>Vị trí</th><th>Ngày sử dụng</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
@@ -413,39 +425,12 @@ export default function App() {
       {([['logs','Nhật ký',ClipboardList],['reports','Báo cáo',BarChart3],['settings','Cài đặt',Settings]] as const).map(([key,label,Icon])=><button key={key} onClick={()=>{setPage(key);setSearch('');setMobileMore(false)}}><Icon size={18}/>{label}<ChevronRight size={16}/></button>)}
     </div></div>}
     {notice&&<div className="toast"><Check size={17}/>{notice}</div>}
-    {printAssetList&&<AssetListPrint assets={filteredAssets} close={()=>setPrintAssetList(false)}/>}
     {detailAsset&&<AssetDetailModal value={detailAsset} logs={logs.filter(l=>l.assetId===detailAsset.id)} close={()=>setDetailAsset(null)} edit={()=>{setEditingAsset({...detailAsset,images:detailAsset.images??[]});setDetailAsset(null);setModal('asset')}} addLog={()=>{setEditingLog({id:uid(),assetId:detailAsset.id,date:today(),kind:'Sửa chữa',description:'',parts:'',readings:'',result:'',performedBy:''});setModal('log')}}/>}
     {modal==='asset'&&editingAsset&&<AssetModal value={editingAsset} close={()=>{setModal(null);setEditingAsset(null)}} save={saveAsset}/>}
     {modal==='item'&&editingItem&&<ItemModal value={editingItem} close={()=>{setModal(null);setEditingItem(null)}} save={saveItem}/>}
     {modal==='task'&&editingTask&&<TaskModal value={editingTask} assets={assets} close={()=>{setModal(null);setEditingTask(null)}} save={saveTask}/>}
     {modal==='log'&&editingLog&&<LogEntryModal value={editingLog} close={()=>{setModal(null);setEditingLog(null)}} save={saveLog}/>}
     {modal==='scan'&&<ScanModal close={()=>setModal(null)} assets={assets} openAsset={(a: Asset)=>{setEditingAsset(a);setModal('asset')}}/>}
-  </div>
-}
-
-function AssetListPrint({assets,close}: {assets: Asset[]; close: () => void}) {
-  useEffect(() => {
-    const finish = () => close()
-    window.addEventListener('afterprint', finish)
-    const timer = window.setTimeout(() => window.print(), 250)
-    return () => {
-      window.clearTimeout(timer)
-      window.removeEventListener('afterprint', finish)
-    }
-  }, [close])
-  return <div className="asset-list-print-sheet">
-    <h1>DANH SÁCH CÁC THIẾT BỊ HIỆN NAY</h1>
-    <table>
-      <thead><tr><th>STT</th><th>Mã định danh</th><th>Tên thiết bị</th><th>Nhóm thiết bị</th><th>Serial</th><th>Vị trí lắp đặt</th><th>Ngày đưa vào sử dụng</th><th>Công suất / thông số</th><th>Tình trạng</th></tr></thead>
-      <tbody>{assets.map((a, index) => <tr key={a.id}>
-        <td className="asset-list-center">{index + 1}</td>
-        <td>{a.code}</td>
-        <td><strong>{a.name}</strong>{a.brand&&<small>Hãng: {a.brand}</small>}{a.model&&<small>Model: {a.model}</small>}</td>
-        <td>{a.category}</td><td>{a.serial||'—'}</td><td>{a.location||'—'}</td>
-        <td>{dateText(a.commissionedAt)}</td><td>{a.power||'—'}</td><td>{a.status}</td>
-      </tr>)}</tbody>
-    </table>
-    <p className="asset-list-print-total">Tổng số: {assets.length} thiết bị</p>
   </div>
 }
 
