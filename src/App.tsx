@@ -85,6 +85,13 @@ export default function App() {
         notes: 'DỮ LIỆU MẪU – chỉ dùng thử nghiệm, có thể xóa sau.'
       }))
       if (missing.length) await db.assets.bulkAdd(missing)
+      const originalDemo = existing.filter(a => ['COMP-001', 'KHO-001'].includes(a.code) && !a.notes)
+      if (originalDemo.length) {
+        await db.assets.bulkPut(originalDemo.map(a => ({
+          ...a, serial: a.serial || `DEMO-${a.code}`,
+          notes: 'DỮ LIỆU MẪU – chỉ dùng thử nghiệm, có thể xóa sau.'
+        })))
+      }
 
       const compressor = await db.assets.where('code').equals('COMP-001').first()
       const coldStore = await db.assets.where('code').equals('KHO-001').first()
