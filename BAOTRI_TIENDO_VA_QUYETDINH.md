@@ -164,7 +164,7 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Bảng Excel và bản in cần có cấu trúc cột rõ ràng, căn chỉnh nhất quán, độ rộng cột hợp lý, tiêu đề dễ phân biệt; tránh nội dung Hãng/Model bị tràn hoặc đẩy thành nhiều hàng.
 - Khi in phải có **đường kẻ hàng và cột rõ ràng** (viền ô/bảng thực sự), không chỉ dựa vào tùy chọn hiển thị gridlines mặc định của Excel vốn có thể không được in.
 - Thiết lập vùng in và lặp lại hàng tiêu đề nếu báo cáo kéo dài nhiều trang; căn trang phù hợp để bảng không bị cắt cột hoặc chữ quá nhỏ.
-- Đây là yêu cầu đã ghi nhận cho đợt sửa báo cáo tiếp theo; **chưa sửa code, chưa xuất thử file và chưa kiểm tra bản in**.
+- Đây là yêu cầu quy chuẩn cho báo cáo danh mục và các danh sách in trong ứng dụng.
 
 
 ### Đợt sửa – xuất Excel và in danh sách thiết bị
@@ -173,7 +173,8 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
   - Mỗi thiết bị là một dòng dữ liệu; cột Tên thiết bị chứa tên, Hãng và Model trên các dòng riêng trong cùng một ô.
   - Bỏ cột Chu kỳ; giữ các thông tin nhận diện/quản lý cần thiết như mã định danh, nhóm, Serial, vị trí, ngày đưa vào sử dụng, công suất/thông số, tình trạng và ghi chú.
   - Thêm tiêu đề **DANH SÁCH CÁC THIẾT BỊ HIỆN NAY** vào đầu worksheet; thiết lập độ rộng cột, chiều cao dòng, bộ lọc tiêu đề.
-  - Thêm nút **In danh sách** riêng, dùng cùng danh sách đã lọc.
-  - Bản in có tiêu đề giữa trang, đầu mục in đậm, bảng có viền ngang/dọc, lặp hàng tiêu đề khi sang trang, tránh ngắt một hàng thiết bị giữa hai trang và đánh số trang dạng “Trang X / Y” ở chân trang.
+  - **Không tạo nút “In danh sách” riêng.** Chỉ giữ nút **Xuất Excel**; đây là chức năng xuất danh mục để người dùng mở file Excel và in khi cần. Xóa nút in riêng và luồng in trực tiếp trong app để tránh trùng chức năng.
+  - File Excel xuất ra phải có tiêu đề “DANH SÁCH CÁC THIẾT BỊ HIỆN NAY”, đầu mục rõ ràng, chữ tiêu đề 12 pt đậm, nội dung 11 pt; bảng có đường viền hàng/cột, độ rộng cột và chiều cao hàng hợp lý, thiết lập khổ giấy/hướng giấy/vùng in, lặp hàng tiêu đề khi qua trang và đánh số trang “Trang X / Y” khi in.
+  - **Quy chuẩn font cho toàn bộ danh sách/bảng in của ứng dụng:** Tahoma; nội dung 11 pt; tiêu đề báo cáo 12 pt, in đậm. Áp dụng thống nhất cho các màn hình/báo cáo có chức năng in, không chỉ danh sách thiết bị.
 - Đã cập nhật `src/style.css` cho khổ A4 ngang và bố cục in.
 - Đã cập nhật code trên GitHub. **Chưa chạy build, chưa mở thử file Excel và chưa kiểm tra bản in thực tế**. Cần Pull origin, chạy `npm.cmd run build`, sau đó thử xuất Excel và In danh sách với dữ liệu nhiều thiết bị để kiểm tra phân trang.
