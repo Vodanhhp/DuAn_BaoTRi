@@ -88,6 +88,21 @@ V. DANH MỤC VIẾT TẮT THIẾT BỊ ĐỀ XUẤT
 
 Các mã dưới đây là danh mục khởi tạo đề xuất để dùng thống nhất. Doanh nghiệp có thể bổ sung hoặc điều chỉnh trước khi áp dụng dữ liệu thật. Không dùng cùng một ABC cho hai loại thiết bị khác nghĩa trong cùng một hệ thống.
 
+Các mã bổ sung cho nhóm thiết bị tổng quát hoặc nhóm được tách chi tiết trong BAOTRI:
+TDE     Thiết bị điện (nhóm tổng quát)
+TDI     Tủ điện (nhóm tổng quát)
+TDT     Tủ điện tổng
+TDP     Tủ điện phân phối
+TDC     Tủ điều khiển
+DDL     Thiết bị đo lường
+TBX     Thiết bị xưởng
+QTG     Quạt thông gió
+QLM     Quạt làm mát
+KN      Thiết bị/hệ thống khí nén (nhóm tổng quát)
+DHT     Hệ thống điều hòa – thông gió (nhóm tổng quát)
+NHA     Nồi hấp
+PCCC    Thiết bị phòng cháy chữa cháy (nhóm tổng quát)
+
 A. Quạt và thông gió
 QL      Quạt lạnh
 QCG     Quạt cắt gió
