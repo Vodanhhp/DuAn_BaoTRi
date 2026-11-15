@@ -222,3 +222,11 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Có hàng tiêu đề, độ rộng cột hợp lý, bộ lọc Excel và cố định hàng tiêu đề khi cuộn. Không chèn tiêu đề báo cáo, tổng số hay dàn trang in vào dữ liệu.
 - Nút **In danh sách** là chức năng độc lập, tạo bản in trình bày riêng với tiêu đề **DANH SÁCH THIẾT BỊ**, bảng có viền, A4 ngang và đánh số trang.
 - Đã kiểm tra nội dung hiện tại của `src/App.tsx` trên GitHub: hai chức năng được tách riêng như trên. Chưa chạy build hoặc kiểm tra thao tác thực tế trên máy người dùng.
+
+
+### Tạo bộ dữ liệu mẫu kho vật tư (15/11/2026)
+- Bổ sung 40 vật tư giả định, mã VT-001 đến VT-040, thuộc các nhóm: khí nén, dầu mỡ, vòng bi, phớt/gioăng, thiết bị điện, cảm biến, nguồn điện tử, đường ống, dây cáp, vật tư hàn cắt và tiêu hao.
+- Mỗi vật tư có đơn vị tính, tồn kho, tồn tối thiểu, vị trí lưu kho, nhà cung cấp giả định và đơn giá tham khảo để thử bộ lọc, cảnh báo tồn thấp, nhập/xuất và báo cáo.
+- Seed theo từng mã vật tư còn thiếu: không xóa, không ghi đè số lượng hoặc thông tin của vật tư đã có; tải lại ứng dụng không tạo trùng.
+- Đây là dữ liệu giả định phục vụ thử nghiệm, không phải giá mua hoặc tồn kho thực tế. Khi chuyển sang sử dụng thật cần reset/xóa toàn bộ dữ liệu demo.
+- Đã cập nhật seed trong `src/App.tsx` và ghi nhận trong file tiến độ. Chưa chạy build hoặc kiểm tra trực tiếp trên trình duyệt.
