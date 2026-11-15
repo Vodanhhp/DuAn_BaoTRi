@@ -278,3 +278,14 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Ví dụ minh họa: mã sau khi tiếp nhận có dạng `QL-HP02-015-03-05-26*`.
 - Đã cập nhật tài liệu quy ước mã định danh riêng. Chưa sửa code.
 - Chưa có quy tắc cho trường hợp thiết bị tiếp tục chuyển qua cơ sở khác hoặc quay lại cơ sở cũ; cần xác nhận trước khi triển khai các trường hợp đó.
+
+
+### Quy chuẩn mã định danh và danh mục viết tắt thiết bị
+- Tạo tài liệu riêng `QUY_UOC_MA_DINH_DANH_VA_VIET_TAT_THIET_BI.txt` trong thư mục gốc dự án, gồm cấu trúc mã, quy tắc đánh số, ký hiệu thiết bị chuyển cơ sở (*), danh mục viết tắt đề xuất và bảng mã vị trí BB demo.
+- Giữ tài liệu `QUY_UOC_MA_DINH_DANH_THIET_BI.md` đã có như ghi chú lịch sử quy ước người dùng cung cấp; file TXT mới là bản quy chuẩn tổng hợp dễ mở bằng Notepad/Word.
+- Cập nhật `src/App.tsx`: 30 thiết bị mẫu được chuẩn hóa theo cấu trúc `ABC-HP01-xxx-BB-MM-YY`; số thứ tự tăng theo từng ABC trong phạm vi công ty, có thể dài hơn 3 chữ số. Mã loại ABC của bộ demo được ánh xạ từ danh mục viết tắt trong tài liệu.
+- Bảng mã vị trí BB dùng cho demo là mã tạm 01–23; không coi đây là quy ước vị trí chính thức của doanh nghiệp.
+- Migration demo nhận diện bản ghi cũ qua serial `DEMO-...`, cập nhật mã trên chính hồ sơ hiện có, giữ nguyên ID, ảnh, trạng thái Lưu kho và các thông tin đã chỉnh sửa; không chủ động xóa hoặc tạo bản sao cho hồ sơ demo đã nhận diện.
+- Sửa tra cứu thiết bị demo dùng serial bằng Collection.filter, không truy vấn chỉ mục serial chưa được khai báo trong Dexie.
+- **Chưa xác nhận build sau thay đổi này.** Người dùng cần Pull origin, chạy `npm.cmd run build`, sau đó mở app để kiểm tra 30 mã demo đã chuyển chuẩn, ảnh còn nguyên và hai công việc mẫu vẫn liên kết đúng thiết bị.
+- Lưu ý: danh mục ABC và BB trong tài liệu là đề xuất/giá trị thử nghiệm; cần được doanh nghiệp phê duyệt trước khi nhập dữ liệu thật.
