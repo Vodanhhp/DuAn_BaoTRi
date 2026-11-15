@@ -170,3 +170,17 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Ảnh là thành phần quan trọng của hồ sơ đối với các thiết bị cần nhận diện trực quan. Khi thiết kế biểu mẫu và lưu trữ cần tính đến việc đính kèm ảnh cho thiết bị; chưa mặc định bắt buộc mọi thiết bị phải có ảnh nếu chưa có quy định cụ thể.
 - Thiết kế bảng chi tiết và thao tác xem ảnh phải thuận tiện trên cả desktop và mobile.
 - Đây là yêu cầu ghi nhận cho đợt triển khai sau; chưa sửa mã nguồn ở thời điểm cập nhật.
+
+### Đợt triển khai – danh mục thiết bị, lọc/sắp xếp và ảnh
+- Đã cập nhật `src/db.ts`: hồ sơ `Asset` có trường `images: string[]`, cho phép lưu nhiều ảnh trên mỗi thiết bị.
+- Đã cập nhật `src/App.tsx`:
+  - Thêm bộ lọc kết hợp theo nhóm, vị trí và trạng thái.
+  - Thêm sắp xếp theo mã tăng/giảm, tên A–Z, ngày đưa vào sử dụng mới nhất/cũ nhất.
+  - Có thao tác đặt lại bộ lọc và hiển thị số thiết bị phù hợp.
+  - Nhấn tên thiết bị mở cửa sổ chi tiết ở chế độ xem; có nút xem ảnh và mở ảnh lớn.
+  - Biểu mẫu thêm/sửa thiết bị cho phép tải nhiều ảnh (tối đa 8 ảnh/hồ sơ), xem trước và xóa ảnh.
+  - Dữ liệu thiết bị cũ được bổ sung `images: []` khi khởi tạo mà không xóa các thông tin hiện có; các hồ sơ demo mới cũng có trường ảnh.
+- Đã cập nhật `src/style.css` cho bộ lọc, chi tiết hồ sơ và thư viện ảnh; có bố cục phù hợp mobile.
+- **Lưu ý dữ liệu mẫu:** repository hiện không có ảnh thực tế tương ứng từng thiết bị; không gán ảnh minh họa không đúng máy. 30 hồ sơ mẫu có trường ảnh rỗng để người dùng bổ sung ảnh thật.
+- **Kiểm thử:** đã kiểm tra lại nội dung các file sau cập nhật trên GitHub; chưa chạy build/test trong môi trường máy người dùng. Cần Pull về máy và chạy `npm.cmd run build` trước khi xác nhận hoàn tất kiểm thử.
+- **Việc còn lại trong backlog:** CRUD nhóm thiết bị; xác nhận xóa/hoàn tác theo yêu cầu trước đó chưa nằm trong đợt code này.
