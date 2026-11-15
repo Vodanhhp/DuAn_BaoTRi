@@ -165,3 +165,15 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Khi in phải có **đường kẻ hàng và cột rõ ràng** (viền ô/bảng thực sự), không chỉ dựa vào tùy chọn hiển thị gridlines mặc định của Excel vốn có thể không được in.
 - Thiết lập vùng in và lặp lại hàng tiêu đề nếu báo cáo kéo dài nhiều trang; căn trang phù hợp để bảng không bị cắt cột hoặc chữ quá nhỏ.
 - Đây là yêu cầu đã ghi nhận cho đợt sửa báo cáo tiếp theo; **chưa sửa code, chưa xuất thử file và chưa kiểm tra bản in**.
+
+
+### Đợt sửa – xuất Excel và in danh sách thiết bị
+- Đã sửa `src/App.tsx`:
+  - Xuất Excel theo danh sách thiết bị đang hiển thị sau khi áp dụng bộ lọc.
+  - Mỗi thiết bị là một dòng dữ liệu; cột Tên thiết bị chứa tên, Hãng và Model trên các dòng riêng trong cùng một ô.
+  - Bỏ cột Chu kỳ; giữ các thông tin nhận diện/quản lý cần thiết như mã định danh, nhóm, Serial, vị trí, ngày đưa vào sử dụng, công suất/thông số, tình trạng và ghi chú.
+  - Thêm tiêu đề **DANH SÁCH CÁC THIẾT BỊ HIỆN NAY** vào đầu worksheet; thiết lập độ rộng cột, chiều cao dòng, bộ lọc tiêu đề.
+  - Thêm nút **In danh sách** riêng, dùng cùng danh sách đã lọc.
+  - Bản in có tiêu đề giữa trang, đầu mục in đậm, bảng có viền ngang/dọc, lặp hàng tiêu đề khi sang trang, tránh ngắt một hàng thiết bị giữa hai trang và đánh số trang dạng “Trang X / Y” ở chân trang.
+- Đã cập nhật `src/style.css` cho khổ A4 ngang và bố cục in.
+- Đã cập nhật code trên GitHub. **Chưa chạy build, chưa mở thử file Excel và chưa kiểm tra bản in thực tế**. Cần Pull origin, chạy `npm.cmd run build`, sau đó thử xuất Excel và In danh sách với dữ liệu nhiều thiết bị để kiểm tra phân trang.
