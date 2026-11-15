@@ -230,3 +230,13 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Seed theo từng mã vật tư còn thiếu: không xóa, không ghi đè số lượng hoặc thông tin của vật tư đã có; tải lại ứng dụng không tạo trùng.
 - Đây là dữ liệu giả định phục vụ thử nghiệm, không phải giá mua hoặc tồn kho thực tế. Khi chuyển sang sử dụng thật cần reset/xóa toàn bộ dữ liệu demo.
 - Đã cập nhật seed trong `src/App.tsx` và ghi nhận trong file tiến độ. Chưa chạy build hoặc kiểm tra trực tiếp trên trình duyệt.
+
+
+### Nâng cấp danh mục kho vật tư (15/11/2026)
+- Tên vật tư (kèm mã) trong bảng là vùng nhấp chuột; nhấp vào mở cửa sổ Chi tiết vật tư. Nút **Sửa** trong cột Thao tác tiếp tục mở trực tiếp biểu mẫu chỉnh sửa.
+- Biểu mẫu vật tư bổ sung hai trường riêng: **Mã số** (mã nhà sản xuất/mã quy cách) và **Kích cỡ / quy cách**; giữ **Mã vật tư** làm mã quản lý nội bộ.
+- Đơn vị tính chuyển thành danh sách chọn: Cái, Con, Cuộn, m, mm, cm, Lít, ml, Kg, g, Bộ, Chai, Hộp, Túi, Thùng, Tấm, Ống, Viên, Đôi, Mét, Bao, Thanh, Can...; đơn vị cũ không nằm trong danh sách vẫn được giữ khi sửa hồ sơ.
+- Thêm nút **In danh sách** cạnh **Xuất Excel**. Bản in riêng có tiêu đề DANH SÁCH VẬT TƯ, Tahoma, A4 ngang, lưới ô, lặp tiêu đề khi sang trang và đánh số trang; danh sách in theo kết quả tìm kiếm hiện tại.
+- Thêm nút **In chi tiết** trong cửa sổ chi tiết vật tư, dùng mẫu trình bày cùng phong cách với phiếu chi tiết thiết bị.
+- Cập nhật kiểu dữ liệu IndexedDB bằng hai trường tùy chọn `partNumber` và `size`, không cần xóa dữ liệu cũ. Xuất Excel bổ sung hai cột tương ứng.
+- Đã cập nhật `src/App.tsx`, `src/db.ts` trên GitHub. Chưa chạy build hoặc kiểm tra in thực tế; cần Pull origin và kiểm tra trên Chrome.
