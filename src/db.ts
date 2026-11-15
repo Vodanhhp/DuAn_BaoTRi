@@ -6,7 +6,7 @@ export type TaskStatus = 'Chờ thực hiện' | 'Đang thực hiện' | 'Hoàn 
 export interface Asset {
   id: string; code: string; name: string; category: string; brand: string; model: string
   serial: string; location: string; commissionedAt: string; power: string; cycle: string
-  status: AssetStatus; notes: string; images: string[]; createdAt: string; updatedAt: string
+  status: AssetStatus; notes: string; images: string[]; archivedAt?: string; createdAt: string; updatedAt: string
 }
 export interface InventoryItem {
   id: string; code: string; name: string; group: string; unit: string
@@ -42,6 +42,14 @@ class MaintenanceDB extends Dexie {
     super('baotri-local-v1')
     this.version(1).stores({
       assets: 'id, code, name, category, status, updatedAt',
+      inventory: 'id, code, name, group, quantity, updatedAt',
+      tasks: 'id, assetId, dueDate, status, updatedAt',
+      logs: 'id, assetId, taskId, date, kind',
+      movements: 'id, itemId, date, type',
+      syncQueue: 'id, tableName, recordId, queuedAt'
+    })
+    this.version(2).stores({
+      assets: 'id, code, name, category, status, archivedAt, updatedAt',
       inventory: 'id, code, name, group, quantity, updatedAt',
       tasks: 'id, assetId, dueDate, status, updatedAt',
       logs: 'id, assetId, taskId, date, kind',
