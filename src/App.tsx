@@ -278,6 +278,7 @@ export default function App() {
       {([['logs','Nhật ký',ClipboardList],['reports','Báo cáo',BarChart3],['settings','Cài đặt',Settings]] as const).map(([key,label,Icon])=><button key={key} onClick={()=>{setPage(key);setSearch('');setMobileMore(false)}}><Icon size={18}/>{label}<ChevronRight size={16}/></button>)}
     </div></div>}
     {notice&&<div className="toast"><Check size={17}/>{notice}</div>}
+    {detailAsset&&<AssetDetailModal value={detailAsset} close={()=>setDetailAsset(null)} edit={()=>{setEditingAsset({...detailAsset,images:detailAsset.images??[]});setDetailAsset(null);setModal('asset')}}/>}
     {modal==='asset'&&editingAsset&&<AssetModal value={editingAsset} close={()=>{setModal(null);setEditingAsset(null)}} save={saveAsset}/>}
     {modal==='item'&&editingItem&&<ItemModal value={editingItem} close={()=>{setModal(null);setEditingItem(null)}} save={saveItem}/>}
     {modal==='task'&&editingTask&&<TaskModal value={editingTask} assets={assets} close={()=>{setModal(null);setEditingTask(null)}} save={saveTask}/>}
@@ -315,6 +316,18 @@ function ReportCard({icon,title,desc,action}:any){return <div className="panel r
 
 function Modal({title,children,close}:any){return <div className="modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&close()}><div className="modal"><div className="modal-head"><h2>{title}</h2><button className="icon-btn" onClick={close}><X/></button></div>{children}</div></div>}
 function Field({label,children}:any){return <label className="field"><span>{label}</span>{children}</label>}
+function AssetDetailModal({value,close,edit}:any){
+  const [showPhotos,setShowPhotos]=useState(false)
+  const [activePhoto,setActivePhoto]=useState<string|null>(null)
+  const photos: string[] = value.images ?? []
+  const rows = [['Mã thiết bị',value.code],['Tên thiết bị',value.name],['Nhóm',value.category],['Vị trí',value.location],['Hãng',value.brand],['Model',value.model],['Serial',value.serial],['Ngày đưa vào sử dụng',dateText(value.commissionedAt)],['Công suất / thông số',value.power],['Chu kỳ bảo trì',value.cycle],['Trạng thái',value.status],['Ghi chú',value.notes]]
+  return <Modal title="Chi tiết thiết bị" close={close}>
+    <div className="asset-detail-grid">{rows.map(([label,val])=><div className="asset-detail-field" key={label}><small>{label}</small><b>{val||'—'}</b></div>)}</div>
+    <div className="asset-photo-actions"><button type="button" className="soft-btn" onClick={()=>setShowPhotos(v=>!v)}><ImageIcon size={16}/> {showPhotos?'Ẩn ảnh':'Xem ảnh ('+photos.length+')'}</button><button type="button" className="primary-btn" onClick={edit}>Sửa hồ sơ</button></div>
+    {showPhotos&&<div className="asset-photo-grid">{photos.length?photos.map((src:string,i:number)=><button type="button" className="asset-photo-thumb" key={i} onClick={()=>setActivePhoto(src)}><img src={src} alt={'Ảnh '+(i+1)+' của '+value.name}/><span>Ảnh {i+1}</span></button>):<p className="muted">Thiết bị này chưa có ảnh. Chọn “Sửa hồ sơ” để bổ sung ảnh.</p>}</div>}
+    {activePhoto&&<div className="photo-lightbox" onClick={()=>setActivePhoto(null)}><button type="button" className="icon-btn" onClick={()=>setActivePhoto(null)}><X/></button><img src={activePhoto} alt={'Ảnh thiết bị '+value.name}/></div>}
+  </Modal>
+}
 function AssetModal({value,close,save}:any){
   const [v,setV]=useState<Asset>(value)
   const set=(k:keyof Asset,x:any)=>setV(p=>({...p,[k]:x}))
@@ -326,6 +339,10 @@ function AssetModal({value,close,save}:any){
     <Field label="Công suất / thông số"><input value={v.power} onChange={e=>set('power',e.target.value)}/></Field><Field label="Chu kỳ bảo trì"><select value={v.cycle} onChange={e=>set('cycle',e.target.value)}>{['Hàng ngày','Hàng tuần','Hàng tháng','Hàng quý','6 tháng','Hàng năm','Theo giờ chạy',''].map(x=><option>{x}</option>)}</select></Field>
     <Field label="Trạng thái"><select value={v.status} onChange={e=>set('status',e.target.value)}>{['Đang hoạt động','Ngừng hoạt động','Thanh lý'].map(x=><option>{x}</option>)}</select></Field>
     <Field label="Ghi chú"><input value={v.notes} onChange={e=>set('notes',e.target.value)}/></Field>
+    <div className="asset-images-field"><label className="field"><span>Ảnh thiết bị (có thể chọn nhiều ảnh)</span><input type="file" accept="image/*" multiple onChange={async e=>{const files=Array.from(e.target.files??[]);const current=v.images??[];const remaining=Math.max(0,8-current.length);const selected=files.slice(0,remaining);const loaded=await Promise.all(selected.map(file=>new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=reject;reader.readAsDataURL(file)})));set('images',[...current,...loaded]);e.target.value=''}}/></label>
+      <div className="asset-photo-grid">{(v.images??[]).map((src:string,i:number)=><div className="asset-photo-thumb" key={i}><img src={src} alt={'Ảnh thiết bị '+(i+1)}/><button type="button" className="text-btn danger" onClick={()=>set('images',(v.images??[]).filter((_:string,index:number)=>index!==i))}>Xóa ảnh</button></div>)}</div>
+      <small className="muted">Tối đa 8 ảnh/hồ sơ. Ảnh được lưu cùng dữ liệu thiết bị trong trình duyệt hiện tại; khi chuyển sang máy chủ sẽ cần chuyển ảnh lên kho lưu trữ trực tuyến.</small>
+    </div>
     <div className="qr-box"><QRCodeSVG value={`ASSET:${v.code||'CHUA-CO-MA'}`} size={112}/><div><b>Mã QR thiết bị</b><small>QR phiên bản đầu chứa mã thiết bị. Chức năng mở hồ sơ theo QR sẽ hoàn thiện cùng luồng quét.</small></div></div>
     <div className="modal-actions"><button type="button" className="soft-btn" onClick={close}>Hủy</button><button className="primary-btn"><Check size={16}/> Lưu thiết bị</button></div>
   </form></Modal>
