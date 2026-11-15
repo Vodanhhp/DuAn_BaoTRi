@@ -47,7 +47,9 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Khi sửa hoặc quản lý nhóm, phải giữ liên kết của thiết bị đang thuộc nhóm đó; không làm mất hoặc gán sai nhóm của thiết bị.
 - Nếu muốn xóa một nhóm đang có thiết bị sử dụng, phải cảnh báo và yêu cầu xử lý thiết bị liên quan (chuyển sang nhóm khác hoặc phương án phù hợp); không xóa âm thầm.
 - **Mọi thao tác xóa ở tất cả phân hệ** (thiết bị, nhóm, vật tư, phiếu, công việc, nhật ký và các dữ liệu khác) đều phải có hộp thoại xác nhận riêng trước khi thực hiện.
-- Ưu tiên cơ chế **xóa mềm/đưa vào thùng rác** thay vì xóa vĩnh viễn ngay. Sau khi xóa, hiển thị thông báo cho phép Hoàn tác; đồng thời có thể khôi phục từ khu vực đã xóa.
+- Dùng tên khu vực **Lưu kho** thay cho “Thùng rác”. Đây là nơi chứa các hồ sơ được đưa ra khỏi danh sách đang hoạt động nhưng vẫn được giữ lại để tra cứu và có thể khôi phục.
+- Thao tác **Lưu kho** không đồng nghĩa với thanh lý hoặc xóa dữ liệu. Khi đưa hồ sơ vào Lưu kho, cần giữ nguyên thông tin thiết bị và toàn bộ lịch sử bảo trì/sửa chữa liên quan.
+- Phân biệt rõ trạng thái nghiệp vụ: **Ngừng hoạt động** (tạm thời không sử dụng, có thể đưa vào hoạt động lại), **Thanh lý** (đã loại khỏi sử dụng nhưng giữ hồ sơ/lịch sử), và **Lưu kho** (ẩn khỏi danh sách đang hoạt động, có thể khôi phục).
 - Chỉ cho phép xóa vĩnh viễn khi người dùng chủ động chọn và xác nhận rõ ràng; cần cân nhắc quan hệ dữ liệu và lịch sử bảo trì, không để xóa một hồ sơ làm mất lịch sử liên quan.
 - Thiết kế thao tác an toàn, dễ hiểu trên cả máy tính và điện thoại; tránh dùng `window.confirm()`/`prompt()` làm trải nghiệm cuối cùng nếu có thể thay bằng hộp thoại giao diện thống nhất.
 
@@ -184,3 +186,11 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - **Lưu ý dữ liệu mẫu:** repository hiện không có ảnh thực tế tương ứng từng thiết bị; không gán ảnh minh họa không đúng máy. 30 hồ sơ mẫu có trường ảnh rỗng để người dùng bổ sung ảnh thật.
 - **Kiểm thử:** đã kiểm tra lại nội dung các file sau cập nhật trên GitHub; chưa chạy build/test trong môi trường máy người dùng. Cần Pull về máy và chạy `npm.cmd run build` trước khi xác nhận hoàn tất kiểm thử.
 - **Việc còn lại trong backlog:** CRUD nhóm thiết bị; xác nhận xóa/hoàn tác theo yêu cầu trước đó chưa nằm trong đợt code này.
+
+
+### Quy ước thuật ngữ – Lưu kho thiết bị
+- Không dùng nhãn hoặc biểu tượng “Thùng rác” cho thao tác đưa thiết bị ra khỏi danh sách đang hoạt động.
+- Dùng thuật ngữ **Lưu kho** cho khu vực lưu các hồ sơ không còn hiển thị trong danh sách hoạt động nhưng vẫn được bảo toàn, tra cứu và khôi phục.
+- Nút thao tác cạnh nút Sửa trong danh sách thiết bị sẽ mang ý nghĩa **Lưu kho** (không phải Thanh lý và không phải Xóa vĩnh viễn); cần có bước xác nhận trước khi lưu kho.
+- Trong khu vực Lưu kho, người dùng có thể xem hồ sơ và chọn khôi phục về danh sách hoạt động. Việc thanh lý/ngừng hoạt động phải được quản lý bằng trạng thái nghiệp vụ riêng, không dùng chung với Lưu kho.
+- Quy ước này mới được ghi nhận trong tài liệu yêu cầu; chưa thay đổi giao diện hoặc mã nguồn. Khi triển khai cần rà soát cả các phân hệ khác để dùng thuật ngữ nhất quán.
