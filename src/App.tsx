@@ -155,8 +155,8 @@ export default function App() {
       const legacyAssets = (await db.assets.toArray()).filter(a => !Array.isArray(a.images))
       if (legacyAssets.length) await db.assets.bulkPut(legacyAssets.map(a => ({ ...a, images: [] })))
 
-      const compressor = await db.assets.where('serial').equals('DEMO-COMP-001').first()
-      const coldStore = await db.assets.where('serial').equals('DEMO-KHO-001').first()
+      const compressor = await db.assets.filter(a => a.serial === 'DEMO-COMP-001').first()
+      const coldStore = await db.assets.filter(a => a.serial === 'DEMO-KHO-001').first()
       if (!(await db.inventory.count())) {
         const item = { ...emptyItem(), code: 'VT-001', name: 'Lọc dầu máy nén khí', quantity: 3, minQuantity: 5, unit: 'Bộ' }
         await db.inventory.add(item)
