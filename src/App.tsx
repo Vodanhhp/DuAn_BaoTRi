@@ -20,7 +20,7 @@ const makeDemoAssetImage = (category: string, code: string, view: number) => {
 }
 const today = () => new Date().toISOString().slice(0, 10)
 const emptyAsset = (): Asset => ({
-  id: uid(), code: '', name: '', category: 'Thiết bị điện', brand: '', model: '', serial: '',
+  id: uid(), code: '', name: '', category: '', brand: '', model: '', serial: '',
   location: '', commissionedAt: '', power: '', cycle: '', status: 'Đang hoạt động',
   notes: '', images: [], createdAt: now(), updatedAt: now()
 })
@@ -32,6 +32,30 @@ const emptyTask = (): Task => ({
   id: uid(), assetId: '', title: '', dueDate: today(), frequency: 'Hàng tháng',
   status: 'Chờ thực hiện', checklist: '', readings: '', notes: '', createdAt: now(), updatedAt: now()
 })
+
+// Danh mục chuẩn: mã nhóm không phụ thuộc tên người dùng nhập.
+const ASSET_CATEGORY_GROUPS = [
+ {label:'Điện – điện tử',items:[{name:'Thiết bị điện',code:'TDE'},{name:'Tủ điện',code:'TDI'},{name:'Tủ điện tổng',code:'TDT'},{name:'Tủ điện phân phối',code:'TDP'},{name:'Tủ điều khiển',code:'TDC'},{name:'Biến tần',code:'BT'},{name:'UPS',code:'UPS'},{name:'Máy biến áp',code:'MBA'},{name:'Thiết bị đo lường',code:'DDL'},{name:'Động cơ điện',code:'DCD'},{name:'Bộ chuyển nguồn ATS',code:'ATS'},{name:'Tủ tụ bù',code:'TCB'}]},
+ {label:'Cơ khí – truyền động',items:[{name:'Máy bơm',code:'MB'},{name:'Thiết bị xưởng',code:'TBX'},{name:'Thang máy',code:'TM'},{name:'Hộp giảm tốc',code:'HGT'},{name:'Băng tải',code:'BTA'}]},
+ {label:'Quạt công nghiệp',items:[{name:'Quạt công nghiệp',code:'QCN'},{name:'Quạt hút',code:'QH'},{name:'Quạt cấp',code:'QC'},{name:'Quạt thông gió',code:'QTG'},{name:'Quạt làm mát',code:'QLM'},{name:'Quạt hướng trục',code:'QK'},{name:'Quạt ly tâm',code:'QLT'}]},
+ {label:'Khí nén – nhiệt – lạnh',items:[{name:'Máy nén khí',code:'MNA'},{name:'Máy sấy khí',code:'MSK'},{name:'Bộ lọc khí nén',code:'BLK'},{name:'Khí nén',code:'KN'},{name:'Kho lạnh',code:'KLA'},{name:'Điều hòa thông gió',code:'DHT'},{name:'Chiller',code:'CHL'},{name:'Tháp giải nhiệt',code:'TGN'},{name:'Nồi hơi',code:'NH'},{name:'Nồi hấp',code:'NHA'}]},
+ {label:'Nguồn điện – an toàn',items:[{name:'Máy phát điện',code:'MPD'},{name:'Phòng cháy chữa cháy',code:'PCCC'}]}
+] as const
+const ASSET_CATEGORY_CODES: Record<string,string> = Object.fromEntries(ASSET_CATEGORY_GROUPS.flatMap(g=>g.items.map(i=>[i.name,i.code])))
+const ASSET_LOCATION_CODES: Record<string,string> = {'Phòng máy nén khí':'01','Khu sản xuất':'02','Phòng bơm tầng hầm':'03','Dây chuyền 1':'04','Khu xử lý bụi':'05','Nhà xưởng A':'06','Khu kỹ thuật':'07','Phòng kỹ thuật tầng 1':'08','Tầng 2':'09','Khu vực Chiller':'10','Sân kỹ thuật mái':'11','Phòng máy phát điện':'12','Phòng điện tổng':'13','Tầng 1':'14','Phòng bơm':'15','Phòng IT':'16','Trạm biến áp':'17','Nhà lò hơi':'18','Xưởng bảo trì':'19','Sảnh chính':'20','Phòng bơm PCCC':'21','Đường ống khí nén':'22','Hố gom tầng hầm':'23'}
+const RECEIVING_FACILITY_CODE='HP01'
+const buildAssetCode=(asset:Asset,allAssets:Asset[])=>{
+ const typeCode=ASSET_CATEGORY_CODES[asset.category]
+ if(!typeCode)return ''
+ // xxx tăng theo ABC trong toàn công ty, không khởi động lại theo từng cơ sở.
+ const pattern=new RegExp('^'+typeCode+'-[^-]+-(\\d+)-')
+ const nums=allAssets.map(a=>a.code.match(pattern)?.[1]).filter((n):n is string=>Boolean(n)).map(Number)
+ const seq=String(Math.max(0,...nums)+1).padStart(3,'0')
+ const date=asset.commissionedAt||today()
+ const location=ASSET_LOCATION_CODES[asset.location]??'99'
+ return typeCode+'-'+RECEIVING_FACILITY_CODE+'-'+seq+'-'+location+'-'+date.slice(5,7)+'-'+date.slice(2,4)+(asset.transferredFromOtherFacility?'*':'')
+}
+
 const money = (n: number) => new Intl.NumberFormat('vi-VN').format(n) + ' đ'
 const dateText = (s: string) => s ? new Date(s + (s.length === 10 ? 'T00:00:00' : '')).toLocaleDateString('vi-VN') : '—'
 
