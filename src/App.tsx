@@ -92,13 +92,57 @@ export default function App() {
         { code: 'SEN-001', name: 'Cảm biến áp suất đường khí', category: 'Thiết bị đo lường', brand: 'WIKA', model: 'A-10', location: 'Đường ống khí nén', commissionedAt: '2023-05-10', power: '0–10 bar', cycle: 'Hàng quý' },
         { code: 'PMP-001', name: 'Bơm thoát nước hố gom', category: 'Máy bơm', brand: 'Tsurumi', model: 'PU-series', location: 'Hố gom tầng hầm', commissionedAt: '2021-07-11', power: '1.5 kW', cycle: 'Hàng tháng' }
       ]
+      // Chuẩn hóa 30 thiết bị mẫu theo cấu trúc ABC-ABXY-xxx-BB-MM-YY.
+      // Giữ nguyên ID, ảnh, lịch sử và các chỉnh sửa của hồ sơ demo đã tồn tại.
+      const typeCodes: Record<string, string> = {
+        COMP: 'MNA', KHO: 'KLA', BOM: 'MB', MOT: 'DCD', FAN: 'QCN',
+        AHU: 'AHU', FCU: 'FCU', CHL: 'CHL', CTW: 'TGN', GEN: 'MPD',
+        ATS: 'ATS', MDB: 'TDT', DB: 'TDP', VFD: 'BT', UPS: 'UPS',
+        TRF: 'MBA', CAP: 'TCB', BOI: 'NH', DRY: 'MSK', FLT: 'BLK',
+        WLD: 'MHD', LFT: 'TM', FIR: 'BCC', SEN: 'CBAS', PMP: 'MB'
+      }
+      const locationCodes: Record<string, string> = {
+        'Phòng máy nén khí': '01', 'Khu sản xuất': '02', 'Phòng bơm tầng hầm': '03',
+        'Dây chuyền 1': '04', 'Khu xử lý bụi': '05', 'Nhà xưởng A': '06',
+        'Khu kỹ thuật': '07', 'Phòng kỹ thuật tầng 1': '08', 'Tầng 2': '09',
+        'Khu vực Chiller': '10', 'Sân kỹ thuật mái': '11', 'Phòng máy phát điện': '12',
+        'Phòng điện tổng': '13', 'Tầng 1': '14', 'Phòng bơm': '15',
+        'Phòng IT': '16', 'Trạm biến áp': '17', 'Nhà lò hơi': '18',
+        'Xưởng bảo trì': '19', 'Sảnh chính': '20', 'Phòng bơm PCCC': '21',
+        'Đường ống khí nén': '22', 'Hố gom tầng hầm': '23'
+      }
+      const typeSequences: Record<string, number> = {}
+      const normalizedDemoAssets = demoAssets.map(item => {
+        const legacyCode = item.code
+        const legacyType = legacyCode.split('-')[0]
+        const typeCode = typeCodes[legacyType] ?? 'TBK'
+        typeSequences[typeCode] = (typeSequences[typeCode] ?? 0) + 1
+        const sequence = String(typeSequences[typeCode]).padStart(3, '0')
+        const date = item.commissionedAt
+        const locationCode = locationCodes[item.location] ?? '99'
+        return {
+          ...item,
+          legacyCode,
+          code: `${typeCode}-HP01-${sequence}-${locationCode}-${date.slice(5, 7)}-${date.slice(2, 4)}`
+        }
+      })
       const existing = await db.assets.toArray()
       const existingCodes = new Set(existing.map(a => a.code))
-      const missing = demoAssets.filter(a => !existingCodes.has(a.code)).map(a => ({
-        ...emptyAsset(), ...a, serial: `DEMO-${a.code}`,
-        images: [makeDemoAssetImage(a.category, a.code, 1), makeDemoAssetImage(a.category, a.code, 2)],
-        notes: 'DỮ LIỆU MẪU – ảnh minh họa kỹ thuật, không phải ảnh thực tế của thiết bị.'
-      }))
+      const updates: Asset[] = []
+      const missing: Asset[] = []
+      for (const item of normalizedDemoAssets) {
+        const oldDemo = existing.find(a => a.serial === `DEMO-${item.legacyCode}`)
+        if (oldDemo) {
+          if (oldDemo.code !== item.code) updates.push({ ...oldDemo, code: item.code, updatedAt: now() })
+        } else if (!existingCodes.has(item.code)) {
+          missing.push({
+            ...emptyAsset(), ...item, serial: `DEMO-${item.legacyCode}`,
+            images: [makeDemoAssetImage(item.category, item.code, 1), makeDemoAssetImage(item.category, item.code, 2)],
+            notes: 'DỮ LIỆU MẪU – ảnh minh họa kỹ thuật, không phải ảnh thực tế của thiết bị.'
+          })
+        }
+      }
+      if (updates.length) await db.assets.bulkPut(updates)
       if (missing.length) await db.assets.bulkAdd(missing)
       // Bổ sung ảnh minh họa cho hồ sơ demo cũ; không ghi đè ảnh người dùng đã tải lên.
       const demoRows = (await db.assets.toArray()).filter(a => a.serial?.startsWith('DEMO-') || a.notes?.includes('DỮ LIỆU MẪU'))
@@ -111,8 +155,8 @@ export default function App() {
       const legacyAssets = (await db.assets.toArray()).filter(a => !Array.isArray(a.images))
       if (legacyAssets.length) await db.assets.bulkPut(legacyAssets.map(a => ({ ...a, images: [] })))
 
-      const compressor = await db.assets.where('code').equals('COMP-001').first()
-      const coldStore = await db.assets.where('code').equals('KHO-001').first()
+      const compressor = await db.assets.where('serial').equals('DEMO-COMP-001').first()
+      const coldStore = await db.assets.where('serial').equals('DEMO-KHO-001').first()
       if (!(await db.inventory.count())) {
         const item = { ...emptyItem(), code: 'VT-001', name: 'Lọc dầu máy nén khí', quantity: 3, minQuantity: 5, unit: 'Bộ' }
         await db.inventory.add(item)
