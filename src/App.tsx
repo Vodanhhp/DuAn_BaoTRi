@@ -353,8 +353,8 @@ export default function App() {
     if (Object.keys(allCodes).some(x=>x.toLocaleLowerCase('vi')===cleanName.toLocaleLowerCase('vi'))) { alert('Tên nhóm đã tồn tại.'); return false }
     if (Object.values(allCodes).includes(cleanCode)) { alert('Mã nhóm đã được sử dụng.'); return false }
     const next = [...customAssetCategories,{name:cleanName,code:cleanCode}]
-    setCustomAssetCategories(next)
     try { localStorage.setItem('baotri-custom-asset-categories',JSON.stringify(next)) } catch { alert('Không lưu được nhóm mới trong trình duyệt.'); return false }
+    setCustomAssetCategories(next)
     return true
   }
   const saveAsset = async (a: Asset) => {
@@ -624,7 +624,7 @@ export default function App() {
     {notice&&<div className="toast"><Check size={17}/>{notice}</div>}
     {detailItem&&<InventoryDetailModal value={detailItem} close={()=>setDetailItem(null)} edit={()=>{setEditingItem(detailItem);setDetailItem(null);setModal('item')}}/>}
     {detailAsset&&<AssetDetailModal value={detailAsset} logs={logs.filter(l=>l.assetId===detailAsset.id)} allowChecklist={checklistAccess || (CHECKLIST_TEST_MODE && page==='checklist')} createRepairFromChecklist={createRepairFromChecklist} close={()=>{setDetailAsset(null);setChecklistAccess(false)}} edit={()=>{setEditingAsset({...detailAsset,images:detailAsset.images??[]});setDetailAsset(null);setChecklistAccess(false);setModal('asset')}} addLog={()=>{setEditingLog({id:uid(),assetId:detailAsset.id,date:today(),kind:'Sửa chữa',description:'',parts:'',readings:'',result:'',performedBy:''});setModal('log')}}/>}
-    {modal==='asset'&&editingAsset&&<AssetModal value={editingAsset} close={()=>{setModal(null);setEditingAsset(null)}} save={saveAsset} assets={assets} customCategories={customAssetCategories} onAddCategory={addAssetCategory}/ >}
+    {modal==='asset'&&editingAsset&&<AssetModal value={editingAsset} close={()=>{setModal(null);setEditingAsset(null)}} save={saveAsset} assets={assets} customCategories={customAssetCategories} onAddCategory={addAssetCategory}/>}
     {modal==='item'&&editingItem&&<ItemModal value={editingItem} close={()=>{setModal(null);setEditingItem(null)}} save={saveItem}/>}
     {modal==='task'&&editingTask&&<TaskModal value={editingTask} assets={assets} close={()=>{setModal(null);setEditingTask(null)}} save={saveTask}/>}
     {modal==='log'&&editingLog&&<LogEntryModal value={editingLog} close={()=>{setModal(null);setEditingLog(null)}} save={saveLog}/>}
