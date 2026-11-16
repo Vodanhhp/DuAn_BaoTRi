@@ -595,3 +595,33 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Chưa có project/credentials nên chưa thể xác thực kết nối, kiểm thử đăng nhập thật hoặc chạy migration trên Supabase.
 
 **Trạng thái:** mới hoàn tất rà soát và ghi kế hoạch; chưa sửa code, chưa cài SDK, chưa tạo schema/migration, chưa có đăng nhập thật. Tiếp tục sửa trực tiếp trên `main`, không tạo branch/PR.
+
+### Cập nhật kế hoạch kết nối Supabase và chuyển dữ liệu IndexedDB lên cloud (16/11/2026)
+
+**Thông tin project đã được người dùng cung cấp trong cuộc trò chuyện:**
+- Đã có Supabase Project URL và Publishable key. Chỉ dùng hai giá trị này làm cấu hình public cho frontend; tuyệt đối không ghi key thật vào repository/file tiến độ/commit.
+- Không sử dụng hướng dẫn @supabase/ssr, page.tsx, cookies, middleware.ts do đó là mẫu Next.js, trong khi BAOTRI Mini là React + Vite.
+- Cấu hình đúng cho Vite: VITE_SUPABASE_URL và VITE_SUPABASE_PUBLISHABLE_KEY, lưu trong .env.local ở máy triển khai; .env.local không được commit. .gitignore hiện đã loại .env.* và chỉ cho phép .env.example.
+
+**Rà soát schema IndexedDB hiện tại (src/db.ts):**
+- Database: baotri-local-v1.
+- Các store: assets, inventory, tasks, logs, movements, syncQueue, checklistTemplates, checklistVersions, checklistResults.
+- Ngoài ra danh mục nhóm/loại thiết bị tự tạo đang nằm trong localStorage key baotri-custom-asset-categories; các cài đặt giao diện khác cũng có localStorage riêng.
+- Phải rà soát tiếp toàn bộ các hàm đọc/ghi và dữ liệu ảnh trước khi chốt schema cloud. Không bỏ qua dữ liệu liên kết từ logs tới task/checklist result, quan hệ template-version-result, và liên kết vật tư/thiết bị.
+
+**Phương án chuyển dữ liệu bắt buộc:**
+1. Tạo chức năng xuất backup đầy đủ từ trình duyệt hiện tại, gồm tất cả store IndexedDB và danh mục custom localStorage; dữ liệu backup có phiên bản định dạng và thời điểm xuất.
+2. Tạo schema PostgreSQL/Supabase có organization_id và user/membership; khóa chính/ID cũ được giữ nguyên khi nhập. Thiết kế foreign key và RLS trước khi mở truy cập nghiệp vụ.
+3. Tạo công cụ import có kiểm tra dữ liệu, thứ tự nhập theo quan hệ cha-con, giao dịch/nhóm thao tác có thể rollback, và chống nhập trùng khi chạy lại.
+4. Đối chiếu số lượng và ID theo từng store, kiểm tra quan hệ tham chiếu, dữ liệu JSON/ảnh; báo cáo bản ghi lỗi trước khi xác nhận.
+5. Chỉ sau khi kiểm thử thành công mới chuyển các thao tác đọc/ghi ứng dụng sang Supabase. Giữ IndexedDB và file backup làm bản dự phòng; không tự xóa dữ liệu local.
+6. Không giả định localStorage danh mục custom có thể tự đồng bộ; phải đưa vào quy trình backup/import hoặc chuyển sang bảng cloud riêng.
+
+**Các rủi ro cần xử lý trước khi bật dùng thực tế:**
+- Dữ liệu hiện tại chưa gắn user/organization. Cần người dùng xác nhận dữ liệu local hiện tại thuộc tổ chức nào khi import; không tự gán cho mọi tài khoản.
+- Cần thiết kế storage cho ảnh thiết bị/tệp đính kèm; không nhét tùy tiện data URL/base64 vào bảng nghiệp vụ nếu có thể lưu object Storage.
+- Cần bảo đảm phiếu Checklist cũ giữ snapshot tên người thực hiện và nội dung phiên bản biểu mẫu; không sửa lịch sử khi hồ sơ tài khoản thay đổi.
+- Không được bật đăng ký tự do với quyền Admin mặc định. Cần quy trình tạo organization và Admin đầu tiên có kiểm soát.
+- Không được chuyển ngay sang cloud trước khi backup và đối chiếu đạt.
+
+**Trạng thái cập nhật:** đã nhận Project URL + Publishable key; đã xác định đúng nền tảng React/Vite và các store local. Chưa cài SDK, chưa tạo schema SQL/RLS, chưa tạo file backup từ trình duyệt, chưa import dữ liệu và chưa có đăng nhập/đồng bộ cloud hoạt động. Tiếp tục thực hiện trực tiếp trên main, không tạo branch/PR.
