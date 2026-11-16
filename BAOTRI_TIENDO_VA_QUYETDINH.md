@@ -1007,3 +1007,12 @@ Người dùng xác nhận đồng ý đưa cả dữ liệu thử nghiệm đan
 - Đã tạo `supabase/tests/20261117000300_authenticated_rls_session_test.sql` trên `main`, commit `a25f0ec34e20c37095bdd22053ed793e288b1afa`. Đây là script chỉ đọc, chỉ chạy trên `BAOTRI-Mini-Test`: đặt JWT claims cho Auth user `tuanluongpham1980@gmail.com`, chuyển SQL role sang `authenticated`, rồi kiểm tra hồ sơ, organization, membership, hai helper phân quyền và khả năng SELECT trên 11 bảng nghiệp vụ. Script kết thúc bằng ROLLBACK.
 - Giới hạn quan trọng: script mô phỏng role/JWT claims bên trong SQL Editor; đây là kiểm tra database grants/RLS ở tầng PostgreSQL, không thay thế kiểm thử API qua một session đăng nhập thực của trình duyệt. Không dùng kết quả này để khẳng định multi-tenant isolation thực tế, vì hiện mới có một tổ chức và chưa có dữ liệu nghiệp vụ.
 - Chưa chạy script này. Chưa thay đổi cấu hình Supabase, Auth user, dữ liệu nghiệp vụ hoặc project Production. Bước kế tiếp: người dùng chạy script trên SQL Editor của Test; nếu kết quả đúng, mới thực hiện kiểm tra API Auth bằng cấu hình Test rõ ràng, không suy đoán nội dung `.env.local` và không chuyển nhầm sang Production.
+
+
+## 17/11/2026 – Bổ sung chẩn đoán JWT/RLS trên Test
+
+- Người dùng chạy script authenticated RLS trước đó và báo kết quả kiểm tra đầu tiên đều bằng 0; chưa đủ bằng chứng để kết luận RLS runtime hoạt động đúng.
+- Không sửa migration, policy, Auth user hoặc dữ liệu. Không chạy lại Bootstrap.
+- Đã thêm script chỉ đọc `supabase/tests/20261117000400_authenticated_rls_diagnostic.sql`, commit `8893012aad4eec3b215d02abf6fbada2f87938e7`.
+- Script lấy đúng Auth user `tuanluongpham1980@gmail.com` và organization active của user trong Test, đặt JWT claims, chuyển role sang `authenticated`, rồi hiển thị database role, `auth.uid()`, các JWT settings, quyền SELECT và số dòng RLS nhìn thấy; kiểm tra trực tiếp hai helper trên organization ID đã xác định. Kết thúc bằng ROLLBACK, không ghi dữ liệu.
+- Chỉ chạy script trên `BAOTRI-Mini-Test`; không chạy Production. Cần đọc kết quả chẩn đoán trước khi quyết định sửa JWT simulation hay chuyển sang kiểm thử API bằng phiên đăng nhập thật trong ứng dụng.
