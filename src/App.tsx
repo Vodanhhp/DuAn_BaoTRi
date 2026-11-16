@@ -10,7 +10,10 @@ import { Html5QrcodeScanner } from 'html5-qrcode'
 import * as XLSX from 'xlsx'
 import { db, uid, now, queueChange, type Asset, type InventoryItem, type Task, type Log, type ChecklistTemplateItem, type ChecklistResultItem, type ChecklistResult } from './db'
 
-type Page = 'dashboard' | 'assets' | 'inventory' | 'tasks' | 'logs' | 'reports' | 'settings'
+type Page = 'dashboard' | 'checklist' | 'assets' | 'inventory' | 'planning' | 'tasks' | 'logs' | 'reports' | 'settings'
+
+// Chỉ bật trong giai đoạn thử nghiệm. Khi nghiệm thu Checklist, đổi duy nhất thành false để bắt buộc quét QR.
+const CHECKLIST_TEST_MODE = true
 const xmlEntities: Record<string, string> = {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}
 const xmlText = (value: string) => value.replace(/[&<>"']/g, ch => xmlEntities[ch] ?? ch)
 const htmlEscape = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch] ?? ch))
@@ -512,22 +515,28 @@ export default function App() {
   }
 
   const nav = [
-    ['dashboard','Tổng quan',LayoutDashboard], ['assets','Thiết bị',HardDrive], ['inventory','Kho vật tư',Package],
-    ['tasks','Kế hoạch bảo dưỡng',CalendarDays], ['logs','Bảo dưỡng – Sửa chữa',ClipboardList], ['reports','Báo cáo',BarChart3], ['settings','Cài đặt',Settings]
+    ['dashboard','Tổng quan',LayoutDashboard],
+    ['checklist','Bảo trì – Checklist',ClipboardList],
+    ['assets','Thiết bị',HardDrive],
+    ['inventory','Kho vật tư',Package],
+    ['planning','Kế hoạch',CalendarDays],
+    ['logs','Bảo dưỡng – Sửa chữa',Wrench],
+    ['reports','Báo cáo',BarChart3],
+    ['settings','Cài đặt',Settings]
   ] as const
 
   return <div className={`app-shell ${theme} ${compact ? 'compact-mode' : ''}`}>
     <aside className="sidebar">
       <div className="brand"><div className="brand-icon"><Wrench size={21}/></div><div><b>BAOTRI</b><small>QUẢN LÝ BẢO TRÌ</small></div></div>
       <div className="nav-label">MENU CHÍNH</div>
-      {nav.map(([key,label,Icon]) => <button key={key} className={`nav-item ${page===key?'active':''}`} onClick={()=>{setPage(key);setSearch('')}}><Icon size={18}/><span>{label}</span>{key==='tasks' && overdue>0 && <em>{overdue}</em>}</button>)}
+      {nav.map(([key,label,Icon]) => <button key={key} className={`nav-item ${page===key || (key==='planning'&&page==='tasks')?'active':''}`} onClick={()=>{setPage(key);setSearch('');if(key==='assets'||key==='checklist')setShowArchived(false)}}><Icon size={18}/><span>{label}</span>{key==='planning' && overdue>0 && <em>{overdue}</em>}</button>)}
       <div className="sidebar-bottom"><div className="offline-pill"><span className="online-dot"/> Bản thử nghiệm · Dữ liệu lưu cục bộ</div><small>Phiên bản 0.1.0</small></div>
     </aside>
     <nav className="mobile-nav" aria-label="Điều hướng chính">
-      {([['dashboard','Tổng quan',LayoutDashboard],['assets','Thiết bị',HardDrive],['inventory','Kho',Package],['tasks','Bảo dưỡng',CalendarDays]] as const).map(([key,label,Icon]) =>
-        <button key={key} className={`mobile-nav-item ${page===key?'active':''}`} onClick={()=>{setPage(key);setSearch('');setMobileMore(false)}}><Icon size={19}/><span>{label}</span>{key==='tasks'&&overdue>0&&<i>{overdue}</i>}</button>
+      {([['dashboard','Tổng quan',LayoutDashboard],['checklist','Checklist',ClipboardList],['assets','Thiết bị',HardDrive],['planning','Kế hoạch',CalendarDays]] as const).map(([key,label,Icon]) =>
+        <button key={key} className={`mobile-nav-item ${page===key || (key==='planning'&&page==='tasks')?'active':''}`} onClick={()=>{setPage(key);setSearch('');setMobileMore(false)}}><Icon size={19}/><span>{label}</span>{key==='planning'&&overdue>0&&<i>{overdue}</i>}</button>
       )}
-      <button className={`mobile-nav-item ${mobileMore||(['logs','reports','settings'] as Page[]).includes(page)?'active':''}`} onClick={()=>setMobileMore(v=>!v)}><MoreHorizontal size={20}/><span>Thêm</span></button>
+      <button className={`mobile-nav-item ${mobileMore||(['inventory','logs','tasks','reports','settings'] as Page[]).includes(page)?'active':''}`} onClick={()=>setMobileMore(v=>!v)}><MoreHorizontal size={20}/><span>Thêm</span></button>
     </nav>
     <main className="main">
       <header className="topbar">
@@ -535,13 +544,14 @@ export default function App() {
         <div className="top-actions">
           <div className="workspace-chip"><Building2 size={16}/><span><b>Đơn vị của tôi</b><small>Không gian cá nhân</small></span></div>
           <button className="icon-btn" title="Quét QR" onClick={()=>setModal('scan')}><QrCode size={19}/></button>
-          <button className="primary-btn" onClick={()=>{ if(page==='assets'){setEditingAsset(emptyAsset());setModal('asset')} else if(page==='inventory'){setEditingItem(emptyItem());setModal('item')} else if(page==='tasks'){setEditingTask(emptyTask());setModal('task')} else {setPage('assets');setEditingAsset(emptyAsset());setModal('asset')} }}><Plus size={17}/><span>Thêm mới</span></button>
+          {page!=='planning'&&page!=='checklist'&&<button className="primary-btn" onClick={()=>{ if(page==='assets'){setEditingAsset(emptyAsset());setModal('asset')} else if(page==='inventory'){setEditingItem(emptyItem());setModal('item')} else if(page==='tasks'){setEditingTask(emptyTask());setModal('task')} else if(page==='logs'){setEditingLog({id:uid(),assetId:'',date:today(),kind:'Sửa chữa',description:'',parts:'',readings:'',result:'',performedBy:''});setModal('log')} else {setPage('assets');setEditingAsset(emptyAsset());setModal('asset')} }}><Plus size={17}/><span>Thêm mới</span></button>}
           <button className="profile-chip" title="Tài khoản mẫu"><span className="avatar"><UserRound size={16}/></span><span className="profile-text"><b>Người dùng</b><small>Quản trị viên</small></span></button>
         </div>
       </header>
       <div className="content">
         {page!=='dashboard' && page!=='settings' && <div className="searchbar"><Search size={18}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Tìm theo mã, tên hoặc nội dung..."/></div>}
         {page==='dashboard' && <Dashboard assets={activeAssets} tasks={tasks} inventory={inventory} dueToday={dueToday} lowStock={lowStock} overdue={overdue} go={setPage} complete={completeTask}/>}
+        {page==='checklist' && <section className="panel"><div className="panel-head"><div><h2>Danh sách thiết bị cần bảo trì – Checklist</h2><p>{CHECKLIST_TEST_MODE?'Chế độ thử nghiệm: chọn thiết bị để tạo biểu mẫu và thực hiện Checklist, chưa cần quét QR.':'Chọn thiết bị rồi quét QR để được phép tạo và thực hiện Checklist.'}</p></div><span className={`status ${CHECKLIST_TEST_MODE?'orange':'green'}`}>{CHECKLIST_TEST_MODE?'ĐANG THỬ NGHIỆM':'BẮT BUỘC QUÉT QR'}</span></div><div className="table-wrap"><table><thead><tr><th>Mã / Tên thiết bị</th><th>Nhóm</th><th>Vị trí</th><th>Tình trạng</th><th>Thao tác</th></tr></thead><tbody>{filteredAssets.map(a=><tr key={a.id}><td><button type="button" className="asset-name-link" onClick={()=>{setChecklistAccess(CHECKLIST_TEST_MODE);setDetailAsset(a)}}><b>{a.code}</b><small>{a.name}</small></button></td><td>{a.category||'Khác'}</td><td>{a.location||'—'}</td><td><span className={`status ${a.status==='Đang hoạt động'?'green':a.status==='Đang sửa chữa'?'orange':'gray'}`}>{a.status}</span></td><td className="actions"><button type="button" className="primary-btn" onClick={()=>{setChecklistAccess(CHECKLIST_TEST_MODE);setDetailAsset(a)}}>{CHECKLIST_TEST_MODE?'Mở Checklist':'Mở hồ sơ / quét QR'}</button></td></tr>)}</tbody></table>{filteredAssets.length===0&&<Empty text="Chưa có thiết bị phù hợp."/ >}</div></section>}
         {page==='assets' && <section className="panel"><div className="panel-head"><div><h2>{showArchived?'Thiết bị đã lưu kho':'Danh mục thiết bị'}</h2><p>{showArchived?'Hồ sơ được giữ lại để tra cứu hoặc khôi phục':'Quản lý lý lịch, mã QR, ảnh và tình trạng thiết bị'}</p></div><div className="asset-toolbar">
             <button className={!showArchived?'soft-btn':'text-btn'} onClick={()=>setShowArchived(false)}>Đang quản lý ({activeAssets.length})</button>
             <button className={showArchived?'soft-btn':'text-btn'} onClick={()=>setShowArchived(true)}><Archive size={15}/> Lưu kho ({archivedAssets.length})</button>
@@ -564,6 +574,7 @@ export default function App() {
           <div className="table-wrap"><table><thead><tr><th>Mã / Tên vật tư</th><th>Nhóm</th><th>Tồn kho</th><th>Tồn tối thiểu</th><th>Vị trí</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
           {filteredItems.map(i=><tr key={i.id}><td><button type="button" className="inventory-name-link" onClick={()=>setDetailItem(i)}><b>{i.code}</b><small>{i.name}</small></button></td><td>{i.group}</td><td><b>{i.quantity} {i.unit}</b></td><td>{i.minQuantity} {i.unit}</td><td>{i.location||'—'}</td><td><span className={`status ${i.quantity<=i.minQuantity?'red':'green'}`}>{i.quantity<=i.minQuantity?'Sắp hết':'Đủ tồn'}</span></td><td className="actions"><button className="text-btn" onClick={()=>addMovement(i,'Nhập',Number(prompt('Số lượng nhập?','1')))}>Nhập</button><button className="text-btn" onClick={()=>addMovement(i,'Xuất',Number(prompt('Số lượng xuất?','1')))}>Xuất</button><button className="text-btn" onClick={()=>{setEditingItem(i);setModal('item')}}>Sửa</button></td></tr>)}
           </tbody></table>{filteredItems.length===0&&<Empty text="Chưa có vật tư."/ >}</div></section>}
+        {page==='planning' && <section className="panel"><div className="panel-head"><div><h2>Kế hoạch</h2><p>Khu vực tập trung các kế hoạch vận hành và kỹ thuật. Các phân hệ sẽ được hoàn thiện theo từng giai đoạn.</p></div><CalendarDays/></div><div className="report-grid"><button type="button" className="panel report-card" onClick={()=>setPage('tasks')}><CalendarDays/><div><b>Kế hoạch bảo dưỡng</b><p>Quản lý lịch bảo dưỡng, hạn thực hiện và tiến độ hiện có</p><span className="soft-btn">Mở kế hoạch bảo dưỡng</span></div></button><div className="panel report-card"><ClipboardList/><div><b>Kế hoạch bảo trì</b><p>Phân hệ lập kế hoạch bảo trì sẽ được xây dựng ở giai đoạn tiếp theo.</p><span className="status gray">Đang lên kế hoạch</span></div></div></div></section>}
         {page==='tasks' && <section className="panel"><div className="panel-head"><div><h2>Kế hoạch bảo dưỡng</h2><p>Lịch công việc, hạn thực hiện và tiến độ bảo dưỡng</p></div><button className="soft-btn" onClick={exportTasks}><Download size={16}/> Xuất Excel</button></div>
           <div className="table-wrap"><table><thead><tr><th>Ngày đến hạn</th><th>Thiết bị</th><th>Công việc</th><th>Chu kỳ</th><th>Trạng thái</th><th></th></tr></thead><tbody>
           {filteredTasks.map(t=><tr key={t.id}><td>{dateText(t.dueDate)}</td><td>{assets.find(a=>a.id===t.assetId)?.name??'Chưa gắn thiết bị'}</td><td><b>{t.title}</b><small>{t.checklist.split('\n').filter(Boolean).length} bước công việc</small></td><td>{t.frequency}</td><td><span className={`status ${t.status==='Hoàn thành'?'green':t.dueDate<today()?'red':'orange'}`}>{t.status==='Hoàn thành'?'Hoàn thành':t.dueDate<today()?'Quá hạn':t.status}</span></td><td className="actions"><button className="text-btn" onClick={()=>{setEditingTask(t);setModal('task')}}>Chi tiết</button>{t.status!=='Hoàn thành'&&<button className="text-btn success-text" onClick={()=>completeTask(t)}>Hoàn thành</button>}</td></tr>)}
@@ -590,11 +601,11 @@ export default function App() {
     </main>
     {mobileMore&&<div className="mobile-more-backdrop" onClick={()=>setMobileMore(false)}><div className="mobile-more-menu" onClick={e=>e.stopPropagation()}>
       <div className="mobile-more-title">Chức năng khác</div>
-      {([['logs','Bảo dưỡng – Sửa chữa',ClipboardList],['reports','Báo cáo',BarChart3],['settings','Cài đặt',Settings]] as const).map(([key,label,Icon])=><button key={key} onClick={()=>{setPage(key);setSearch('');setMobileMore(false)}}><Icon size={18}/>{label}<ChevronRight size={16}/></button>)}
+      {([['inventory','Kho vật tư',Package],['tasks','Kế hoạch bảo dưỡng',CalendarDays],['logs','Bảo dưỡng – Sửa chữa',Wrench],['reports','Báo cáo',BarChart3],['settings','Cài đặt',Settings]] as const).map(([key,label,Icon])=><button key={key} onClick={()=>{setPage(key);setSearch('');setMobileMore(false)}}><Icon size={18}/>{label}<ChevronRight size={16}/></button>)}
     </div></div>}
     {notice&&<div className="toast"><Check size={17}/>{notice}</div>}
     {detailItem&&<InventoryDetailModal value={detailItem} close={()=>setDetailItem(null)} edit={()=>{setEditingItem(detailItem);setDetailItem(null);setModal('item')}}/>}
-    {detailAsset&&<AssetDetailModal value={detailAsset} logs={logs.filter(l=>l.assetId===detailAsset.id)} allowChecklist={checklistAccess} createRepairFromChecklist={createRepairFromChecklist} close={()=>{setDetailAsset(null);setChecklistAccess(false)}} edit={()=>{setEditingAsset({...detailAsset,images:detailAsset.images??[]});setDetailAsset(null);setChecklistAccess(false);setModal('asset')}} addLog={()=>{setEditingLog({id:uid(),assetId:detailAsset.id,date:today(),kind:'Sửa chữa',description:'',parts:'',readings:'',result:'',performedBy:''});setModal('log')}}/>}
+    {detailAsset&&<AssetDetailModal value={detailAsset} logs={logs.filter(l=>l.assetId===detailAsset.id)} allowChecklist={checklistAccess || (CHECKLIST_TEST_MODE && page==='checklist')} createRepairFromChecklist={createRepairFromChecklist} close={()=>{setDetailAsset(null);setChecklistAccess(false)}} edit={()=>{setEditingAsset({...detailAsset,images:detailAsset.images??[]});setDetailAsset(null);setChecklistAccess(false);setModal('asset')}} addLog={()=>{setEditingLog({id:uid(),assetId:detailAsset.id,date:today(),kind:'Sửa chữa',description:'',parts:'',readings:'',result:'',performedBy:''});setModal('log')}}/>}
     {modal==='asset'&&editingAsset&&<AssetModal value={editingAsset} close={()=>{setModal(null);setEditingAsset(null)}} save={saveAsset} assets={assets}/>}
     {modal==='item'&&editingItem&&<ItemModal value={editingItem} close={()=>{setModal(null);setEditingItem(null)}} save={saveItem}/>}
     {modal==='task'&&editingTask&&<TaskModal value={editingTask} assets={assets} close={()=>{setModal(null);setEditingTask(null)}} save={saveTask}/>}
