@@ -906,6 +906,82 @@ function buildDefaultChecklist(asset: Asset): ChecklistTemplateItem[] {
       'Kiểm tra che chắn an toàn và vệ sinh khu vực'
     ]
   }
+  Object.assign(byCategory, {
+    'Bộ chuyển nguồn ATS': [
+      'Kiểm tra trạng thái nguồn lưới và nguồn máy phát trên bộ điều khiển',
+      'Kiểm tra chế độ Auto/Manual và tín hiệu sẵn sàng',
+      'Kiểm tra chỉ thị vị trí máy cắt/contactor nguồn lưới và máy phát',
+      'Kiểm tra liên động điện và cơ khí, tránh đóng song song ngoài thiết kế',
+      'Kiểm tra thời gian trễ chuyển nguồn và chuyển trả nguồn',
+      'Kiểm tra cảnh báo, nguồn điều khiển và ắc quy nếu có',
+      'Kiểm tra đầu nối, dây tín hiệu và tiếp địa',
+      'Thử chuyển nguồn theo kế hoạch được phê duyệt và ghi nhận kết quả'
+    ],
+    'Tủ tụ bù': [
+      'Kiểm tra bộ điều khiển tụ bù và hệ số công suất hiển thị',
+      'Ghi nhận hệ số công suất trước/sau khi đóng cấp tụ',
+      'Kiểm tra trạng thái đóng cắt từng cấp tụ',
+      'Kiểm tra contactor chuyên dụng hoặc thyristor đóng cắt tụ',
+      'Kiểm tra tụ điện phồng, rò dầu, nứt vỡ hoặc biến dạng',
+      'Kiểm tra cầu chì, cuộn kháng lọc sóng hài và đầu nối',
+      'Kiểm tra nhiệt độ trong tủ, quạt làm mát và thông gió',
+      'Ghi nhận cảnh báo quá áp, quá dòng hoặc quá nhiệt'
+    ],
+    'Hộp giảm tốc': [
+      'Kiểm tra mức dầu, chất lượng dầu và lịch thay dầu',
+      'Kiểm tra rò rỉ dầu tại phớt và mặt ghép',
+      'Kiểm tra tiếng ồn, rung động và nhiệt độ vỏ hộp',
+      'Kiểm tra độ chắc chắn bulông chân đế và mặt bích',
+      'Kiểm tra khớp nối, then, puly hoặc nhông xích liên kết',
+      'Kiểm tra độ đồng tâm và tình trạng tải truyền động',
+      'Kiểm tra nút thông hơi, nút châm và nút xả dầu'
+    ],
+    'Thiết bị đo lường': [
+      'Kiểm tra tình trạng vỏ, màn hình và đầu nối thiết bị',
+      'Kiểm tra nguồn cấp và tín hiệu đầu ra',
+      'Đối chiếu giá trị đo với thiết bị chuẩn hoặc giá trị tham chiếu',
+      'Kiểm tra dây tín hiệu, chống nhiễu và tiếp địa',
+      'Kiểm tra vị trí lắp đặt, rung động, nhiệt độ và độ ẩm',
+      'Kiểm tra hạn hiệu chuẩn/kiểm định và tem nhận diện',
+      'Ghi nhận sai lệch đo và tình trạng cảnh báo'
+    ],
+    'Bộ lọc khí nén': [
+      'Kiểm tra chênh áp trước và sau bộ lọc',
+      'Kiểm tra lõi lọc và thời hạn thay thế',
+      'Kiểm tra cốc lọc, nứt vỡ và rò rỉ',
+      'Kiểm tra bộ xả nước ngưng tự động/thủ công',
+      'Kiểm tra áp suất làm việc và tình trạng tắc nghẽn',
+      'Kiểm tra van khóa, bypass và chiều dòng khí',
+      'Ghi nhận tình trạng nước, dầu và bụi bẩn trong cốc lọc'
+    ],
+    'Khí nén': [
+      'Kiểm tra áp suất đường ống chính và áp suất tại điểm sử dụng',
+      'Kiểm tra rò rỉ tại khớp nối, van và ống mềm',
+      'Kiểm tra giá đỡ, rung động và ăn mòn đường ống',
+      'Kiểm tra van khóa, van xả và van điều áp',
+      'Kiểm tra bộ lọc, bộ điều áp và bộ tra dầu tại điểm dùng',
+      'Kiểm tra nước ngưng và điểm xả thấp đường ống',
+      'Ghi nhận sụt áp bất thường và khu vực tiêu thụ lớn'
+    ],
+    'Nồi hấp': [
+      'Kiểm tra tình trạng buồng hấp, cửa và gioăng làm kín',
+      'Kiểm tra áp suất, nhiệt độ và đồng hồ hiển thị',
+      'Kiểm tra van an toàn, van xả và đường thoát nước',
+      'Kiểm tra cấp nước, tạo hơi và xả ngưng',
+      'Kiểm tra khóa liên động cửa và thiết bị bảo vệ',
+      'Kiểm tra chương trình chu trình, cảnh báo và nhật ký lỗi',
+      'Ghi nhận kết quả thử chu trình theo quy trình của đơn vị'
+    ],
+    'Thiết bị xưởng': [
+      'Kiểm tra vỏ máy, chân đế, bulông và che chắn an toàn',
+      'Kiểm tra nguồn điện, dây dẫn và tiếp địa',
+      'Kiểm tra công tắc, nút dừng khẩn và thiết bị bảo vệ',
+      'Kiểm tra cơ cấu truyền động, ray trượt hoặc bộ phận chuyển động',
+      'Kiểm tra tiếng ồn, rung động và phát nhiệt',
+      'Thử vận hành không tải và có tải theo hướng dẫn',
+      'Kiểm tra vệ sinh, bôi trơn và tình trạng phụ kiện'
+    ]
+  })
   let labels = byCategory[category]
   if (!labels && category.toLowerCase().includes('quạt')) labels = byCategory['Quạt công nghiệp']
   if (!labels && category.toLowerCase().includes('điều hòa')) labels = byCategory['Điều hòa thông gió']
