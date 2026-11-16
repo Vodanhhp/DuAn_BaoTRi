@@ -665,3 +665,13 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Rà soát toàn bộ file sau sửa: 1.527 dòng; không còn phát hiện mẫu câu lệnh bị dính tương tự tại các điểm nối.
 - Commit code trên `main`: `e4373848e39a762050b7241c59720228f19e669b`.
 - Chưa chạy build local; cần Pull origin và chạy lại `npm.cmd run build`.
+
+
+## 16/11/2026 – Xác nhận build local thành công sau tích hợp Supabase Auth
+- Người dùng chạy `npm.cmd run build` tại `E:\DuAnBaoTri\DuAn_BaoTRi`.
+- TypeScript `tsc -b`: hoàn tất, không còn lỗi.
+- Vite 6.4.6: build thành công; 1.660 modules transformed.
+- PWA 0.21.2: generateSW thành công, precache 10 entries; tạo `dist/sw.js` và `dist/workbox-ee9d8b34.js`.
+- Xác nhận: mã nguồn hiện tại build production thành công trên máy local.
+- Chưa xác nhận đăng nhập thực tế với Supabase, đăng xuất, hoặc kiểm thử các chức năng nghiệp vụ sau đăng nhập.
+- Bước tiếp theo: tạo tài khoản Auth đầu tiên trong Supabase Dashboard (nếu chưa tạo), chạy ứng dụng local và kiểm tra đăng nhập/đăng xuất; tiếp tục giữ dữ liệu nghiệp vụ local, chưa đồng bộ cloud.
