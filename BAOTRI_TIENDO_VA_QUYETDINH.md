@@ -274,3 +274,11 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Việc tạo mẫu được thực hiện trong transaction và kiểm tra biểu mẫu đã tồn tại trước khi thêm, tránh tạo trùng khi component khởi tạo lại. Không ghi đè biểu mẫu đã tùy chỉnh, không ảnh hưởng phiên bản và phiếu kết quả cũ.
 - Nút Thực hiện Checklist chỉ được kích hoạt khi biểu mẫu và phiên bản hiện hành đã sẵn sàng; bổ sung điều kiện kiểm tra phiên bản để tránh mở phiếu rỗng.
 - Đã cập nhật trực tiếp src/App.tsx trên main. Chưa chạy build/test và chưa kiểm thử thao tác thực tế; cần người dùng Pull origin, chạy build, thử mở nhiều loại thiết bị, thực hiện và lưu phiếu. Chưa tuyên bố chức năng đã hoàn tất.
+
+
+### Tách lịch sử Checklist và bổ sung in phiếu A4 (16/11/2026)
+- Giữ nguyên phân hệ **Lịch sử bảo trì – sửa chữa**: chỉ ghi nhận công việc bảo dưỡng/sửa chữa thủ công; số lần ghi nhận không tự tăng khi thực hiện Checklist.
+- Đổi phần kết quả thực hiện thành khu vực **Lịch sử Checklist** riêng, hiển thị số phiếu đã lưu, thời gian, phiên bản biểu mẫu, người thực hiện và kết quả chung. Khi chưa có phiếu, hiển thị hướng dẫn lưu phiếu rõ ràng.
+- Mỗi phiếu Checklist có nút **In phiếu A4**. Mẫu in gồm thông tin thiết bị, biểu mẫu/phiên bản, thời gian, người thực hiện, kết quả, toàn bộ hạng mục/kết quả/ghi chú và khu vực ký xác nhận.
+- Mẫu in được tách riêng khỏi mẫu in lịch sử bảo trì – sửa chữa và không thay đổi dữ liệu phiếu đã lưu.
+- Đã cập nhật trực tiếp src/App.tsx và src/style.css trên main. Chưa chạy build hoặc xác minh in trên Chrome; cần đồng bộ và kiểm thử thực tế. Không tuyên bố chức năng in hoàn tất trước khi kiểm thử.
