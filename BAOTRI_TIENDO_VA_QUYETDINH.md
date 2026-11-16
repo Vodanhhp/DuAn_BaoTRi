@@ -256,3 +256,12 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Người dùng đã thử chạy local bằng PowerShell tại `E:\\DuAnBaoTri\\DuAn_BaoTRi`; `npm install` bị PowerShell chặn script `npm.ps1`, đã khắc phục bằng `npm.cmd install`. Ứng dụng chạy được nhưng không thấy Checklist vì thư mục local đang dùng chưa có thay đổi từ nhánh thử nghiệm. Git chưa được nhận diện trong PATH của PowerShell (`where.exe git` không tìm thấy); người dùng có GitHub Desktop và đã thử đồng bộ.
 - Hướng xử lý tiếp theo: kiểm tra kỹ phần Checklist trên nhánh thử nghiệm; sau khi đủ an toàn thì đưa trực tiếp thay đổi cần thiết vào `main` theo quy trình phù hợp, cập nhật file tiến độ này trong cùng đợt. Sau đó người dùng đồng bộ `main` bằng GitHub Desktop và chạy thử local.
 - **Quy tắc cập nhật tài liệu:** file chính thức là `BAOTRI_TIENDO_VA_QUYETDINH.md` ở thư mục gốc nhánh `main`. Mọi quyết định mới, thay đổi code, kết quả build/test và việc còn tồn tại phải cập nhật trực tiếp vào đúng file này; không tạo file tiến độ khác.
+
+### Đưa Checklist trực tiếp vào main (16/11/2026)
+- Theo yêu cầu người dùng, đã cập nhật trực tiếp hai tệp trên nhánh `main`, không tạo nhánh mới và không dùng Pull Request làm quy trình triển khai:
+  - `src/App.tsx`: thêm khu vực Checklist trong hồ sơ thiết bị, tạo/sửa biểu mẫu, thực hiện phiếu và xem lịch sử.
+  - `src/db.ts`: bổ sung các kiểu dữ liệu và ba bảng IndexedDB `checklistTemplates`, `checklistVersions`, `checklistResults`; nâng schema lên version 3, giữ nguyên dữ liệu cũ.
+- Đã sửa lỗi thiếu trường `templateItemId` trong snapshot kết quả và thống nhất kiểu sự kiện biểu mẫu với `FormEvent`.
+- Đã đọc lại các tệp trên `main` sau khi cập nhật; xác nhận mã Checklist và schema v3 hiện diện.
+- **Chưa chạy được build/test trong môi trường này.** Người dùng cần đồng bộ nhánh `main` bằng GitHub Desktop, sau đó chạy `npm.cmd run build` và kiểm tra giao diện Checklist trong hồ sơ một thiết bị.
+- Lưu ý: PR #1/nhánh thử nghiệm trước đó không phải quy trình triển khai nữa; các thay đổi Checklist đã được ghi trực tiếp vào `main`. Không tiếp tục tạo nhánh/PR mới cho các lần sửa sau.
