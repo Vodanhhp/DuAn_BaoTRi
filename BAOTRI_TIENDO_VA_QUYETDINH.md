@@ -931,3 +931,74 @@ Các bảng nghiệp vụ có `organization_id`. Mọi FK liên kết nghiệp v
 - Mã nguồn: chưa sửa.
 - Dữ liệu local: giữ nguyên; chưa backup/import cloud.
 - Bước tiếp theo: đối chiếu chi tiết interface TypeScript và trường dữ liệu thực tế với ERD, hoàn thiện mapping và các ràng buộc trước khi trình schema SQL lần cuối.
+
+
+## 16/11/2026 – Đối chiếu ERD với TypeScript interfaces thực tế
+
+Đã đọc lại toàn bộ `src/db.ts` trên `main` để đối chiếu tên trường thực tế. Mục tiêu là tránh thiết kế schema thiếu trường hoặc tự giả định dữ liệu chưa có. Không sửa mã nguồn và chưa tạo migration.
+
+### 1. Mapping trường hiện tại
+
+**assets → assets**
+- Giữ: `id, code, name, category, brand, model, serial, location, commissionedAt, power, cycle, cycleStartedAt, transferredFromOtherFacility, status, notes, images, archivedAt, createdAt, updatedAt`.
+- `images` hiện là `string[]` data URL/Base64; chuyển thành quan hệ asset_images + Storage object path, không import nguyên chuỗi Base64 vào PostgreSQL.
+- `category` hiện là chuỗi tự do; `asset_categories` có thể quản lý danh mục gợi ý nhưng không ép FK bắt buộc ngay nếu cần giữ dữ liệu cũ chưa chuẩn hóa.
+
+**inventory → inventory_items**
+- Giữ: `id, code, name, group, unit, partNumber, size, quantity, minQuantity, location, supplier, unitPrice, updatedAt`.
+- `quantity` là số tồn hiện tại; phải được bảo vệ khỏi client tự cập nhật. Thay đổi tồn đi qua movement và transaction/RPC.
+- Cần bổ sung `created_at`, `created_by`, `organization_id`; cân nhắc `archived_at` cho lưu kho vật tư trong tương lai.
+
+**tasks → maintenance_tasks**
+- Giữ: `id, assetId, title, dueDate, frequency, status, checklist, readings, notes, completedAt, createdAt, updatedAt`.
+- Bổ sung `organization_id` và `assigned_to_user_id` để thực thi quyền User chỉ cập nhật tiến độ việc được giao.
+- Hiện interface chưa có trường người giao, người hoàn thành hoặc snapshot người thực hiện; nếu cần audit đầy đủ có thể bổ sung ở schema mới.
+
+**logs → maintenance_logs**
+- Giữ: `id, assetId, taskId, checklistResultId, date, kind, description, parts, readings, result, performedBy`.
+- Hiện `performedBy` là chuỗi nhập tay và interface không có `createdAt/updatedAt`; schema mới cần `performed_by_user_id` lấy từ Auth và `performed_by_name_snapshot`, thêm `created_at`.
+- Giữ `taskId` và `checklistResultId` nullable đúng như nghiệp vụ hiện tại.
+
+**movements → inventory_movements**
+- Giữ: `id, itemId, date, type` (Nhập/Xuất/Điều chỉnh), `quantity, reason, linkedAssetId`.
+- Hiện interface không có người tạo, đơn giá tại thời điểm giao dịch hoặc mã chứng từ; schema mới cần người tạo và snapshot các thông tin cần thiết cho kiểm toán.
+- Quyền User: chỉ Nhập/Xuất; Điều chỉnh chỉ Admin. Movement là lịch sử bất biến; cập nhật tồn và tạo movement phải cùng transaction.
+
+**checklistTemplates → checklist_templates**
+- Giữ: `id, assetId, title, description, currentVersion, active, createdAt, updatedAt`.
+- Một template gắn một asset; không dùng template chung cho nhiều thiết bị.
+
+**checklistVersions → checklist_template_versions**
+- Giữ: `id, templateId, assetId, version, title, description, items, createdAt`.
+- `items` lưu JSONB để giữ cấu trúc hạng mục và thứ tự; phiên bản bất biến.
+
+**checklistResults → checklist_results**
+- Giữ: `id, assetId, templateId, templateVersionId, templateVersion, templateTitle, performedAt, performedBy, result, scheduledFor, isMakeup, notes, items, createdAt`.
+- `items` là snapshot kết quả từng hạng mục, lưu JSONB; không chỉ tham chiếu version vì nội dung phiếu phải bất biến.
+- `performedBy` hiện là chuỗi; schema mới thay bằng user ID được xác thực + snapshot tên. Không nhận user ID/người thực hiện do client tự khai báo.
+- Giữ `scheduledFor` và `isMakeup` để không mất lịch Checklist định kỳ và dấu Checklist bù.
+
+**syncQueue**
+- Chỉ tồn tại local để xếp hàng thay đổi; không phải bảng nghiệp vụ cloud bắt buộc trong schema lõi. Khi chuyển sang kiến trúc cloud-first, cần thiết kế lại cơ chế offline/outbox riêng, không import queue cũ một cách máy móc.
+
+### 2. Ràng buộc và quy tắc cần giữ
+- Tất cả ID hiện tại là string do `crypto.randomUUID()`; có thể giữ nguyên UUID khi import để không đứt liên kết. Schema mới dùng UUID.
+- Mã thiết bị và mã vật tư chỉ cần unique trong từng organization, không unique toàn hệ thống: unique (organization_id, code).
+- Mỗi template thuộc một asset; unique (organization_id, asset_id) trên checklist_templates.
+- Version unique (organization_id, template_id, version); kết quả phải tham chiếu đúng version thuộc đúng template và asset.
+- FK liên kết asset/task/item/template/result cần ràng buộc cùng organization_id; tránh tham chiếu chéo tenant.
+- Không cascade xóa lịch sử; archive thiết bị không xóa task/log/checklist cũ. Xem xét RESTRICT hoặc soft archive.
+- Giữ enum trạng thái và loại giao dịch có mapping rõ ràng; không tự chuyển giá trị tiếng Việt thành enum mới mà không có bảng mapping import.
+
+### 3. Những khác biệt cần xử lý khi chuyển đổi
+- Local interface chưa có `organization_id`, `created_by`, `performed_by_user_id`, membership hoặc tenant context; đây là các trường mới bắt buộc.
+- `performedBy` ở log và Checklist hiện là text; không thể tự suy ra user Auth chính xác khi import lịch sử cũ. Dữ liệu cũ phải giữ snapshot text, user_id để NULL nếu không xác minh được.
+- Ảnh Base64 cần tách upload Storage; phải có quy trình retry/đối chiếu để không mất ảnh.
+- Tồn kho local có quantity hiện tại và movements; trước import phải đối chiếu tổng movement với quantity, vì dữ liệu lịch sử có thể bắt đầu giữa vòng đời tồn kho.
+- Các trường ngày hiện dùng ISO string; migration cần chuẩn hóa timestamptz/date phù hợp, giữ nguyên múi giờ và ngày nghiệp vụ.
+- ID UUID có thể giữ nguyên; cần kiểm tra mọi ID thực tế hợp lệ UUID trước import.
+
+### 4. Trạng thái và bước tiếp theo
+- Đã đối chiếu các interface chính xác trong `src/db.ts`; mapping sơ bộ đủ trường cho 9 stores.
+- Chưa hoàn tất kiểm kê mọi luồng ghi/đọc UI, backup và quy tắc nhập/xuất kho; chưa viết SQL.
+- Bước tiếp theo: chốt schema SQL chi tiết gồm kiểu dữ liệu, PK/FK composite, unique/index, trigger/RPC và policy RLS; sau đó rà soát riêng từng policy và test plan trước khi tạo migration đầu tiên.
