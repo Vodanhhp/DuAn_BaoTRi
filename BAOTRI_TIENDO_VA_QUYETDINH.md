@@ -434,3 +434,19 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 **Rủi ro:** dữ liệu danh mục cũ đang lưu dạng mảng phẳng; cần hỗ trợ migration khi nạp. Tên loại thiết bị phải duy nhất vì hồ sơ hiện tại chỉ lưu tên loại, chưa lưu group ID.
 
 **Kiểm thử:** kiểm tra migration dữ liệu cũ; tạo `TB Y TẾ` + `Máy làm răng` + `MLR`; thêm tiếp loại khác vào nhóm TB Y TẾ; xác nhận select hiển thị đúng nhóm/loại; xác nhận mã preview và mã lưu dùng `MLR`; xác nhận danh mục chuẩn và hồ sơ cũ không đổi; chạy `npm.cmd run build` nếu có môi trường build.
+
+
+### Đã sửa danh mục thiết bị thành đúng cấu trúc 2 cấp: Nhóm → Loại thiết bị (16/11/2026)
+- Sửa trực tiếp `src/App.tsx` trên `main`. Cấu trúc danh mục bổ sung hiện là nhóm có `label` và danh sách `items`, không còn danh sách phẳng hiển thị dưới nhãn “Nhóm tự tạo”.
+- Trong form **Thêm thiết bị**, trường chọn được đặt đúng tên **Loại thiết bị**; các lựa chọn được gom theo tên nhóm. Nút **Thêm nhóm / loại thiết bị** mở phần nhập danh mục:
+  - Chọn `Tạo nhóm mới`, nhập tên nhóm (ví dụ `TB Y TẾ`), tên loại (ví dụ `Máy làm răng`) và mã loại (`MLR`) để tạo nhóm cùng loại đầu tiên.
+  - Hoặc chọn một nhóm bổ sung đã có để thêm loại thiết bị mới vào nhóm đó.
+  - Sau khi lưu, loại mới tự được chọn cho hồ sơ đang tạo.
+- Danh sách chọn hiển thị dạng `TB Y TẾ` (nhóm) chứa `Máy làm răng · MLR` (loại). Mã loại tiếp tục là tiền tố mã định danh; cả xem trước và lưu thiết bị đều dùng danh mục hai cấp.
+- Kiểm tra trùng tên loại và mã loại trên toàn bộ danh mục chuẩn + danh mục bổ sung; tên nhóm mới không được trùng nhóm chuẩn hoặc nhóm bổ sung đã có.
+- Tương thích dữ liệu đã lưu từ phiên bản trước: mảng phẳng cũ được nạp và gom vào nhóm `Danh mục bổ sung (cũ)` để không mất loại đã tạo. Khi thêm mục mới, dữ liệu được lưu theo cấu trúc hai cấp. Không đổi trường `Asset.category` (vẫn lưu tên loại), không đổi schema IndexedDB và không đổi mã thiết bị đã cấp.
+- Kiểm tra tĩnh mã nguồn: đạt các mục cấu trúc nhóm/loại, migration dữ liệu cũ, tạo nhóm mới, thêm loại vào nhóm có sẵn, render optgroup, kiểm tra trùng, dùng mã loại trong preview và lưu; đã loại bỏ nhãn “Nhóm tự tạo”.
+- **Chưa chạy `npm.cmd run build` và chưa kiểm thử giao diện thực tế.** Cần build và thử đúng ví dụ `TB Y TẾ` → `Máy làm răng` → `MLR`, sau đó thêm tiếp một loại khác vào nhóm TB Y TẾ và tải lại trang để kiểm tra dữ liệu còn nguyên.
+- Commit ghi kế hoạch trước khi sửa: `62a53565b2cdff8e63ef09be452df858266aff8b`.
+- Commit sửa cấu trúc hai cấp: `cffcf4b8ebc8e4282cecc05cd75f8ed8202f6fd2`.
+- Bước tiếp theo: Pull origin trên GitHub Desktop, chạy `npm.cmd run build`, rồi thử quy trình nhóm/loại như trên.
