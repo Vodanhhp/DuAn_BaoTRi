@@ -13,7 +13,7 @@ import { db, uid, now, queueChange, type Asset, type InventoryItem, type Task, t
 type Page = 'dashboard' | 'checklist' | 'assets' | 'inventory' | 'planning' | 'tasks' | 'logs' | 'reports' | 'settings'
 
 // Chỉ bật trong giai đoạn thử nghiệm. Khi nghiệm thu Checklist, đổi duy nhất thành false để bắt buộc quét QR.
-const CHECKLIST_TEST_MODE = true
+const CHECKLIST_TEST_MODE = false
 const xmlEntities: Record<string, string> = {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}
 const xmlText = (value: string) => value.replace(/[&<>"']/g, ch => xmlEntities[ch] ?? ch)
 const htmlEscape = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch] ?? ch))
