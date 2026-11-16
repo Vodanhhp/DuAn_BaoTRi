@@ -6,7 +6,8 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import {
   Activity, Archive, BarChart3, Building2, CalendarDays, Check, ChevronRight, ClipboardList,
   Download, FileSpreadsheet, Printer, HardDrive, LayoutDashboard, Menu, MoreHorizontal, Package,
-  Plus, QrCode, Search, Settings, ShieldAlert, Trash2, UserRound, Wrench, X, ChevronDown, Image as ImageIcon
+  Plus, QrCode, Search, Settings, ShieldAlert, Trash2, UserRound, Wrench, X, ChevronDown, Image as ImageIcon,
+  Phone, Mail
 } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { Html5QrcodeScanner } from 'html5-qrcode'
@@ -1056,7 +1057,24 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut }
             <div className="setting-row"><div><b>Trạng thái đồng bộ</b><small>{queueCount} thay đổi đang chờ. Chưa kết nối máy chủ cloud ở phiên bản này.</small></div><span className="status orange">Chỉ lưu cục bộ</span></div>
             <div className="setting-row"><div><b>Giao diện</b><small>Chuyển đổi giữa tối/ sáng và thu gọn thông tin chính.</small></div><div className="setting-inline-actions"><button className={`soft-btn ${theme === 'light' ? 'active' : ''}`} onClick={()=>setTheme('light')}>Sáng</button><button className={`soft-btn ${theme === 'dark' ? 'active' : ''}`} onClick={()=>setTheme('dark')}>Tối</button><button className={`soft-btn ${compact ? 'active' : ''}`} onClick={()=>setCompact(v=>!v)}>{compact ? 'Thu gọn' : 'Mở rộng'}</button></div></div>
           </section>
-          <section className="panel"><h2>Thông tin phiên bản</h2><p className="muted">BAOTRI PWA · 0.1.0</p><p>Đây là bộ khung chạy thử để cùng hoàn thiện nghiệp vụ. Dữ liệu nằm trong trình duyệt trên thiết bị hiện tại.</p><p className="warning-box">Không dùng dữ liệu này làm hồ sơ bảo trì chính thức trước khi thiết lập máy chủ, sao lưu và kiểm thử đồng bộ.</p></section>
+          <section className="panel about-panel">
+            <div className="about-heading">
+              <div><span className="about-eyebrow">GIỚI THIỆU ỨNG DỤNG</span><h2>Thông tin phiên bản</h2></div>
+              <span className="about-version">BAOTRI PWA <b>0.1.0</b></span>
+            </div>
+            <p className="about-description">Đây là bộ khung chạy thử để cùng hoàn thiện nghiệp vụ. Dữ liệu nằm trong trình duyệt trên thiết bị hiện tại.</p>
+            <div className="about-contact-grid">
+              <a className="about-contact" href="tel:0912500396">
+                <span className="about-contact-icon"><Phone size={18}/></span>
+                <span className="about-contact-copy"><small>Điện thoại liên hệ</small><strong>0912500396</strong></span>
+              </a>
+              <a className="about-contact" href="mailto:tuanluongpham@gmail.com">
+                <span className="about-contact-icon"><Mail size={18}/></span>
+                <span className="about-contact-copy"><small>Email liên hệ</small><strong>tuanluongpham@gmail.com</strong></span>
+              </a>
+            </div>
+            <div className="about-warning"><ShieldAlert size={18}/><p>Không dùng dữ liệu này làm hồ sơ bảo trì chính thức trước khi thiết lập máy chủ, sao lưu và kiểm thử đồng bộ.</p></div>
+          </section>
         </div>}
       </div>
     </main>

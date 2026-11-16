@@ -52,6 +52,28 @@ html[data-theme='dark']{--bg:#0d1716;--panel:#122824;--panel-alt:#152d2a;--sideb
   .mobile-more-menu button svg:last-child{margin-left:auto}
 }
 
+.about-panel{padding:24px}
+.about-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:12px}
+.about-eyebrow{display:block;color:var(--primary);font-size:9px;font-weight:700;letter-spacing:1.2px;margin-bottom:5px}
+.about-heading h2{font-size:17px!important;margin:0!important}
+.about-version{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--panel-alt);color:var(--muted);font-size:10px;font-weight:600;white-space:nowrap}
+.about-version b{color:var(--primary);font-size:10px}
+.about-description{max-width:760px;line-height:1.7;margin-bottom:18px!important}
+.about-contact-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));margin-bottom:14px;padding:13px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+.about-contact{display:flex;align-items:center;gap:11px;min-width:0;padding:4px 14px;color:var(--text);text-decoration:none}
+.about-contact:first-child{padding-left:0;border-right:1px solid var(--border)}
+.about-contact:last-child{padding-right:0;padding-left:18px}
+.about-contact:hover .about-contact-copy strong{color:var(--primary)}
+.about-contact:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+.about-contact-icon{width:34px;height:34px;flex:0 0 34px;display:grid;place-items:center;border-radius:50%;background:var(--success-bg);color:var(--success-text)}
+.about-contact-copy{display:grid;gap:4px;min-width:0}
+.about-contact-copy small{color:var(--muted);font-size:9px}
+.about-contact-copy strong{overflow-wrap:anywhere;font-size:11px}
+.about-warning{display:flex;align-items:flex-start;gap:10px;padding:12px;border:1px solid var(--border);border-radius:9px;background:var(--warning-bg);color:var(--warning-text)}
+.about-warning svg{flex:0 0 auto;margin-top:1px}
+.about-warning p{color:inherit!important;font-size:10px!important;line-height:1.7}
+@media(max-width:520px){.about-panel{padding:16px}.about-heading{align-items:flex-start;flex-direction:column;gap:9px}.about-contact-grid{grid-template-columns:1fr;gap:10px}.about-contact,.about-contact:first-child,.about-contact:last-child{padding:0;border:0}}
+
 
 /* Danh mục thiết bị: lọc, sắp xếp, hồ sơ và ảnh */
 .asset-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -477,4 +499,103 @@ button:focus-visible,summary:focus-visible,input:focus-visible,select:focus-visi
   .report-period-toolbar .plan-period-control input,.report-period-toolbar .plan-period-control select{min-width:0;width:100%}
   .report-period-toolbar .plan-period-range{padding:0}
   .report-data-panel .panel-head .soft-btn{max-width:none;width:100%}
+}
+
+@media(max-width:680px){
+  .content{width:100%;padding:16px 14px calc(92px + env(safe-area-inset-bottom))}
+  .topbar{gap:8px;min-width:0}
+  .page-heading{flex:1;min-width:0}
+  .topbar h1{max-width:42vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:clamp(15px,4.2vw,18px)}
+  .topbar .eyebrow{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px}
+  .top-actions{flex:0 0 auto}
+  .panel{padding:16px}
+  .panel h2,.panel-head h2{font-size:16px}
+  .panel p{font-size:13px;line-height:1.6}
+  .primary-btn,.soft-btn{min-height:44px;padding:10px 13px;font-size:13px}
+  .icon-btn{width:42px;height:42px}
+  button,.mobile-nav-item,.mobile-more-menu button{min-height:42px}
+  .mobile-nav-item{font-size:10px}
+  .searchbar{height:48px}
+  .searchbar input{font-size:16px}
+  .field{font-size:12px}
+  .field input,.field select,.field textarea,.plan-period-control input,.plan-period-control select{
+    min-height:44px;font-size:16px
+  }
+  .field textarea{min-height:96px}
+  .setting-row{align-items:stretch;flex-direction:column;gap:10px;padding:14px 0}
+  .setting-row b{font-size:13px}
+  .setting-row small{font-size:12px;line-height:1.55}
+  .setting-inline-actions{width:100%;gap:7px}
+  .setting-inline-actions button{flex:1}
+  .muted{font-size:12px}
+  .table-wrap{max-width:100%;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
+  .actions{flex-wrap:wrap}
+  .modal{max-height:calc(100dvh - 24px);padding:18px}
+  .modal-actions{display:flex;flex-wrap:wrap}
+  .modal-actions>*{flex:1 1 130px;min-height:44px}
+}
+
+@media(max-width:680px){
+  .app-shell.light{
+    --bg:#f1f5f3;
+    --panel:#fff;
+    --panel-alt:#f6faf8;
+    --border:#e0e9e4;
+    --soft:#edf4f0;
+    --shadow:0 5px 16px rgba(20,66,52,.07);
+  }
+  .app-shell.light .topbar{
+    color:#fff;
+    background:linear-gradient(115deg,#103b33,#176b5c);
+    border-bottom-color:#ffffff20;
+    box-shadow:0 5px 18px rgba(16,59,51,.16);
+  }
+  .app-shell.light .topbar h1{color:#fff}
+  .app-shell.light .topbar .eyebrow{color:#b7d8ce}
+  .app-shell.light .top-actions .icon-btn{
+    color:#fff;
+    background:#ffffff14;
+    border-color:#ffffff42;
+  }
+  .app-shell.light .top-actions .primary-btn{
+    color:#12483d;
+    background:#d9f2e6;
+    box-shadow:none;
+  }
+  .app-shell.light .top-actions .profile-chip{color:#fff}
+  .app-shell.light .top-actions .avatar{background:#d9f2e6;color:#145b4b}
+  .app-shell.light .panel,.app-shell.light .stat-card{
+    background:linear-gradient(145deg,#fff,#f5faf7);
+    border-color:#e0e9e4;
+    box-shadow:var(--shadow);
+  }
+  .app-shell.light .mini-stat,
+  .app-shell.light .plan-period-toolbar,
+  .app-shell.light .report-period-toolbar,
+  .app-shell.light .checklist-schedule-summary,
+  .app-shell.light .searchbar,
+  .app-shell.light .mobile-more-menu,
+  .app-shell.light .mobile-more-menu button{
+    background:var(--panel-alt);
+    border-color:var(--border);
+  }
+  .app-shell.light .setting-row{border-color:var(--border)}
+  .app-shell.light .mobile-nav{
+    background:linear-gradient(110deg,#103b33,#15594d);
+    border-top-color:#347064;
+    box-shadow:0 -6px 22px rgba(16,59,51,.2);
+  }
+  .app-shell.light .mobile-nav-item{color:#c1d9d1}
+  .app-shell.light .mobile-nav-item.active{
+    color:#fff;
+    background:#ffffff17;
+    border-radius:10px;
+  }
+  .app-shell.light .mobile-nav-item.active svg{color:#9fe0c3}
+  .app-shell.light .mobile-more-title{color:#164c40}
+  .app-shell.light .mobile-more-menu button{color:#173b33}
+  .auth-page{
+    background:radial-gradient(circle at 15% 15%,#b8ddce 0,transparent 36%),linear-gradient(135deg,#dcece5,#eef5f1);
+  }
+  .auth-card{border-color:#cfe2d8;box-shadow:0 20px 55px rgba(20,65,52,.16)}
 }
