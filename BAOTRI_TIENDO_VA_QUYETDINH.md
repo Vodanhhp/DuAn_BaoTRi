@@ -1205,3 +1205,23 @@ Người dùng đã đồng ý hai chính sách sau:
 
 Hai chính sách trên đã được người dùng duyệt. Bước tiếp theo là thiết kế migration SQL đầu tiên để review; tuyệt đối chưa chạy migration lên Supabase trước khi người dùng kiểm tra và xác nhận.
 
+## Quyết định chính sách lịch sử và tồn kho khi chuyển đổi (16/11/2026)
+
+Người dùng đã đồng ý hai đề xuất:
+
+### 1. Lịch sử bảo dưỡng – sửa chữa
+- Phiếu lịch sử đã ghi nhận là bất biến; User và Admin đều không sửa/xóa trực tiếp.
+- Khi có sai sót, Admin tạo bản ghi đính chính liên kết phiếu gốc, ghi rõ nội dung điều chỉnh, lý do, người thực hiện và thời điểm.
+- Giữ nguyên phiếu gốc; khi xem lịch sử phải thể hiện được phiếu gốc và các đính chính liên quan.
+- Thiết kế database cần bảo đảm quyền INSERT đính chính theo quy trình, không cho UPDATE/DELETE phiếu gốc hoặc bản đính chính; lưu audit trail.
+
+### 2. Tồn kho ban đầu khi chuyển dữ liệu lên Supabase
+- Tại thời điểm chuyển đổi, lấy số lượng hiện có của từng vật tư làm số dư đầu kỳ.
+- Ghi nhận bằng loại nghiệp vụ riêng `Tồn đầu kỳ`, không giả lập giao dịch nhập hàng thực tế.
+- Lịch sử nhập/xuất trước chuyển đổi được giữ để tra cứu và đánh dấu là dữ liệu lịch sử; không cộng lại vào số tồn đã chốt đầu kỳ.
+- Từ thời điểm chuyển đổi, mọi nhập/xuất mới phải cập nhật số lượng tồn và tạo movement tương ứng trong cùng transaction phía database.
+- Vật tư có số tồn bằng 0 không cần tạo movement số dư đầu kỳ.
+- Quy trình import phải có mốc thời gian chuyển đổi, snapshot/backup và đối chiếu tổng số lượng trước/sau; phải chống chạy import lặp gây nhân đôi số dư.
+
+Hai chính sách đã được duyệt về nghiệp vụ; chưa viết/chạy migration hoặc import dữ liệu thật.
+
