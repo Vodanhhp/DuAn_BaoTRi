@@ -328,6 +328,13 @@ button:focus-visible,summary:focus-visible,input:focus-visible,select:focus-visi
 }
 .quick-panel button{font-size:12px}
 .task-row,.stock-row{padding:14px 0}
+.settings-profile{grid-column:1/-1}
+.employee-profile-details{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.employee-profile-details>div{min-width:0;border:1px solid var(--border);border-radius:9px;padding:12px;background:var(--panel-alt)}
+.employee-profile-details small,.employee-profile-details b{display:block}
+.employee-profile-details small{font-size:10px;color:var(--muted);margin-bottom:5px}
+.employee-profile-details b{font-size:12px;overflow-wrap:anywhere}
+@media(max-width:680px){.employee-profile-details{grid-template-columns:1fr}}
 .task-info b,.stock-row b{font-size:12px}
 .task-info small,.stock-row small{font-size:11px}
 .footnote{font-size:11px}
@@ -395,3 +402,79 @@ button:focus-visible,summary:focus-visible,input:focus-visible,select:focus-visi
 .auth-brand{display:flex;align-items:center;gap:12px;margin-bottom:30px}.auth-brand>span{width:48px;height:48px;display:grid;place-items:center;border-radius:14px;background:#176b5c;color:#fff}.auth-brand b{display:block;font-size:18px;letter-spacing:2px}.auth-brand small{display:block;font-size:9px;letter-spacing:1.2px;color:#698078}
 .auth-card h1{font-size:23px;margin:0 0 8px}.auth-intro{font-size:13px;line-height:1.6;color:#60736b;margin:0 0 24px}.auth-form{display:grid;gap:10px}.auth-form label{font-size:12px;font-weight:700;margin-top:5px}.auth-input{height:46px;display:flex;align-items:center;gap:10px;padding:0 13px;border:1px solid #dce6e1;border-radius:10px;color:#71857c}.auth-input:focus-within{border-color:#398f7b;box-shadow:0 0 0 3px #398f7b20}.auth-input input{border:0;outline:0;min-width:0;flex:1;font-size:13px;color:#172b28;background:transparent}.auth-submit{height:46px;border:0;border-radius:10px;background:#176b5c;color:#fff;font-weight:700;margin-top:12px}.auth-submit:disabled{opacity:.65;cursor:wait}.auth-error{padding:11px 13px;border-radius:9px;background:#fff0ef;color:#a9322b;font-size:12px;line-height:1.55;margin:8px 0}.auth-note{border-top:1px solid #e7eeea;margin-top:23px;padding-top:17px;font-size:11px;line-height:1.65;color:#6b7d75}.auth-note b{color:#405b50}.auth-loading{font-size:14px;text-align:center}
 @media(max-width:520px){.auth-page{padding:15px}.auth-card{padding:25px 21px;border-radius:16px}}
+
+.maintenance-plan-panel{display:grid;gap:18px}
+.maintenance-plan-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.plan-period-tabs{display:flex;gap:7px;overflow-x:auto;border-bottom:1px solid var(--border);padding-bottom:10px}
+.plan-period-tabs button{border:1px solid var(--border);border-radius:999px;background:var(--panel);color:var(--muted);padding:8px 17px;font-size:12px;font-weight:650;white-space:nowrap}
+.plan-period-tabs button:hover{border-color:#71bba6;color:var(--text)}
+.plan-period-tabs button.active{border-color:#68b99d;background:#e5f4ee;color:#145b48}
+.plan-period-toolbar{display:flex;align-items:flex-end;justify-content:space-between;gap:15px;flex-wrap:wrap;padding:14px 16px;border:1px solid var(--border);border-radius:12px;background:var(--panel-alt)}
+.plan-period-picker{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap}
+.plan-period-control{display:flex;flex-direction:column;gap:5px;color:var(--muted);font-size:10px;font-weight:600}
+.plan-period-control input,.plan-period-control select{min-width:145px;border:1px solid var(--border);border-radius:8px;padding:8px 10px;background:var(--panel);color:var(--text);font:inherit}
+.plan-period-range{font-size:12px;color:var(--text);padding-bottom:8px}
+.plan-summary{display:flex;gap:10px;flex-wrap:wrap}
+.plan-summary span{border:1px solid var(--border);border-radius:9px;padding:8px 12px;color:var(--muted);font-size:11px;background:var(--panel)}
+.plan-summary b{color:var(--text);margin-right:3px}
+.plan-coverage-warning{border:1px solid #f0d7b1;border-radius:9px;background:var(--warning-bg);padding:10px 12px;color:var(--warning-text);font-size:11px}
+.plan-coverage-warning summary{font-weight:650;cursor:pointer}
+.plan-coverage-warning p{margin:8px 0 0;color:var(--warning-text);line-height:1.6;overflow-wrap:anywhere}
+.plan-assets-field{grid-column:1/-1;display:grid;gap:8px}
+.plan-assets-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--muted);font-size:10px}
+.plan-assets-heading>label{display:flex;align-items:center;gap:6px;cursor:pointer}
+.plan-assets-heading input,.plan-asset-option input{accent-color:var(--primary)}
+.plan-assets-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;max-height:210px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px}
+.plan-asset-option{display:flex;align-items:flex-start;gap:8px;min-width:0;border:1px solid var(--border);border-radius:7px;padding:8px;background:var(--panel-alt);cursor:pointer}
+.plan-asset-option input{margin:2px 0 0}
+.plan-asset-option span{min-width:0}
+.plan-asset-option b,.plan-asset-option small{display:block;overflow-wrap:anywhere}
+.plan-asset-option b{font-size:10px;color:var(--text)}
+.plan-asset-option small,.plan-assets-field>small{font-size:9px;color:var(--muted);line-height:1.5}
+.maintenance-plan-table{min-width:820px;font-size:10px}
+.maintenance-plan-table th,.maintenance-plan-table td{padding:9px 10px;font-size:10px}
+.maintenance-plan-table .status{padding:4px 7px;font-size:8px}
+.maintenance-plan-table td:nth-child(2),.maintenance-plan-table td:nth-child(4),.maintenance-plan-table td:nth-child(6){white-space:normal;min-width:140px;max-width:260px;line-height:1.5}
+.maintenance-plan-table td:nth-child(4){min-width:180px}
+.maintenance-plan-table td:nth-child(4) b{white-space:normal;overflow-wrap:anywhere}
+.maintenance-plan-table td small{white-space:normal;overflow-wrap:anywhere}
+.plan-export-all{grid-column:1/-1;display:flex;align-items:center;gap:9px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--panel-alt);color:var(--text);font-size:11px;cursor:pointer}
+.plan-export-all input{accent-color:var(--primary)}
+.plan-export-scope{grid-column:1/-1;margin:0;color:var(--muted);font-size:10px;line-height:1.6}
+@media(max-width:680px){
+  .maintenance-plan-panel{gap:14px}
+  .maintenance-plan-actions{width:100%;justify-content:stretch}
+  .maintenance-plan-actions button{flex:1}
+  .plan-assets-list{grid-template-columns:1fr}
+  .plan-assets-heading{align-items:flex-start;flex-direction:column}
+  .plan-period-toolbar{align-items:stretch;padding:12px}
+  .plan-period-picker{width:100%}
+  .plan-period-control{flex:1}
+  .plan-period-control input,.plan-period-control select{min-width:0;width:100%}
+  .plan-period-range{padding:0}
+}
+.reports-dashboard{display:grid;gap:15px}
+.report-period-panel,.report-data-panel{display:grid;gap:15px}
+.report-period-tabs{display:flex;gap:7px;overflow-x:auto;border-bottom:1px solid var(--border);padding-bottom:10px}
+.report-period-tabs button{border:1px solid var(--border);border-radius:999px;background:var(--panel);color:var(--muted);padding:8px 17px;font-size:12px;font-weight:650;white-space:nowrap}
+.report-period-tabs button:hover{border-color:#71bba6;color:var(--text)}
+.report-period-tabs button.active{border-color:#68b99d;background:#e5f4ee;color:#145b48}
+.report-period-toolbar{display:flex;align-items:flex-end;justify-content:space-between;gap:15px;flex-wrap:wrap;padding:14px 16px;border:1px solid var(--border);border-radius:12px;background:var(--panel-alt)}
+.report-summary{display:flex;gap:10px;flex-wrap:wrap}
+.report-summary span{border:1px solid var(--border);border-radius:9px;padding:8px 12px;color:var(--muted);font-size:11px;background:var(--panel)}
+.report-summary b{color:var(--text);margin-right:3px}
+.report-summary .report-summary-alert b{color:var(--danger-text)}
+.period-report-table{min-width:880px}
+.period-report-table td:nth-child(4),.period-report-table td:nth-child(5),.period-report-table td:nth-child(6){white-space:normal;min-width:135px;max-width:290px;line-height:1.5;overflow-wrap:anywhere}
+.period-report-table td small{white-space:normal;overflow-wrap:anywhere}
+.report-data-panel .panel-head .soft-btn{max-width:280px}
+@media(max-width:680px){
+  .reports-dashboard{gap:12px}
+  .report-period-panel,.report-data-panel{gap:12px}
+  .report-period-toolbar{align-items:stretch;padding:12px}
+  .report-period-toolbar .plan-period-picker{width:100%}
+  .report-period-toolbar .plan-period-control{flex:1}
+  .report-period-toolbar .plan-period-control input,.report-period-toolbar .plan-period-control select{min-width:0;width:100%}
+  .report-period-toolbar .plan-period-range{padding:0}
+  .report-data-panel .panel-head .soft-btn{max-width:none;width:100%}
+}

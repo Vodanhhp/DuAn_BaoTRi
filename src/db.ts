@@ -2,6 +2,8 @@ import Dexie, { type Table } from 'dexie'
 
 export type AssetStatus = 'Đang hoạt động' | 'Đang sửa chữa' | 'Ngừng sử dụng' | 'Thanh lý'
 export type TaskStatus = 'Chờ thực hiện' | 'Đang thực hiện' | 'Hoàn thành' | 'Quá hạn'
+export type MaintenancePlanPeriod = 'Tuần' | 'Tháng' | 'Quý' | 'Năm'
+export type MaintenancePlanExecution = 'Nội bộ' | 'Thuê ngoài'
 
 export type ChecklistAnswerType = 'pass-fail-na' | 'yes-no' | 'text' | 'number'
 
@@ -81,9 +83,14 @@ export interface Task {
   status: TaskStatus; checklist: string; readings: string; notes: string
   completedAt?: string; createdAt: string; updatedAt: string
 }
+export interface MaintenancePlan {
+  id: string; assetId: string; title: string; period: MaintenancePlanPeriod
+  startDate: string; endDate: string; execution: MaintenancePlanExecution
+  contractor: string; notes: string; createdAt: string; updatedAt: string
+}
 export interface Log {
   id: string; assetId: string; taskId?: string; checklistResultId?: string; date: string; kind: string
-  description: string; parts: string; readings: string; result?: 'Đạt' | 'Không đạt' | ''; performedBy: string
+  description: string; parts: string; readings: string; result?: 'Đạt' | 'Không đạt' | ''; completedAt?: string; performedBy: string
 }
 export interface Movement {
   id: string; itemId: string; date: string; type: 'Nhập' | 'Xuất' | 'Điều chỉnh'
@@ -103,6 +110,7 @@ class MaintenanceDB extends Dexie {
   checklistTemplates!: Table<ChecklistTemplate, string>
   checklistVersions!: Table<ChecklistTemplateVersion, string>
   checklistResults!: Table<ChecklistResult, string>
+  maintenancePlans!: Table<MaintenancePlan, string>
 
   constructor() {
     super('baotri-local-v1')
@@ -147,6 +155,18 @@ class MaintenanceDB extends Dexie {
       checklistTemplates: 'id, assetId, active, updatedAt',
       checklistVersions: 'id, templateId, assetId, version, createdAt',
       checklistResults: 'id, assetId, templateId, templateVersionId, performedAt, result'
+    })
+    this.version(5).stores({
+      assets: 'id, code, name, category, status, archivedAt, updatedAt',
+      inventory: 'id, code, name, group, quantity, updatedAt',
+      tasks: 'id, assetId, dueDate, status, updatedAt',
+      logs: 'id, assetId, taskId, checklistResultId, date, kind',
+      movements: 'id, itemId, date, type',
+      syncQueue: 'id, tableName, recordId, queuedAt',
+      checklistTemplates: 'id, assetId, active, updatedAt',
+      checklistVersions: 'id, templateId, assetId, version, createdAt',
+      checklistResults: 'id, assetId, templateId, templateVersionId, performedAt, result',
+      maintenancePlans: 'id, assetId, period, startDate, endDate, updatedAt'
     })
   }
 }

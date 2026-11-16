@@ -36,7 +36,7 @@ export default defineConfig({
         manualChunks: {
           react: ['react', 'react-dom'],
           dexie: ['dexie', 'dexie-react-hooks'],
-          data: ['xlsx'],
+          data: ['exceljs'],
           qr: ['qrcode.react', 'html5-qrcode'],
           icons: ['lucide-react']
         }

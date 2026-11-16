@@ -10,9 +10,9 @@ import {
 } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { Html5QrcodeScanner } from 'html5-qrcode'
-import * as XLSX from 'xlsx'
 import namingConventionText from '../QUY_UOC_MA_DINH_DANH_VA_VIET_TAT_THIET_BI.txt?raw'
-import { db, uid, now, queueChange, type Asset, type InventoryItem, type Task, type Log, type ChecklistTemplateItem, type ChecklistTemplateVersion, type ChecklistResultItem, type ChecklistResult } from './db'
+import { db, uid, now, queueChange, type Asset, type InventoryItem, type Task, type MaintenancePlan, type MaintenancePlanPeriod, type Movement, type Log, type ChecklistTemplateItem, type ChecklistTemplateVersion, type ChecklistResultItem, type ChecklistResult } from './db'
+import { downloadExcelReport } from './lib/excelExport'
 
 type Page = 'dashboard' | 'checklist' | 'assets' | 'inventory' | 'planning' | 'tasks' | 'logs' | 'reports' | 'settings'
 
@@ -88,6 +88,62 @@ const emptyTask = (): Task => ({
   id: uid(), assetId: '', title: '', dueDate: today(), frequency: 'Hàng tháng',
   status: 'Chờ thực hiện', checklist: '', readings: '', notes: '', createdAt: now(), updatedAt: now()
 })
+function maintenancePlanRange(period: MaintenancePlanPeriod, anchorDate: string) {
+  const anchor = new Date(`${anchorDate.slice(0, 10)}T00:00:00.000Z`)
+  const year = anchor.getUTCFullYear()
+  const month = anchor.getUTCMonth()
+  let start: Date
+  let end: Date
+  if (period === 'Tuần') {
+    start = new Date(anchor)
+    start.setUTCDate(anchor.getUTCDate() - ((anchor.getUTCDay() + 6) % 7))
+    end = new Date(start)
+    end.setUTCDate(start.getUTCDate() + 6)
+  } else if (period === 'Tháng') {
+    start = new Date(Date.UTC(year, month, 1))
+    end = new Date(Date.UTC(year, month + 1, 0))
+  } else if (period === 'Quý') {
+    const firstMonth = Math.floor(month / 3) * 3
+    start = new Date(Date.UTC(year, firstMonth, 1))
+    end = new Date(Date.UTC(year, firstMonth + 3, 0))
+  } else {
+    start = new Date(Date.UTC(year, 0, 1))
+    end = new Date(Date.UTC(year, 11, 31))
+  }
+  return { startDate: start.toISOString().slice(0, 10), endDate: end.toISOString().slice(0, 10) }
+}
+function maintenancePlanPeriodsFor(period: MaintenancePlanPeriod): MaintenancePlanPeriod[] {
+  if (period === 'Tuần') return ['Tuần']
+  if (period === 'Tháng') return ['Tuần', 'Tháng']
+  if (period === 'Quý') return ['Tuần', 'Tháng', 'Quý']
+  return ['Tuần', 'Tháng', 'Quý', 'Năm']
+}
+const MAINTENANCE_PLAN_PERIOD_ORDER: Record<MaintenancePlanPeriod, number> = { Tuần: 0, Tháng: 1, Quý: 2, Năm: 3 }
+const MAINTENANCE_PLAN_PERIOD_SLUG: Record<MaintenancePlanPeriod, string> = { Tuần: 'tuan', Tháng: 'thang', Quý: 'quy', Năm: 'nam' }
+function maintenancePlanScopeLabel(period: MaintenancePlanPeriod) {
+  if (period === 'Tuần') return 'chỉ kế hoạch tuần'
+  if (period === 'Tháng') return 'gồm kế hoạch tháng và tuần'
+  if (period === 'Quý') return 'gồm kế hoạch quý, tháng và tuần'
+  return 'gồm kế hoạch năm, quý, tháng và tuần'
+}
+function sortMaintenancePlansByDate(plans: MaintenancePlan[], assets: Asset[]) {
+  return [...plans].sort((a, b) => a.startDate.localeCompare(b.startDate) || a.endDate.localeCompare(b.endDate) || MAINTENANCE_PLAN_PERIOD_ORDER[a.period]-MAINTENANCE_PLAN_PERIOD_ORDER[b.period] || (assets.find(item=>item.id===a.assetId)?.code??'').localeCompare(assets.find(item=>item.id===b.assetId)?.code??'','vi') || a.title.localeCompare(b.title, 'vi'))
+}
+const emptyMaintenancePlan = (period: MaintenancePlanPeriod, anchorDate = today()): MaintenancePlan => {
+  const range = maintenancePlanRange(period, anchorDate)
+  return {
+    id: uid(), assetId: '', title: '', period, ...range, execution: 'Nội bộ',
+    contractor: '', notes: '', createdAt: now(), updatedAt: now()
+  }
+}
+const MAINTENANCE_PLAN_YEARS = Array.from({ length: 101 }, (_, index) => String(2000 + index))
+function periodRangeLabel(period: MaintenancePlanPeriod, range: { startDate: string; endDate: string }) {
+  if (period === 'Tuần') return `Tuần ${dateText(range.startDate)} – ${dateText(range.endDate)}`
+  if (period === 'Tháng') return `Tháng ${range.startDate.slice(5, 7)}/${range.startDate.slice(0, 4)}`
+  if (period === 'Quý') return `Quý ${Math.floor((Number(range.startDate.slice(5, 7)) - 1) / 3) + 1}/${range.startDate.slice(0, 4)}`
+  return `Năm ${range.startDate.slice(0, 4)}`
+}
+const completedWorkDate = (log: Log) => log.completedAt?.slice(0, 10) || log.date
 
 // Danh mục chuẩn: mã nhóm không phụ thuộc tên người dùng nhập.
 const ASSET_CATEGORY_GROUPS = [
@@ -168,13 +224,23 @@ const buildAssetCode=(asset:Asset,allAssets:Asset[],customCategories:CustomAsset
 
 const money = (n: number) => new Intl.NumberFormat('vi-VN').format(n) + ' đ'
 const dateText = (s: string) => s ? new Date(s + (s.length === 10 ? 'T00:00:00' : '')).toLocaleDateString('vi-VN') : '—'
+const dateTimeText = (s?: string) => s ? new Date(s).toLocaleString('vi-VN') : '—'
 
-function AppWorkspace({ userEmail, onSignOut }: { userEmail: string; onSignOut: () => void }) {
+type EmployeeProfile = { fullName: string; phone: string; dateOfBirth: string; position: string }
+
+function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut }: {
+  userName: string
+  userEmail: string
+  profile: EmployeeProfile
+  onSaveProfile: (value: EmployeeProfile) => Promise<void>
+  onSignOut: () => void
+}) {
   const [page, setPage] = useState<Page>('dashboard')
   const [search, setSearch] = useState('')
   const [theme, setTheme] = useState<'light' | 'dark'>('light')
   const [compact, setCompact] = useState(false)
-  const [modal, setModal] = useState<'asset'|'item'|'task'|'log'|'scan'|null>(null)
+  const [profileEditOpen, setProfileEditOpen] = useState(false)
+  const [modal, setModal] = useState<'asset'|'item'|'task'|'plan'|'planExport'|'log'|'scan'|null>(null)
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null)
   const [detailAsset, setDetailAsset] = useState<Asset | null>(null)
   const [checklistAccess, setChecklistAccess] = useState(false)
@@ -198,6 +264,14 @@ function AppWorkspace({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null)
   const [detailItem, setDetailItem] = useState<InventoryItem | null>(null)
   const [editingTask, setEditingTask] = useState<Task | null>(null)
+  const [editingPlan, setEditingPlan] = useState<MaintenancePlan | null>(null)
+  const [planPeriod, setPlanPeriod] = useState<MaintenancePlanPeriod>('Năm')
+  const [planAnchorDate, setPlanAnchorDate] = useState(today())
+  const [planExportPeriod, setPlanExportPeriod] = useState<MaintenancePlanPeriod>('Năm')
+  const [planExportAnchorDate, setPlanExportAnchorDate] = useState(today())
+  const [planExportAllPeriods, setPlanExportAllPeriods] = useState(false)
+  const [reportPeriod, setReportPeriod] = useState<MaintenancePlanPeriod>('Tháng')
+  const [reportAnchorDate, setReportAnchorDate] = useState(today())
   const [editingLog, setEditingLog] = useState<Log | null>(null)
   const [notice, setNotice] = useState('')
   const [mobileMore, setMobileMore] = useState(false)
@@ -205,7 +279,9 @@ function AppWorkspace({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
   const activeAssets = assets.filter(a => !a.archivedAt)
   const archivedAssets = assets.filter(a => !!a.archivedAt)
   const inventory = useLiveQuery(() => db.inventory.orderBy('name').toArray(), []) ?? []
+  const movements = useLiveQuery(() => db.movements.orderBy('date').reverse().toArray(), []) ?? []
   const tasks = useLiveQuery(() => db.tasks.orderBy('dueDate').toArray(), []) ?? []
+  const maintenancePlans = useLiveQuery(() => db.maintenancePlans.orderBy('startDate').toArray(), []) ?? []
   const logs = useLiveQuery(() => db.logs.orderBy('date').reverse().toArray(), []) ?? []
   const checklistTemplates = useLiveQuery(() => db.checklistTemplates.toArray(), []) ?? []
   const allChecklistResults = useLiveQuery(() => db.checklistResults.toArray(), []) ?? []
@@ -408,6 +484,53 @@ function AppWorkspace({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
   const checklistScheduleRows = useMemo(() => buildChecklistScheduleRows(activeAssets,checklistTemplates,allChecklistResults,checklistFrequency,today()).filter(row=>!search.trim() || [row.asset.code,row.asset.name,row.asset.location].join(' ').toLocaleLowerCase('vi').includes(search.trim().toLocaleLowerCase('vi'))),[activeAssets,checklistTemplates,allChecklistResults,checklistFrequency,search])
   const filteredItems = useMemo(() => inventory.filter(a => `${a.code} ${a.name} ${a.group}`.toLowerCase().includes(search.toLowerCase())), [inventory, search])
   const filteredTasks = useMemo(() => tasks.filter(t => `${t.title} ${assets.find(a=>a.id===t.assetId)?.name ?? ''}`.toLowerCase().includes(search.toLowerCase())), [tasks, assets, search])
+  const maintenancePlanPeriodRange = useMemo(() => maintenancePlanRange(planPeriod, planAnchorDate), [planPeriod, planAnchorDate])
+  const planExportRange = useMemo(() => planExportAllPeriods && planExportPeriod !== 'Năm'
+    ? maintenancePlanRange('Năm', `${planExportAnchorDate.slice(0, 4)}-01-01`)
+    : maintenancePlanRange(planExportPeriod, planExportAnchorDate),
+  [planExportAllPeriods, planExportPeriod, planExportAnchorDate])
+  const maintenancePlansForPeriod = useMemo(() => maintenancePlans
+    .filter(plan => maintenancePlanPeriodsFor(planPeriod).includes(plan.period))
+    .filter(plan => plan.startDate <= maintenancePlanPeriodRange.endDate && plan.endDate >= maintenancePlanPeriodRange.startDate),
+  [maintenancePlans, planPeriod, maintenancePlanPeriodRange])
+  const filteredMaintenancePlans = useMemo(() => sortMaintenancePlansByDate(maintenancePlansForPeriod
+    .filter(plan => {
+      const asset = assets.find(item => item.id === plan.assetId)
+      return `${plan.title} ${asset?.code ?? ''} ${asset?.name ?? ''} ${plan.contractor} ${plan.notes}`.toLocaleLowerCase('vi').includes(search.trim().toLocaleLowerCase('vi'))
+    }), assets),
+  [maintenancePlansForPeriod, assets, search])
+  const plannedAssetIds = useMemo(() => new Set(maintenancePlansForPeriod.map(plan => plan.assetId)), [maintenancePlansForPeriod])
+  const unplannedMaintenanceAssets = useMemo(() => activeAssets.filter(asset => !plannedAssetIds.has(asset.id)), [activeAssets, plannedAssetIds])
+  const reportPeriodRange = useMemo(() => maintenancePlanRange(reportPeriod, reportAnchorDate), [reportPeriod, reportAnchorDate])
+  const reportWorkLogs = useMemo(() => logs
+    .filter(log => Boolean(log.result) && completedWorkDate(log) >= reportPeriodRange.startDate && completedWorkDate(log) <= reportPeriodRange.endDate)
+    .filter(log => {
+      const asset = assets.find(item => item.id === log.assetId)
+      return `${log.kind} ${log.description} ${asset?.code ?? ''} ${asset?.name ?? ''} ${log.performedBy}`.toLocaleLowerCase('vi').includes(search.trim().toLocaleLowerCase('vi'))
+    }),
+  [logs, reportPeriodRange, assets, search])
+  const reportMaterialMovements = useMemo(() => movements
+    .filter(movement => movement.type === 'Xuất' && movement.date >= reportPeriodRange.startDate && movement.date <= reportPeriodRange.endDate),
+  [movements, reportPeriodRange])
+  const reportMaterialUsage = useMemo(() => {
+    const grouped = new Map<string, { itemId: string; quantity: number; transactions: number }>()
+    for (const movement of reportMaterialMovements) {
+      const row = grouped.get(movement.itemId) ?? { itemId: movement.itemId, quantity: 0, transactions: 0 }
+      row.quantity += movement.quantity
+      row.transactions += 1
+      grouped.set(movement.itemId, row)
+    }
+    const query = search.trim().toLocaleLowerCase('vi')
+    return [...grouped.values()].map(row => {
+      const item = inventory.find(value => value.id === row.itemId)
+      return {
+        ...row,
+        item,
+        matches: `${item?.code ?? ''} ${item?.name ?? ''} ${item?.group ?? ''}`.toLocaleLowerCase('vi').includes(query)
+      }
+    }).filter(row => row.matches).sort((a, b) => (a.item?.name ?? '').localeCompare(b.item?.name ?? '', 'vi'))
+  }, [reportMaterialMovements, inventory, search])
+  const reportBrokenAssets = useMemo(() => activeAssets.filter(asset => asset.status === 'Đang sửa chữa'), [activeAssets])
   const overdue = tasks.filter(t => t.status !== 'Hoàn thành' && t.dueDate < today()).length
   const dueToday = tasks.filter(t => t.dueDate === today() && t.status !== 'Hoàn thành')
   const lowStock = inventory.filter(i => i.quantity <= i.minQuantity)
@@ -488,22 +611,47 @@ function AppWorkspace({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
     const value = { ...t, updatedAt: now() }
     await db.tasks.put(value); await queueChange('tasks', value.id); setModal(null); setEditingTask(null); flash('Đã lưu công việc')
   }
+  const saveMaintenancePlans = async (plans: MaintenancePlan[]) => {
+    if (plans.some(plan => plan.startDate > plan.endDate)) {
+      alert('Ngày kết thúc phải bằng hoặc sau ngày bắt đầu.')
+      return
+    }
+    const timestamp = now()
+    const values = plans.map(plan => ({ ...plan, title: plan.title.trim(), contractor: plan.contractor.trim(), notes: plan.notes.trim(), updatedAt: timestamp }))
+    await db.transaction('rw', [db.maintenancePlans, db.syncQueue], async () => {
+      await db.maintenancePlans.bulkPut(values)
+      await Promise.all(values.map(value => queueChange('maintenancePlans', value.id)))
+    })
+    setModal(null); setEditingPlan(null)
+    flash(values.length > 1 ? `Đã lưu kế hoạch cho ${values.length} thiết bị` : 'Đã lưu kế hoạch bảo trì')
+  }
+  const deleteMaintenancePlan = async (plan: MaintenancePlan) => {
+    if (!confirm(`Xóa kế hoạch “${plan.title}”?`)) return
+    await db.maintenancePlans.delete(plan.id)
+    await queueChange('maintenancePlans', plan.id, 'delete')
+    flash('Đã xóa kế hoạch bảo trì')
+  }
   const saveLog = async (entry: Log) => {
-    await db.logs.put(entry); await queueChange('logs', entry.id)
-    setModal(null); setEditingLog(null); flash('Đã ghi nhận Bảo dưỡng – Sửa chữa')
+    const existing = await db.logs.get(entry.id)
+    const completedAt = entry.result ? entry.completedAt || existing?.completedAt || now() : undefined
+    const value: Log = { ...entry, performedBy: entry.performedBy.trim() || userName, result: entry.result || '', completedAt }
+    await db.logs.put(value); await queueChange('logs', value.id)
+    setModal(null); setEditingLog(null)
+    flash(value.result ? 'Đã lưu phiếu hoàn thành' : 'Đã lưu phiếu, đang chờ kết quả')
   }
   const createRepairFromChecklist = (entry: ChecklistResult) => {
     const failedItems = entry.items.filter(item => item.answer === 'Không đạt' || item.answer === 'Không')
     const description = `Phát hiện từ Checklist ${entry.templateTitle} · phiên bản ${entry.templateVersion} · ${new Date(entry.performedAt).toLocaleString('vi-VN')}\n` +
       failedItems.map((item, index) => `${index + 1}. ${item.label}${item.note ? ` — ${item.note}` : ''}`).join('\n')
-    setEditingLog({ id: uid(), assetId: entry.assetId, checklistResultId: entry.id, date: today(), kind: 'Sửa chữa', description, parts: '', readings: '', result: '', performedBy: '' })
+    setEditingLog({ id: uid(), assetId: entry.assetId, checklistResultId: entry.id, date: today(), kind: 'Sửa chữa', description, parts: '', readings: '', result: '', performedBy: userName })
     setDetailAsset(null); setChecklistAccess(false); setModal('log')
   }
   const completeTask = async (t: Task) => {
-    const completed = { ...t, status: 'Hoàn thành' as const, completedAt: now(), updatedAt: now() }
+    const completedAt = now()
+    const completed = { ...t, status: 'Hoàn thành' as const, completedAt, updatedAt: completedAt }
     await db.transaction('rw', db.tasks, db.logs, async () => {
       await db.tasks.put(completed)
-      await db.logs.add({ id: uid(), assetId: t.assetId, taskId: t.id, date: today(), kind: 'Bảo dưỡng định kỳ', description: t.title, parts: '', readings: t.readings, performedBy: 'Người sử dụng' })
+      await db.logs.add({ id: uid(), assetId: t.assetId, taskId: t.id, date: today(), kind: 'Bảo dưỡng định kỳ', description: t.title, parts: '', readings: t.readings, result: 'Đạt', completedAt, performedBy: userName })
     })
     await queueChange('tasks', t.id); flash('Đã ghi nhận hoàn thành')
   }
@@ -531,48 +679,31 @@ function AppWorkspace({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
     })
     await queueChange('inventory', item.id); flash(`Đã ${type.toLowerCase()} ${qty} ${item.unit}`)
   }
-  const exportRows = (rows: object[], filename: string) => {
-    const ws = XLSX.utils.json_to_sheet(rows)
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Du lieu')
-    XLSX.writeFile(wb, filename)
+  const exportRows = async (rows: Record<string, string | number>[], filename: string, title: string, sheetName: string, headers: string[], orientation: 'portrait' | 'landscape' = 'landscape') => {
+    flash('Đang chuẩn bị tệp Excel…')
+    try {
+      await downloadExcelReport(rows, filename, title, sheetName, headers, orientation)
+    flash(`Đã xuất Excel: ${filename}`)
+    } catch (error) {
+      console.error('Không thể xuất tệp Excel:', error)
+      flash('Xuất Excel thất bại. Vui lòng thử lại.')
+    }
   }
   const exportAssets = () => {
-    // Xuất dữ liệu thuần thành tệp XLSX chuẩn để tiếp tục lọc, sắp xếp và xử lý trong Excel.
     const headers = ['STT','Mã định danh','Tên thiết bị','Nhóm thiết bị','Hãng','Model','Serial','Vị trí lắp đặt','Ngày đưa vào sử dụng','Công suất / thông số','Tình trạng','Ghi chú']
-    const rows = filteredAssets.map((asset, index) => [
-      index + 1,
-      asset.code || '',
-      asset.name || '',
-      asset.category || '',
-      asset.brand || '',
-      asset.model || '',
-      asset.serial || '',
-      asset.location || '',
-      asset.commissionedAt ? dateText(asset.commissionedAt) : '',
-      asset.power || '',
-      asset.status || '',
-      asset.notes || ''
-    ])
-    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows])
-    ws['!cols'] = [
-      { wch: 6 }, { wch: 23 }, { wch: 30 }, { wch: 22 },
-      { wch: 18 }, { wch: 18 }, { wch: 20 }, { wch: 24 },
-      { wch: 20 }, { wch: 24 }, { wch: 19 }, { wch: 32 }
-    ]
-    if (rows.length > 0) {
-      ws['!autofilter'] = { ref: 'A1:L' + (rows.length + 1) }
-    }
-    ws['!freeze'] = { xSplit: 0, ySplit: 1, topLeftCell: 'A2', activePane: 'bottomLeft', state: 'frozen' }
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Danh sách thiết bị')
-    wb.Props = {
-      Title: 'Danh sách thiết bị',
-      Subject: 'Dữ liệu danh mục thiết bị BAOTRI',
-      Author: 'BAOTRI',
-      CreatedDate: new Date()
-    }
-    XLSX.writeFile(wb, 'danh-sach-thiet-bi.xlsx', { compression: true })
+    exportRows(filteredAssets.map(asset => ({
+      'Mã định danh':asset.code||'',
+      'Tên thiết bị':asset.name||'',
+      'Nhóm thiết bị':asset.category||'',
+      'Hãng':asset.brand||'',
+      'Model':asset.model||'',
+      'Serial':asset.serial||'',
+      'Vị trí lắp đặt':asset.location||'',
+      'Ngày đưa vào sử dụng':asset.commissionedAt?dateText(asset.commissionedAt):'',
+      'Công suất / thông số':asset.power||'',
+      'Tình trạng':asset.status||'',
+      'Ghi chú':asset.notes||''
+    })), 'danh-sach-thiet-bi.xlsx', 'DANH SÁCH THIẾT BỊ', 'Danh sách thiết bị', headers.slice(1))
   }
   const printAssets = () => {
     const headers = ['STT','Mã định danh','Tên thiết bị','Nhóm thiết bị','Serial','Vị trí lắp đặt','Ngày đưa vào sử dụng','Công suất / thông số','Tình trạng','Ghi chú']
@@ -597,7 +728,7 @@ function AppWorkspace({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
     printWindow.document.open(); printWindow.document.write(html); printWindow.document.close()
     printWindow.focus(); printWindow.onafterprint = () => printWindow.close(); printWindow.print()
   }
-  const exportInventory = () => exportRows(inventory.map(i => ({ 'Mã vật tư':i.code,'Mã số':i.partNumber??'','Tên vật tư':i.name,'Nhóm':i.group,'Kích cỡ':i.size??'','ĐVT':i.unit,'Tồn':i.quantity,'Tồn tối thiểu':i.minQuantity,'Vị trí':i.location,'Nhà cung cấp':i.supplier,'Đơn giá':i.unitPrice })), 'ton-kho-vat-tu.xlsx')
+  const exportInventory = () => exportRows(inventory.map(i => ({ 'Mã vật tư':i.code,'Mã số':i.partNumber??'','Tên vật tư':i.name,'Nhóm':i.group,'Kích cỡ':i.size??'','ĐVT':i.unit,'Tồn kho':i.quantity,'Tồn tối thiểu':i.minQuantity,'Vị trí':i.location,'Nhà cung cấp':i.supplier,'Đơn giá (VNĐ)':i.unitPrice })), 'ton-kho-vat-tu.xlsx', 'BÁO CÁO TỒN KHO VẬT TƯ', 'Tồn kho vật tư', ['Mã vật tư','Mã số','Tên vật tư','Nhóm','Kích cỡ','ĐVT','Tồn kho','Tồn tối thiểu','Vị trí','Nhà cung cấp','Đơn giá (VNĐ)'], 'landscape')
   const printInventory = () => {
     const rows = filteredItems.map((i,index)=>'<tr><td class="center">'+(index+1)+'</td><td>'+htmlEscape(i.code)+'</td><td>'+htmlEscape(i.partNumber||'—')+'</td><td><strong>'+htmlEscape(i.name)+'</strong></td><td>'+htmlEscape(i.group)+'</td><td>'+htmlEscape(i.size||'—')+'</td><td class="center">'+htmlEscape(i.unit)+'</td><td class="num">'+i.quantity+'</td><td class="num">'+i.minQuantity+'</td><td>'+htmlEscape(i.location||'—')+'</td><td>'+htmlEscape(i.supplier||'—')+'</td><td class="num">'+Number(i.unitPrice||0).toLocaleString('vi-VN')+'</td></tr>').join('')
     const printWindow=window.open('','_blank')
@@ -606,12 +737,118 @@ function AppWorkspace({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
     const html='<!DOCTYPE html><html lang="vi"><head><meta charset="utf-8"/><title>DANH SÁCH VẬT TƯ</title><style>@page{size:A4 landscape;margin:12mm 8mm 16mm;@bottom-center{content:"Trang " counter(page) " / " counter(pages);font:9pt Tahoma}}*{box-sizing:border-box}body{font-family:Tahoma,sans-serif;font-size:11pt;color:#111;margin:0}h1{text-align:center;font-size:12pt;margin:0 0 12pt}table{width:100%;border-collapse:collapse;table-layout:fixed}thead{display:table-header-group}tr{break-inside:avoid;page-break-inside:avoid}th,td{border:1px solid #333;padding:4pt 3pt;vertical-align:top;overflow-wrap:anywhere;font-size:9pt}th{text-align:center;font-weight:bold;background:#e9eeeb!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.center{text-align:center}.num{text-align:right}.total{text-align:right;font-weight:bold;margin-top:10pt}@media screen{body{padding:16px}}</style></head><body><h1>DANH SÁCH VẬT TƯ</h1><table><colgroup><col style="width:3%"/><col style="width:8%"/><col style="width:8%"/><col style="width:15%"/><col style="width:9%"/><col style="width:8%"/><col style="width:5%"/><col style="width:6%"/><col style="width:7%"/><col style="width:10%"/><col style="width:10%"/><col style="width:11%"/></colgroup><thead><tr>'+headers.map(h=>'<th>'+htmlEscape(h)+'</th>').join('')+'</tr></thead><tbody>'+rows+'</tbody></table><p class="total">Tổng số: '+filteredItems.length+' vật tư</p></body></html>'
     printWindow.document.open();printWindow.document.write(html);printWindow.document.close();printWindow.focus();printWindow.onafterprint=()=>printWindow.close();printWindow.print()
   }
-  const exportTasks = () => exportRows(tasks.map(t => ({ 'Thiết bị':assets.find(a=>a.id===t.assetId)?.name ?? '', 'Công việc':t.title,'Ngày đến hạn':t.dueDate,'Chu kỳ':t.frequency,'Trạng thái':t.status,'Checklist':t.checklist,'Thông số':t.readings,'Ghi chú':t.notes })), 'ke-hoach-bao-duong.xlsx')
-  const exportLogs = () => exportRows(logs.map(l => ({ 'Ngày':l.date,'Thiết bị':assets.find(a=>a.id===l.assetId)?.name ?? '', 'Loại':l.kind,'Nội dung':l.description,'Thông số':l.readings,'Vật tư':l.parts,'Người thực hiện':l.performedBy })), 'bao-duong-sua-chua.xlsx')
+  const exportTasks = () => exportRows(tasks.map(t => ({ 'Thiết bị':assets.find(a=>a.id===t.assetId)?.name ?? '', 'Công việc':t.title,'Ngày đến hạn':t.dueDate?dateText(t.dueDate):'','Chu kỳ':t.frequency,'Trạng thái':t.status,'Checklist':t.checklist??'','Thông số':t.readings??'','Ghi chú':t.notes??'' })), 'lich-bao-duong-dinh-ky.xlsx', 'LỊCH BẢO DƯỠNG ĐỊNH KỲ', 'Lịch bảo dưỡng', ['Thiết bị','Công việc','Ngày đến hạn','Chu kỳ','Trạng thái','Checklist','Thông số','Ghi chú'], 'landscape')
+  const openMaintenancePlanExport = () => {
+    setPlanExportPeriod(planPeriod)
+    setPlanExportAnchorDate(planAnchorDate)
+    setPlanExportAllPeriods(false)
+    setModal('planExport')
+  }
+  const exportMaintenancePlans = () => {
+    const exportAllInYear = planExportPeriod !== 'Năm' && planExportAllPeriods
+    const exportRange = exportAllInYear
+      ? maintenancePlanRange('Năm', `${planExportAnchorDate.slice(0, 4)}-01-01`)
+      : maintenancePlanRange(planExportPeriod, planExportAnchorDate)
+    const exportPlans = sortMaintenancePlansByDate(maintenancePlans.filter(plan =>
+      maintenancePlanPeriodsFor(planExportPeriod).includes(plan.period) &&
+      plan.startDate <= exportRange.endDate &&
+      plan.endDate >= exportRange.startDate
+    ), assets)
+    if (exportPlans.length === 0) {
+      alert('Không có kế hoạch trong phạm vi đã chọn.')
+      return
+    }
+    const year = exportRange.startDate.slice(0, 4)
+    const periodLabel = exportAllInYear
+      ? `Toàn bộ kế hoạch ${planExportPeriod.toLocaleLowerCase('vi')} trong năm ${year}`
+      : periodRangeLabel(planExportPeriod, exportRange)
+    const headers = ['Kỳ kế hoạch','Thời gian dự kiến','Mã thiết bị','Tên thiết bị','Nhóm thiết bị','Vị trí','Nội dung bảo trì','Hình thức thực hiện','Đơn vị thuê ngoài','Ghi chú']
+    const rows = exportPlans.map(plan => {
+      const asset = assets.find(item => item.id === plan.assetId)
+      return {
+        'Kỳ kế hoạch': plan.period,
+        'Thời gian dự kiến': `${dateText(plan.startDate)} – ${dateText(plan.endDate)}`,
+        'Mã thiết bị': asset?.code ?? '',
+        'Tên thiết bị': asset?.name ?? '',
+        'Nhóm thiết bị': asset?.category ?? '',
+        'Vị trí': asset?.location ?? '',
+        'Nội dung bảo trì': plan.title,
+        'Hình thức thực hiện': plan.execution,
+        'Đơn vị thuê ngoài': plan.execution === 'Thuê ngoài' ? plan.contractor : '',
+        'Ghi chú': plan.notes
+      }
+    })
+    const periodId = exportAllInYear
+      ? `toan-bo-nam-${year}`
+      : planExportPeriod === 'Tuần'
+        ? exportRange.startDate
+        : planExportPeriod === 'Tháng'
+          ? exportRange.startDate.slice(0, 7)
+          : planExportPeriod === 'Quý'
+            ? `${year}-q${Math.floor((Number(exportRange.startDate.slice(5, 7))-1)/3)+1}`
+            : year
+    const reportTitle = `KẾ HOẠCH BẢO TRÌ · ${periodLabel.toLocaleUpperCase('vi')} · ${maintenancePlanScopeLabel(planExportPeriod).toLocaleUpperCase('vi')}`
+    exportRows(rows, `ke-hoach-bao-tri-${MAINTENANCE_PLAN_PERIOD_SLUG[planExportPeriod]}-${periodId}.xlsx`, reportTitle, 'Kế hoạch bảo trì', headers, 'landscape')
+    setModal(null)
+  }
+  const exportLogs = () => exportRows(logs.map(l => ({
+    'Ngày lập phiếu':dateText(l.date),
+    'Thiết bị':assets.find(a=>a.id===l.assetId)?.name ?? '',
+    'Nội dung công việc':[l.kind,l.description].filter(Boolean).join('\n'),
+    'Thông số / vật tư':[l.readings?`Thông số: ${l.readings}`:'',l.parts?`Vật tư: ${l.parts}`:''].filter(Boolean).join('\n'),
+    'Kết quả / trạng thái':[`Trạng thái: ${l.result?'Hoàn thành':'Chưa hoàn thành'}`,`Kết quả: ${l.result||'Chưa cập nhật'}`].join('\n'),
+    'Người thực hiện':l.performedBy||'',
+    'Hoàn thành lúc':l.completedAt?dateTimeText(l.completedAt):''
+  })), 'bao-duong-sua-chua.xlsx', 'PHIẾU BẢO DƯỠNG – SỬA CHỮA', 'Phiếu bảo dưỡng', ['Ngày lập phiếu','Thiết bị','Nội dung công việc','Thông số / vật tư','Kết quả / trạng thái','Người thực hiện','Hoàn thành lúc'], 'portrait')
+  const reportTitleSuffix = periodRangeLabel(reportPeriod, reportPeriodRange).toLocaleUpperCase('vi')
+  const exportReportWork = () => exportRows(reportWorkLogs.map(log => {
+    const asset = assets.find(item => item.id === log.assetId)
+    return {
+      'Ngày hoàn thành': dateText(completedWorkDate(log)),
+      'Mã thiết bị': asset?.code ?? '',
+      'Tên thiết bị': asset?.name ?? '',
+      'Loại công việc': log.kind,
+      'Nội dung bảo trì / sửa chữa': log.description,
+      'Vật tư ghi nhận trên phiếu': log.parts || '',
+      'Người thực hiện': log.performedBy || '',
+      'Kết quả': log.result || 'Chưa cập nhật'
+    }
+  }), `bao-cao-cong-viec-${reportPeriodRange.startDate}.xlsx`, `BÁO CÁO CÔNG VIỆC BẢO TRÌ · ${reportTitleSuffix}`, 'Công việc bảo trì', ['Ngày hoàn thành','Mã thiết bị','Tên thiết bị','Loại công việc','Nội dung bảo trì / sửa chữa','Vật tư ghi nhận trên phiếu','Người thực hiện','Kết quả'], 'landscape')
+  const exportReportMaterials = () => exportRows(reportMaterialUsage.map(row => ({
+    'Mã vật tư': row.item?.code ?? 'Không còn trong danh mục',
+    'Tên vật tư': row.item?.name ?? row.itemId,
+    'Nhóm vật tư': row.item?.group ?? '',
+    'ĐVT': row.item?.unit ?? '',
+    'Số lượng xuất trong kỳ': row.quantity,
+    'Số lượt xuất': row.transactions,
+    'Tồn kho hiện tại': row.item?.quantity ?? '—',
+    'Vị trí lưu kho': row.item?.location ?? ''
+  })), `bao-cao-vat-tu-${reportPeriodRange.startDate}.xlsx`, `BÁO CÁO SỬ DỤNG VẬT TƯ · ${reportTitleSuffix}`, 'Vật tư sử dụng', ['Mã vật tư','Tên vật tư','Nhóm vật tư','ĐVT','Số lượng xuất trong kỳ','Số lượt xuất','Tồn kho hiện tại','Vị trí lưu kho'], 'landscape')
+  const exportReportAssets = () => {
+    const brokenCodes = reportBrokenAssets.map(asset => asset.code).join(', ')
+    const headers = ['Loại thông tin','Số lượng','Mã thiết bị','Tên thiết bị','Nhóm thiết bị','Vị trí','Tình trạng hiện tại']
+    const rows: Record<string, string | number>[] = [
+      { 'Loại thông tin':'Tổng thiết bị chưa lưu kho','Số lượng':activeAssets.length },
+      { 'Loại thông tin':'Đang hoạt động','Số lượng':activeAssets.filter(asset=>asset.status==='Đang hoạt động').length },
+      { 'Loại thông tin':'Hỏng / đang sửa chữa','Số lượng':reportBrokenAssets.length,'Mã thiết bị':brokenCodes },
+      { 'Loại thông tin':'Ngừng sử dụng / thanh lý','Số lượng':activeAssets.filter(asset=>asset.status==='Ngừng sử dụng'||asset.status==='Thanh lý').length },
+      ...reportBrokenAssets.map(asset=>({
+        'Loại thông tin':'Thiết bị hỏng / đang sửa chữa',
+        'Số lượng':1,
+        'Mã thiết bị':asset.code,
+        'Tên thiết bị':asset.name,
+        'Nhóm thiết bị':asset.category,
+        'Vị trí':asset.location,
+        'Tình trạng hiện tại':asset.status
+      }))
+    ]
+    exportRows(rows, `bao-cao-tinh-trang-thiet-bi-${today()}.xlsx`, `BÁO CÁO TÌNH TRẠNG THIẾT BỊ · ${dateText(today())}`, 'Tình trạng thiết bị', headers, 'landscape')
+  }
   const backup = async () => {
     const data = {
       assets: await db.assets.toArray(), inventory: await db.inventory.toArray(),
       tasks: await db.tasks.toArray(), logs: await db.logs.toArray(), movements: await db.movements.toArray(),
+      maintenancePlans: await db.maintenancePlans.toArray(),
       checklistTemplates: await db.checklistTemplates.toArray(),
       checklistVersions: await db.checklistVersions.toArray(),
       checklistResults: await db.checklistResults.toArray()
@@ -622,9 +859,10 @@ function AppWorkspace({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
   const restore = async (file: File) => {
     try {
       const data = JSON.parse(await file.text())
-      await db.transaction('rw', [db.assets, db.inventory, db.tasks, db.logs, db.movements, db.checklistTemplates, db.checklistVersions, db.checklistResults], async () => {
+      await db.transaction('rw', [db.assets, db.inventory, db.tasks, db.logs, db.movements, db.maintenancePlans, db.checklistTemplates, db.checklistVersions, db.checklistResults], async () => {
         await db.assets.bulkPut(data.assets ?? []); await db.inventory.bulkPut(data.inventory ?? [])
         await db.tasks.bulkPut(data.tasks ?? []); await db.logs.bulkPut(data.logs ?? []); await db.movements.bulkPut(data.movements ?? [])
+        await db.maintenancePlans.bulkPut(data.maintenancePlans ?? [])
         await db.checklistTemplates.bulkPut(data.checklistTemplates ?? [])
         await db.checklistVersions.bulkPut(data.checklistVersions ?? [])
         await db.checklistResults.bulkPut(data.checklistResults ?? [])
@@ -638,7 +876,7 @@ function AppWorkspace({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
     ['checklist','Bảo trì – Checklist',ClipboardList],
     ['assets','Thiết bị',HardDrive],
     ['inventory','Kho vật tư',Package],
-    ['planning','Kế hoạch',CalendarDays],
+    ['planning','Kế hoạch bảo trì',CalendarDays],
     ['logs','Bảo dưỡng – Sửa chữa',Wrench],
     ['reports','Báo cáo',BarChart3],
     ['settings','Cài đặt',Settings]
@@ -652,19 +890,19 @@ function AppWorkspace({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
       <div className="sidebar-bottom"><div className="offline-pill"><span className="online-dot"/> Bản thử nghiệm · Dữ liệu lưu cục bộ</div><small>Phiên bản 0.1.0</small></div>
     </aside>
     <nav className="mobile-nav" aria-label="Điều hướng chính">
-      {([['dashboard','Tổng quan',LayoutDashboard],['checklist','Checklist',ClipboardList],['assets','Thiết bị',HardDrive],['planning','Kế hoạch',CalendarDays]] as const).map(([key,label,Icon]) =>
+      {([['dashboard','Tổng quan',LayoutDashboard],['checklist','Checklist',ClipboardList],['assets','Thiết bị',HardDrive],['planning','Kế hoạch bảo trì',CalendarDays]] as const).map(([key,label,Icon]) =>
         <button key={key} className={`mobile-nav-item ${page===key || (key==='planning'&&page==='tasks')?'active':''}`} onClick={()=>{setPage(key);setSearch('');setMobileMore(false)}}><Icon size={19}/><span>{label}</span>{key==='planning'&&overdue>0&&<i>{overdue}</i>}</button>
       )}
       <button className={`mobile-nav-item ${mobileMore||(['inventory','logs','tasks','reports','settings'] as Page[]).includes(page)?'active':''}`} onClick={()=>setMobileMore(v=>!v)}><MoreHorizontal size={20}/><span>Thêm</span></button>
     </nav>
     <main className="main">
       <header className="topbar">
-        <div className="page-heading"><div className="eyebrow">HỆ THỐNG QUẢN LÝ KỸ THUẬT</div><h1>{nav.find(n=>n[0]===page)?.[1] ?? (page==='tasks'?'Kế hoạch bảo dưỡng':'')}</h1></div>
+        <div className="page-heading"><div className="eyebrow">HỆ THỐNG QUẢN LÝ KỸ THUẬT</div><h1>{nav.find(n=>n[0]===page)?.[1] ?? (page==='tasks'?'Lịch bảo dưỡng định kỳ':'')}</h1></div>
         <div className="top-actions">
           <div className="workspace-chip"><Building2 size={16}/><span><b>Dữ liệu trên thiết bị</b><small>Chưa đồng bộ lên cloud</small></span></div>
           <button className="icon-btn" title="Quét QR" onClick={()=>setModal('scan')}><QrCode size={19}/></button>
-          {page!=='planning'&&page!=='checklist'&&<button className="primary-btn" onClick={()=>{ if(page==='assets'){setEditingAsset(emptyAsset());setModal('asset')} else if(page==='inventory'){setEditingItem(emptyItem());setModal('item')} else if(page==='tasks'){setEditingTask(emptyTask());setModal('task')} else if(page==='logs'){setEditingLog({id:uid(),assetId:'',date:today(),kind:'Sửa chữa',description:'',parts:'',readings:'',result:'',performedBy:''});setModal('log')} else {setPage('assets');setEditingAsset(emptyAsset());setModal('asset')} }}><Plus size={17}/><span>Thêm mới</span></button>}
-          <button className="profile-chip" title="Đăng xuất" onClick={onSignOut}><span className="avatar"><UserRound size={16}/></span><span className="profile-text"><b>{userEmail}</b><small>Đăng xuất</small></span></button>
+          {page!=='planning'&&page!=='checklist'&&<button className="primary-btn" onClick={()=>{ if(page==='assets'){setEditingAsset(emptyAsset());setModal('asset')} else if(page==='inventory'){setEditingItem(emptyItem());setModal('item')} else if(page==='tasks'){setEditingTask(emptyTask());setModal('task')} else if(page==='logs'){setEditingLog({id:uid(),assetId:'',date:today(),kind:'Sửa chữa',description:'',parts:'',readings:'',result:'',performedBy:userName});setModal('log')} else {setPage('assets');setEditingAsset(emptyAsset());setModal('asset')} }}><Plus size={17}/><span>Thêm mới</span></button>}
+          <button className="profile-chip" title="Mở hồ sơ trong Cài đặt" onClick={()=>{setPage('settings');setSearch('');setMobileMore(false)}}><span className="avatar"><UserRound size={16}/></span><span className="profile-text"><b>{userName}</b><small>Hồ sơ · Cài đặt</small></span></button>
         </div>
       </header>
       <div className="content">
@@ -709,23 +947,111 @@ function AppWorkspace({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
           <div className="table-wrap"><table><thead><tr><th>Mã / Tên vật tư</th><th>Nhóm</th><th>Tồn kho</th><th>Tồn tối thiểu</th><th>Vị trí</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
           {filteredItems.map(i=><tr key={i.id}><td><button type="button" className="inventory-name-link" onClick={()=>setDetailItem(i)}><b>{i.code}</b><small>{i.name}</small></button></td><td>{i.group}</td><td><b>{i.quantity} {i.unit}</b></td><td>{i.minQuantity} {i.unit}</td><td>{i.location||'—'}</td><td><span className={`status ${i.quantity<=i.minQuantity?'red':'green'}`}>{i.quantity<=i.minQuantity?'Sắp hết':'Đủ tồn'}</span></td><td className="actions"><button className="text-btn" onClick={()=>addMovement(i,'Nhập',Number(prompt('Số lượng nhập?','1')))}>Nhập</button><button className="text-btn" onClick={()=>addMovement(i,'Xuất',Number(prompt('Số lượng xuất?','1')))}>Xuất</button><button className="text-btn" onClick={()=>{setEditingItem(i);setModal('item')}}>Sửa</button></td></tr>)}
           </tbody></table>{filteredItems.length===0&&<Empty text="Chưa có vật tư."/ >}</div></section>}
-        {page==='planning' && <section className="panel"><div className="panel-head"><div><h2>Kế hoạch</h2><p>Khu vực tập trung các kế hoạch vận hành và kỹ thuật. Các phân hệ sẽ được hoàn thiện theo từng giai đoạn.</p></div><CalendarDays/></div><div className="report-grid"><button type="button" className="panel report-card" onClick={()=>setPage('tasks')}><CalendarDays/><div><b>Kế hoạch bảo dưỡng</b><p>Quản lý lịch bảo dưỡng, hạn thực hiện và tiến độ hiện có</p><span className="soft-btn">Mở kế hoạch bảo dưỡng</span></div></button><div className="panel report-card"><ClipboardList/><div><b>Kế hoạch bảo trì</b><p>Phân hệ lập kế hoạch bảo trì sẽ được xây dựng ở giai đoạn tiếp theo.</p><span className="status gray">Đang lên kế hoạch</span></div></div></div></section>}
-        {page==='tasks' && <section className="panel"><div className="panel-head"><div><h2>Kế hoạch bảo dưỡng</h2><p>Lịch công việc, hạn thực hiện và tiến độ bảo dưỡng</p></div><button className="soft-btn" onClick={exportTasks}><Download size={16}/> Xuất Excel</button></div>
+        {page==='planning' && <section className="panel maintenance-plan-panel">
+          <div className="panel-head">
+            <div><h2>Kế hoạch bảo trì</h2><p>Lập lịch bảo trì thiết bị, phân công nội bộ hoặc thuê ngoài</p></div>
+            <div className="maintenance-plan-actions">
+              <button type="button" className="soft-btn" onClick={()=>setPage('tasks')}><CalendarDays size={16}/> Lịch bảo dưỡng định kỳ</button>
+              <button type="button" className="soft-btn" onClick={openMaintenancePlanExport}><Download size={16}/> Xuất kế hoạch Excel</button>
+              <button type="button" className="primary-btn" onClick={()=>{setEditingPlan(emptyMaintenancePlan(planPeriod,planAnchorDate));setModal('plan')}}><Plus size={16}/> Thêm kế hoạch</button>
+            </div>
+          </div>
+          <div className="plan-period-tabs" role="tablist" aria-label="Kỳ kế hoạch bảo trì">
+            {(['Tuần','Tháng','Quý','Năm'] as MaintenancePlanPeriod[]).map(period=><button type="button" role="tab" aria-selected={planPeriod===period} key={period} className={planPeriod===period?'active':''} onClick={()=>setPlanPeriod(period)}>{period}</button>)}
+          </div>
+          <div className="plan-period-toolbar">
+            <div className="plan-period-picker">
+              {planPeriod==='Tuần'&&<label className="plan-period-control"><span>Chọn ngày trong tuần</span><input type="date" value={planAnchorDate} onChange={event=>event.target.value&&setPlanAnchorDate(event.target.value)}/></label>}
+              {planPeriod==='Tháng'&&<label className="plan-period-control"><span>Chọn tháng</span><input type="month" value={planAnchorDate.slice(0,7)} onChange={event=>event.target.value&&setPlanAnchorDate(`${event.target.value}-01`)}/></label>}
+              {planPeriod==='Quý'&&<><label className="plan-period-control"><span>Năm</span><select value={planAnchorDate.slice(0,4)} onChange={event=>setPlanAnchorDate(`${event.target.value}-${planAnchorDate.slice(5,7)}-01`)}>{MAINTENANCE_PLAN_YEARS.map(year=><option key={year}>{year}</option>)}</select></label><label className="plan-period-control"><span>Quý</span><select value={Math.floor((Number(planAnchorDate.slice(5,7))-1)/3)+1} onChange={event=>setPlanAnchorDate(`${planAnchorDate.slice(0,4)}-${String((Number(event.target.value)-1)*3+1).padStart(2,'0')}-01`)}>{[1,2,3,4].map(quarter=><option key={quarter} value={quarter}>Quý {quarter}</option>)}</select></label></>}
+              {planPeriod==='Năm'&&<label className="plan-period-control"><span>Chọn năm</span><select value={planAnchorDate.slice(0,4)} onChange={event=>setPlanAnchorDate(`${event.target.value}-01-01`)}>{MAINTENANCE_PLAN_YEARS.map(year=><option key={year}>{year}</option>)}</select></label>}
+            </div>
+            <b className="plan-period-range">
+              {periodRangeLabel(planPeriod,maintenancePlanPeriodRange)} · {maintenancePlanScopeLabel(planPeriod)}
+            </b>
+          </div>
+          <div className="plan-summary">
+            <span><b>{filteredMaintenancePlans.length}</b> hạng mục trong kỳ</span>
+            <span><b>{filteredMaintenancePlans.filter(plan=>plan.execution==='Nội bộ').length}</b> nội bộ</span>
+            <span><b>{filteredMaintenancePlans.filter(plan=>plan.execution==='Thuê ngoài').length}</b> thuê ngoài</span>
+            <span><b>{activeAssets.length-unplannedMaintenanceAssets.length}/{activeAssets.length}</b> thiết bị đã có lịch</span>
+          </div>
+          {unplannedMaintenanceAssets.length>0&&<details className="plan-coverage-warning">
+            <summary>Chưa có kế hoạch cho {unplannedMaintenanceAssets.length} thiết bị trong kỳ này</summary>
+            <p>{unplannedMaintenanceAssets.map(asset=>`${asset.code} – ${asset.name}`).join(' · ')}</p>
+          </details>}
+          <div className="table-wrap">
+            <table className="maintenance-plan-table"><thead><tr><th>Kỳ</th><th>Thời gian dự kiến</th><th>Thiết bị</th><th>Nội dung bảo trì</th><th>Thực hiện</th><th>Đơn vị thuê ngoài</th><th>Thao tác</th></tr></thead><tbody>
+              {filteredMaintenancePlans.map(plan=>{
+                const asset=assets.find(item=>item.id===plan.assetId)
+                return <tr key={plan.id}><td><span className="status gray">{plan.period}</span></td><td>{dateText(plan.startDate)}{plan.endDate!==plan.startDate&&<> – {dateText(plan.endDate)}</>}</td><td><b>{asset?.code||'—'}</b><small>{asset?.name||'Thiết bị không còn trong danh mục'}</small></td><td><b>{plan.title}</b>{plan.notes&&<small>{plan.notes}</small>}</td><td><span className={`status ${plan.execution==='Nội bộ'?'green':'orange'}`}>{plan.execution}</span></td><td>{plan.execution==='Thuê ngoài'?(plan.contractor||'Chưa xác định'):'—'}</td><td className="actions"><button type="button" className="text-btn" onClick={()=>{setEditingPlan(plan);setModal('plan')}}>Sửa</button><button type="button" className="text-btn danger" title="Xóa kế hoạch" onClick={()=>deleteMaintenancePlan(plan)}><Trash2 size={15}/></button></td></tr>
+              })}
+            </tbody></table>
+            {filteredMaintenancePlans.length===0&&<Empty text="Chưa có kế hoạch trong kỳ này. Hãy thêm hạng mục bảo trì đầu tiên."/>}
+          </div>
+        </section>}
+        {page==='tasks' && <section className="panel"><div className="panel-head"><div><h2>Lịch bảo dưỡng định kỳ</h2><p>Công việc lặp lại, hạn thực hiện và tiến độ; không phải kế hoạch bảo trì theo kỳ.</p></div><button className="soft-btn" onClick={exportTasks}><Download size={16}/> Xuất lịch bảo dưỡng Excel</button></div>
           <div className="table-wrap"><table><thead><tr><th>Ngày đến hạn</th><th>Thiết bị</th><th>Công việc</th><th>Chu kỳ</th><th>Trạng thái</th><th></th></tr></thead><tbody>
           {filteredTasks.map(t=><tr key={t.id}><td>{dateText(t.dueDate)}</td><td>{assets.find(a=>a.id===t.assetId)?.name??'Chưa gắn thiết bị'}</td><td><b>{t.title}</b><small>{t.checklist.split('\n').filter(Boolean).length} bước công việc</small></td><td>{t.frequency}</td><td><span className={`status ${t.status==='Hoàn thành'?'green':t.dueDate<today()?'red':'orange'}`}>{t.status==='Hoàn thành'?'Hoàn thành':t.dueDate<today()?'Quá hạn':t.status}</span></td><td className="actions"><button className="text-btn" onClick={()=>{setEditingTask(t);setModal('task')}}>Chi tiết</button>{t.status!=='Hoàn thành'&&<button className="text-btn success-text" onClick={()=>completeTask(t)}>Hoàn thành</button>}</td></tr>)}
           </tbody></table>{filteredTasks.length===0&&<Empty text="Chưa có công việc."/ >}</div></section>}
         {page==='logs' && <section className="panel"><div className="panel-head"><div><h2>Bảo dưỡng – Sửa chữa</h2><p>Phiếu công việc và lịch sử xử lý kỹ thuật thực tế</p></div><button className="soft-btn" onClick={exportLogs}><Download size={16}/> Xuất Excel</button></div>
-          <div className="table-wrap"><table><thead><tr><th>Ngày</th><th>Thiết bị</th><th>Loại công việc</th><th>Nội dung</th><th>Thông số</th><th>Người thực hiện</th></tr></thead><tbody>{logs.map(l=><tr key={l.id}><td>{dateText(l.date)}</td><td>{assets.find(a=>a.id===l.assetId)?.name??'—'}</td><td>{l.kind}</td><td>{l.description}</td><td>{l.readings||'—'}</td><td>{l.performedBy}</td></tr>)}</tbody></table>{logs.length===0&&<Empty text="Chưa có nhật ký."/ >}</div></section>}
-        {page==='reports' && <div className="report-grid">
-          <ReportCard icon={<HardDrive/>} title="Danh mục thiết bị" desc="Lý lịch và trạng thái toàn bộ thiết bị" action={exportAssets}/>
-          <ReportCard icon={<Package/>} title="Tồn kho vật tư" desc="Số lượng tồn và mức tối thiểu" action={exportInventory}/>
-          <ReportCard icon={<CalendarDays/>} title="Kế hoạch bảo dưỡng" desc="Công việc bảo dưỡng đến hạn và trạng thái" action={exportTasks}/>
-          <ReportCard icon={<ClipboardList/>} title="Bảo dưỡng – Sửa chữa" desc="Lịch sử công việc kỹ thuật đã ghi nhận" action={exportLogs}/>
-          <div className="panel report-note"><ShieldAlert/><div><b>Lưu ý về dữ liệu</b><p>Báo cáo lấy từ dữ liệu đang có trên thiết bị này. Hãy sao lưu định kỳ trong mục Cài đặt.</p></div></div>
+          <div className="table-wrap"><table><thead><tr><th>Ngày lập phiếu</th><th>Thiết bị</th><th>Loại công việc</th><th>Nội dung</th><th>Trạng thái</th><th>Kết quả</th><th>Người thực hiện</th><th>Hoàn thành lúc</th><th>Thao tác</th></tr></thead><tbody>{logs.map(l=><tr key={l.id}><td>{dateText(l.date)}</td><td>{assets.find(a=>a.id===l.assetId)?.name??'—'}</td><td>{l.kind}</td><td>{l.description}</td><td><span className={`status ${l.result?'green':'orange'}`}>{l.result?'Hoàn thành':'Chưa hoàn thành'}</span></td><td>{l.result||'Chưa có kết quả'}</td><td>{l.performedBy||'—'}</td><td>{dateTimeText(l.completedAt)}</td><td className="actions"><button type="button" className="text-btn" onClick={()=>{setEditingLog(l);setModal('log')}}>{l.result?'Sửa phiếu':'Cập nhật phiếu'}</button></td></tr>)}</tbody></table>{logs.length===0&&<Empty text="Chưa có nhật ký."/ >}</div></section>}
+        {page==='reports' && <div className="reports-dashboard">
+          <section className="panel report-period-panel">
+            <div className="panel-head"><div><h2>Báo cáo hoạt động thực tế</h2><p>Thống kê phiếu đã ghi nhận và vật tư đã xuất kho; không bao gồm kế hoạch dự kiến.</p></div><FileSpreadsheet/></div>
+            <div className="report-period-tabs" role="tablist" aria-label="Kỳ báo cáo">
+              {(['Tuần','Tháng','Quý','Năm'] as MaintenancePlanPeriod[]).map(period=><button type="button" role="tab" aria-selected={reportPeriod===period} key={period} className={reportPeriod===period?'active':''} onClick={()=>setReportPeriod(period)}>{period}</button>)}
+            </div>
+            <div className="report-period-toolbar">
+              <div className="plan-period-picker">
+                {reportPeriod==='Tuần'&&<label className="plan-period-control"><span>Chọn ngày trong tuần</span><input type="date" value={reportAnchorDate} onChange={event=>event.target.value&&setReportAnchorDate(event.target.value)}/></label>}
+                {reportPeriod==='Tháng'&&<label className="plan-period-control"><span>Chọn tháng</span><input type="month" value={reportAnchorDate.slice(0,7)} onChange={event=>event.target.value&&setReportAnchorDate(`${event.target.value}-01`)}/></label>}
+                {reportPeriod==='Quý'&&<><label className="plan-period-control"><span>Năm</span><select value={reportAnchorDate.slice(0,4)} onChange={event=>setReportAnchorDate(`${event.target.value}-${reportAnchorDate.slice(5,7)}-01`)}>{MAINTENANCE_PLAN_YEARS.map(year=><option key={year}>{year}</option>)}</select></label><label className="plan-period-control"><span>Quý</span><select value={Math.floor((Number(reportAnchorDate.slice(5,7))-1)/3)+1} onChange={event=>setReportAnchorDate(`${reportAnchorDate.slice(0,4)}-${String((Number(event.target.value)-1)*3+1).padStart(2,'0')}-01`)}>{[1,2,3,4].map(quarter=><option key={quarter} value={quarter}>Quý {quarter}</option>)}</select></label></>}
+                {reportPeriod==='Năm'&&<label className="plan-period-control"><span>Chọn năm</span><select value={reportAnchorDate.slice(0,4)} onChange={event=>setReportAnchorDate(`${event.target.value}-01-01`)}>{MAINTENANCE_PLAN_YEARS.map(year=><option key={year}>{year}</option>)}</select></label>}
+              </div>
+              <b className="plan-period-range">{periodRangeLabel(reportPeriod, reportPeriodRange)}</b>
+            </div>
+          </section>
+
+          <section className="panel report-data-panel">
+            <div className="panel-head"><div><h2>Công việc bảo trì, bảo dưỡng, sửa chữa</h2><p>{periodRangeLabel(reportPeriod, reportPeriodRange)} · chỉ tính phiếu đã hoàn thành, theo ngày hoàn thành</p></div><button type="button" className="soft-btn" onClick={exportReportWork}><Download size={16}/> Xuất báo cáo công việc Excel</button></div>
+            <div className="report-summary"><span><b>{reportWorkLogs.length}</b> phiếu đã hoàn thành</span><span><b>{reportWorkLogs.filter(log=>/bảo dưỡng|bảo trì/i.test(log.kind)).length}</b> bảo trì / bảo dưỡng</span><span><b>{reportWorkLogs.filter(log=>log.kind.toLocaleLowerCase('vi').includes('sửa chữa')).length}</b> sửa chữa</span></div>
+            <div className="table-wrap"><table className="period-report-table"><thead><tr><th>Ngày hoàn thành</th><th>Thiết bị</th><th>Loại công việc</th><th>Nội dung đã thực hiện</th><th>Vật tư ghi trên phiếu</th><th>Người thực hiện</th></tr></thead><tbody>
+              {reportWorkLogs.map(log=>{const asset=assets.find(item=>item.id===log.assetId);return <tr key={log.id}><td>{dateText(completedWorkDate(log))}</td><td><b>{asset?.code||'—'}</b><small>{asset?.name||'Thiết bị không còn trong danh mục'}</small></td><td>{log.kind}</td><td>{log.description||'—'}</td><td>{log.parts||'—'}</td><td>{log.performedBy||'—'}</td></tr>})}
+            </tbody></table>{reportWorkLogs.length===0&&<Empty text="Không có phiếu công việc trong kỳ báo cáo này."/>}</div>
+          </section>
+
+          <section className="panel report-data-panel">
+            <div className="panel-head"><div><h2>Vật tư đã xuất và tồn kho hiện tại</h2><p>{periodRangeLabel(reportPeriod, reportPeriodRange)} · số lượng sử dụng tính theo giao dịch Xuất kho</p></div><button type="button" className="soft-btn" onClick={exportReportMaterials}><Download size={16}/> Xuất báo cáo vật tư Excel</button></div>
+            <div className="report-summary"><span><b>{reportMaterialUsage.length}</b> loại vật tư đã xuất</span><span><b>{reportMaterialUsage.reduce((sum,row)=>sum+row.transactions,0)}</b> lượt xuất kho</span></div>
+            <div className="table-wrap"><table className="period-report-table"><thead><tr><th>Vật tư</th><th>Nhóm</th><th>Đã xuất trong kỳ</th><th>Tồn kho hiện tại</th><th>Vị trí</th></tr></thead><tbody>
+              {reportMaterialUsage.map(row=><tr key={row.itemId}><td><b>{row.item?.code||'—'}</b><small>{row.item?.name||'Vật tư không còn trong danh mục'}</small></td><td>{row.item?.group||'—'}</td><td><b>{row.quantity} {row.item?.unit||''}</b><small>{row.transactions} lượt xuất</small></td><td><b>{row.item?`${row.item.quantity} ${row.item.unit}`:'—'}</b></td><td>{row.item?.location||'—'}</td></tr>)}
+            </tbody></table>{reportMaterialUsage.length===0&&<Empty text="Không có giao dịch xuất kho trong kỳ báo cáo này."/>}</div>
+          </section>
+
+          <section className="panel report-data-panel">
+            <div className="panel-head"><div><h2>Tình trạng thiết bị hiện tại</h2><p>Ảnh chụp hiện tại, không thay đổi theo kỳ thời gian đã chọn</p></div><button type="button" className="soft-btn" onClick={exportReportAssets}><Download size={16}/> Xuất báo cáo thiết bị Excel</button></div>
+            <div className="report-summary"><span><b>{activeAssets.length}</b> thiết bị chưa lưu kho</span><span><b>{activeAssets.filter(asset=>asset.status==='Đang hoạt động').length}</b> đang hoạt động</span><span className="report-summary-alert"><b>{reportBrokenAssets.length}</b> hỏng / đang sửa chữa</span><span><b>{activeAssets.filter(asset=>asset.status==='Ngừng sử dụng'||asset.status==='Thanh lý').length}</b> ngừng sử dụng / thanh lý</span></div>
+            <div className="table-wrap"><table className="period-report-table"><thead><tr><th>Mã thiết bị hỏng</th><th>Tên thiết bị</th><th>Nhóm</th><th>Vị trí</th><th>Tình trạng</th></tr></thead><tbody>
+              {reportBrokenAssets.map(asset=><tr key={asset.id}><td><b>{asset.code}</b></td><td>{asset.name}</td><td>{asset.category||'—'}</td><td>{asset.location||'—'}</td><td><span className="status orange">Đang sửa chữa / hỏng</span></td></tr>)}
+            </tbody></table>{reportBrokenAssets.length===0&&<Empty text="Hiện không có thiết bị nào được đánh dấu Đang sửa chữa / hỏng."/>}</div>
+          </section>
+          <div className="panel report-note"><ShieldAlert/><div><b>Lưu ý nguồn dữ liệu</b><p>Vật tư đã dùng được tính từ giao dịch Xuất kho; tồn kho là số hiện tại. Vật tư nhập dạng ghi chú tự do trong phiếu sửa chữa không được cộng vào số lượng xuất kho.</p></div></div>
         </div>}
         {page==='settings' && <div className="settings-grid">
+          <section className="panel settings-profile">
+            <div className="panel-head"><div><h2>Hồ sơ nhân viên</h2><p>Thông tin cá nhân của tài khoản đang đăng nhập</p></div><UserRound/></div>
+            <div className="employee-profile-details">
+              <div><small>Email đăng nhập</small><b>{userEmail||'—'}</b></div>
+              <div><small>Họ và tên</small><b>{profile.fullName||'Chưa cập nhật'}</b></div>
+              <div><small>Số điện thoại</small><b>{profile.phone||'Chưa cập nhật'}</b></div>
+              <div><small>Ngày sinh</small><b>{profile.dateOfBirth?dateText(profile.dateOfBirth):'Chưa cập nhật'}</b></div>
+              <div><small>Vị trí nhân viên</small><b>{profile.position||'Chưa cập nhật'}</b></div>
+            </div>
+            <div className="setting-row"><div><b>Thao tác hồ sơ</b><small>Thông tin chỉ được thay đổi khi chọn Sửa hồ sơ.</small></div><div className="setting-inline-actions"><button className="soft-btn" onClick={()=>setProfileEditOpen(true)}>Sửa hồ sơ</button><button className="soft-btn" onClick={onSignOut}>Đăng xuất</button></div></div>
+          </section>
           <section className="panel"><div className="panel-head"><div><h2>Dữ liệu và sao lưu</h2><p>Phiên bản thử nghiệm lưu dữ liệu cục bộ trong trình duyệt này</p></div><HardDrive/></div>
-            <div className="setting-row"><div><b>Xuất bản sao lưu</b><small>Tải thiết bị, vật tư, công việc và nhật ký thành JSON.</small></div><button className="primary-btn" onClick={backup}><Download size={16}/> Sao lưu</button></div>
+            <div className="setting-row"><div><b>Xuất bản sao lưu</b><small>Tải thiết bị, vật tư, công việc, kế hoạch bảo trì và nhật ký thành JSON.</small></div><button className="primary-btn" onClick={backup}><Download size={16}/> Sao lưu</button></div>
             <div className="setting-row"><div><b>Khôi phục bản sao lưu</b><small>Nhập file JSON đã xuất từ ứng dụng.</small></div><label className="soft-btn file-btn">Chọn file<input type="file" accept=".json,application/json" onChange={e=>e.target.files?.[0]&&restore(e.target.files[0])}/></label></div>
             <div className="setting-row"><div><b>Trạng thái đồng bộ</b><small>{queueCount} thay đổi đang chờ. Chưa kết nối máy chủ cloud ở phiên bản này.</small></div><span className="status orange">Chỉ lưu cục bộ</span></div>
             <div className="setting-row"><div><b>Giao diện</b><small>Chuyển đổi giữa tối/ sáng và thu gọn thông tin chính.</small></div><div className="setting-inline-actions"><button className={`soft-btn ${theme === 'light' ? 'active' : ''}`} onClick={()=>setTheme('light')}>Sáng</button><button className={`soft-btn ${theme === 'dark' ? 'active' : ''}`} onClick={()=>setTheme('dark')}>Tối</button><button className={`soft-btn ${compact ? 'active' : ''}`} onClick={()=>setCompact(v=>!v)}>{compact ? 'Thu gọn' : 'Mở rộng'}</button></div></div>
@@ -736,15 +1062,39 @@ function AppWorkspace({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
     </main>
     {mobileMore&&<div className="mobile-more-backdrop" onClick={()=>setMobileMore(false)}><div className="mobile-more-menu" onClick={e=>e.stopPropagation()}>
       <div className="mobile-more-title">Chức năng khác</div>
-      {([['inventory','Kho vật tư',Package],['tasks','Kế hoạch bảo dưỡng',CalendarDays],['logs','Bảo dưỡng – Sửa chữa',Wrench],['reports','Báo cáo',BarChart3],['settings','Cài đặt',Settings]] as const).map(([key,label,Icon])=><button key={key} onClick={()=>{setPage(key);setSearch('');setMobileMore(false)}}><Icon size={18}/>{label}<ChevronRight size={16}/></button>)}
+      {([['inventory','Kho vật tư',Package],['tasks','Kế hoạch bảo dưỡng định kỳ',CalendarDays],['logs','Bảo dưỡng – Sửa chữa',Wrench],['reports','Báo cáo',BarChart3],['settings','Cài đặt',Settings]] as const).map(([key,label,Icon])=><button key={key} onClick={()=>{setPage(key);setSearch('');setMobileMore(false)}}><Icon size={18}/>{label}<ChevronRight size={16}/></button>)}
     </div></div>}
     {notice&&<div className="toast"><Check size={17}/>{notice}</div>}
+    {profileEditOpen&&<EmployeeProfileEditModal email={userEmail} profile={profile} close={()=>setProfileEditOpen(false)} onSave={async value=>{await onSaveProfile(value);setNotice('Đã lưu hồ sơ nhân viên')}}/>}
     {detailItem&&<InventoryDetailModal value={detailItem} close={()=>setDetailItem(null)} edit={()=>{setEditingItem(detailItem);setDetailItem(null);setModal('item')}}/>}
-    {detailAsset&&<AssetDetailModal value={detailAsset} logs={logs.filter(l=>l.assetId===detailAsset.id)} allowChecklist={checklistAccess || (CHECKLIST_TEST_MODE && page==='checklist')} checklistOccurrence={activeChecklistOccurrence} createRepairFromChecklist={createRepairFromChecklist} close={()=>{setDetailAsset(null);setChecklistAccess(false);setActiveChecklistOccurrence(null)}} edit={()=>{setEditingAsset({...detailAsset,images:detailAsset.images??[]});setDetailAsset(null);setChecklistAccess(false);setModal('asset')}} addLog={()=>{setEditingLog({id:uid(),assetId:detailAsset.id,date:today(),kind:'Sửa chữa',description:'',parts:'',readings:'',result:'',performedBy:''});setModal('log')}}/>}
+    {detailAsset&&<AssetDetailModal value={detailAsset} logs={logs.filter(l=>l.assetId===detailAsset.id)} allowChecklist={checklistAccess || (CHECKLIST_TEST_MODE && page==='checklist')} checklistOccurrence={activeChecklistOccurrence} createRepairFromChecklist={createRepairFromChecklist} editLog={(entry:Log)=>{setEditingLog(entry);setModal('log')}} close={()=>{setDetailAsset(null);setChecklistAccess(false);setActiveChecklistOccurrence(null)}} edit={()=>{setEditingAsset({...detailAsset,images:detailAsset.images??[]});setDetailAsset(null);setChecklistAccess(false);setModal('asset')}} addLog={()=>{setEditingLog({id:uid(),assetId:detailAsset.id,date:today(),kind:'Sửa chữa',description:'',parts:'',readings:'',result:'',performedBy:userName});setModal('log')}}/>}
     {modal==='asset'&&editingAsset&&<AssetModal value={editingAsset} close={()=>{setModal(null);setEditingAsset(null)}} save={saveAsset} assets={assets} customCategories={customAssetCategories} onAddCategory={addAssetCategory} onExportConvention={exportAssetCodeConvention}/>}
     {modal==='item'&&editingItem&&<ItemModal value={editingItem} close={()=>{setModal(null);setEditingItem(null)}} save={saveItem}/>}
     {modal==='task'&&editingTask&&<TaskModal value={editingTask} assets={assets} close={()=>{setModal(null);setEditingTask(null)}} save={saveTask}/>}
-    {modal==='log'&&editingLog&&<LogEntryModal value={editingLog} close={()=>{setModal(null);setEditingLog(null)}} save={saveLog}/>}
+    {modal==='plan'&&editingPlan&&<MaintenancePlanModal value={editingPlan} assets={assets} close={()=>{setModal(null);setEditingPlan(null)}} save={saveMaintenancePlans}/>}
+    {modal==='planExport'&&<Modal title="Xuất kế hoạch bảo trì Excel" close={()=>setModal(null)}>
+      <form className="form-grid plan-export-form" onSubmit={event=>{event.preventDefault();exportMaintenancePlans()}}>
+        <Field label="Kỳ kế hoạch">
+          <select value={planExportPeriod} onChange={event=>setPlanExportPeriod(event.target.value as MaintenancePlanPeriod)}>
+            {(['Tuần','Tháng','Quý','Năm'] as MaintenancePlanPeriod[]).map(period=><option key={period}>{period}</option>)}
+          </select>
+        </Field>
+        {planExportPeriod==='Tuần'&&<Field label="Chọn ngày trong tuần"><input type="date" value={planExportAnchorDate} onChange={event=>event.target.value&&setPlanExportAnchorDate(event.target.value)}/></Field>}
+        {planExportPeriod==='Tháng'&&<Field label="Chọn tháng"><input type="month" value={planExportAnchorDate.slice(0,7)} onChange={event=>event.target.value&&setPlanExportAnchorDate(`${event.target.value}-01`)}/></Field>}
+        {planExportPeriod==='Quý'&&<>
+          <Field label="Năm"><select value={planExportAnchorDate.slice(0,4)} onChange={event=>setPlanExportAnchorDate(`${event.target.value}-${planExportAnchorDate.slice(5,7)}-01`)}>{MAINTENANCE_PLAN_YEARS.map(year=><option key={year}>{year}</option>)}</select></Field>
+          <Field label="Quý"><select value={Math.floor((Number(planExportAnchorDate.slice(5,7))-1)/3)+1} onChange={event=>setPlanExportAnchorDate(`${planExportAnchorDate.slice(0,4)}-${String((Number(event.target.value)-1)*3+1).padStart(2,'0')}-01`)}>{[1,2,3,4].map(quarter=><option key={quarter} value={quarter}>Quý {quarter}</option>)}</select></Field>
+        </>}
+        {planExportPeriod==='Năm'&&<Field label="Chọn năm"><select value={planExportAnchorDate.slice(0,4)} onChange={event=>setPlanExportAnchorDate(`${event.target.value}-01-01`)}>{MAINTENANCE_PLAN_YEARS.map(year=><option key={year}>{year}</option>)}</select></Field>}
+        {planExportPeriod!=='Năm'&&<label className="plan-export-all">
+          <input type="checkbox" checked={planExportAllPeriods} onChange={event=>setPlanExportAllPeriods(event.target.checked)}/>
+          <span>Xuất toàn bộ {planExportPeriod.toLocaleLowerCase('vi')} trong năm {planExportAnchorDate.slice(0,4)}</span>
+        </label>}
+        <p className="plan-export-scope">Phạm vi: {planExportAllPeriods&&planExportPeriod!=='Năm'?`Toàn bộ ${planExportPeriod.toLocaleLowerCase('vi')} trong năm ${planExportAnchorDate.slice(0,4)}`:periodRangeLabel(planExportPeriod,planExportRange)} · {maintenancePlanScopeLabel(planExportPeriod)}.</p>
+        <div className="modal-actions"><button type="button" className="soft-btn" onClick={()=>setModal(null)}>Hủy</button><button type="submit" className="primary-btn"><Download size={16}/> Xuất Excel</button></div>
+      </form>
+    </Modal>}
+    {modal==='log'&&editingLog&&<LogEntryModal value={editingLog} assets={assets} userName={userName} isExisting={logs.some(entry=>entry.id===editingLog.id)} close={()=>{setModal(null);setEditingLog(null)}} save={saveLog}/>}
     {modal==='scan'&&<ScanModal close={()=>{setModal(null);setPendingChecklistOccurrence(null)}} assets={assets} expectedAssetId={pendingChecklistOccurrence?.assetId} openAsset={(a: Asset)=>{if(pendingChecklistOccurrence&&pendingChecklistOccurrence.assetId!==a.id)return;setEditingAsset(null);setChecklistAccess(true);setActiveChecklistOccurrence(pendingChecklistOccurrence?{scheduledFor:pendingChecklistOccurrence.scheduledFor,isMakeup:pendingChecklistOccurrence.isMakeup}:null);setPendingChecklistOccurrence(null);setModal(null);setDetailAsset(a)}}/>}
   </div>
 }
@@ -826,11 +1176,38 @@ function Dashboard({assets,tasks,dueToday,lowStock,overdue,go,complete,inventory
 }
 function Stat({icon,label,value,hint,color}:any){return <div className="stat-card"><div className={`stat-icon ${color}`}>{icon}</div><div><small>{label}</small><strong>{value}</strong><span>{hint}</span></div></div>}
 function Empty({text}:any){return <div className="empty"><Archive size={24}/><span>{text}</span></div>}
-function ReportCard({icon,title,desc,action}:any){return <div className="panel report-card"><div className="report-icon">{icon}</div><div><h3>{title}</h3><p>{desc}</p></div><button className="soft-btn" onClick={action}><Download size={16}/> Excel</button></div>}
-
 function Modal({title,children,close}:any){return <div className="modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&close()}><div className="modal"><div className="modal-head"><h2>{title}</h2><button className="icon-btn" onClick={close}><X/></button></div>{children}</div></div>}
 function Field({label,children}:any){return <label className="field"><span>{label}</span>{children}</label>}
-function AssetDetailModal({value,logs,allowChecklist,checklistOccurrence,createRepairFromChecklist,close,edit,addLog}:any){
+function EmployeeProfileEditModal({email,profile,close,onSave}:{email:string;profile:EmployeeProfile;close:()=>void;onSave:(value:EmployeeProfile)=>Promise<void>}) {
+  const [value,setValue]=useState(profile)
+  const [busy,setBusy]=useState(false)
+  const [error,setError]=useState('')
+  const set = <K extends keyof EmployeeProfile,>(key:K,next:EmployeeProfile[K]) => setValue(current=>({...current,[key]:next}))
+  const submit = async (event:FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      await onSave({...value,fullName:value.fullName.trim(),phone:value.phone.trim(),position:value.position.trim()})
+      close()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Không thể lưu hồ sơ. Vui lòng thử lại.')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return <Modal title="Sửa hồ sơ nhân viên" close={close}><form className="form-grid" onSubmit={submit}>
+    <div className="form-hint">Thông tin được lưu trong hồ sơ tài khoản Supabase. Email đăng nhập không thể thay đổi tại đây.</div>
+    <Field label="Email đăng nhập"><input type="email" value={email} readOnly/></Field>
+    <Field label="Họ và tên"><input autoComplete="name" value={value.fullName} onChange={event=>set('fullName',event.target.value)} placeholder="Nhập họ và tên"/></Field>
+    <Field label="Số điện thoại"><input type="tel" autoComplete="tel" value={value.phone} onChange={event=>set('phone',event.target.value)} placeholder="Nhập số điện thoại"/></Field>
+    <Field label="Ngày sinh"><input type="date" autoComplete="bday" value={value.dateOfBirth} onChange={event=>set('dateOfBirth',event.target.value)}/></Field>
+    <Field label="Vị trí nhân viên"><input autoComplete="organization-title" value={value.position} onChange={event=>set('position',event.target.value)} placeholder="Ví dụ: Nhân viên bảo trì"/></Field>
+    {error&&<div className="form-hint warning-hint" role="alert">{error}</div>}
+    <div className="modal-actions"><button type="button" className="soft-btn" onClick={close}>Hủy</button><button type="submit" className="primary-btn" disabled={busy}>{busy?'Đang lưu…':'Lưu hồ sơ'}</button></div>
+  </form></Modal>
+}
+function AssetDetailModal({value,logs,allowChecklist,checklistOccurrence,createRepairFromChecklist,editLog,close,edit,addLog}:any){
   const [showPhotos,setShowPhotos]=useState(false)
   const [activePhoto,setActivePhoto]=useState<string|null>(null)
   const [printMode,setPrintMode]=useState<null|'sticker'|'detail'|'history'>(null)
@@ -849,14 +1226,14 @@ function AssetDetailModal({value,logs,allowChecklist,checklistOccurrence,createR
     </div>
     <AssetChecklist asset={value} allowActions={allowChecklist} scheduledFor={checklistOccurrence?.scheduledFor} isMakeup={checklistOccurrence?.isMakeup} createRepairFromChecklist={createRepairFromChecklist}/>
     <section className="asset-maintenance-history"><div className="panel-head"><div><h3>Lịch sử Bảo dưỡng – Sửa chữa</h3><p>{logs.length} lần ghi nhận công việc của thiết bị</p></div><button type="button" className="soft-btn" disabled={!logs.length} onClick={()=>print('history')}><Printer size={15}/> In lịch sử sửa chữa</button></div>
-      {logs.length?<div className="maintenance-history-list">{logs.slice().sort((a:any,b:any)=>b.date.localeCompare(a.date)).map((entry:any)=><article key={entry.id}><time>{dateText(entry.date)}</time><div><b>{entry.kind}</b><p>{entry.description||'Không có mô tả'}</p>{entry.parts&&<small>Vật tư/phụ tùng: {entry.parts}</small>}{entry.readings&&<small>Thông số: {entry.readings}</small>}<small>Kết quả sau thực hiện: {entry.result||'Chưa đánh giá'}</small><small>Người thực hiện: {entry.performedBy||'—'}</small>{entry.checklistResultId&&<small>Liên kết từ phiếu Checklist</small>}</div></article>)}</div>:<p className="muted">Chưa có lịch sử. Hãy chọn “Ghi nhận bảo dưỡng / sửa chữa” sau khi thực hiện công việc.</p>}
+      {logs.length?<div className="maintenance-history-list">{logs.slice().sort((a:any,b:any)=>b.date.localeCompare(a.date)).map((entry:any)=><article key={entry.id}><time>{dateText(entry.date)}</time><div><b>{entry.kind}</b><p>{entry.description||'Không có mô tả'}</p>{entry.parts&&<small>Vật tư/phụ tùng: {entry.parts}</small>}{entry.readings&&<small>Thông số: {entry.readings}</small>}<small>Kết quả: {entry.result||'Chưa có kết quả · Chưa hoàn thành'}</small><small>Người thực hiện: {entry.performedBy||'—'}</small>{entry.result&&<small>Hoàn thành lúc: {dateTimeText(entry.completedAt)}</small>}{entry.checklistResultId&&<small>Liên kết từ phiếu Checklist</small>}<button type="button" className="text-btn" onClick={()=>editLog(entry)}>{entry.result?'Sửa phiếu':'Cập nhật phiếu sửa chữa'}</button></div></article>)}</div>:<p className="muted">Chưa có lịch sử. Hãy chọn “Ghi nhận bảo dưỡng / sửa chữa” sau khi thực hiện công việc.</p>}
     </section>
     {showPhotos&&<div className="asset-photo-grid">{photos.length?photos.map((src:string,i:number)=><button type="button" className="asset-photo-thumb" key={i} onClick={()=>setActivePhoto(src)}><img src={src} alt={'Ảnh '+(i+1)+' của '+value.name}/><span>Ảnh {i+1}</span></button>):<p className="muted">Thiết bị này chưa có ảnh. Chọn “Sửa hồ sơ” để bổ sung ảnh.</p>}</div>}
     {activePhoto&&<div className="photo-lightbox" onClick={()=>setActivePhoto(null)}><button type="button" className="icon-btn" onClick={()=>setActivePhoto(null)}><X/></button><img src={activePhoto} alt={'Ảnh thiết bị '+value.name}/></div>}
     {printMode&&<div className={'asset-print-sheet print-'+printMode}>
       {printMode==='sticker'&&<div className="asset-sticker"><QRCodeSVG value={value.code} size={78} level="M"/><strong>{value.code}</strong></div>}
       {printMode==='detail'&&<div className="asset-print-report"><h1 className="asset-print-form-title">BẢNG CHI TIẾT THIẾT BỊ</h1><div className="asset-print-header"><div className="company-logo-placeholder"><span className="company-logo-mark">BT</span><span className="company-logo-wording"><strong>BAOTRI</strong><small>LOGO THỬ NGHIỆM</small></span></div><QRCodeSVG className="asset-print-header-qr" value={value.code} size={104} level="M"/></div><h2 className="asset-print-device-name">{value.name}</h2><table><tbody>{rows.map(([label,val])=><tr key={label}><th>{label}</th><td>{val||'—'}</td></tr>)}</tbody></table></div>}
-      {printMode==='history'&&<div className="asset-print-report print-history-report"><h1>LỊCH SỬ BẢO DƯỠNG – SỬA CHỮA</h1><h2>{value.name}</h2><b>Mã thiết bị: {value.code}</b><table className="print-history-table"><colgroup><col style={{width:'9%'}}/><col style={{width:'12%'}}/><col style={{width:'24%'}}/><col style={{width:'16%'}}/><col style={{width:'14%'}}/><col style={{width:'12%'}}/><col style={{width:'13%'}}/></colgroup><thead><tr><th>Ngày</th><th>Loại</th><th>Nội dung</th><th>Phụ tùng</th><th>Thông số</th><th>Kết quả</th><th>Người thực hiện</th></tr></thead><tbody>{logs.map((entry:any)=><tr key={entry.id}><td>{dateText(entry.date)}</td><td>{entry.kind}</td><td>{entry.description}</td><td>{entry.parts||'—'}</td><td>{entry.readings||'—'}</td><td>{entry.result||'Chưa đánh giá'}</td><td>{entry.performedBy||'—'}</td></tr>)}</tbody></table></div>}
+      {printMode==='history'&&<div className="asset-print-report print-history-report"><h1>LỊCH SỬ BẢO DƯỠNG – SỬA CHỮA</h1><h2>{value.name}</h2><b>Mã thiết bị: {value.code}</b><table className="print-history-table"><colgroup><col style={{width:'8%'}}/><col style={{width:'11%'}}/><col style={{width:'22%'}}/><col style={{width:'14%'}}/><col style={{width:'12%'}}/><col style={{width:'10%'}}/><col style={{width:'12%'}}/><col style={{width:'11%'}}/></colgroup><thead><tr><th>Ngày lập phiếu</th><th>Loại</th><th>Nội dung</th><th>Phụ tùng</th><th>Thông số</th><th>Kết quả</th><th>Hoàn thành lúc</th><th>Người thực hiện</th></tr></thead><tbody>{logs.map((entry:any)=><tr key={entry.id}><td>{dateText(entry.date)}</td><td>{entry.kind}</td><td>{entry.description}</td><td>{entry.parts||'—'}</td><td>{entry.readings||'—'}</td><td>{entry.result||'Chưa hoàn thành'}</td><td>{dateTimeText(entry.completedAt)}</td><td>{entry.performedBy||'—'}</td></tr>)}</tbody></table></div>}
     </div>}
   </Modal>
 }
@@ -1396,17 +1773,19 @@ function AssetChecklist({asset,allowActions,scheduledFor,isMakeup,createRepairFr
   </section>
 }
 
-function LogEntryModal({value,close,save}:any){
-  const [v,setV]=useState<Log>(value)
+function LogEntryModal({value,close,save,assets,userName,isExisting}:{value:Log;close:()=>void;save:(entry:Log)=>void;assets:Asset[];userName:string;isExisting:boolean}){
+  const [v,setV]=useState<Log>(()=>({...value,performedBy:value.performedBy||userName,result:value.result||''}))
   const set = <K extends keyof Log,>(key: K, val: Log[K]) => setV(p => ({ ...p, [key]: val }))
-  return <Modal title="Phiếu Bảo dưỡng – Sửa chữa" close={close}><form className="form-grid" onSubmit={e=>{e.preventDefault();if(!v.description.trim())return alert('Nhập nội dung công việc');save(v)}}>
-    <Field label="Ngày thực hiện"><input type="date" value={v.date} onChange={e=>set('date',e.target.value)}/></Field>
+  return <Modal title={isExisting?'Cập nhật phiếu Bảo dưỡng – Sửa chữa':'Tạo phiếu Bảo dưỡng – Sửa chữa'} close={close}><form className="form-grid" onSubmit={async e=>{e.preventDefault();if(!v.assetId)return alert('Chọn thiết bị');if(!v.description.trim())return alert('Nhập nội dung công việc');await save(v)}}>
+    <Field label="Thiết bị *"><select required value={v.assetId} onChange={e=>set('assetId',e.target.value)}><option value="">-- Chọn thiết bị --</option>{assets.filter(asset=>!asset.archivedAt).map(asset=><option key={asset.id} value={asset.id}>{asset.code} · {asset.name}</option>)}</select></Field>
+    <Field label="Ngày lập phiếu"><input type="date" value={v.date} onChange={e=>set('date',e.target.value)}/></Field>
     <Field label="Loại công việc"><select value={v.kind} onChange={e=>set('kind',e.target.value)}>{['Bảo dưỡng định kỳ','Sửa chữa','Thay thế phụ tùng','Hiệu chuẩn','Khác'].map(x=><option key={x}>{x}</option>)}</select></Field>
     <Field label="Nội dung thực hiện *"><textarea required value={v.description} onChange={e=>set('description',e.target.value)}/></Field>
     <Field label="Vật tư / phụ tùng thay thế"><textarea value={v.parts} onChange={e=>set('parts',e.target.value)}/></Field>
-    <Field label="Thông số sau thực hiện"><textarea value={v.readings} onChange={e=>set('readings',e.target.value)}/></Field><Field label="Kết quả sau thực hiện"><div className="result-choice"><label><input type="radio" name="maintenance-result" checked={v.result==='Đạt'} onChange={()=>set('result','Đạt')}/> Đạt</label><label><input type="radio" name="maintenance-result" checked={v.result==='Không đạt'} onChange={()=>set('result','Không đạt')}/> Không đạt</label></div></Field>
-    <Field label="Người thực hiện"><input value={v.performedBy} onChange={e=>set('performedBy',e.target.value)}/></Field>
-    <div className="form-actions"><button type="button" className="soft-btn" onClick={close}>Hủy</button><button type="submit" className="primary-btn">Lưu lịch sử</button></div>
+    <Field label="Thông số sau thực hiện"><textarea value={v.readings} onChange={e=>set('readings',e.target.value)}/></Field>
+    {isExisting?<Field label="Kết quả sau thực hiện"><div className="result-choice"><label><input type="radio" name="maintenance-result" checked={v.result==='Đạt'} onChange={()=>set('result','Đạt')}/> Đạt</label><label><input type="radio" name="maintenance-result" checked={v.result==='Không đạt'} onChange={()=>set('result','Không đạt')}/> Không đạt</label></div></Field>:<div className="form-hint">Kết quả sẽ được ghi nhận sau khi công việc hoàn tất. Hãy lưu phiếu trước, sau đó mở lại phiếu để cập nhật kết quả.</div>}
+    <Field label="Người thực hiện *"><input required value={v.performedBy} onChange={e=>set('performedBy',e.target.value)}/></Field>
+    <div className="form-actions"><button type="button" className="soft-btn" onClick={close}>Hủy</button><button type="submit" className="primary-btn">{isExisting?(v.result?'Lưu kết quả hoàn thành':'Lưu phiếu chưa hoàn thành'):'Tạo phiếu chưa hoàn thành'}</button></div>
   </form></Modal>
 }
 
@@ -1466,7 +1845,7 @@ function InventoryDetailModal({value,close,edit}:any){
 }
 function TaskModal({value,assets,close,save}:any){
   const [v,setV]=useState<Task>(value); const set=(k:keyof Task,x:any)=>setV(p=>({...p,[k]:x}))
-  return <Modal title="Kế hoạch bảo dưỡng" close={close}><form className="form-grid" onSubmit={e=>{e.preventDefault();if(!v.title||!v.assetId)return alert('Chọn thiết bị và nhập tên công việc');save(v)}}>
+  return <Modal title="Công việc bảo dưỡng định kỳ" close={close}><form className="form-grid" onSubmit={e=>{e.preventDefault();if(!v.title||!v.assetId)return alert('Chọn thiết bị và nhập tên công việc');save(v)}}>
     <Field label="Thiết bị"><select value={v.assetId} onChange={e=>set('assetId',e.target.value)}><option value="">-- Chọn thiết bị --</option>{assets.map((a:Asset)=><option key={a.id} value={a.id}>{a.code} - {a.name}</option>)}</select></Field>
     <Field label="Tên công việc"><input required value={v.title} onChange={e=>set('title',e.target.value)}/></Field>
     <Field label="Ngày đến hạn"><input type="date" value={v.dueDate} onChange={e=>set('dueDate',e.target.value)}/></Field><Field label="Chu kỳ"><select value={v.frequency} onChange={e=>set('frequency',e.target.value)}>{['Một lần','Hàng ngày','Hàng tuần','Hàng tháng','Hàng quý','6 tháng','Hàng năm'].map(x=><option key={x}>{x}</option>)}</select></Field>
@@ -1476,6 +1855,59 @@ function TaskModal({value,assets,close,save}:any){
     <Field label="Ghi chú"><textarea rows={2} value={v.notes} onChange={e=>set('notes',e.target.value)}/></Field>
     <div className="modal-actions"><button type="button" className="soft-btn" onClick={close}>Hủy</button><button className="primary-btn"><Check size={16}/> Lưu công việc</button></div>
   </form></Modal>
+}
+function MaintenancePlanModal({value,assets,close,save}:{value:MaintenancePlan;assets:Asset[];close:()=>void;save:(plans:MaintenancePlan[])=>void}) {
+  const [plan,setPlan]=useState<MaintenancePlan>(value)
+  const isEditing=Boolean(value.assetId)
+  const [selectedAssetIds,setSelectedAssetIds]=useState<string[]>(()=>value.assetId?[value.assetId]:assets.filter(asset=>!asset.archivedAt).map(asset=>asset.id))
+  const [didInitializeAssetSelection,setDidInitializeAssetSelection]=useState(Boolean(value.assetId)||assets.some(asset=>!asset.archivedAt))
+  useEffect(()=>{
+    if(!didInitializeAssetSelection&&assets.some(asset=>!asset.archivedAt)){
+      setSelectedAssetIds(assets.filter(asset=>!asset.archivedAt).map(asset=>asset.id))
+      setDidInitializeAssetSelection(true)
+    }
+  },[assets,didInitializeAssetSelection])
+  const set=(key:keyof MaintenancePlan,next:string)=>setPlan(current=>({...current,[key]:next}))
+  const activeAssets=assets.filter(asset=>!asset.archivedAt)
+  const selectableAssets=assets.filter(asset=>!asset.archivedAt||selectedAssetIds.includes(asset.id))
+  const allActiveAssetsSelected=activeAssets.length>0&&activeAssets.every(asset=>selectedAssetIds.includes(asset.id))
+  const changePeriod=(period:MaintenancePlanPeriod)=>{
+    const range=maintenancePlanRange(period,plan.startDate||today())
+    setPlan(current=>({...current,period,...range}))
+  }
+  return <Modal title="Kế hoạch bảo trì" close={close}>
+    <form className="form-grid" onSubmit={event=>{
+      event.preventDefault()
+      if(selectedAssetIds.length===0||!plan.title.trim())return alert('Chọn ít nhất một thiết bị và nhập nội dung bảo trì.')
+      if(plan.startDate>plan.endDate)return alert('Ngày kết thúc phải bằng hoặc sau ngày bắt đầu.')
+      save(selectedAssetIds.map((assetId,index)=>({...plan,id:isEditing?plan.id:index===0?plan.id:uid(),assetId})))
+    }}>
+      <div className="plan-assets-field">
+        <div className="plan-assets-heading"><strong>Thiết bị áp dụng *</strong>
+          {!isEditing&&<label><input type="checkbox" checked={allActiveAssetsSelected} onChange={event=>setSelectedAssetIds(event.target.checked?activeAssets.map(asset=>asset.id):[])}/> Chọn tất cả thiết bị đang quản lý ({activeAssets.length})</label>}
+        </div>
+        <div className="plan-assets-list">
+          {selectableAssets.map(asset=><label key={asset.id} className="plan-asset-option">
+            <input type={isEditing?'radio':'checkbox'} name="maintenancePlanAsset" checked={selectedAssetIds.includes(asset.id)} onChange={event=>{
+              if(isEditing){if(event.target.checked)setSelectedAssetIds([asset.id])}
+              else setSelectedAssetIds(current=>event.target.checked?[...current,asset.id]:current.filter(id=>id!==asset.id))
+            }}/>
+            <span><b>{asset.code}</b><small>{asset.name}{asset.archivedAt?' · Đã lưu kho':''}</small></span>
+          </label>)}
+          {selectableAssets.length===0&&<p className="muted">Chưa có thiết bị đang quản lý.</p>}
+        </div>
+        <small>{isEditing?'Chọn thiết bị của hạng mục này.':'Kế hoạch sẽ tạo một hạng mục riêng cho từng thiết bị đã chọn. Mặc định đã chọn tất cả thiết bị đang quản lý.'}</small>
+      </div>
+      <Field label="Kỳ kế hoạch"><select value={plan.period} onChange={event=>changePeriod(event.target.value as MaintenancePlanPeriod)}>{(['Tuần','Tháng','Quý','Năm'] as MaintenancePlanPeriod[]).map(period=><option key={period}>{period}</option>)}</select></Field>
+      <Field label="Ngày bắt đầu"><input required type="date" value={plan.startDate} onChange={event=>set('startDate',event.target.value)}/></Field>
+      <Field label="Ngày kết thúc"><input required type="date" value={plan.endDate} onChange={event=>set('endDate',event.target.value)}/></Field>
+      <Field label="Nội dung bảo trì"><input required value={plan.title} onChange={event=>set('title',event.target.value)} placeholder="Ví dụ: Bảo dưỡng cụm máy nén khí"/></Field>
+      <Field label="Hình thức thực hiện"><select value={plan.execution} onChange={event=>set('execution',event.target.value)}><option>Nội bộ</option><option>Thuê ngoài</option></select></Field>
+      {plan.execution==='Thuê ngoài'&&<Field label="Đơn vị thuê ngoài (nếu có)"><input value={plan.contractor} onChange={event=>set('contractor',event.target.value)} placeholder="Tên nhà cung cấp / đơn vị thực hiện"/></Field>}
+      <Field label="Ghi chú"><textarea rows={3} value={plan.notes} onChange={event=>set('notes',event.target.value)} placeholder="Phạm vi công việc, yêu cầu hoặc lưu ý"/></Field>
+      <div className="modal-actions"><button type="button" className="soft-btn" onClick={close}>Hủy</button><button type="submit" className="primary-btn">Lưu kế hoạch</button></div>
+    </form>
+  </Modal>
 }
 function ScanModal({close,assets,openAsset,expectedAssetId}:any){
   const [result,setResult]=useState('')
@@ -1518,10 +1950,31 @@ export default function App() {
   const authenticatedClient = supabase
   if (checkingSession) return <div className="auth-page"><div className="auth-card auth-loading">Đang kiểm tra phiên đăng nhập…</div></div>
   if (!session) return <AuthScreen client={authenticatedClient} />
+  const metadata = session.user.user_metadata
+  const profile: EmployeeProfile = {
+    fullName: typeof metadata.full_name === 'string' ? metadata.full_name : typeof metadata.name === 'string' ? metadata.name : '',
+    phone: typeof metadata.phone === 'string' ? metadata.phone : '',
+    dateOfBirth: typeof metadata.date_of_birth === 'string' ? metadata.date_of_birth : '',
+    position: typeof metadata.position === 'string' ? metadata.position : ''
+  }
+  const userEmail = session.user.email ?? 'Tài khoản'
+  const userName = profile.fullName.trim() || userEmail
+  const onSaveProfile = async (value:EmployeeProfile) => {
+    const { error } = await authenticatedClient.auth.updateUser({data:{
+      full_name:value.fullName,
+      phone:value.phone,
+      date_of_birth:value.dateOfBirth,
+      position:value.position
+    }})
+    if (error) throw error
+  }
 
   return <AppWorkspace
     key={session.user.id}
-    userEmail={session.user.email ?? 'Tài khoản'}
+    userName={userName}
+    userEmail={userEmail}
+    profile={profile}
+    onSaveProfile={onSaveProfile}
     onSignOut={() => { void authenticatedClient.auth.signOut() }}
   />
 }
