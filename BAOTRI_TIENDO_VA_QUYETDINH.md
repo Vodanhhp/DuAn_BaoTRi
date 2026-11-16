@@ -1016,3 +1016,16 @@ Người dùng xác nhận đồng ý đưa cả dữ liệu thử nghiệm đan
 - Đã thêm script chỉ đọc `supabase/tests/20261117000400_authenticated_rls_diagnostic.sql`, commit `8893012aad4eec3b215d02abf6fbada2f87938e7`.
 - Script lấy đúng Auth user `tuanluongpham1980@gmail.com` và organization active của user trong Test, đặt JWT claims, chuyển role sang `authenticated`, rồi hiển thị database role, `auth.uid()`, các JWT settings, quyền SELECT và số dòng RLS nhìn thấy; kiểm tra trực tiếp hai helper trên organization ID đã xác định. Kết thúc bằng ROLLBACK, không ghi dữ liệu.
 - Chỉ chạy script trên `BAOTRI-Mini-Test`; không chạy Production. Cần đọc kết quả chẩn đoán trước khi quyết định sửa JWT simulation hay chuyển sang kiểm thử API bằng phiên đăng nhập thật trong ứng dụng.
+
+
+## 17/11/2026 – Kết nối ứng dụng đọc tổ chức và thử ghi/đọc một thiết bị trên Supabase Test
+
+- Đã cập nhật `src/App.tsx` trực tiếp trên `main`, commit `b39802178501d254bb581b933ce9fda531f3f173` và commit sửa thứ tự React hooks/làm rõ trạng thái dữ liệu `244ce4264fe4f41725b081c67d66659672bf2df3`.
+- Sau khi đăng nhập, ứng dụng gọi Supabase API bằng phiên người dùng thật để đọc membership active của chính user, sau đó đọc tổ chức active tương ứng. Nếu thiếu membership hoặc không đọc được tổ chức, ứng dụng không mở workspace và hiển thị lỗi thay vì dùng dữ liệu không có tenant context.
+- Workspace hiển thị tên tổ chức và role thực tế lấy từ Supabase.
+- Bổ sung phép thử thủ công “Thử ghi thiết bị lên cloud”: tạo một hàng thử nghiệm trong `public.assets` với mã `TEST-CLOUD-...`, `organization_id` lấy từ membership đã xác thực; ngay sau insert, ứng dụng SELECT lại theo ID để xác minh RLS/ghi/đọc qua API.
+- Khi đăng nhập lại, ứng dụng tự tìm hàng `TEST-CLOUD-%` trong đúng organization để xác nhận bản ghi vẫn tồn tại trên cloud. Bản ghi thử nghiệm được giữ lại, không tự xóa.
+- Phép thử chỉ ghi đúng một bản ghi thử nghiệm khi người dùng bấm nút; không nhập dữ liệu IndexedDB, không sửa/xóa dữ liệu local, không thay đổi schema/RLS, không dùng service-role key.
+- Cần kiểm thử thực tế sau khi người dùng pull `main`, chạy `npm.cmd run build`, khởi động ứng dụng với `.env.local` trỏ đúng project Test, đăng nhập và bấm nút thử ghi. Sau đó đăng xuất/đăng nhập lại để xác nhận bản ghi được tìm thấy.
+- Chưa có kết quả build hoặc API runtime từ máy người dùng; không tuyên bố phép thử đã thành công. Dữ liệu nghiệp vụ hiện tại vẫn lưu IndexedDB, chưa triển khai đồng bộ tự động.
+- Production `BAOTRI-Mini` không được thay đổi.
