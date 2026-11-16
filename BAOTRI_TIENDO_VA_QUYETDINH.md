@@ -1002,3 +1002,156 @@ Các bảng nghiệp vụ có `organization_id`. Mọi FK liên kết nghiệp v
 - Đã đối chiếu các interface chính xác trong `src/db.ts`; mapping sơ bộ đủ trường cho 9 stores.
 - Chưa hoàn tất kiểm kê mọi luồng ghi/đọc UI, backup và quy tắc nhập/xuất kho; chưa viết SQL.
 - Bước tiếp theo: chốt schema SQL chi tiết gồm kiểu dữ liệu, PK/FK composite, unique/index, trigger/RPC và policy RLS; sau đó rà soát riêng từng policy và test plan trước khi tạo migration đầu tiên.
+
+
+## 16/11/2026 – Thiết kế schema PostgreSQL và ma trận RLS chi tiết (bản dự thảo)
+
+Đã kiểm tra thêm các luồng thao tác thực tế trong `src/App.tsx` và đối chiếu với `src/db.ts`. Nội dung dưới đây là thiết kế kỹ thuật để duyệt; **chưa tạo file migration, chưa chạy SQL, chưa thay đổi ứng dụng hoặc dữ liệu local**.
+
+### 1. Phát hiện từ luồng ứng dụng hiện tại
+
+- Kho hiện có hàm Nhập/Xuất; mỗi giao dịch cập nhật tồn và thêm movement trong một Dexie transaction. Chưa thấy giao diện điều chỉnh tồn kho trực tiếp, dù type dữ liệu có giá trị `Điều chỉnh`. Schema giữ khả năng lưu loại lịch sử cũ; chức năng điều chỉnh mới chỉ Admin được phép nếu sau này được triển khai.
+- Khi hoàn thành task, ứng dụng cập nhật task và thêm log trong cùng transaction; sau transaction chỉ queue task, chưa queue log. Cloud phải dùng một RPC/transaction để cập nhật task và tạo log cùng lúc.
+- Khi nhập/xuất, ứng dụng cập nhật inventory và thêm movement trong cùng transaction; sau transaction chỉ queue inventory, chưa queue movement. Cloud phải ghi movement và cập nhật tồn nguyên tử.
+- Log bảo dưỡng/sửa chữa có thể được tạo độc lập; có thể tham chiếu task hoặc Checklist result nguồn.
+- Checklist result chứa snapshot nội dung từng hạng mục, kết quả, ghi chú, ngày dự kiến và dấu Checklist bù; các trường này phải được giữ nguyên.
+- Người thực hiện trong local hiện là text tự nhập hoặc giá trị mặc định “Người sử dụng”; không thể dùng text này làm định danh Auth khi import.
+
+### 2. Quy ước schema chung
+
+- PostgreSQL schema: `public`; ID dùng `uuid`, giữ nguyên UUID local khi import nếu xác thực hợp lệ.
+- Tên cột dùng `snake_case`; thời điểm dùng `timestamptz`; ngày nghiệp vụ như `due_date`, `movement_date`, `scheduled_for` dùng `date`.
+- Mọi bảng nghiệp vụ thuộc tenant đều có `organization_id uuid NOT NULL`.
+- Bảng nghiệp vụ có PK `id` và thêm unique `(organization_id, id)` để làm đích cho composite FK, bảo đảm mọi quan hệ tham chiếu cùng tổ chức.
+- Không dùng cascade delete cho dữ liệu nghiệp vụ/lịch sử. FK lịch sử mặc định RESTRICT/NO ACTION; lưu trữ dùng `archived_at`.
+- `created_at`/`updated_at` do database quản lý; không tin timestamp do client tự gửi cho mục đích audit.
+- Mã thiết bị/vật tư unique theo tổ chức: `UNIQUE (organization_id, code)`, không unique toàn hệ thống.
+- Trạng thái/loại nghiệp vụ hiện đang là chuỗi tiếng Việt. Giai đoạn đầu giữ mapping có kiểm soát, dùng CHECK constraint hoặc lookup phù hợp; không tự dịch enum khi import.
+
+### 3. Danh sách bảng và trường dự kiến
+
+**A. Tài khoản và tổ chức**
+- `profiles`: `id uuid PK REFERENCES auth.users(id)`, `display_name text`, `phone text NULL`, `created_at`, `updated_at`. Profile không chứa role toàn cục.
+- `organizations`: `id uuid PK`, `name text NOT NULL`, `code text NOT NULL UNIQUE`, `status text`, `created_at`, `updated_at`, `created_by uuid REFERENCES auth.users(id)`.
+- `organization_members`: `id uuid PK`, `organization_id uuid NOT NULL`, `user_id uuid NOT NULL REFERENCES auth.users(id)`, `role text CHECK IN ('admin','user')`, `status text CHECK IN ('active','invited','suspended')`, `joined_at timestamptz`, `created_at`, `updated_at`; unique `(organization_id,user_id)`; index `(user_id,status)` và `(organization_id,status,role)`. Mọi thao tác membership do Admin trong tenant hoặc quy trình bootstrap được bảo vệ thực hiện.
+- Có thể thêm `organization_invitations` ở giai đoạn triển khai chức năng mời; không bắt buộc trong schema lõi đầu tiên.
+
+**B. Danh mục và thiết bị**
+- `asset_categories`: `id, organization_id, code, name, group_name, is_active, created_at, updated_at`; unique `(organization_id,code)`. Danh mục tự tạo từ localStorage sẽ được backup/import; không xóa danh mục đang được thiết bị tham chiếu.
+- `assets`: `id, organization_id, code, name, category`, `category_id uuid NULL`, `brand, model, serial, location, commissioned_at date NULL, power, cycle, cycle_started_at date NULL, transferred_from_other_facility boolean NOT NULL DEFAULT false, status, notes, archived_at timestamptz NULL, created_at, updated_at, created_by uuid`. Giữ `category` text để bảo toàn chuỗi hiện tại; `category_id` là liên kết tùy chọn đến danh mục chuẩn hóa.
+- `asset_images`: `id, organization_id, asset_id, storage_path, file_name, content_type, byte_size, sort_order, created_at, created_by`; unique `(organization_id,storage_path)`; composite FK đến assets. Ảnh lưu trong bucket private, không lưu Base64 trong row.
+
+**C. Kho vật tư**
+- `inventory_items`: `id, organization_id, code, name, group_name, unit, part_number NULL, size NULL, quantity numeric(18,3) NOT NULL, min_quantity numeric(18,3) NOT NULL, location, supplier, unit_price numeric(18,2) NOT NULL, archived_at NULL, created_at, updated_at, created_by`; unique `(organization_id,code)`; CHECK quantity/min_quantity >= 0 và unit_price >= 0.
+- `inventory_movements`: `id, organization_id, item_id, movement_date date, type text, quantity numeric(18,3), reason, linked_asset_id NULL, performed_by_user_id, performed_by_name_snapshot, created_at`. Quantity lưu số dương; type xác định chiều tăng/giảm. Nhập/Xuất là loại hiện có; Điều chỉnh chỉ Admin nếu được mở. Movement bất biến sau khi tạo.
+- Không cho client UPDATE trực tiếp `inventory_items.quantity`. RPC xử lý movement phải khóa dòng item, kiểm tra quyền và tồn đủ khi xuất, cập nhật quantity và insert movement trong cùng transaction.
+
+**D. Kế hoạch và nhật ký kỹ thuật**
+- `maintenance_tasks`: `id, organization_id, asset_id, title, due_date date, frequency, status, checklist, readings, notes, completed_at timestamptz NULL, assigned_to_user_id uuid NULL, created_at, updated_at, created_by`. Composite FK asset cùng organization. Giữ các chuỗi frequency/status hiện tại để không mất dữ liệu.
+- `maintenance_logs`: `id, organization_id, asset_id, task_id NULL, checklist_result_id NULL, log_date date, kind, description, parts, readings, result NULL, performed_by_user_id NULL, performed_by_name_snapshot, created_at, created_by`. Composite FK cho asset/task/checklist result; không xóa log. Với lịch sử local cũ, user_id để NULL nếu không xác minh được; snapshot giữ text `performedBy`.
+- Task được giao có `assigned_to_user_id`; User chỉ cập nhật tiến độ task được giao. Việc hoàn thành task dùng RPC để update task và insert log trong cùng transaction; log tạo tự động lấy danh tính từ `auth.uid()`.
+
+**E. Checklist**
+- `checklist_templates`: `id, organization_id, asset_id, title, description, current_version, active, created_at, updated_at, created_by`; unique `(organization_id,asset_id)` để một thiết bị có một template riêng. Không dùng chung mẫu cho nhiều thiết bị.
+- `checklist_template_versions`: `id, organization_id, template_id, asset_id, version, title, description, items jsonb NOT NULL, created_at, created_by`; unique `(organization_id,template_id,version)`; CHECK items là JSON array; composite FK đảm bảo template và asset cùng tenant.
+- `checklist_results`: `id, organization_id, asset_id, template_id, template_version_id, template_version, template_title, performed_at timestamptz, performed_by_user_id, performed_by_name_snapshot, result, scheduled_for date NULL, is_makeup boolean NOT NULL DEFAULT false, notes, items jsonb NOT NULL, created_at`; CHECK items là JSON array. Snapshot giữ nội dung mẫu và câu trả lời đúng thời điểm thực hiện.
+- Version và result là append-only; sửa template tạo version mới. Không UPDATE/DELETE phiếu kết quả qua UI/RLS thông thường.
+
+**F. Nhật ký kiểm toán**
+- Đề xuất `audit_events`: `id, organization_id, actor_user_id, action, table_name, record_id, before_data jsonb NULL, after_data jsonb NULL, created_at`. Chỉ insert từ trigger/RPC tin cậy; thành viên Admin được đọc trong tổ chức, User không được sửa/xóa. Có thể triển khai theo từng nhóm thao tác để tránh ghi dữ liệu nhạy cảm không cần thiết.
+- Những hiệu chỉnh lịch sử trong tương lai phải tạo audit event hoặc bản ghi điều chỉnh riêng, không âm thầm sửa phiếu gốc.
+
+### 4. Composite foreign keys và index cần có
+
+- Mỗi bảng tenant có `UNIQUE (organization_id,id)`.
+- `assets` → `asset_categories`: FK `(organization_id,category_id)` nếu category_id khác NULL.
+- `asset_images` → `assets`: FK `(organization_id,asset_id)`.
+- `maintenance_tasks` → `assets`: FK `(organization_id,asset_id)`.
+- `maintenance_logs` → `assets`, `maintenance_tasks`, `checklist_results`: composite FK nullable cho các liên kết tùy chọn.
+- `inventory_movements` → `inventory_items` và tùy chọn `assets`.
+- `checklist_templates` → `assets`; versions → đúng template + asset; results → đúng template + version + asset.
+- Index tối thiểu: mọi FK; `assets(organization_id,archived_at,code)`; `maintenance_tasks(organization_id,status,due_date)`; `maintenance_tasks(organization_id,assigned_to_user_id,status)`; `maintenance_logs(organization_id,asset_id,log_date DESC)`; `inventory_movements(organization_id,item_id,movement_date DESC)`; `checklist_results(organization_id,asset_id,performed_at DESC)`; `checklist_results(organization_id,scheduled_for)`.
+- Không tạo index tràn lan trên JSONB; chỉ bổ sung GIN/index expression nếu truy vấn thực tế cần.
+
+### 5. Ma trận RLS chi tiết dự kiến
+
+Tất cả bảng tenant bật RLS. Policy dùng helper SQL `SECURITY DEFINER` như `is_org_member(org_id)` và `has_org_role(org_id, role)`; hàm cố định `search_path`, schema-qualify bảng và không cho client gọi để thay đổi quyền. Tránh policy membership tự tham chiếu gây RLS đệ quy.
+
+| Bảng | SELECT | INSERT | UPDATE | DELETE |
+|---|---|---|---|---|
+| profiles | Chính mình; tên thành viên cùng tổ chức khi cần hiển thị | Trigger/provisioning an toàn | Chính mình, chỉ trường hồ sơ cho phép | Không |
+| organizations | Thành viên tổ chức | Quy trình bootstrap kiểm soát | Admin cùng tổ chức, trường được phép | Không |
+| organization_members | Thành viên cùng tổ chức | Admin/quy trình mời được bảo vệ | Admin cùng tổ chức; không tự nâng quyền, không xóa/hạ Admin cuối cùng | Không qua client; dùng trạng thái suspended |
+| asset_categories | Thành viên | Admin | Admin | Không nếu đang được tham chiếu; ưu tiên is_active=false |
+| assets | Thành viên | Admin | Admin | Không; archive/restore |
+| asset_images | Thành viên | Admin qua luồng upload | Admin metadata | Admin có thể xóa file theo quy trình kiểm soát, không xóa ảnh lịch sử đang được tham chiếu |
+| inventory_items | Thành viên | Admin | Admin; quantity chỉ thay đổi qua RPC | Không; archive |
+| inventory_movements | Thành viên | User/Admin qua RPC hợp lệ | Không | Không |
+| maintenance_tasks | Thành viên | Admin | Admin; User chỉ cập nhật tiến độ task được giao qua RPC | Không |
+| maintenance_logs | Thành viên | User/Admin | Không | Không |
+| checklist_templates | Thành viên | Admin sau xác thực QR/asset access ở ứng dụng và kiểm tra tenant phía DB | Admin; sửa nội dung phải tạo version mới | Không; có thể active=false |
+| checklist_template_versions | Thành viên | Admin | Không | Không |
+| checklist_results | Thành viên | User/Admin qua RPC xác thực user, asset, template và version | Không | Không |
+| audit_events | Admin | Trigger/RPC tin cậy | Không | Không |
+
+Ghi chú:
+- RLS SELECT phải luôn giới hạn theo `organization_id` và membership active.
+- Role được đọc từ `organization_members` trong database; không tin role/org_id do localStorage, JWT custom metadata do client tự đặt hoặc payload gửi lên.
+- User tạo Checklist result/log/movement phải có membership active; người thực hiện lấy từ `auth.uid()`.
+- RLS UPDATE task của User phải giới hạn `assigned_to_user_id = auth.uid()`; nên dùng RPC chỉ nhận các trường tiến độ cho phép, không cho đổi asset, organization, người giao hoặc nội dung kế hoạch.
+- Không cấp quyền UPDATE trực tiếp cho User trên `inventory_items.quantity`; không cấp UPDATE/DELETE cho bảng lịch sử.
+- `profiles` chỉ cho user tự sửa tên hiển thị/thông tin cá nhân cho phép; không cho sửa id hay role.
+- Membership Admin cuối cùng được bảo vệ bằng RPC/trigger; không chỉ dựa vào UI.
+
+### 6. RPC/transaction bắt buộc
+
+1. `record_inventory_movement(item_id,type,quantity,reason,linked_asset_id)`: kiểm tra auth, membership, role, loại giao dịch; khóa item bằng `SELECT ... FOR UPDATE`; kiểm tra quantity > 0 và không cho tồn âm; update quantity; insert movement với actor từ `auth.uid()`; cùng transaction.
+2. `complete_maintenance_task(task_id,readings,notes)`: xác thực Admin hoặc User được giao; cập nhật status/completed_at; insert maintenance_log với task/asset đúng tenant và actor snapshot; cùng transaction.
+3. `update_assigned_task_progress(task_id,status,readings,notes)`: chỉ cho User được giao cập nhật trường tiến độ hợp lệ; không cho User tự đặt completed nếu quy trình hoàn thành cần tạo log qua RPC riêng.
+4. `create_checklist_result(...)`: xác thực tenant, asset, template, version; kiểm tra liên kết và dữ liệu kết quả; lấy actor từ auth.uid(); snapshot tên; insert phiếu bất biến.
+5. `bootstrap_organization(...)`: chỉ người vận hành đáng tin cậy hoặc quy trình server-side được phép tạo organization và membership Admin đầu tiên. Không expose endpoint đăng ký tự cấp Admin.
+6. `manage_member_role(...)`: Admin hiện hữu có thể mời/đổi trạng thái/role thành viên cùng tổ chức; cấm tự nâng quyền và cấm làm tổ chức không còn Admin active.
+
+Các RPC SECURITY DEFINER cần kiểm tra quyền từ đầu, set search_path an toàn, schema-qualify đối tượng, validate mọi ID thuộc cùng organization và thu hồi EXECUTE khỏi PUBLIC khi phù hợp. Không cho phép client truyền actor_user_id để quyết định danh tính.
+
+### 7. Supabase Storage
+
+- Bucket `asset-images` đặt private.
+- Path đề xuất: `{organization_id}/{asset_id}/{image_uuid}.{ext}`.
+- Storage policies xác minh segment organization_id thuộc tổ chức mà auth.uid() là thành viên active; xác minh asset thuộc đúng organization.
+- Admin mới được upload/xóa ảnh hồ sơ; User chỉ đọc ảnh của tổ chức nếu có quyền xem thiết bị.
+- Chỉ lưu object path và metadata trong `asset_images`; không lưu public URL cố định. Ứng dụng lấy signed URL theo phiên.
+- Khi upload nhiều ảnh cần quy trình upload → ghi metadata → xác minh → mới đánh dấu hoàn tất; có retry và dọn object mồ côi sau khi đối chiếu.
+
+### 8. Kiểm thử bắt buộc trước migration dữ liệu thật
+
+Tạo tối thiểu hai tổ chức A/B; mỗi tổ chức có Admin và User riêng, cùng một user có thể thuộc hai tổ chức để kiểm tra context. Test:
+- User A không SELECT/INSERT/UPDATE/DELETE dữ liệu B bằng cách thay organization_id hoặc đoán UUID.
+- Admin A quản trị được A nhưng không đọc/ghi B.
+- User không thể tự thêm membership, tự đổi role hoặc giả danh người thực hiện.
+- User chỉ cập nhật task được giao; không thể sửa kế hoạch hoặc task người khác.
+- Xuất kho vượt tồn bị từ chối; hai giao dịch đồng thời không làm tồn âm; movement và tồn luôn khớp.
+- Hoàn thành task luôn tạo log cùng transaction; lỗi insert log phải rollback task.
+- Checklist result không thể tham chiếu template/version/asset khác tenant hoặc version không thuộc template; phiếu cũ không bị sửa khi tạo version mới.
+- Storage không đọc/ghi chéo tenant; object path giả mạo bị từ chối.
+- Admin cuối cùng không thể bị hạ quyền/xóa khỏi tổ chức.
+- Kiểm tra tất cả policy theo SELECT/INSERT/UPDATE/DELETE, RPC EXECUTE và signed URL.
+
+### 9. Các điểm còn phải chốt trước khi viết migration SQL
+
+- Quy tắc mời thành viên: tạo Auth user bằng Dashboard trước hay dùng invitation flow/email invite; chưa mở đăng ký tự do.
+- Quy tắc tên/mã tổ chức: mã có thể đổi không, có cần slug hay chỉ mã nội bộ duy nhất.
+- Tên snapshot người thực hiện: lấy từ `profiles.display_name`, nếu trống thì fallback email hay yêu cầu hoàn thiện hồ sơ trước khi ghi phiếu.
+- Điều chỉnh tồn kho: hiện UI chưa có; chốt giữ lịch sử legacy và chỉ mở RPC Admin khi cần, không thêm UI trong giai đoạn schema.
+- Định nghĩa chính xác trạng thái task được phép cho User và quy trình hoàn thành; hiện ứng dụng chỉ có hàm completeTask, chưa có trường assigned_to_user_id ở local.
+- Chính sách chỉnh sửa nhật ký: đề xuất bất biến, nếu sai tạo bản ghi đính chính liên kết bản gốc; cần chốt trước khi bật quyền ghi cloud.
+- Cách chuyển category localStorage thành asset_categories và map category string hiện có.
+- Xác định thời điểm bắt đầu tồn kho và cách import quantity ban đầu mà không tạo movement giả.
+- Chốt RLS và Storage policy sau khi có migration SQL cụ thể, rồi mới thực thi trên Supabase.
+
+### 10. Trạng thái
+
+- Đã rà luồng kho, hoàn thành task, log và backup trong `App.tsx`.
+- Schema PostgreSQL, quan hệ composite FK, index, RLS, RPC và Storage đã có bản dự thảo chi tiết.
+- Chưa viết hoặc chạy migration SQL; chưa tạo bảng Supabase; chưa sửa frontend; chưa đồng bộ dữ liệu.
+- Bước kế tiếp: trình người dùng các quyết định còn mở (mời thành viên, task assignment/hoàn thành, chỉnh sửa lịch sử, tồn kho ban đầu), chốt chúng rồi mới viết migration SQL đầu tiên để review.
