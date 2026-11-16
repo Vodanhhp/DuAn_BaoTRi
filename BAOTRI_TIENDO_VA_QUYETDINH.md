@@ -1185,3 +1185,23 @@ Người dùng đã xác nhận phương án quản lý tài khoản:
 
 Đây là quyết định nghiệp vụ đã được duyệt; chưa triển khai migration, bootstrap SQL/RPC hoặc invitation flow.
 
+## Quyết định bảo toàn lịch sử bảo dưỡng/sửa chữa và tồn kho khi chuyển cloud (16/11/2026)
+
+Người dùng đã đồng ý hai chính sách sau:
+
+### Lịch sử bảo dưỡng – sửa chữa
+- Phiếu lịch sử đã ghi nhận là bất biến; cả Admin và User không được sửa hoặc xóa trực tiếp.
+- Khi có sai sót, Admin tạo bản ghi đính chính liên kết với phiếu gốc, ghi rõ nội dung điều chỉnh, lý do, người thực hiện và thời điểm.
+- Phiếu gốc luôn được giữ nguyên; màn hình lịch sử phải thể hiện phiếu gốc cùng thông tin đính chính.
+- Cần thiết kế bảng/cơ chế đính chính và audit trail trong schema/RLS/RPC; chưa triển khai.
+
+### Tồn kho ban đầu khi chuyển dữ liệu lên Supabase
+- Tại thời điểm cutover, lấy số lượng tồn hiện tại của từng vật tư làm số dư đầu kỳ.
+- Ghi nhận số dư đầu kỳ bằng loại nghiệp vụ riêng `Tồn đầu kỳ`, không giả lập giao dịch nhập hàng thực tế.
+- Lịch sử nhập/xuất cũ được lưu để tra cứu, đánh dấu là dữ liệu trước thời điểm chuyển đổi và không cộng lại vào tồn kho hiện tại.
+- Từ thời điểm cutover trở đi, mọi giao dịch nhập/xuất phải tạo movement và cập nhật số tồn nguyên tử phía database.
+- Vật tư có tồn bằng 0 không cần tạo movement số dư đầu kỳ.
+- Quy trình import phải đối chiếu số lượng tồn trước/sau, chống cộng trùng và có thể phục hồi; chưa chạy import/migration.
+
+Hai chính sách trên đã được người dùng duyệt. Bước tiếp theo là thiết kế migration SQL đầu tiên để review; tuyệt đối chưa chạy migration lên Supabase trước khi người dùng kiểm tra và xác nhận.
+
