@@ -1,6 +1,6 @@
 # BAOTRI – Tiến độ và các quyết định đã chốt
 
-Cập nhật: 15/11/2026 (đã bổ sung tiến độ giao diện)
+Cập nhật: 17/11/2026 (đã bổ sung tiến độ backup và thiết kế schema cloud)
 
 Tài liệu này ghi lại các quyết định kiến trúc và tiến độ thực tế để tiếp tục dự án ở những cuộc làm việc sau. Khi thay đổi quyết định hoặc hoàn thành chức năng, phải cập nhật tài liệu này.
 
