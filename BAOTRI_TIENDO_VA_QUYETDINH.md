@@ -891,3 +891,31 @@ Người dùng mong muốn có thể sử dụng BAOTRI trong đợt đi làm s�
 - Sau đó triển khai backup/import và chuyển từng phân hệ; cuối cùng triển khai GitHub Pages production.
 - Không tuyên bố sẵn sàng sử dụng tại nơi làm việc cho đến khi các tiêu chí trên được kiểm thử thực tế.
 - Chưa có code, migration hay dữ liệu nào được thay đổi chỉ bởi quyết định này.
+
+
+## 16/11/2026 – Xác nhận phạm vi reset toàn bộ dữ liệu trước khi dùng thật
+
+Người dùng làm rõ yêu cầu: **đến ngày bắt đầu sử dụng BAOTRI Mini tại nơi làm việc mới, toàn bộ dữ liệu nghiệp vụ đã tạo từ giai đoạn phát triển/thử nghiệm cho đến thời điểm đó phải được xóa sạch**, không chỉ xóa các bản ghi được gắn nhãn demo.
+
+Phạm vi reset dự kiến gồm toàn bộ dữ liệu nghiệp vụ trong môi trường/tổ chức sử dụng cá nhân trước ngày go-live, bao gồm:
+- Toàn bộ hồ sơ thiết bị và ảnh thiết bị.
+- Toàn bộ vật tư, số lượng tồn kho và lịch sử nhập/xuất/điều chỉnh.
+- Toàn bộ kế hoạch/task bảo trì.
+- Toàn bộ phiếu và nhật ký bảo dưỡng – sửa chữa (phiếu SC, lịch sử liên quan).
+- Toàn bộ Checklist: biểu mẫu, các phiên bản biểu mẫu và phiếu/kết quả đã thực hiện.
+- Toàn bộ danh mục nghiệp vụ tự tạo, dữ liệu mẫu và dữ liệu thử nghiệm liên quan khác.
+- Các liên kết, hàng đợi đồng bộ và tệp lưu trữ chỉ thuộc các dữ liệu nghiệp vụ nói trên.
+
+Sau reset, nơi làm việc mới bắt đầu với dữ liệu nghiệp vụ trống; thiết bị và vật tư được tạo/nhập lại theo thực tế. Tồn kho ban đầu được ghi nhận đúng số lượng thực tế tại thời điểm bắt đầu, không tái sử dụng lịch sử nhập/xuất thử nghiệm và không tạo giao dịch nhập giả.
+
+**Không xóa** tài khoản Supabase Auth, thông tin đăng nhập/phiên, cấu trúc database/schema, migration, cấu hình ứng dụng, mã nguồn hoặc các thiết lập kỹ thuật cần để ứng dụng tiếp tục hoạt động. Không xóa dữ liệu của project test hoặc project khác ngoài phạm vi đã xác định.
+
+### Điều kiện an toàn bắt buộc
+1. Chức năng reset chỉ được thực hiện khi người dùng chủ động xác nhận rõ ràng ngay trước ngày go-live; không tự chạy theo ngày hoặc khi deploy.
+2. Trước reset phải tạo bản backup đầy đủ, có thể khôi phục, gồm dữ liệu quan hệ, ảnh/tệp và các dữ liệu nghiệp vụ liên quan; xác minh backup đọc/khôi phục được.
+3. Hiển thị bản xem trước số lượng bản ghi/tệp sẽ xóa theo từng phân hệ; yêu cầu xác nhận mạnh (ví dụ nhập `RESET TOAN BO DU LIEU NGHIEP VU`).
+4. Reset theo đúng phạm vi một môi trường/tổ chức cá nhân, dùng transaction hoặc quy trình có kiểm soát; không xóa Auth user, schema hay dữ liệu ngoài phạm vi.
+5. Sau reset kiểm tra tất cả phân hệ rỗng, không còn ảnh/tệp mồ côi, dữ liệu tồn kho bằng 0 và không có seed tự động chèn dữ liệu demo trở lại.
+6. Chỉ sau khi kiểm tra xong mới bắt đầu nhập thiết bị, vật tư và số dư tồn kho thực tế của nơi làm việc mới.
+
+Đây là yêu cầu nghiệp vụ đã được người dùng xác nhận. Chưa triển khai chức năng reset và chưa xóa dữ liệu nào. Khi triển khai phải thiết kế riêng, review phạm vi và kiểm thử trên project test trước; tuyệt đối không thực hiện reset thật khi chưa có xác nhận cuối cùng của người dùng.
