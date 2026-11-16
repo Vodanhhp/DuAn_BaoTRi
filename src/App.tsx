@@ -82,6 +82,8 @@ const ASSET_CATEGORY_GROUPS = [
  {label:'Nhóm khác',items:[{name:'Khác',code:'KHC'}]}
 ] as const
 const ASSET_CATEGORY_CODES: Record<string,string> = Object.fromEntries(ASSET_CATEGORY_GROUPS.flatMap(g=>g.items.map(i=>[i.name,i.code])))
+type CustomAssetCategory = { name: string; code: string }
+const getAssetCategoryCodes = (custom: CustomAssetCategory[] = []): Record<string,string> => ({...ASSET_CATEGORY_CODES,...Object.fromEntries(custom.map(item=>[item.name,item.code]))})
 const suggestAssetCategory = (name:string) => {
  const n=name.toLocaleLowerCase('vi')
  const rules:[RegExp,string][]=[
@@ -98,8 +100,8 @@ const suggestAssetCategory = (name:string) => {
 }
 const ASSET_LOCATION_CODES: Record<string,string> = {'Phòng máy nén khí':'01','Khu sản xuất':'02','Phòng bơm tầng hầm':'03','Dây chuyền 1':'04','Khu xử lý bụi':'05','Nhà xưởng A':'06','Khu kỹ thuật':'07','Phòng kỹ thuật tầng 1':'08','Tầng 2':'09','Khu vực Chiller':'10','Sân kỹ thuật mái':'11','Phòng máy phát điện':'12','Phòng điện tổng':'13','Tầng 1':'14','Phòng bơm':'15','Phòng IT':'16','Trạm biến áp':'17','Nhà lò hơi':'18','Xưởng bảo trì':'19','Sảnh chính':'20','Phòng bơm PCCC':'21','Đường ống khí nén':'22','Hố gom tầng hầm':'23'}
 const RECEIVING_FACILITY_CODE='HP01'
-const buildAssetCode=(asset:Asset,allAssets:Asset[])=>{
- const typeCode=ASSET_CATEGORY_CODES[asset.category]
+const buildAssetCode=(asset:Asset,allAssets:Asset[],customCategories:CustomAssetCategory[] = [])=>{
+ const typeCode=getAssetCategoryCodes(customCategories)[asset.category]
  if(!typeCode)return ''
  // xxx tăng theo ABC trong toàn công ty, không khởi động lại theo từng cơ sở.
  const pattern=new RegExp('^'+typeCode+'-[^-]+-(\\d+)-')
@@ -123,6 +125,9 @@ export default function App() {
   const [detailAsset, setDetailAsset] = useState<Asset | null>(null)
   const [checklistAccess, setChecklistAccess] = useState(false)
   const [assetCategoryFilter, setAssetCategoryFilter] = useState('')
+  const [customAssetCategories, setCustomAssetCategories] = useState<CustomAssetCategory[]>(() => {
+    try { const saved = JSON.parse(localStorage.getItem('baotri-custom-asset-categories') || '[]'); return Array.isArray(saved) ? saved.filter((x:any)=>x&&typeof x.name==='string'&&typeof x.code==='string') : [] } catch { return [] }
+  })
   const [assetLocationFilter, setAssetLocationFilter] = useState('')
   const [assetStatusFilter, setAssetStatusFilter] = useState('')
   const [assetSort, setAssetSort] = useState('code-asc')
@@ -339,16 +344,29 @@ export default function App() {
   const lowStock = inventory.filter(i => i.quantity <= i.minQuantity)
 
   const flash = (s: string) => { setNotice(s); setTimeout(() => setNotice(''), 2800) }
+  const addAssetCategory = (name: string, code: string) => {
+    const cleanName = name.trim()
+    const cleanCode = code.trim().toUpperCase()
+    const allCodes = getAssetCategoryCodes(customAssetCategories)
+    if (!cleanName) { alert('Nhập tên nhóm thiết bị.'); return false }
+    if (!/^[A-Z0-9]{2,5}$/.test(cleanCode)) { alert('Mã nhóm gồm 2–5 ký tự chữ không dấu hoặc số.'); return false }
+    if (Object.keys(allCodes).some(x=>x.toLocaleLowerCase('vi')===cleanName.toLocaleLowerCase('vi'))) { alert('Tên nhóm đã tồn tại.'); return false }
+    if (Object.values(allCodes).includes(cleanCode)) { alert('Mã nhóm đã được sử dụng.'); return false }
+    const next = [...customAssetCategories,{name:cleanName,code:cleanCode}]
+    setCustomAssetCategories(next)
+    try { localStorage.setItem('baotri-custom-asset-categories',JSON.stringify(next)) } catch { alert('Không lưu được nhóm mới trong trình duyệt.'); return false }
+    return true
+  }
   const saveAsset = async (a: Asset) => {
     const isNew = !a.code
     let code = a.code
     if (isNew) {
-      if (!ASSET_CATEGORY_CODES[a.category]) {
-        alert('Bạn cần chọn một nhóm thiết bị trong danh mục chuẩn để hệ thống cấp mã định danh.')
+      if (!getAssetCategoryCodes(customAssetCategories)[a.category]) {
+        alert('Bạn cần chọn một nhóm thiết bị hợp lệ để hệ thống cấp mã định danh.')
         return
       }
       const existing = await db.assets.toArray()
-      code = buildAssetCode(a, existing)
+      code = buildAssetCode(a, existing, customAssetCategories)
       if (!code) {
         alert('Không thể tạo mã định danh. Hãy kiểm tra lại nhóm thiết bị.')
         return
@@ -606,7 +624,7 @@ export default function App() {
     {notice&&<div className="toast"><Check size={17}/>{notice}</div>}
     {detailItem&&<InventoryDetailModal value={detailItem} close={()=>setDetailItem(null)} edit={()=>{setEditingItem(detailItem);setDetailItem(null);setModal('item')}}/>}
     {detailAsset&&<AssetDetailModal value={detailAsset} logs={logs.filter(l=>l.assetId===detailAsset.id)} allowChecklist={checklistAccess || (CHECKLIST_TEST_MODE && page==='checklist')} createRepairFromChecklist={createRepairFromChecklist} close={()=>{setDetailAsset(null);setChecklistAccess(false)}} edit={()=>{setEditingAsset({...detailAsset,images:detailAsset.images??[]});setDetailAsset(null);setChecklistAccess(false);setModal('asset')}} addLog={()=>{setEditingLog({id:uid(),assetId:detailAsset.id,date:today(),kind:'Sửa chữa',description:'',parts:'',readings:'',result:'',performedBy:''});setModal('log')}}/>}
-    {modal==='asset'&&editingAsset&&<AssetModal value={editingAsset} close={()=>{setModal(null);setEditingAsset(null)}} save={saveAsset} assets={assets}/>}
+    {modal==='asset'&&editingAsset&&<AssetModal value={editingAsset} close={()=>{setModal(null);setEditingAsset(null)}} save={saveAsset} assets={assets} customCategories={customAssetCategories} onAddCategory={addAssetCategory}/ >}
     {modal==='item'&&editingItem&&<ItemModal value={editingItem} close={()=>{setModal(null);setEditingItem(null)}} save={saveItem}/>}
     {modal==='task'&&editingTask&&<TaskModal value={editingTask} assets={assets} close={()=>{setModal(null);setEditingTask(null)}} save={saveTask}/>}
     {modal==='log'&&editingLog&&<LogEntryModal value={editingLog} close={()=>{setModal(null);setEditingLog(null)}} save={saveLog}/>}
@@ -1276,16 +1294,20 @@ function LogEntryModal({value,close,save}:any){
   </form></Modal>
 }
 
-function AssetModal({value,close,save,assets}:any){
+function AssetModal({value,close,save,assets,customCategories=[],onAddCategory}:any){
   const [v,setV]=useState<Asset>(value)
+  const [showAddCategory,setShowAddCategory]=useState(false)
+  const [newCategoryName,setNewCategoryName]=useState('')
+  const [newCategoryCode,setNewCategoryCode]=useState('')
   const isNew=!value.code
   const set=(k:keyof Asset,x:any)=>setV(p=>({...p,[k]:x}))
-  const previewCode=isNew&&ASSET_CATEGORY_CODES[v.category]?buildAssetCode(v,assets):''
+  const categoryCodes=getAssetCategoryCodes(customCategories)
+  const previewCode=isNew&&categoryCodes[v.category]?buildAssetCode(v,assets,customCategories):''
   const suggestedCategory=suggestAssetCategory(v.name)
   const showCategoryWarning=Boolean(suggestedCategory)&&suggestedCategory!==v.category
-  return <Modal title={isNew?'Thêm thiết bị':'Thông tin thiết bị'} close={close}><form onSubmit={e=>{e.preventDefault();if(!v.name.trim())return alert('Nhập tên thiết bị');if(!ASSET_CATEGORY_CODES[v.category])return alert('Chọn nhóm thiết bị hợp lệ trong danh mục chuẩn');save(v)}} className="form-grid">
+  return <Modal title={isNew?'Thêm thiết bị':'Thông tin thiết bị'} close={close}><form onSubmit={e=>{e.preventDefault();if(!v.name.trim())return alert('Nhập tên thiết bị');if(!categoryCodes[v.category])return alert('Chọn nhóm thiết bị hợp lệ');save(v)}} className="form-grid">
     <Field label="Tên thiết bị *"><input required value={v.name} placeholder="Ví dụ: Quạt hút khu vực đóng gói số 1" onChange={e=>set('name',e.target.value)}/></Field>
-    <Field label="Nhóm thiết bị *"><select required disabled={!isNew} value={v.category} onChange={e=>set('category',e.target.value)}><option value="">-- Chọn nhóm thiết bị --</option>{ASSET_CATEGORY_GROUPS.map(group=><optgroup key={group.label} label={group.label}>{group.items.map(item=><option key={item.name} value={item.name}>{item.name} · {item.code}</option>)}</optgroup>)}</select>{!isNew&&<small className="muted">Nhóm đã khóa sau khi cấp mã để tránh mã định danh không còn đúng loại thiết bị.</small>}</Field>
+    <Field label="Nhóm thiết bị *"><select required disabled={!isNew} value={v.category} onChange={e=>set('category',e.target.value)}><option value="">-- Chọn nhóm thiết bị --</option>{ASSET_CATEGORY_GROUPS.map(group=><optgroup key={group.label} label={group.label}>{group.items.map(item=><option key={item.name} value={item.name}>{item.name} · {item.code}</option>)}</optgroup>)}{customCategories.length>0&&<optgroup label="Nhóm tự tạo">{customCategories.map((item:CustomAssetCategory)=><option key={item.name} value={item.name}>{item.name} · {item.code}</option>)}</optgroup>}</select>{isNew&&<button type="button" className="soft-btn" style={{marginTop:8}} onClick={()=>setShowAddCategory(x=>!x)}><Plus size={15}/> Thêm nhóm</button>}{showAddCategory&&isNew&&<div className="panel" style={{marginTop:10,display:'grid',gap:8}}><Field label="Tên nhóm mới *"><input value={newCategoryName} onChange={e=>setNewCategoryName(e.target.value)} placeholder="Ví dụ: Máy đóng đai"/></Field><Field label="Mã nhóm *"><input value={newCategoryCode} onChange={e=>setNewCategoryCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,''))} maxLength={5} placeholder="Ví dụ: MDD"/><small className="muted">2–5 ký tự chữ không dấu hoặc số, dùng để tạo mã thiết bị.</small></Field><div style={{display:'flex',gap:8,flexWrap:'wrap'}}><button type="button" className="primary-btn" onClick={()=>{if(onAddCategory(newCategoryName,newCategoryCode)){set('category',newCategoryName.trim());setNewCategoryName('');setNewCategoryCode('');setShowAddCategory(false)}}}>Lưu nhóm và chọn</button><button type="button" className="soft-btn" onClick={()=>setShowAddCategory(false)}>Hủy</button></div></div>}{!isNew&&<small className="muted">Nhóm đã khóa sau khi cấp mã để tránh mã định danh không còn đúng loại thiết bị.</small>}</Field>
     {showCategoryWarning&&<div className="form-hint warning-hint">Theo tên thiết bị, hệ thống gợi ý nhóm “{suggestedCategory}”. Nhóm hiện tại là “{v.category||'chưa chọn'}”. Hãy kiểm tra và chọn nhóm phù hợp; hệ thống không tự đổi nhóm hay mã định danh.</div>}
     <Field label="Vị trí lắp đặt"><input value={v.location} placeholder="Ví dụ: Nhà xưởng A" onChange={e=>set('location',e.target.value)}/></Field>
     <Field label="Hãng"><input value={v.brand} onChange={e=>set('brand',e.target.value)}/></Field><Field label="Model"><input value={v.model} onChange={e=>set('model',e.target.value)}/></Field>
