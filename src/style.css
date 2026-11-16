@@ -221,3 +221,34 @@ button.asset-photo-thumb{text-align:left}
     break-inside: avoid;
   }
 }
+
+
+/* Bảo trì – Checklist: bảng lịch định kỳ, tách biệt với danh mục thiết bị */
+.checklist-schedule-panel{display:flex;flex-direction:column;gap:16px}
+.checklist-frequency-tabs{display:flex;gap:8px;flex-wrap:wrap}
+.checklist-frequency-tabs button{border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:9px;padding:9px 16px;font-size:12px;font-weight:700;cursor:pointer}
+.checklist-frequency-tabs button.active{background:#e7f3ed;border-color:#2b8764;color:#176044}
+.checklist-schedule-summary{display:flex;gap:18px;flex-wrap:wrap;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--surface)}
+.checklist-schedule-summary span{font-size:12px;color:var(--muted)}
+.checklist-schedule-summary b{font-size:15px;color:var(--text);margin-right:4px}
+.checklist-schedule-summary .checklist-summary-done b{color:#16734d}
+.checklist-schedule-summary .checklist-summary-pending b{color:#c33b36}
+.checklist-schedule-table{min-width:760px}
+.checklist-schedule-table td{vertical-align:middle}
+.checklist-schedule-table td:first-child{font-weight:700;white-space:nowrap}
+.checklist-schedule-table td:nth-child(2){min-width:190px}
+.checklist-schedule-table td:nth-child(2) b,.checklist-schedule-table td:nth-child(2) small{display:block}
+.checklist-schedule-table td:nth-child(2) small{margin-top:4px;color:var(--muted);white-space:normal}
+.checklist-row-done td{background:rgba(34,139,92,.045)}
+.checklist-row-pending td{background:rgba(205,55,55,.045)}
+.checklist-schedule-state{display:inline-block;border-radius:6px;padding:5px 8px;font-size:11px;font-weight:750}
+.checklist-schedule-state.done{color:#176b49;background:#e2f3e9}
+.checklist-schedule-state.pending{color:#a52f2c;background:#fde9e7}
+.checklist-overdue-note{display:block;margin-top:5px;color:#bd3430;font-size:10px;font-weight:650}
+.checklist-schedule-footnote{margin:0;color:var(--muted);font-size:11px;line-height:1.6}
+@media(max-width:640px){
+  .checklist-schedule-panel{padding:13px}
+  .checklist-frequency-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
+  .checklist-frequency-tabs button{padding:9px 6px}
+  .checklist-schedule-summary{gap:8px 14px}
+}
