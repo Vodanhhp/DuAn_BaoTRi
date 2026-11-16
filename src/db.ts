@@ -3,6 +3,64 @@ import Dexie, { type Table } from 'dexie'
 export type AssetStatus = 'Đang hoạt động' | 'Đang sửa chữa' | 'Ngừng sử dụng' | 'Thanh lý'
 export type TaskStatus = 'Chờ thực hiện' | 'Đang thực hiện' | 'Hoàn thành' | 'Quá hạn'
 
+export type ChecklistAnswerType = 'pass-fail-na' | 'yes-no' | 'text' | 'number'
+
+export interface ChecklistTemplateItem {
+  id: string
+  label: string
+  description?: string
+  answerType: ChecklistAnswerType
+  required: boolean
+  order: number
+}
+
+export interface ChecklistTemplate {
+  id: string
+  assetId: string
+  title: string
+  description: string
+  currentVersion: number
+  active: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ChecklistTemplateVersion {
+  id: string
+  templateId: string
+  assetId: string
+  version: number
+  title: string
+  description: string
+  items: ChecklistTemplateItem[]
+  createdAt: string
+}
+
+export interface ChecklistResultItem {
+  templateItemId: string
+  label: string
+  description?: string
+  answerType: ChecklistAnswerType
+  answer: string
+  note: string
+  order: number
+}
+
+export interface ChecklistResult {
+  id: string
+  assetId: string
+  templateId: string
+  templateVersionId: string
+  templateVersion: number
+  templateTitle: string
+  performedAt: string
+  performedBy: string
+  result: 'Đạt' | 'Không đạt' | 'Chưa hoàn thành'
+  notes: string
+  items: ChecklistResultItem[]
+  createdAt: string
+}
+
 export interface Asset {
   id: string; code: string; name: string; category: string; brand: string; model: string
   serial: string; location: string; commissionedAt: string; power: string; cycle: string
@@ -39,6 +97,9 @@ class MaintenanceDB extends Dexie {
   logs!: Table<Log, string>
   movements!: Table<Movement, string>
   syncQueue!: Table<SyncItem, string>
+  checklistTemplates!: Table<ChecklistTemplate, string>
+  checklistVersions!: Table<ChecklistTemplateVersion, string>
+  checklistResults!: Table<ChecklistResult, string>
 
   constructor() {
     super('baotri-local-v1')
@@ -57,6 +118,19 @@ class MaintenanceDB extends Dexie {
       logs: 'id, assetId, taskId, date, kind',
       movements: 'id, itemId, date, type',
       syncQueue: 'id, tableName, recordId, queuedAt'
+    })
+    // v3: Checklist có biểu mẫu riêng theo từng thiết bị; phiên bản và phiếu kết quả độc lập.
+    // Không sửa/xóa dữ liệu Task.checklist cũ trong quá trình nâng cấp.
+    this.version(3).stores({
+      assets: 'id, code, name, category, status, archivedAt, updatedAt',
+      inventory: 'id, code, name, group, quantity, updatedAt',
+      tasks: 'id, assetId, dueDate, status, updatedAt',
+      logs: 'id, assetId, taskId, date, kind',
+      movements: 'id, itemId, date, type',
+      syncQueue: 'id, tableName, recordId, queuedAt',
+      checklistTemplates: 'id, assetId, active, updatedAt',
+      checklistVersions: 'id, templateId, assetId, version, createdAt',
+      checklistResults: 'id, assetId, templateId, templateVersionId, performedAt, result'
     })
   }
 }
