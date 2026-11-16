@@ -65,7 +65,7 @@ export interface ChecklistResult {
 
 export interface Asset {
   id: string; code: string; name: string; category: string; brand: string; model: string
-  serial: string; location: string; commissionedAt: string; power: string; cycle: string
+  serial: string; location: string; commissionedAt: string; power: string; cycle: string; cycleStartedAt?: string
   transferredFromOtherFacility?: boolean
   status: AssetStatus; notes: string; images: string[]; archivedAt?: string; createdAt: string; updatedAt: string
 }
