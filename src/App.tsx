@@ -428,16 +428,25 @@ export default function App() {
   const exportTasks = () => exportRows(tasks.map(t => ({ 'Thiết bị':assets.find(a=>a.id===t.assetId)?.name ?? '', 'Công việc':t.title,'Ngày đến hạn':t.dueDate,'Chu kỳ':t.frequency,'Trạng thái':t.status,'Checklist':t.checklist,'Thông số':t.readings,'Ghi chú':t.notes })), 'ke-hoach-bao-tri.xlsx')
   const exportLogs = () => exportRows(logs.map(l => ({ 'Ngày':l.date,'Thiết bị':assets.find(a=>a.id===l.assetId)?.name ?? '', 'Loại':l.kind,'Nội dung':l.description,'Thông số':l.readings,'Vật tư':l.parts,'Người thực hiện':l.performedBy })), 'nhat-ky-bao-tri.xlsx')
   const backup = async () => {
-    const data = { assets: await db.assets.toArray(), inventory: await db.inventory.toArray(), tasks: await db.tasks.toArray(), logs: await db.logs.toArray(), movements: await db.movements.toArray() }
+    const data = {
+      assets: await db.assets.toArray(), inventory: await db.inventory.toArray(),
+      tasks: await db.tasks.toArray(), logs: await db.logs.toArray(), movements: await db.movements.toArray(),
+      checklistTemplates: await db.checklistTemplates.toArray(),
+      checklistVersions: await db.checklistVersions.toArray(),
+      checklistResults: await db.checklistResults.toArray()
+    }
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `backup-baotri-${today()}.json`; a.click(); URL.revokeObjectURL(url)
   }
   const restore = async (file: File) => {
     try {
       const data = JSON.parse(await file.text())
-      await db.transaction('rw', db.assets, db.inventory, db.tasks, db.logs, db.movements, async () => {
+      await db.transaction('rw', db.assets, db.inventory, db.tasks, db.logs, db.movements, db.checklistTemplates, db.checklistVersions, db.checklistResults, async () => {
         await db.assets.bulkPut(data.assets ?? []); await db.inventory.bulkPut(data.inventory ?? [])
         await db.tasks.bulkPut(data.tasks ?? []); await db.logs.bulkPut(data.logs ?? []); await db.movements.bulkPut(data.movements ?? [])
+        await db.checklistTemplates.bulkPut(data.checklistTemplates ?? [])
+        await db.checklistVersions.bulkPut(data.checklistVersions ?? [])
+        await db.checklistResults.bulkPut(data.checklistResults ?? [])
       })
       flash('Đã nhập dữ liệu sao lưu')
     } catch { flash('File sao lưu không hợp lệ') }
