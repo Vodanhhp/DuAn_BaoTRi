@@ -842,3 +842,80 @@ Người dùng xác nhận chọn phương án triển khai theo từng giai đo
 - Dữ liệu nghiệp vụ: vẫn ở IndexedDB/localStorage; chưa có bảng nghiệp vụ cloud, chưa import, chưa đồng bộ.
 - Bốn tài khoản Auth thử nghiệm: giữ nguyên, chưa cần thao tác thêm.
 - Bước tiếp theo: tiếp tục công việc hoàn thiện BAOTRI Mini theo thứ tự ưu tiên; khi bắt đầu triển khai đồng bộ, thiết kế schema và luồng cloud cho một tài khoản trước nhưng không phá vỡ khả năng mở rộng multi-tenant.
+
+
+## 16/11/2026 – Chốt trạng thái cuối buổi và điểm tiếp tục ngày mai
+
+### Xác nhận về phiên đăng nhập
+- Supabase client hiện đã cấu hình `persistSession: true`, `autoRefreshToken: true` và `detectSessionInUrl: true`.
+- Người dùng không phải đăng nhập lại mỗi lần mở ứng dụng hoặc mỗi lần sửa dữ liệu; trình duyệt sẽ khôi phục phiên đã lưu và tự làm mới token khi cần.
+- Mỗi trình duyệt/thiết bị có phiên đăng nhập riêng: máy tính đăng nhập một lần, điện thoại cũng cần đăng nhập lần đầu riêng. Đăng xuất, xóa dữ liệu trình duyệt hoặc mất phiên có thể khiến phải đăng nhập lại.
+- Đây mới là trạng thái của Supabase Auth. Dữ liệu nghiệp vụ vẫn đang lưu riêng trong IndexedDB/localStorage của từng trình duyệt; chưa đồng bộ giữa máy tính và điện thoại.
+
+### Trạng thái cuối buổi
+- Đã thống nhất bắt đầu triển khai đồng bộ cloud theo lộ trình một tài khoản Auth trước, giữ khả năng mở rộng multi-tenant về sau.
+- Chưa có thay đổi mã nguồn, chưa tạo migration mới, chưa chạy SQL trên Supabase project chính trong buổi trao đổi này.
+- File tiến độ chính thức tiếp tục là tài liệu này trên nhánh `main`; không tạo file tiến độ phụ.
+
+### Việc tiếp tục vào buổi làm việc kế tiếp
+1. Đọc lại toàn bộ tài liệu tiến độ và kiểm tra trạng thái mới nhất trên nhánh `main`.
+2. Rà soát schema/luồng nghiệp vụ đã kiểm kê, chốt schema cloud tối thiểu cho một tài khoản nhưng vẫn có `organization_id`, RLS và khả năng mở rộng tenant.
+3. Lập kế hoạch migration theo từng phần, bắt đầu trên project `BAOTRI-Mini-Test`; không chạy SQL trên project chính khi chưa review và xác nhận phạm vi.
+4. Thiết kế backup đầy đủ dữ liệu local trước khi viết import; tuyệt đối không tự xóa, ghi đè hoặc chuyển dữ liệu thật khi chưa có backup và đối chiếu.
+5. Chỉ sau khi chốt thiết kế mới bắt đầu sửa code theo từng phân hệ; giữ nguyên chức năng đang chạy ổn và cập nhật tài liệu này sau mỗi mốc.
+
+
+
+## 16/11/2026 – Chốt phương án triển khai sử dụng thực tế cá nhân
+
+Người dùng xác nhận tiếp tục xây dựng BAOTRI Mini theo kiến trúc:
+- **GitHub Pages**: host giao diện Web App/PWA, truy cập online từ máy tính và điện thoại; không cần bật máy tính cá nhân hoặc chạy Vite/PowerShell để sử dụng.
+- **Supabase**: cung cấp Auth và PostgreSQL/database tập trung; các thiết bị đăng nhập cùng tài khoản cá nhân và đọc/ghi chung dữ liệu cloud.
+- **Một người dùng cá nhân trước mắt**; chưa cần triển khai giao diện quản lý nhiều thành viên/tổ chức để đưa vào sử dụng đợt đầu. Tuy nhiên schema và bảo mật vẫn giữ khả năng mở rộng tenant, không hardcode quyền hoặc bỏ qua RLS.
+- PWA có thể cài trên điện thoại; không đồng nghĩa ứng dụng có thể ghi dữ liệu nghiệp vụ offline. Khi mất Internet, phải thể hiện rõ trạng thái và tránh báo lưu thành công nếu chưa ghi được cloud.
+
+### Mục tiêu và tiêu chí trước khi dùng tại nơi làm việc
+Người dùng mong muốn có thể sử dụng BAOTRI trong đợt đi làm sắp tới. Đây là mục tiêu ưu tiên triển khai, không phải xác nhận ứng dụng đã sẵn sàng. Trước khi dùng dữ liệu công việc thật cần hoàn thành và kiểm tra tối thiểu:
+1. Hoàn thiện schema cloud, RLS và quy trình khởi tạo tổ chức/tài khoản một cách an toàn.
+2. Có backup đầy đủ dữ liệu local và quy trình import có kiểm tra, giữ ID, quan hệ, lịch sử và ảnh; có đối chiếu trước/sau.
+3. Chuyển từng phân hệ sang đọc/ghi Supabase; không còn ghi nhầm vào IndexedDB như thể đã đồng bộ.
+4. Kiểm tra PC và điện thoại cùng tài khoản thấy dữ liệu giống nhau; thử thêm/sửa/ghi nhận ở thiết bị này và xác nhận ở thiết bị kia.
+5. Kiểm tra lỗi mạng, token/session, tải ảnh, dữ liệu trùng, lỗi ghi và khôi phục sau lỗi; giao diện phải báo rõ trạng thái lưu.
+6. Build production và triển khai GitHub Pages; kiểm tra URL thật, PWA/cài đặt điện thoại, refresh/deep links và cập nhật phiên bản.
+7. Kiểm tra dữ liệu mẫu/seed không tự chèn vào dữ liệu sử dụng thật; phân biệt dữ liệu demo và dữ liệu thật.
+8. Chỉ đưa dữ liệu công việc thật vào sau khi backup, bảo mật và các kiểm thử thiết yếu đạt yêu cầu.
+
+### Điểm tiếp tục
+- Bắt đầu buổi làm việc kế tiếp bằng việc đọc lại file tiến độ và kiểm tra nhánh main.
+- Ưu tiên chốt schema cloud tối thiểu, RLS và quy trình bootstrap cho một tài khoản; thử nghiệm trên project BAOTRI-Mini-Test.
+- Sau đó triển khai backup/import và chuyển từng phân hệ; cuối cùng triển khai GitHub Pages production.
+- Không tuyên bố sẵn sàng sử dụng tại nơi làm việc cho đến khi các tiêu chí trên được kiểm thử thực tế.
+- Chưa có code, migration hay dữ liệu nào được thay đổi chỉ bởi quyết định này.
+
+
+## 16/11/2026 – Xác nhận phạm vi reset toàn bộ dữ liệu trước khi dùng thật
+
+Người dùng làm rõ yêu cầu: **đến ngày bắt đầu sử dụng BAOTRI Mini tại nơi làm việc mới, toàn bộ dữ liệu nghiệp vụ đã tạo từ giai đoạn phát triển/thử nghiệm cho đến thời điểm đó phải được xóa sạch**, không chỉ xóa các bản ghi được gắn nhãn demo.
+
+Phạm vi reset dự kiến gồm toàn bộ dữ liệu nghiệp vụ trong môi trường/tổ chức sử dụng cá nhân trước ngày go-live, bao gồm:
+- Toàn bộ hồ sơ thiết bị và ảnh thiết bị.
+- Toàn bộ vật tư, số lượng tồn kho và lịch sử nhập/xuất/điều chỉnh.
+- Toàn bộ kế hoạch/task bảo trì.
+- Toàn bộ phiếu và nhật ký bảo dưỡng – sửa chữa (phiếu SC, lịch sử liên quan).
+- Toàn bộ Checklist: biểu mẫu, các phiên bản biểu mẫu và phiếu/kết quả đã thực hiện.
+- Toàn bộ danh mục nghiệp vụ tự tạo, dữ liệu mẫu và dữ liệu thử nghiệm liên quan khác.
+- Các liên kết, hàng đợi đồng bộ và tệp lưu trữ chỉ thuộc các dữ liệu nghiệp vụ nói trên.
+
+Sau reset, nơi làm việc mới bắt đầu với dữ liệu nghiệp vụ trống; thiết bị và vật tư được tạo/nhập lại theo thực tế. Tồn kho ban đầu được ghi nhận đúng số lượng thực tế tại thời điểm bắt đầu, không tái sử dụng lịch sử nhập/xuất thử nghiệm và không tạo giao dịch nhập giả.
+
+**Không xóa** tài khoản Supabase Auth, thông tin đăng nhập/phiên, cấu trúc database/schema, migration, cấu hình ứng dụng, mã nguồn hoặc các thiết lập kỹ thuật cần để ứng dụng tiếp tục hoạt động. Không xóa dữ liệu của project test hoặc project khác ngoài phạm vi đã xác định.
+
+### Điều kiện an toàn bắt buộc
+1. Chức năng reset chỉ được thực hiện khi người dùng chủ động xác nhận rõ ràng ngay trước ngày go-live; không tự chạy theo ngày hoặc khi deploy.
+2. Trước reset phải tạo bản backup đầy đủ, có thể khôi phục, gồm dữ liệu quan hệ, ảnh/tệp và các dữ liệu nghiệp vụ liên quan; xác minh backup đọc/khôi phục được.
+3. Hiển thị bản xem trước số lượng bản ghi/tệp sẽ xóa theo từng phân hệ; yêu cầu xác nhận mạnh (ví dụ nhập `RESET TOAN BO DU LIEU NGHIEP VU`).
+4. Reset theo đúng phạm vi một môi trường/tổ chức cá nhân, dùng transaction hoặc quy trình có kiểm soát; không xóa Auth user, schema hay dữ liệu ngoài phạm vi.
+5. Sau reset kiểm tra tất cả phân hệ rỗng, không còn ảnh/tệp mồ côi, dữ liệu tồn kho bằng 0 và không có seed tự động chèn dữ liệu demo trở lại.
+6. Chỉ sau khi kiểm tra xong mới bắt đầu nhập thiết bị, vật tư và số dư tồn kho thực tế của nơi làm việc mới.
+
+Đây là yêu cầu nghiệp vụ đã được người dùng xác nhận. Chưa triển khai chức năng reset và chưa xóa dữ liệu nào. Khi triển khai phải thiết kế riêng, review phạm vi và kiểm thử trên project test trước; tuyệt đối không thực hiện reset thật khi chưa có xác nhận cuối cùng của người dùng.
