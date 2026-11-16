@@ -1311,3 +1311,14 @@ Bộ test yêu cầu project thử nghiệm đã có bốn Auth users (Admin A, 
 - Commit cập nhật migration: `f84bf329ac08379d2eb5cd3a23548bb9f902afbe`.
 - Chưa chạy migration trên project test; chưa tạo tổ chức/membership mẫu; chưa chạy bộ test RLS.
 - Bước tiếp theo: người dùng xác nhận project test đã hoàn tất khởi tạo (project ở trạng thái Healthy), sau đó tạo bốn tài khoản Auth thử nghiệm và thực hiện migration 001 trên đúng project test. Không gửi Database Password hoặc bất kỳ secret/service-role key nào qua chat.
+
+
+## 16/11/2026 – Project Supabase thử nghiệm đã Healthy và rà soát cuối migration 001
+
+- Người dùng xác nhận project thử nghiệm `oyzhxgzltpdebpymuicb` đã ở trạng thái **Healthy**.
+- Tiếp tục review tĩnh migration 001 trước khi hướng dẫn chạy.
+- Phát hiện `has_org_role` và policy đọc profile đồng nghiệp chưa cùng kiểm tra trạng thái `organizations.status = 'active'` như helper `is_org_member`.
+- Đã bổ sung điều kiện tổ chức active cho cả hai vị trí để nhất quán khi tổ chức bị suspended.
+- Commit migration mới nhất: `fe7d46f887dad8f1c5a5906291ac8a0f06b0bdb5`.
+- Đây mới là review/chỉnh sửa mã SQL trên GitHub; **chưa chạy SQL, chưa tạo Auth test users, chưa tạo tổ chức/membership mẫu và chưa kiểm thử runtime**.
+- Bước tiếp theo: tạo bốn tài khoản Auth thử nghiệm trên project test, sau đó chạy migration 001 trên đúng project test. Cần kiểm tra lại project reference ở Dashboard trước khi chạy; tuyệt đối không chạy trên project BAOTRI-Mini chính.
