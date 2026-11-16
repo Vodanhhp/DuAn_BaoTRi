@@ -804,3 +804,41 @@ Hàm `seed()` trong `App.tsx` chạy khi workspace mount và hiện có thể:
 - Chưa xác minh độc lập từng bảng/policy/function bằng truy vấn kiểm tra; chưa tạo tổ chức hoặc membership mẫu; chưa chạy bộ test RLS hai tổ chức/hai vai trò.
 - Chưa chạy migration trên project chính `BAOTRI-Mini`; chưa tạo bảng nghiệp vụ, chưa import dữ liệu local và chưa bật đồng bộ cloud. Dữ liệu nghiệp vụ vẫn ở IndexedDB/localStorage trên từng trình duyệt.
 - Bước tiếp theo: kiểm tra ba bảng nền trong Table Editor, sau đó chuẩn bị tổ chức và membership thử nghiệm cho bốn Auth users; chạy bộ kiểm thử RLS sau khi thay placeholder bằng UUID thật. Không sao chép thao tác sang project chính.
+
+
+## 16/11/2026 – Điều chỉnh lộ trình: đồng bộ cloud trước với một tài khoản
+
+Người dùng xác nhận chọn phương án triển khai theo từng giai đoạn: **trước mắt chỉ sử dụng một tài khoản Auth của chính người dùng, nhưng vẫn xây dựng đồng bộ dữ liệu nghiệp vụ giữa máy tính và điện thoại qua Supabase**. Không cần chờ hoàn thiện multi-user/multi-tenant mới làm đồng bộ.
+
+### Phạm vi giai đoạn hiện tại
+- Giữ Supabase Auth đã tích hợp và đã kiểm thử đăng nhập/đăng xuất cơ bản; trước mắt chỉ dùng một tài khoản cá nhân được kiểm soát.
+- Mục tiêu gần: một tài khoản đăng nhập trên nhiều thiết bị, cùng đọc/ghi một nguồn dữ liệu nghiệp vụ trên Supabase.
+- Vẫn phải xây dựng schema PostgreSQL, API/RLS, Storage nếu cần và cơ chế chuyển dữ liệu từ IndexedDB/localStorage; một tài khoản không có nghĩa là chỉ dùng dữ liệu local.
+- Không được tuyên bố đồng bộ hoạt động cho đến khi schema, luồng đọc/ghi, xử lý lỗi/mạng, đối chiếu dữ liệu và kiểm thử thực tế trên ít nhất máy tính + điện thoại hoàn tất.
+- Không tự động import hoặc xóa dữ liệu local. Trước khi chuyển dữ liệu phải có backup đầy đủ, kế hoạch import có thể chạy an toàn và đối chiếu sau import.
+- Tạm thời chưa cần tạo hai tổ chức và bốn membership thử nghiệm; không cần tiếp tục thao tác thủ công với các ID của bốn tài khoản test ở thời điểm này.
+- Giữ nguyên project test, bốn Auth users và Migration 001 đã chạy; không cần rollback/xóa.
+- Không chạy migration trên project chính chỉ vì đã chốt phương án một tài khoản. Project chính chỉ được thay đổi khi đã review migration và xác định rõ phạm vi.
+- Tạm hoãn kiểm thử multi-tenant đầy đủ (hai tổ chức, Admin/User, RLS cross-tenant) đến giai đoạn mở rộng, nhưng không loại bỏ mục tiêu kiến trúc multi-tenant.
+
+### Kiến trúc đích vẫn phải giữ khả năng mở rộng
+- Database nghiệp vụ tiếp tục thiết kế có `organization_id` và quan hệ tenant phù hợp để không phải thiết kế lại khi mở rộng.
+- Trong giai đoạn một tài khoản, tổ chức ban đầu được khởi tạo theo quy trình an toàn; không hardcode quyền Admin vào frontend và không cho client tự chọn organization_id/role.
+- RLS vẫn phải được bật và kiểm thử; phạm vi quyền giai đoạn đầu có thể đơn giản hơn nhưng không được dùng service-role key ở frontend hoặc bỏ qua bảo mật database.
+- Sau khi đồng bộ một tài khoản hoạt động ổn định, tiếp tục hoàn thiện invitation, membership, Admin/User và kiểm thử cách ly nhiều tổ chức.
+
+### Thứ tự công việc được điều chỉnh
+1. Tiếp tục hoàn thiện các phân hệ và kiểm thử nghiệp vụ trên dữ liệu local hiện có.
+2. Chốt schema cloud theo dữ liệu thực tế, vẫn dành chỗ cho organization_id và mở rộng tenant.
+3. Thiết kế/kiểm thử migration và RLS trên project BAOTRI-Mini-Test; chưa đụng project chính.
+4. Hoàn thiện backup local đầy đủ, bao gồm 9 IndexedDB stores, danh mục custom localStorage và ảnh/tệp.
+5. Viết import có kiểm tra, giữ ID/quan hệ/lịch sử, chống chạy lặp; đối chiếu trước/sau.
+6. Chuyển từng phân hệ sang Supabase; xác thực cùng một tài khoản trên máy tính và điện thoại, kiểm tra đọc/ghi đồng nhất.
+7. Khi luồng một tài khoản ổn định, quay lại hoàn thiện multi-tenant và phân quyền trên project test trước khi triển khai nhiều tổ chức thực tế.
+
+### Trạng thái hiện tại
+- Auth đăng nhập/đăng xuất cơ bản: đã được người dùng xác nhận hoạt động.
+- Migration 001 identity/organizations/memberships: đã chạy thành công trên project test; chưa có tổ chức/membership mẫu.
+- Dữ liệu nghiệp vụ: vẫn ở IndexedDB/localStorage; chưa có bảng nghiệp vụ cloud, chưa import, chưa đồng bộ.
+- Bốn tài khoản Auth thử nghiệm: giữ nguyên, chưa cần thao tác thêm.
+- Bước tiếp theo: tiếp tục công việc hoàn thiện BAOTRI Mini theo thứ tự ưu tiên; khi bắt đầu triển khai đồng bộ, thiết kế schema và luồng cloud cho một tài khoản trước nhưng không phá vỡ khả năng mở rộng multi-tenant.
