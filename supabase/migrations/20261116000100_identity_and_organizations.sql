@@ -152,6 +152,12 @@ as $$
       and m.user_id = (select auth.uid())
       and m.status = 'active'
       and m.role = p_role
+      and exists (
+        select 1
+        from public.organizations as o
+        where o.id = m.organization_id
+          and o.status = 'active'
+      )
   );
 $$;
 
@@ -181,6 +187,12 @@ using (
       and mine.status = 'active'
       and theirs.user_id = profiles.id
       and theirs.status = 'active'
+      and exists (
+        select 1
+        from public.organizations as o
+        where o.id = mine.organization_id
+          and o.status = 'active'
+      )
   )
 );
 
