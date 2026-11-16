@@ -197,8 +197,7 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 
 
 ### Chuẩn hóa xuất Excel danh sách thiết bị (15/11/2026)
-- Đổi tiêu đề hiển thị trong tệp thành “Danh sách các thiết bị”.- Thay tệp HTML giả dạng `.xls` bằng workbook `.xlsx` chuẩn Open XML được tạo bằng thư viện SheetJS đang có trong dự án.- Bố cục bảng: tiêu đề gộp 10 cột, hàng tiêu đề cột, mỗi thiết bị một hàng; Hãng và Model hiển thị xuống dòng trong ô tên thiết bị; giữ nguyên dữ liệu theo bộ lọc hiện tại.- Thiết lập độ rộng cột, bộ lọc tự động, khổ A4 ngang, vừa một trang theo chiều rộng và không ép chiều cao; có dòng tổng số thiết bị.
-- Tên file: `danh-sach-cac-thiet-bi.xlsx`. Chưa chạy build và chưa mở thử bằng Excel trên máy người dùng; cần kiểm tra nội dung, định dạng và Print Preview.
+- Đổi tiêu đề hiển thị trong tệp thành “Danh sách các thiết bị”.- Thay tệp HTML giả dạng `.xls` bằng workbook `.xlsx` chuẩn Open XML được tạo bằng thư viện SheetJS đang có trong dự án.- Bố cục bảng: tiêu đề gộp 10 cột, hàng tiêu đề cột, mỗi thiết bị một hàng; Hãng và Model hiển thị xuống dòng trong ô tên thiết bị; giữ nguyên dữ liệu theo bộ lọc hiện tại.- Thiết lập độ rộng cột, bộ lọc tự động, khổ A4 ngang, vừa một trang theo chiều rộng và không ép chiều cao; có dòng tổng số thiết bị.- Tên file: `danh-sach-cac-thiet-bi.xlsx`. Chưa chạy build và chưa mở thử bằng Excel trên máy người dùng; cần kiểm tra nội dung, định dạng và Print Preview.
 
 
 ### Điều chỉnh lại xuất Excel theo đúng phạm vi yêu cầu (15/11/2026)
@@ -399,7 +398,6 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 **Rủi ro:** mã nhóm trùng làm sai chuỗi mã định danh; nhóm lưu cục bộ không tự đồng bộ sang máy/trình duyệt khác (đúng với trạng thái lưu trữ hiện tại, trước khi triển khai Supabase).
 **Cách kiểm thử:** kiểm tra tĩnh luồng thêm nhóm, lưu localStorage, kiểm tra trùng tên/mã, chọn nhóm tự tạo và xem mã dự kiến; chạy `npm.cmd run build`. Chưa đánh dấu hoàn thành nếu chưa chạy build thực tế.
 
-
 ### Đã bổ sung tạo nhóm thiết bị ngay trong form Thêm thiết bị (16/11/2026)
 - Sửa trực tiếp `src/App.tsx` trên `main`; không tạo branch/PR và không đổi schema IndexedDB.
 - Bên cạnh trường **Nhóm thiết bị** có nút **Thêm nhóm**. Khi mở, người dùng nhập tên nhóm và mã nhóm 2–5 ký tự chữ không dấu/số; bấm **Lưu nhóm và chọn** để lưu và tự chọn nhóm vừa tạo cho thiết bị đang nhập.
@@ -597,8 +595,7 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 
 **Rà soát schema IndexedDB hiện tại (src/db.ts):**- Database: baotri-local-v1.
 - Các store: assets, inventory, tasks, logs, movements, syncQueue, checklistTemplates, checklistVersions, checklistResults.
-- Ngoài ra danh mục nhóm/loại thiết bị tự tạo đang nằm trong localStorage key baotri-custom-asset-categories; các cài đặt giao diện khác cũng có localStorage riêng.
-- Phải rà soát tiếp toàn bộ các hàm đọc/ghi và dữ liệu ảnh trước khi chốt schema cloud. Không bỏ qua dữ liệu liên kết từ logs tới task/checklist result, quan hệ template-version-result, và liên kết vật tư/thiết bị.
+- Ngoài ra danh mục nhóm/loại thiết bị tự tạo đang nằm trong localStorage key baotri-custom-asset-categories; các cài đặt giao diện khác cũng có localStorage riêng.- Phải rà soát tiếp toàn bộ các hàm đọc/ghi và dữ liệu ảnh trước khi chốt schema cloud. Không bỏ qua dữ liệu liên kết từ logs tới task/checklist result, quan hệ template-version-result, và liên kết vật tư/thiết bị.
 
 **Phương án chuyển dữ liệu bắt buộc:**
 1. Tạo chức năng xuất backup đầy đủ từ trình duyệt hiện tại, gồm tất cả store IndexedDB và danh mục custom localStorage; dữ liệu backup có phiên bản định dạng và thời điểm xuất.
@@ -798,7 +795,6 @@ Hàm `seed()` trong `App.tsx` chạy khi workspace mount và hiện có thể:
 
 
 ## 16/11/2026 – Điều chỉnh lộ trình: đồng bộ cloud trước với một tài khoản
-
 Người dùng xác nhận chọn phương án triển khai theo từng giai đoạn: **trước mắt chỉ sử dụng một tài khoản Auth của chính người dùng, nhưng vẫn xây dựng đồng bộ dữ liệu nghiệp vụ giữa máy tính và điện thoại qua Supabase**. Không cần chờ hoàn thiện multi-user/multi-tenant mới làm đồng bộ.
 
 ### Phạm vi giai đoạn hiện tại
@@ -976,3 +972,10 @@ Người dùng xác nhận đồng ý đưa cả dữ liệu thử nghiệm đan
 - Đã đối chiếu các union type trạng thái thiết bị/công việc, chu kỳ kế hoạch, hình thức thực hiện và kết quả Checklist với CHECK constraint trong migration.
 - Chưa xác minh đầy đủ nghiệp vụ ghi movement trong UI; CHECK quantity > 0 đang giả định quantity là trị tuyệt đối dương. Cần review nếu Điều chỉnh có thể biểu diễn số âm.
 - Commit cập nhật Migration 002 theo mapping danh mục: 1a8755782297c39261a628d2c3993d3424f968ed. Commit cập nhật tài liệu thiết kế: 03cc12adb23b617fbb5ad9864bcd987930998b35.
+
+### Người dùng duyệt Migration 002 cho môi trường Test (17/11/2026)
+- Người dùng đã xác nhận duyệt bản nháp Migration 002 với phạm vi triển khai chỉ trên BAOTRI-Mini-Test; không được áp dụng trên BAOTRI-Mini production.
+- Đã kiểm tra Migration 001 cung cấp set_updated_at(), is_org_member(uuid), has_org_role(uuid,text); role helper kiểm tra membership active và organization active. Các helper phù hợp với các tham chiếu trong Migration 002.
+- Đã tạo script kiểm tra chỉ đọc: supabase/tests/20261117000200_business_schema_smoke_test.sql (commit 144299085e4c424d0b725b61ad830203dbcbde25). Script kiểm tra đủ 11 bảng, RLS/policies, quyền anon, quyền helper, cấm cập nhật số tồn trực tiếp, cấm insert movement trực tiếp và tính append-only của Checklist result/maintenance log.
+- Trạng thái thực thi: chưa chạy Migration 002 và chưa chạy smoke test. Môi trường hiện tại không có kết nối/công cụ thực thi SQL trực tiếp tới Supabase; cần người dùng chạy trong SQL Editor của BAOTRI-Mini-Test hoặc cung cấp kết nối thực thi được cấp quyền. Không yêu cầu gửi service-role key hoặc mật khẩu.
+- Trước khi chạy: mở đúng project BAOTRI-Mini-Test (ref oyzhxgzltpdebpymuicb), xác nhận Migration 001 đã có trong lịch sử migration, chạy nội dung Migration 002; nếu thành công mới chạy smoke test. Nếu lỗi, dừng, gửi nguyên văn lỗi để rà soát; không chạy tiếp hoặc thử trên production.
