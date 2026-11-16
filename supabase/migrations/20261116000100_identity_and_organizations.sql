@@ -28,8 +28,7 @@ create table public.organizations (
   updated_at timestamptz not null default now(),
   constraint organizations_name_not_blank check (char_length(btrim(name)) > 0),
   constraint organizations_name_length check (char_length(name) <= 160),
-  constraint organizations_status_check check (status in ('active', 'suspended')),
-  constraint organizations_id_id_unique unique (id)
+  constraint organizations_status_check check (status in ('active', 'suspended'))
 );
 
 create table public.organization_members (
