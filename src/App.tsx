@@ -657,8 +657,297 @@ function AssetDetailModal({value,logs,close,edit,addLog}:any){
   </Modal>
 }
 
+// Bộ Checklist nền theo đúng nhóm thiết bị. Mỗi thiết bị được tạo bản riêng để người dùng tùy chỉnh.
+function buildDefaultChecklist(asset: Asset): ChecklistTemplateItem[] {
+  const category = asset.category || ''
+  const common = [
+    'Kiểm tra vệ sinh bên ngoài, bụi bẩn và tình trạng tổng thể',
+    'Kiểm tra nhãn thiết bị, cảnh báo và thông tin nhận diện',
+    'Kiểm tra tiếng ồn, rung động hoặc dấu hiệu bất thường khi vận hành',
+    'Kiểm tra rò rỉ, phát nhiệt, mùi khét hoặc dấu hiệu hư hỏng',
+    'Kiểm tra khu vực xung quanh, lối tiếp cận và điều kiện an toàn'
+  ]
+  const byCategory: Record<string, string[]> = {
+    'Động cơ điện': [
+      'Kiểm tra thân máy, chân đế, bulông và khớp nối',
+      'Kiểm tra tiếng ồn, rung động và nhiệt độ ổ bi',
+      'Kiểm tra quạt làm mát, nắp che và đường thông gió',
+      'Kiểm tra hộp cực, đầu cos, dây tiếp địa và độ chắc chắn đầu nối',
+      'Đo điện áp ba pha và kiểm tra độ cân bằng pha',
+      'Đo dòng điện ba pha khi động cơ mang tải',
+      'Kiểm tra cách điện cuộn dây theo quy trình an toàn phù hợp',
+      'Kiểm tra chiều quay, tốc độ và tình trạng tải',
+      'Kiểm tra khớp nối, puly, dây đai hoặc cơ cấu truyền động',
+      'Ghi nhận nhiệt độ ổ bi và thông số vận hành'
+    ],
+    'Máy bơm': [
+      'Kiểm tra thân bơm, chân đế, bulông và khớp nối',
+      'Kiểm tra rò rỉ tại phớt cơ khí, gioăng và mặt bích',
+      'Kiểm tra áp suất hút và áp suất đẩy',
+      'Kiểm tra lưu lượng hoặc khả năng cấp/thoát nước',
+      'Kiểm tra tiếng ồn, rung động và nhiệt độ ổ bi',
+      'Kiểm tra động cơ, dòng điện và chiều quay',
+      'Kiểm tra van hút, van đẩy và van một chiều',
+      'Kiểm tra lọc rác, đường ống và tình trạng tắc nghẽn',
+      'Kiểm tra mồi bơm, mức nước và nguy cơ chạy khô',
+      'Kiểm tra chế độ chạy luân phiên/dự phòng nếu có'
+    ],
+    'Máy nén khí': [
+      'Kiểm tra mức dầu và tình trạng dầu bôi trơn',
+      'Kiểm tra rò rỉ khí, dầu tại đầu nối và đường ống',
+      'Kiểm tra áp suất khởi động, áp suất tải và áp suất ngắt',
+      'Kiểm tra nhiệt độ đầu nén và nhiệt độ dầu',
+      'Kiểm tra dòng điện động cơ và tình trạng tải',
+      'Kiểm tra lọc hút gió và cảnh báo chênh áp lọc',
+      'Kiểm tra bộ tách dầu, đường hồi dầu và mức tiêu hao dầu',
+      'Xả nước ngưng tại bình chứa và bộ lọc',
+      'Kiểm tra dây đai/khớp nối, tiếng ồn và rung động',
+      'Kiểm tra van an toàn, nút dừng khẩn và cảnh báo lỗi',
+      'Ghi nhận tổng giờ chạy và giờ chạy có tải'
+    ],
+    'Máy sấy khí': [
+      'Kiểm tra áp suất khí vào/ra và chênh áp',
+      'Kiểm tra nhiệt độ điểm sương hoặc chỉ thị độ ẩm',
+      'Kiểm tra nhiệt độ dàn nóng/dàn lạnh nếu là máy sấy lạnh',
+      'Kiểm tra quạt giải nhiệt và vệ sinh dàn trao đổi nhiệt',
+      'Kiểm tra bộ xả nước ngưng tự động',
+      'Kiểm tra rò rỉ khí, tiếng ồn và rung động',
+      'Kiểm tra cảnh báo, đèn báo và chế độ vận hành'
+    ],
+    'Tủ điện': [
+      'Kiểm tra vỏ tủ, cửa tủ, khóa và gioăng chống bụi',
+      'Kiểm tra dấu hiệu ẩm, bụi, côn trùng và nước xâm nhập',
+      'Kiểm tra đèn báo pha, đồng hồ và màn hình hiển thị',
+      'Kiểm tra điện áp các pha và điện áp điều khiển',
+      'Kiểm tra dòng tải các pha và tình trạng mất cân bằng',
+      'Kiểm tra nhiệt độ bất thường tại aptomat, contactor và đầu nối',
+      'Kiểm tra tiếng kêu, rung và mùi khét của thiết bị đóng cắt',
+      'Kiểm tra dây tiếp địa, thanh cái và đầu cos bằng quan sát an toàn',
+      'Kiểm tra quạt lọc gió, bộ sấy tủ và thông gió',
+      'Kiểm tra sơ đồ điện, nhãn mạch và cảnh báo an toàn'
+    ],
+    'Tủ điện tổng': [
+      'Kiểm tra tình trạng tổng thể tủ và khu vực đặt tủ',
+      'Kiểm tra máy cắt tổng, cơ cấu đóng cắt và chỉ thị trạng thái',
+      'Ghi nhận điện áp các pha và điện áp dây',
+      'Ghi nhận dòng điện từng pha và dòng trung tính nếu có',
+      'Kiểm tra nhiệt bất thường tại thanh cái, đầu cáp và máy cắt',
+      'Kiểm tra hệ thống đo đếm, công tơ và hệ số công suất',
+      'Kiểm tra tiếp địa, liên động và che chắn phần mang điện',
+      'Kiểm tra thông gió, nhiệt độ và độ ẩm phòng điện',
+      'Đối chiếu cảnh báo/rơ le bảo vệ và nhật ký sự cố'
+    ],
+    'Tủ điện phân phối': [
+      'Kiểm tra vỏ tủ, cửa, khóa và sơ đồ phân phối',
+      'Kiểm tra trạng thái aptomat nhánh và nhãn phụ tải',
+      'Ghi nhận dòng tải các nhánh quan trọng',
+      'Kiểm tra điểm phát nhiệt bất thường tại đầu nối',
+      'Kiểm tra dấu hiệu quá tải, nhảy aptomat hoặc cháy sém',
+      'Kiểm tra dây trung tính, dây tiếp địa và thanh cái',
+      'Kiểm tra độ kín, bụi, ẩm và thông gió trong tủ'
+    ],
+    'Tủ điều khiển': [
+      'Kiểm tra nguồn điều khiển và nguồn dự phòng nếu có',
+      'Kiểm tra PLC, HMI, đèn báo và trạng thái lỗi',
+      'Kiểm tra contactor, relay trung gian và rơ le nhiệt',
+      'Kiểm tra cầu đấu, dây tín hiệu và đánh số dây',
+      'Kiểm tra cảm biến, công tắc hành trình và tín hiệu phản hồi',
+      'Thử nút Start/Stop và chế độ Auto/Manual theo quy trình',
+      'Kiểm tra liên động, dừng khẩn và các chức năng bảo vệ',
+      'Kiểm tra quạt tủ, lọc bụi và nhiệt độ bên trong'
+    ],
+    'Biến tần': [
+      'Kiểm tra mã lỗi hiện tại và lịch sử lỗi',
+      'Ghi nhận tần số đặt, tần số đầu ra và dòng điện',
+      'Kiểm tra điện áp nguồn vào và điện áp DC bus theo hướng dẫn hãng',
+      'Kiểm tra nhiệt độ biến tần và quạt làm mát',
+      'Kiểm tra bụi bẩn, khe thông gió và tụ điện có dấu hiệu bất thường',
+      'Kiểm tra dây động lực, dây tiếp địa và đầu nối',
+      'Kiểm tra dây điều khiển, tín hiệu analog và truyền thông',
+      'Thử lệnh chạy/dừng và tín hiệu liên động ở chế độ được phép',
+      'Đối chiếu thông số cài đặt, thời gian tăng/giảm tốc và giới hạn bảo vệ'
+    ],
+    'UPS': [
+      'Kiểm tra trạng thái UPS, chế độ hoạt động và cảnh báo',
+      'Ghi nhận điện áp/tần số đầu vào và đầu ra',
+      'Ghi nhận tải phần trăm và công suất tải',
+      'Kiểm tra tình trạng ắc quy, ngày thay và cảnh báo pin',
+      'Kiểm tra điện áp chuỗi ắc quy theo quy trình của hãng',
+      'Kiểm tra quạt làm mát, nhiệt độ và thông gió',
+      'Kiểm tra chế độ bypass và khả năng chuyển nguồn theo kế hoạch thử',
+      'Kiểm tra nhật ký sự kiện và thời gian lưu điện ước tính'
+    ],
+    'Máy phát điện': [
+      'Kiểm tra mức nhiên liệu, dầu bôi trơn và nước làm mát',
+      'Kiểm tra rò rỉ nhiên liệu, dầu và nước làm mát',
+      'Kiểm tra điện áp ắc quy khởi động và bộ sạc',
+      'Kiểm tra mức nước làm mát, dây đai và két nước',
+      'Kiểm tra tình trạng lọc gió, lọc dầu và lọc nhiên liệu',
+      'Chạy thử không tải theo thời lượng quy định',
+      'Ghi nhận điện áp, tần số và áp suất dầu khi chạy',
+      'Kiểm tra bộ điều tốc, bộ điều khiển và cảnh báo',
+      'Kiểm tra ATS/chế độ Auto và tín hiệu sẵn sàng',
+      'Kiểm tra khí xả, giảm thanh, thông gió và nút dừng khẩn',
+      'Ghi nhận giờ chạy và mức nhiên liệu sau thử'
+    ],
+    'Máy biến áp': [
+      'Kiểm tra mức dầu, rò rỉ dầu và tình trạng bình dầu phụ nếu có',
+      'Kiểm tra nhiệt độ dầu/cuộn dây và chỉ thị nhiệt',
+      'Kiểm tra sứ cách điện, đầu cáp và dấu hiệu phóng điện',
+      'Kiểm tra tiếng ù, rung và mùi bất thường',
+      'Ghi nhận điện áp, dòng điện và mức tải các pha',
+      'Kiểm tra tiếp địa vỏ máy và chống sét liên quan',
+      'Kiểm tra quạt/bơm làm mát và bộ điều khiển nhiệt',
+      'Kiểm tra khu vực đặt máy, thông gió và biển cảnh báo'
+    ],
+    'Máy phát điện dự phòng': [
+      'Kiểm tra mức nhiên liệu, dầu bôi trơn và nước làm mát',
+      'Kiểm tra ắc quy khởi động và bộ sạc',
+      'Kiểm tra rò rỉ và tình trạng đường ống',
+      'Chạy thử và ghi nhận điện áp, tần số, áp suất dầu',
+      'Kiểm tra bộ điều khiển, cảnh báo và ATS',
+      'Kiểm tra khí xả, thông gió và nút dừng khẩn'
+    ],
+    'Chiller': [
+      'Ghi nhận nhiệt độ nước lạnh vào/ra',
+      'Ghi nhận nhiệt độ nước giải nhiệt vào/ra nếu có',
+      'Ghi nhận áp suất hút/đẩy và thông số môi chất theo màn hình máy',
+      'Kiểm tra dòng điện máy nén và phần trăm tải',
+      'Kiểm tra lưu lượng nước, chênh áp và tình trạng bơm',
+      'Kiểm tra rò rỉ nước/môi chất và dấu hiệu đóng băng',
+      'Kiểm tra dàn trao đổi nhiệt và vệ sinh bề mặt',
+      'Kiểm tra quạt, bơm, van và cơ cấu chấp hành',
+      'Kiểm tra cảnh báo, lịch sử lỗi và liên động bảo vệ',
+      'Ghi nhận nhiệt độ môi trường/phòng máy và tình trạng thông gió'
+    ],
+    'Kho lạnh': [
+      'Ghi nhận nhiệt độ hiển thị và nhiệt độ thực tế theo quy định',
+      'Kiểm tra chênh lệch nhiệt độ, thời gian kéo nhiệt và cảnh báo',
+      'Kiểm tra cửa kho, gioăng cửa và tình trạng đóng kín',
+      'Kiểm tra lớp cách nhiệt, trần, vách và nền kho',
+      'Kiểm tra dàn lạnh, quạt dàn lạnh và tình trạng đóng tuyết',
+      'Kiểm tra dàn nóng, quạt giải nhiệt và vệ sinh',
+      'Kiểm tra rò rỉ nước ngưng và đường thoát nước',
+      'Kiểm tra áp suất/nhiệt độ hệ thống lạnh theo thông số máy',
+      'Kiểm tra chuông báo, mở cửa khẩn cấp và cảnh báo nhiệt độ',
+      'Ghi nhận tình trạng hàng hóa và lối lưu thông gió'
+    ],
+    'Điều hòa thông gió': [
+      'Kiểm tra nhiệt độ gió cấp và gió hồi',
+      'Kiểm tra lọc gió, vệ sinh và chênh áp lọc',
+      'Kiểm tra dàn trao đổi nhiệt và khay nước ngưng',
+      'Kiểm tra quạt, dây đai, ổ bi và độ rung',
+      'Kiểm tra động cơ, dòng điện và chế độ chạy',
+      'Kiểm tra van nước lạnh/van gas và cơ cấu điều khiển',
+      'Kiểm tra rò rỉ nước, tắc đường thoát nước ngưng',
+      'Kiểm tra cảm biến nhiệt độ, thermostat và tín hiệu BMS',
+      'Kiểm tra damper, cửa gió và lưu lượng gió',
+      'Kiểm tra tiếng ồn và tình trạng cách nhiệt đường ống'
+    ],
+    'Quạt công nghiệp': [
+      'Kiểm tra cánh quạt, lồng bảo vệ và vỏ quạt',
+      'Kiểm tra chân đế, bulông, khớp nối và độ chắc chắn',
+      'Kiểm tra tiếng ồn, rung động và độ đồng tâm',
+      'Kiểm tra ổ bi, nhiệt độ gối đỡ và bôi trơn',
+      'Kiểm tra dây đai/puly hoặc khớp nối truyền động',
+      'Kiểm tra động cơ, dòng điện và chiều quay',
+      'Kiểm tra cửa gió, damper và tình trạng tắc nghẽn',
+      'Kiểm tra lưu lượng gió và tình trạng hút/cấp',
+      'Kiểm tra lưới chắn, tiếp địa và thiết bị bảo vệ'
+    ],
+    'Tháp giải nhiệt': [
+      'Kiểm tra mức nước bể và tình trạng cấp nước bổ sung',
+      'Kiểm tra quạt, cánh quạt, hộp giảm tốc và động cơ',
+      'Kiểm tra rung động, tiếng ồn và nhiệt độ ổ bi',
+      'Kiểm tra dây đai/khớp nối và bulông liên kết',
+      'Kiểm tra vòi phun, tấm tản nhiệt và phân phối nước',
+      'Kiểm tra bơm tuần hoàn, van và đường ống',
+      'Kiểm tra xả đáy, cáu cặn, rêu và chất lượng nước theo quy định',
+      'Ghi nhận nhiệt độ nước vào/ra'
+    ],
+    'Nồi hơi': [
+      'Kiểm tra áp suất làm việc và đồng hồ áp suất',
+      'Kiểm tra mức nước và thiết bị báo/cắt mức thấp',
+      'Kiểm tra tình trạng đầu đốt và ngọn lửa qua ô quan sát',
+      'Kiểm tra rò rỉ nhiên liệu, nước và hơi',
+      'Kiểm tra van an toàn, van xả và đường ống',
+      'Kiểm tra bơm cấp nước và hệ thống xử lý nước',
+      'Kiểm tra cảnh báo, liên động và nút dừng khẩn',
+      'Ghi nhận nhiệt độ, áp suất và thông số vận hành'
+    ],
+    'Phòng cháy chữa cháy': [
+      'Kiểm tra trạng thái tủ điều khiển và nguồn điện chính/dự phòng',
+      'Kiểm tra áp suất hệ thống và trạng thái van chính',
+      'Kiểm tra bơm chính, bơm bù áp và bơm dự phòng',
+      'Kiểm tra chế độ Auto/Manual và tín hiệu báo chạy',
+      'Kiểm tra công tắc dòng chảy, công tắc áp suất và tín hiệu giám sát',
+      'Kiểm tra bình chữa cháy, niêm phong và hạn kiểm định theo kế hoạch',
+      'Kiểm tra lối tiếp cận, biển báo và tình trạng đầu phun/họng nước',
+      'Ghi nhận sự cố/cảnh báo trên tủ trung tâm'
+    ],
+    'Thang máy': [
+      'Kiểm tra trạng thái hoạt động và mã lỗi bộ điều khiển',
+      'Kiểm tra cửa tầng, cửa cabin và cảm biến an toàn',
+      'Kiểm tra nút gọi tầng, bảng hiển thị và đèn chiếu sáng',
+      'Kiểm tra quạt thông gió và liên lạc khẩn cấp',
+      'Kiểm tra tiếng ồn, rung và độ êm khi vận hành',
+      'Kiểm tra cứu hộ tự động/nguồn dự phòng theo quy trình',
+      'Kiểm tra phòng máy, tủ điện và dấu hiệu bất thường',
+      'Ghi nhận tình trạng kiểm định và lịch bảo dưỡng đơn vị chuyên môn'
+    ],
+    'Băng tải': [
+      'Kiểm tra dây băng, mối nối và tình trạng lệch băng',
+      'Kiểm tra con lăn, tang chủ động/bị động và ổ bi',
+      'Kiểm tra động cơ, hộp giảm tốc và khớp nối',
+      'Kiểm tra dây đai/xích truyền động và độ căng',
+      'Kiểm tra cơ cấu căng băng và gạt liệu',
+      'Kiểm tra công tắc lệch băng, dây giật dừng khẩn',
+      'Kiểm tra tiếng ồn, rung và nhiệt độ ổ bi',
+      'Kiểm tra che chắn an toàn và vệ sinh khu vực'
+    ]
+  }
+  let labels = byCategory[category]
+  if (!labels && category.toLowerCase().includes('quạt')) labels = byCategory['Quạt công nghiệp']
+  if (!labels && category.toLowerCase().includes('điều hòa')) labels = byCategory['Điều hòa thông gió']
+  if (!labels && category.toLowerCase().includes('tủ điện')) labels = byCategory['Tủ điện']
+  if (!labels && category.toLowerCase().includes('máy bơm')) labels = byCategory['Máy bơm']
+  if (!labels && category.toLowerCase().includes('máy nén')) labels = byCategory['Máy nén khí']
+  if (!labels) labels = [...common, 'Kiểm tra nguồn cấp và thông số vận hành theo nhãn thiết bị', 'Kiểm tra cơ cấu bảo vệ, liên động và nút dừng khẩn', 'Ghi nhận thông số vận hành và hiện tượng bất thường']
+  return labels.map((label, order) => ({
+    id: uid(), label, description: 'Đánh giá theo hướng dẫn nhà sản xuất và quy trình an toàn tại cơ sở.',
+    answerType: 'pass-fail-na', required: true, order
+  }))
+}
+
+async function ensureDefaultChecklist(asset: Asset) {
+  return db.transaction('rw', db.checklistTemplates, db.checklistVersions, async () => {
+    const existing = await db.checklistTemplates.where('assetId').equals(asset.id).first()
+    if (existing) return null
+    const timestamp = now()
+    const templateId = uid()
+    const title = 'Checklist bảo trì – ' + (asset.category || 'Thiết bị')
+    const description = 'Biểu mẫu nền tự động theo nhóm thiết bị. Admin có thể bổ sung, xóa hoặc chỉnh sửa hạng mục theo cấu hình thực tế.'
+    const items = buildDefaultChecklist(asset)
+    await db.checklistTemplates.add({
+      id: templateId, assetId: asset.id, title, description, currentVersion: 1,
+      active: true, createdAt: timestamp, updatedAt: timestamp
+    })
+    await db.checklistVersions.add({
+      id: uid(), templateId, assetId: asset.id, version: 1, title, description, items, createdAt: timestamp
+    })
+    return templateId
+  })
+}
+
 function AssetChecklist({asset}:{asset:Asset}) {
   const template = useLiveQuery(() => db.checklistTemplates.where('assetId').equals(asset.id).first(), [asset.id])
+  useEffect(() => {
+    let active = true
+    void ensureDefaultChecklist(asset).then(async templateId => {
+      if (active && templateId) await queueChange('checklistTemplates', templateId)
+    }).catch(error => console.error('Không thể tạo Checklist mẫu:', error))
+    return () => { active = false }
+  }, [asset.id])
   const versions = useLiveQuery(() => template ? db.checklistVersions.where('templateId').equals(template.id).toArray() : Promise.resolve([]), [template?.id])
   const results = useLiveQuery(() => db.checklistResults.where('assetId').equals(asset.id).toArray(), [asset.id]) ?? []
   const [builderOpen,setBuilderOpen] = useState(false)
@@ -721,7 +1010,7 @@ function AssetChecklist({asset}:{asset:Asset}) {
   }
   return <section className="asset-maintenance-history">
     <div className="panel-head"><div><h3>Checklist thiết bị</h3><p>{template?('Biểu mẫu riêng · Phiên bản '+template.currentVersion+' · '+orderedResults.length+' lần thực hiện'):'Thiết bị chưa có biểu mẫu Checklist riêng'}</p></div>
-      <div className="asset-photo-actions"><button type="button" className="soft-btn" onClick={openBuilder}>{template?'Sửa biểu mẫu':'Tạo biểu mẫu'}</button><button type="button" className="primary-btn" disabled={!template} onClick={startRun}>Thực hiện Checklist</button></div>
+      <div className="asset-photo-actions"><button type="button" className="soft-btn" onClick={openBuilder}>{template?'Sửa biểu mẫu':'Tạo biểu mẫu'}</button><button type="button" className="primary-btn" disabled={!template || !currentVersion} onClick={startRun}>Thực hiện Checklist</button></div>
     </div>
     {template&&currentVersion&&<div className="maintenance-history-list"><b>{currentVersion.title}</b>{currentVersion.description&&<p>{currentVersion.description}</p>}{currentVersion.items.map((item,index)=><article key={item.id}><time>{index+1}</time><div><b>{item.label}</b>{item.description&&<small>{item.description}</small>}</div></article>)}</div>}
     {orderedResults.length>0&&<div className="maintenance-history-list"><b>Lịch sử thực hiện</b>{orderedResults.map(entry=><article key={entry.id}><time>{new Date(entry.performedAt).toLocaleString('vi-VN')}</time><div><b>{entry.templateTitle} · v{entry.templateVersion}</b><small>Người thực hiện: {entry.performedBy} · Kết quả: {entry.result}</small>{entry.notes&&<small>Ghi chú: {entry.notes}</small>}<details><summary>Xem chi tiết phiếu</summary>{entry.items.map((item,index)=><p key={item.templateItemId}>{index+1}. {item.label}: <b>{item.answer||'—'}</b>{item.note?' · '+item.note:''}</p>)}</details></div></article>)}</div>}
