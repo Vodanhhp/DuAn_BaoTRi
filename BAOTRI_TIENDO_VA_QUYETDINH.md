@@ -686,3 +686,37 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 
 - Người dùng tiếp tục kiểm tra trên giao diện local: email tài khoản hiển thị đúng; đăng xuất đưa về màn hình đăng nhập và đăng nhập lại thành công. Xác nhận các thao tác này hoạt động trong lần kiểm thử đầu tiên.
 - Chưa có kiểm thử riêng về session sau khi đóng/mở trình duyệt hoặc hết hạn token; chưa kiểm thử các chức năng nghiệp vụ với dữ liệu cloud vì chưa triển khai schema/RLS.
+
+
+## 16/11/2026 – Chốt kiến trúc triển khai Supabase multi-tenant (quyết định mới nhất)
+
+Người dùng xác nhận chọn **Phương án 2: triển khai nhiều tài khoản, nhiều tổ chức, vai trò Admin/User và cách ly dữ liệu doanh nghiệp ngay từ đầu**. Quyết định này thay thế định hướng giai đoạn đầu chỉ phục vụ một người dùng cá nhân trong các mục cũ; các ghi chú lịch sử trước đó được giữ để truy vết, nhưng khi triển khai tiếp phải ưu tiên quyết định mới này.
+
+### Nguyên tắc kiến trúc
+- Một Supabase project/database phục vụ nhiều tổ chức; dữ liệu nghiệp vụ của mỗi tổ chức phải được gắn `organization_id` và cách ly bằng PostgreSQL RLS ở backend/database.
+- Có bảng hồ sơ người dùng liên kết `auth.users`, bảng `organizations`, bảng membership nối user–organization–role. Một tài khoản có thể là thành viên của một hoặc nhiều tổ chức.
+- Vai trò ban đầu: Admin và User. Quyền cụ thể phải được định nghĩa theo từng nghiệp vụ; không chỉ dựa vào việc ẩn/hiện nút trên frontend.
+- Admin quản lý thành viên và dữ liệu trong tổ chức mình theo quyền; User chỉ thực hiện các thao tác được policy/role cho phép.
+- Không cho client tự gửi role hoặc organization_id để tự nâng quyền. Khởi tạo tổ chức và Admin đầu tiên phải có quy trình được kiểm soát an toàn; không tự cấp Admin cho mọi tài khoản đăng ký.
+- Danh tính người thực hiện Checklist lấy từ Supabase Auth/session và được xác thực ở backend; lưu user ID cùng snapshot tên người thực hiện tại thời điểm ghi nhận. Không cho người dùng tự chọn/giả mạo người thực hiện.
+- Các bảng nghiệp vụ, quan hệ khóa ngoại, unique constraint và policy RLS phải được thiết kế đồng bộ; kiểm thử chéo ít nhất hai tổ chức và các vai trò trước khi đưa dữ liệu thật lên cloud.
+
+### Thứ tự triển khai bắt buộc
+1. Rà soát đầy đủ schema IndexedDB/localStorage và các quan hệ dữ liệu hiện tại.
+2. Thiết kế ERD/schema PostgreSQL, organization membership, role/permission, foreign key, index và RLS.
+3. Viết migration SQL có thể quản lý phiên bản; rà soát chính sách SELECT/INSERT/UPDATE/DELETE và kiểm tra không thể truy cập chéo tổ chức.
+4. Tạo chức năng backup đầy đủ dữ liệu local trước khi migrate, gồm tất cả IndexedDB stores, danh mục custom localStorage và dữ liệu tệp/ảnh liên quan nếu có.
+5. Xây dựng import có kiểm tra, giữ nguyên ID/quan hệ/version lịch sử, chống nhập trùng và có phương án phục hồi.
+6. Chuyển từng phân hệ sang Supabase theo thứ tự đã thống nhất; máy tính và điện thoại truy cập cùng nguồn dữ liệu cloud.
+7. Đối chiếu số lượng, ID, quan hệ tham chiếu, file/ảnh; kiểm thử đa tài khoản/đa tổ chức, sau đó mới xác nhận sẵn sàng chạy thật.
+
+### Giới hạn an toàn
+- Chưa có bảng nghiệp vụ cloud, RLS, migration dữ liệu hay đồng bộ nào được triển khai chỉ bởi việc chọn phương án này.
+- Hiện Supabase Auth đã đăng nhập được; dữ liệu thiết bị, kho, Checklist, bảo dưỡng/sửa chữa vẫn ở IndexedDB/localStorage trên từng trình duyệt.
+- Không xóa hoặc ghi đè dữ liệu local; không chạy import lên dữ liệu thật trước khi có backup và đối chiếu.
+- Không đưa service-role/secret key vào frontend, repository hoặc file tiến độ. Frontend chỉ dùng publishable key; RLS là bắt buộc.
+- Không mở đăng ký tự do hoặc cấp quyền Admin mặc định.
+- Tiếp tục làm trực tiếp trên nhánh `main`, không tạo branch/PR; bảo toàn chức năng hiện hữu.
+
+### Bước công việc kế tiếp
+Bắt đầu bằng rà soát chi tiết toàn bộ `src/db.ts`, các hàm đọc/ghi trong `src/App.tsx` và những nơi dùng localStorage để lập bản đồ dữ liệu/quan hệ. Sau đó đề xuất schema và ma trận quyền Admin/User để người dùng duyệt trước khi tạo migration SQL hoặc sửa code.
