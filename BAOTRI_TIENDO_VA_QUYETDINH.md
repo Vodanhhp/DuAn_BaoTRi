@@ -842,3 +842,25 @@ Người dùng xác nhận chọn phương án triển khai theo từng giai đo
 - Dữ liệu nghiệp vụ: vẫn ở IndexedDB/localStorage; chưa có bảng nghiệp vụ cloud, chưa import, chưa đồng bộ.
 - Bốn tài khoản Auth thử nghiệm: giữ nguyên, chưa cần thao tác thêm.
 - Bước tiếp theo: tiếp tục công việc hoàn thiện BAOTRI Mini theo thứ tự ưu tiên; khi bắt đầu triển khai đồng bộ, thiết kế schema và luồng cloud cho một tài khoản trước nhưng không phá vỡ khả năng mở rộng multi-tenant.
+
+
+## 16/11/2026 – Chốt trạng thái cuối buổi và điểm tiếp tục ngày mai
+
+### Xác nhận về phiên đăng nhập
+- Supabase client hiện đã cấu hình `persistSession: true`, `autoRefreshToken: true` và `detectSessionInUrl: true`.
+- Người dùng không phải đăng nhập lại mỗi lần mở ứng dụng hoặc mỗi lần sửa dữ liệu; trình duyệt sẽ khôi phục phiên đã lưu và tự làm mới token khi cần.
+- Mỗi trình duyệt/thiết bị có phiên đăng nhập riêng: máy tính đăng nhập một lần, điện thoại cũng cần đăng nhập lần đầu riêng. Đăng xuất, xóa dữ liệu trình duyệt hoặc mất phiên có thể khiến phải đăng nhập lại.
+- Đây mới là trạng thái của Supabase Auth. Dữ liệu nghiệp vụ vẫn đang lưu riêng trong IndexedDB/localStorage của từng trình duyệt; chưa đồng bộ giữa máy tính và điện thoại.
+
+### Trạng thái cuối buổi
+- Đã thống nhất bắt đầu triển khai đồng bộ cloud theo lộ trình một tài khoản Auth trước, giữ khả năng mở rộng multi-tenant về sau.
+- Chưa có thay đổi mã nguồn, chưa tạo migration mới, chưa chạy SQL trên Supabase project chính trong buổi trao đổi này.
+- File tiến độ chính thức tiếp tục là tài liệu này trên nhánh `main`; không tạo file tiến độ phụ.
+
+### Việc tiếp tục vào buổi làm việc kế tiếp
+1. Đọc lại toàn bộ tài liệu tiến độ và kiểm tra trạng thái mới nhất trên nhánh `main`.
+2. Rà soát schema/luồng nghiệp vụ đã kiểm kê, chốt schema cloud tối thiểu cho một tài khoản nhưng vẫn có `organization_id`, RLS và khả năng mở rộng tenant.
+3. Lập kế hoạch migration theo từng phần, bắt đầu trên project `BAOTRI-Mini-Test`; không chạy SQL trên project chính khi chưa review và xác nhận phạm vi.
+4. Thiết kế backup đầy đủ dữ liệu local trước khi viết import; tuyệt đối không tự xóa, ghi đè hoặc chuyển dữ liệu thật khi chưa có backup và đối chiếu.
+5. Chỉ sau khi chốt thiết kế mới bắt đầu sửa code theo từng phân hệ; giữ nguyên chức năng đang chạy ổn và cập nhật tài liệu này sau mỗi mốc.
+
