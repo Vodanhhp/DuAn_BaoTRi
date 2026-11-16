@@ -294,3 +294,11 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Cập nhật trực tiếp trên nhánh `main`: `src/App.tsx`, `src/db.ts`, `src/style.css`. Nâng IndexedDB lên schema v4 để bổ sung chỉ mục liên kết tùy chọn từ nhật ký sang phiếu Checklist; dữ liệu cũ được giữ nguyên.
 - **Chưa chạy build/test và chưa xác minh camera QR, lưu phiếu, liên kết sửa chữa hoặc bản in thực tế.** Cần đồng bộ main về máy, chạy `npm.cmd run build`, sau đó thử: mở hồ sơ từ danh mục (không thấy Checklist), quét QR (thấy Checklist), lưu phiếu, tạo phiếu sửa chữa từ kết quả Không đạt, kiểm tra lịch sử riêng và in A4.
 - Mẫu giấy vật lý cụ thể chưa được đính kèm trong cuộc trao đổi; bảng in hiện được chuẩn hóa theo cấu trúc hàng/cột nêu trên. Nếu cần khớp chính xác từng cột của biểu mẫu đang dùng tại đơn vị, cần đối chiếu ảnh/scan mẫu giấy gốc.
+
+
+### Điều chỉnh quyền xem lịch sử Checklist và căn lề in A4 (16/11/2026)
+- Sửa nguyên tắc truy cập: quét QR chỉ bắt buộc khi tạo mới/thực hiện Checklist hoặc chỉnh sửa biểu mẫu. Khi mở hồ sơ thiết bị bình thường, người dùng vẫn xem được lịch sử Checklist đã lưu, xem chi tiết và in lại từng phiếu mà không cần quét QR.
+- Thành phần Checklist luôn tải lịch sử theo mã thiết bị; chỉ khi có quyền truy cập từ luồng quét QR mới tự tạo mẫu mặc định và hiện nút Tạo/Sửa biểu mẫu, Thực hiện Checklist. Việc xem lịch sử không tự sinh biểu mẫu.
+- Sửa CSS in phiếu A4: gom quy tắc trang Checklist về lề trên 5mm, lề trái/phải 7mm, bỏ padding 8mm thừa của báo cáo, giảm khoảng cách tiêu đề/metadata và tránh cộng dồn lề trang với lề nội dung. Ẩn toàn bộ giao diện, chỉ in phiếu Checklist.
+- Cập nhật trực tiếp trên `main`: `src/App.tsx`, `src/style.css`, và file tiến độ này.
+- Chưa chạy build/test hoặc xem bản in thực tế; cần đồng bộ về máy, chạy `npm.cmd run build`, sau đó mở hồ sơ từ danh mục để in phiếu cũ không cần QR và kiểm tra lề trên A4.
