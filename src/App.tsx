@@ -651,7 +651,7 @@ function AssetDetailModal({value,logs,allowChecklist,createRepairFromChecklist,c
       <button type="button" className="primary-btn" onClick={addLog}><Wrench size={16}/> Ghi nhận bảo dưỡng / sửa chữa</button>
       <button type="button" className="primary-btn" onClick={edit}>Sửa hồ sơ</button>
     </div>
-    {allowChecklist&&<AssetChecklist asset={value} createRepairFromChecklist={createRepairFromChecklist}/>}
+    <AssetChecklist asset={value} allowActions={allowChecklist} createRepairFromChecklist={createRepairFromChecklist}/>
     <section className="asset-maintenance-history"><div className="panel-head"><div><h3>Lịch sử Bảo dưỡng – Sửa chữa</h3><p>{logs.length} lần ghi nhận công việc của thiết bị</p></div><button type="button" className="soft-btn" disabled={!logs.length} onClick={()=>print('history')}><Printer size={15}/> In lịch sử sửa chữa</button></div>
       {logs.length?<div className="maintenance-history-list">{logs.slice().sort((a:any,b:any)=>b.date.localeCompare(a.date)).map((entry:any)=><article key={entry.id}><time>{dateText(entry.date)}</time><div><b>{entry.kind}</b><p>{entry.description||'Không có mô tả'}</p>{entry.parts&&<small>Vật tư/phụ tùng: {entry.parts}</small>}{entry.readings&&<small>Thông số: {entry.readings}</small>}<small>Kết quả sau thực hiện: {entry.result||'Chưa đánh giá'}</small><small>Người thực hiện: {entry.performedBy||'—'}</small>{entry.checklistResultId&&<small>Liên kết từ phiếu Checklist</small>}</div></article>)}</div>:<p className="muted">Chưa có lịch sử. Hãy chọn “Ghi nhận bảo dưỡng / sửa chữa” sau khi thực hiện công việc.</p>}
     </section>
@@ -1023,15 +1023,16 @@ async function ensureDefaultChecklist(asset: Asset) {
   })
 }
 
-function AssetChecklist({asset,createRepairFromChecklist}:{asset:Asset;createRepairFromChecklist:(entry:ChecklistResult)=>void}) {
+function AssetChecklist({asset,allowActions,createRepairFromChecklist}:{asset:Asset;allowActions:boolean;createRepairFromChecklist:(entry:ChecklistResult)=>void}) {
   const template = useLiveQuery(() => db.checklistTemplates.where('assetId').equals(asset.id).first(), [asset.id])
   useEffect(() => {
     let active = true
+    if (!allowActions) return () => { active = false }
     void ensureDefaultChecklist(asset).then(async templateId => {
       if (active && templateId) await queueChange('checklistTemplates', templateId)
     }).catch(error => console.error('Không thể tạo Checklist mẫu:', error))
     return () => { active = false }
-  }, [asset.id])
+  }, [asset.id, allowActions])
   const versions = useLiveQuery(() => template ? db.checklistVersions.where('templateId').equals(template.id).toArray() : Promise.resolve([]), [template?.id])
   const results = useLiveQuery(() => db.checklistResults.where('assetId').equals(asset.id).toArray(), [asset.id]) ?? []
   const [builderOpen,setBuilderOpen] = useState(false)
@@ -1094,10 +1095,10 @@ function AssetChecklist({asset,createRepairFromChecklist}:{asset:Asset;createRep
     alert('Đã lưu phiếu Checklist. Kết quả được lưu thành một lần thực hiện riêng.')
   }
   return <section className="asset-maintenance-history">
-    <div className="panel-head"><div><h3>1. Bảo trì – Checklist</h3><p>{template?('Biểu mẫu riêng · Phiên bản '+template.currentVersion+' · '+orderedResults.length+' lần thực hiện'):'Thiết bị chưa có biểu mẫu Checklist riêng'}</p></div>
-      <div className="asset-photo-actions"><button type="button" className="soft-btn" onClick={openBuilder}>{template?'Sửa biểu mẫu':'Tạo biểu mẫu'}</button><button type="button" className="primary-btn" disabled={!template || !currentVersion} onClick={startRun}>Thực hiện Checklist</button></div>
+    <div className="panel-head"><div><h3>1. Bảo trì – Checklist</h3><p>{template?('Biểu mẫu riêng · Phiên bản '+template.currentVersion+' · '+orderedResults.length+' lần thực hiện'):(allowActions?'Thiết bị chưa có biểu mẫu Checklist riêng':'Lịch sử các phiếu Checklist đã lưu')}</p></div>
+      {allowActions&&<div className="asset-photo-actions"><button type="button" className="soft-btn" onClick={openBuilder}>{template?'Sửa biểu mẫu':'Tạo biểu mẫu'}</button><button type="button" className="primary-btn" disabled={!template || !currentVersion} onClick={startRun}>Thực hiện Checklist</button></div>}
     </div>
-    {template&&currentVersion&&<div className="maintenance-history-list"><b>{currentVersion.title}</b>{currentVersion.description&&<p>{currentVersion.description}</p>}{currentVersion.items.map((item,index)=><article key={item.id}><time>{index+1}</time><div><b>{item.label}</b>{item.description&&<small>{item.description}</small>}</div></article>)}</div>}
+    {allowActions&&template&&currentVersion&&<div className="maintenance-history-list"><b>{currentVersion.title}</b>{currentVersion.description&&<p>{currentVersion.description}</p>}{currentVersion.items.map((item,index)=><article key={item.id}><time>{index+1}</time><div><b>{item.label}</b>{item.description&&<small>{item.description}</small>}</div></article>)}</div>}
     <section className="checklist-results">
       <div className="panel-head"><div><b>Lịch sử Bảo trì – Checklist</b><p>{orderedResults.length} phiếu đã thực hiện · lưu riêng, không tính vào lịch sử sửa chữa</p></div></div>
       {orderedResults.length>0?<div className="maintenance-history-list">{orderedResults.map(entry=><article key={entry.id}><time>{new Date(entry.performedAt).toLocaleString('vi-VN')}</time><div><b>{entry.templateTitle} · v{entry.templateVersion}</b><small>Người thực hiện: {entry.performedBy} · Kết quả: {entry.result}</small>{entry.notes&&<small>Ghi chú: {entry.notes}</small>}<div className="checklist-result-actions"><button type="button" className="soft-btn" onClick={()=>{setPrintEntry(entry);window.setTimeout(()=>window.print(),180)}}><Printer size={14}/> In phiếu A4</button>{entry.result==='Không đạt'&&<button type="button" className="soft-btn" onClick={()=>createRepairFromChecklist(entry)}><Wrench size={14}/> Tạo phiếu Bảo dưỡng – Sửa chữa</button>}</div><details><summary>Xem chi tiết phiếu</summary>{entry.items.map((item,index)=><p key={item.templateItemId}>{index+1}. {item.label}: <b>{item.answer||'—'}</b>{item.note?' · '+item.note:''}</p>)}</details></div></article>)}</div>:<p className="muted">Chưa có phiếu Checklist nào. Sau khi nhấn “Thực hiện Checklist” và “Lưu phiếu kết quả”, phiếu sẽ xuất hiện tại đây.</p>}
@@ -1115,7 +1116,7 @@ function AssetChecklist({asset,createRepairFromChecklist}:{asset:Asset;createRep
       {printEntry.notes&&<p><b>Ghi chú chung:</b> {printEntry.notes}</p>}
       <div className="checklist-signatures"><div><b>Người thực hiện</b><small>(Ký, ghi rõ họ tên)</small></div><div><b>Người kiểm tra / xác nhận</b><small>(Ký, ghi rõ họ tên)</small></div></div>
     </div></div>}
-    {builderOpen&&<Modal title={template?'Chỉnh sửa biểu mẫu Checklist':'Tạo Checklist cho thiết bị'} close={()=>setBuilderOpen(false)}><form className="form-grid" onSubmit={saveTemplate}>
+    {allowActions&&builderOpen&&<Modal title={template?'Chỉnh sửa biểu mẫu Checklist':'Tạo Checklist cho thiết bị'} close={()=>setBuilderOpen(false)}><form className="form-grid" onSubmit={saveTemplate}>
       <div className="form-hint">Thiết bị: <b>{asset.code} – {asset.name}</b>. Biểu mẫu này chỉ thuộc thiết bị đang mở.</div>
       <Field label="Tên biểu mẫu *"><input required value={draftTitle} onChange={e=>setDraftTitle(e.target.value)}/></Field>
       <Field label="Mô tả"><textarea value={draftDescription} onChange={e=>setDraftDescription(e.target.value)}/></Field>
@@ -1124,7 +1125,7 @@ function AssetChecklist({asset,createRepairFromChecklist}:{asset:Asset;createRep
       <button type="button" className="soft-btn" onClick={addItem}><Plus size={16}/> Thêm hạng mục</button>
       <div className="modal-actions"><button type="button" className="soft-btn" onClick={()=>setBuilderOpen(false)}>Hủy</button><button className="primary-btn"><Check size={16}/> Lưu biểu mẫu</button></div>
     </form></Modal>}
-    {runOpen&&currentVersion&&<Modal title="Thực hiện Checklist" close={()=>setRunOpen(false)}><form className="form-grid" onSubmit={saveResult}>
+    {allowActions&&runOpen&&currentVersion&&<Modal title="Thực hiện Checklist" close={()=>setRunOpen(false)}><form className="form-grid" onSubmit={saveResult}>
       <div className="form-hint"><b>{asset.code} – {asset.name}</b><br/>{currentVersion.title} · Phiên bản {currentVersion.version}</div>
       <Field label="Người thực hiện"><input value={performedBy} onChange={e=>setPerformedBy(e.target.value)}/></Field>
       {currentVersion.items.map((item,index)=><div className="panel" key={item.id}><b>{index+1}. {item.label}{item.required?' *':''}</b>{item.description&&<small>{item.description}</small>}{item.answerType==='pass-fail-na'?<Field label="Kết quả"><select required={item.required} value={answers[item.id]??''} onChange={e=>setAnswers(a=>({...a,[item.id]:e.target.value}))}><option value="">-- Chọn kết quả --</option><option>Đạt</option><option>Không đạt</option><option>Không áp dụng</option></select></Field>:item.answerType==='yes-no'?<Field label="Kết quả"><select required={item.required} value={answers[item.id]??''} onChange={e=>setAnswers(a=>({...a,[item.id]:e.target.value}))}><option value="">-- Chọn --</option><option>Có</option><option>Không</option></select></Field>:<Field label="Giá trị ghi nhận"><input required={item.required} type={item.answerType==='number'?'number':'text'} value={answers[item.id]??''} onChange={e=>setAnswers(a=>({...a,[item.id]:e.target.value}))}/></Field>}<Field label="Ghi chú"><input value={itemNotes[item.id]??''} onChange={e=>setItemNotes(a=>({...a,[item.id]:e.target.value}))}/></Field></div>)}
