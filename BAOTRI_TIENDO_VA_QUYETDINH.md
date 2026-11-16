@@ -269,7 +269,7 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 
 ### Nâng cấp Checklist tự sinh mẫu theo loại thiết bị (16/11/2026)
 - Khi mở hồ sơ thiết bị chưa có Checklist, hệ thống tự tạo và lưu biểu mẫu nền phiên bản 1 theo nhóm thiết bị; mỗi thiết bị vẫn có biểu mẫu riêng, không dùng chung dữ liệu.
-- Bổ sung bộ tiêu chí kỹ thuật chuyên biệt cho các nhóm phổ biến: động cơ điện, máy bơm, máy nén khí, máy sấy khí, tủ điện (tổng/phân phối/điều khiển), biến tần, UPS, máy biến áp, máy phát điện, Chiller, kho lạnh, điều hòa thông gió, quạt, tháp giải nhiệt, nồi hơi, PCCC, thang máy và băng tải. Nhóm chưa có bộ riêng dùng bộ tiêu chí nền an toàn và có thể chỉnh sửa.
+- Bổ sung bộ tiêu chí kỹ thuật chuyên biệt cho các nhóm: động cơ điện, máy bơm, máy nén khí, máy sấy khí, bộ lọc khí nén, hệ thống khí nén, tủ điện (tổng/phân phối/điều khiển), ATS, tủ tụ bù, biến tần, UPS, máy biến áp, thiết bị đo lường, máy phát điện, Chiller, kho lạnh, điều hòa thông gió, quạt, tháp giải nhiệt, nồi hơi, nồi hấp, PCCC, thang máy, hộp giảm tốc, băng tải và thiết bị xưởng. Nhóm chưa có bộ riêng dùng bộ tiêu chí nền an toàn và có thể chỉnh sửa.
 - Mỗi mẫu tự sinh có sẵn các hạng mục bắt buộc theo dạng Đạt / Không đạt / Không áp dụng; Admin chỉ cần sửa, thêm hoặc bỏ hạng mục theo cấu hình thực tế, không phải tạo từ đầu.
 - Việc tạo mẫu được thực hiện trong transaction và kiểm tra biểu mẫu đã tồn tại trước khi thêm, tránh tạo trùng khi component khởi tạo lại. Không ghi đè biểu mẫu đã tùy chỉnh, không ảnh hưởng phiên bản và phiếu kết quả cũ.
 - Nút Thực hiện Checklist chỉ được kích hoạt khi biểu mẫu và phiên bản hiện hành đã sẵn sàng; bổ sung điều kiện kiểm tra phiên bản để tránh mở phiếu rỗng.
