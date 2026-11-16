@@ -172,6 +172,8 @@ create table public.checklist_template_versions (
     unique (organization_id, template_id, version),
   constraint checklist_template_versions_org_id_template_asset_unique
     unique (organization_id, id, template_id, asset_id),
+  constraint checklist_template_versions_full_reference_unique
+    unique (organization_id, id, template_id, asset_id, version),
   constraint checklist_template_versions_version_positive check (version > 0),
   constraint checklist_template_versions_items_array check (jsonb_typeof(items) = 'array'),
   constraint checklist_template_versions_template_asset_fk
@@ -211,8 +213,8 @@ create table public.checklist_results (
     foreign key (organization_id, template_id, asset_id)
     references public.checklist_templates (organization_id, id, asset_id) on delete restrict,
   constraint checklist_results_version_template_asset_fk
-    foreign key (organization_id, template_version_id, template_id, asset_id)
-    references public.checklist_template_versions (organization_id, id, template_id, asset_id)
+    foreign key (organization_id, template_version_id, template_id, asset_id, template_version)
+    references public.checklist_template_versions (organization_id, id, template_id, asset_id, version)
     on delete restrict
 );
 
@@ -417,8 +419,7 @@ for insert to authenticated with check (public.has_org_role(organization_id, 'ad
 create policy checklist_templates_update_admin on public.checklist_templates
 for update to authenticated using (public.has_org_role(organization_id, 'admin'))
 with check (public.has_org_role(organization_id, 'admin'));
-create policy checklist_templates_delete_admin on public.checklist_templates
-for delete to authenticated using (public.has_org_role(organization_id, 'admin'));
+-- No client DELETE policy: template/version history must be retained.
 
 -- Version rows are immutable from the client. Admin can append new versions.
 create policy checklist_template_versions_select_member on public.checklist_template_versions
@@ -492,10 +493,15 @@ to authenticated;
 
 grant insert, update on table
   public.assets,
-  public.inventory_items,
   public.maintenance_tasks,
   public.maintenance_plans
 to authenticated;
+
+-- Inventory quantity is intentionally excluded from direct client updates.
+-- A later reviewed RPC must update quantity and append its movement atomically.
+grant insert on table public.inventory_items to authenticated;
+grant update (code, name, item_group, unit, part_number, size, min_quantity, location, supplier, unit_price)
+  on table public.inventory_items to authenticated;
 
 grant delete on table
   public.assets,
@@ -504,13 +510,14 @@ grant delete on table
   public.maintenance_plans
 to authenticated;
 
-grant insert, update, delete on table public.checklist_templates to authenticated;
+grant insert, update on table public.checklist_templates to authenticated;
 grant insert on table
   public.checklist_template_versions,
   public.checklist_results,
-  public.maintenance_logs,
-  public.inventory_movements
+  public.maintenance_logs
 to authenticated;
+
+-- Direct movement INSERT is withheld until an atomic stock-movement RPC exists.
 
 grant insert, delete on table public.asset_images to authenticated;
 grant insert, update on table public.organization_settings to authenticated;
@@ -521,7 +528,7 @@ comment on table public.maintenance_logs is 'Append-only maintenance and repair 
 comment on table public.checklist_templates is 'One current Checklist template per asset; edits are represented by new version rows.';
 comment on table public.checklist_template_versions is 'Immutable Checklist template versions; items are stored as JSONB snapshots.';
 comment on table public.checklist_results is 'Immutable Checklist execution history; items are stored as JSONB snapshots.';
-comment on table public.inventory_movements is 'Append-only stock movement history. Balance updates require a future atomic RPC.';
+comment on table public.inventory_movements is 'Append-only stock movement history. Client INSERT is withheld until a future atomic stock-movement RPC is implemented.';
 comment on table public.asset_images is 'Metadata for objects stored separately in a private Supabase Storage bucket.';
 
 commit;
