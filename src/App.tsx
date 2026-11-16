@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import {
   Activity, Archive, BarChart3, Building2, CalendarDays, Check, ChevronRight, ClipboardList,
@@ -682,7 +682,7 @@ function AssetChecklist({asset}:{asset:Asset}) {
   }
   const addItem = () => setDraftItems(items=>[...items,{id:uid(),label:'',description:'',answerType:'pass-fail-na',required:true,order:items.length}])
   const updateItem = (id:string,patch:Partial<ChecklistTemplateItem>) => setDraftItems(items=>items.map(item=>item.id===id?{...item,...patch}:item))
-  const saveTemplate = async (event:React.FormEvent) => {
+  const saveTemplate = async (event:FormEvent) => {
     event.preventDefault()
     const cleanItems = draftItems.filter(item=>item.label.trim()).map((item,index)=>({...item,label:item.label.trim(),order:index}))
     if(!draftTitle.trim()) return alert('Nhập tên biểu mẫu Checklist')
