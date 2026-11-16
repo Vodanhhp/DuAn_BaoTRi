@@ -325,3 +325,19 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 4. Tiếp tục sửa trực tiếp trên main, không tạo branch hoặc Pull Request; bảo toàn chức năng đang hoạt động và dữ liệu hiện có.
 
 **Trạng thái trước khi bắt đầu:** mới chốt kiến trúc và ghi nhận kế hoạch. Chưa sửa mã nguồn cho Supabase/Auth/Profile/tenant; chưa tạo Supabase project; chưa có URL/key; chưa thay đổi nơi lưu dữ liệu. Ứng dụng hiện vẫn dùng IndexedDB cục bộ.
+
+### Mở rộng danh mục thiết bị và Checklist thông minh theo tên thiết bị (16/11/2026) – GHI NHẬN TRƯỚC KHI SỬA CODE
+**Mục tiêu:** khắc phục việc danh mục nhóm thiết bị quá hẹp (ví dụ chưa có máy hàn xung/công cụ điện), đồng thời làm Checklist mặc định phù hợp hơn với thiết bị thực tế của từng doanh nghiệp.
+
+**Phạm vi dự kiến:**
+- Rà soát và mở rộng danh mục nhóm theo các mảng: điện/điện tử; cơ khí/truyền động; công cụ và dụng cụ điện cầm tay; hàn/cắt; máy gia công; khí nén; lạnh/HVAC; nguồn điện; PCCC/an toàn; đo lường/điều khiển; thiết bị sản xuất và phụ trợ.
+- Bổ sung nhóm **Khác** để ghi nhận thiết bị đặc thù/chưa có nhóm riêng; vẫn phải cấp mã định danh hợp lệ, không làm lỗi tạo QR.
+- Rà soát luồng tạo Checklist mặc định: kết hợp nhóm đã chọn với từ khóa trong tên thiết bị; ưu tiên bộ tiêu chí chuyên biệt khi tên thể hiện rõ loại máy (ví dụ máy hàn xung, máy khoan, máy mài), đồng thời luôn có phần kiểm tra nền/an toàn phù hợp.
+- Hạng mục bắt buộc phải được đánh dấu rõ và không bị suy đoán bỏ qua; mục phụ thuộc cấu hình chỉ nên để Không áp dụng khi thiết bị không có chức năng đó. Người quản trị vẫn có thể tùy chỉnh biểu mẫu riêng của từng thiết bị; không ghi đè mẫu đã tạo, version cũ hoặc phiếu đã lưu.
+- Rà soát cảnh báo lệch giữa tên và nhóm; không tự ý đổi nhóm/mã thiết bị khi người dùng nhập tên.
+
+**File dự kiến tác động:** `src/App.tsx`; cập nhật file tiến độ này sau khi hoàn tất. Chưa dự kiến đổi schema IndexedDB vì trường category hiện lưu dạng chuỗi và có thể giữ tương thích.
+
+**Rủi ro cần tránh:** đổi mã nhóm làm sai mã định danh đã cấp; thay mẫu tự động làm mất tùy chỉnh; tạo checklist không phù hợp hoặc yêu cầu thao tác nguy hiểm khi thiết bị đang mang điện/chạy; nhóm Khác không cấp được mã; sửa danh mục làm hỏng lọc/sắp xếp thiết bị.
+
+**Cách kiểm thử:** build TypeScript/Vite; thử tạo thiết bị Máy hàn xung, Máy khoan, Máy mài, thiết bị cơ khí/điện phổ biến và một thiết bị lạ thuộc Khác; kiểm tra mã/QR, nhóm hiển thị và bộ Checklist sinh ra; xác nhận mẫu cũ/phiếu cũ không đổi và có thể sửa version mới. Chưa đánh dấu hoàn thành trước khi có kết quả build/test.
