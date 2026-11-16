@@ -797,7 +797,6 @@ Tiếp tục kiểm tra `src/db.ts` và toàn bộ `src/App.tsx` trên `main`. K
 Hàm `seed()` trong `App.tsx` chạy khi workspace mount và hiện có thể:
 
 ## 16/11/2026 – Migration 001 thực thi thành công trên Supabase project thử nghiệm
-
 - Người dùng đã chạy file `supabase/migrations/20261116000100_identity_and_organizations.sql` trong SQL Editor của project thử nghiệm `BAOTRI-Mini-Test`, Project Reference `oyzhxgzltpdebpymuicb`.
 - Supabase trả kết quả **Success. No rows returned**. Đây là kết quả bình thường đối với migration DDL; xác nhận lệnh SQL chạy hoàn tất không báo lỗi.
 - Migration tạo các bảng nền `profiles`, `organizations`, `organization_members`, trigger, helper functions, index, RLS policies và quyền truy cập tối thiểu theo nội dung migration.
@@ -938,3 +937,31 @@ Người dùng xác nhận đồng ý đưa cả dữ liệu thử nghiệm đan
 - Người dùng cần mở BAOTRI trên đúng trình duyệt/máy đang chứa dữ liệu hiện tại, vào Cài đặt → Dữ liệu và sao lưu → Sao lưu, rồi gửi file `backup-baotri-day-du-YYYY-MM-DD.json` vừa tải xuống trong cuộc trò chuyện.
 - Khi nhận file: kiểm tra cấu trúc, số lượng từng store, quan hệ ID, dung lượng/ảnh và danh mục; sau đó mới chốt schema + import có đối chiếu trên project test. Không xóa/ghi đè dữ liệu local.
 - Chưa có kết quả build sau commit này; cần người dùng chạy `npm run build` local và báo kết quả trước khi dựa vào chức năng backup mới.
+
+## 17/11/2026 – Đã kiểm tra backup và lập bản thiết kế schema nghiệp vụ cloud
+
+### Đã xác minh lại trạng thái repository và nguồn dữ liệu
+- Đã đọc lại file tiến độ trên `main`, migration nền `supabase/migrations/20261116000100_identity_and_organizations.sql`, `src/db.ts`, `src/lib/supabase.ts`, `package.json` và cấu trúc dữ liệu trong `src/App.tsx`.
+- Auth Supabase đã tích hợp; dữ liệu nghiệp vụ hiện vẫn dùng Dexie/IndexedDB `baotri-local-v1`. Chưa có bảng nghiệp vụ cloud, chưa có worker đồng bộ.
+- Người dùng đã chạy thành công `npm.cmd run build` tại máy local sau các thay đổi backup: TypeScript + Vite build thành công; Vite 6.4.6, 1664 modules transformed, PWA precache 11 entries. Kết quả này xác nhận build tại thời điểm người dùng chạy, không thay thế kiểm thử cloud.
+- Đã mở và phân tích file backup `backup-baotri-day-du-2026-11-16.json`, backupVersion 2, database `baotri-local-v1`. Số lượng: assets 34; inventory 41; tasks 4; logs 6; movements 0; maintenancePlans 0; checklistTemplates 34; checklistVersions 34; checklistResults 0; syncQueue 17; customAssetCategories 0.
+- Backup có 32 thiết bị chứa tổng cộng 64 ảnh dạng Data URL/Base64 trong `Asset.images`.
+- Kiểm tra quan hệ: task → asset; log → asset/task; checklist template → asset; checklist version → template/asset đều không có tham chiếu mồ côi.
+- Phát hiện hai bản ghi inventory trùng mã `VT-001`, cùng tên “Lọc dầu máy nén khí” và thông tin nghiệp vụ tương tự nhưng khác ID. Chưa gộp/xóa/đổi mã; cần người dùng xác nhận trước import.
+- `syncQueue` 17 mục chỉ có upsert cho assets/tasks/logs, không phản ánh đầy đủ các phân hệ. Không được replay hàng đợi này để import cloud.
+
+### Tài liệu thiết kế được tạo trên main
+- Tạo `supabase/SCHEMA_NGHIEP_VU_DE_XUAT.md`, commit `a868f0e8cf78813f1ab73ca57c8487d2d230081a`.
+- Tài liệu đề xuất các bảng: assets, inventory_items, maintenance_tasks, maintenance_logs, inventory_movements, maintenance_plans, checklist_templates, checklist_template_versions, checklist_results, asset_images và cấu hình danh mục nhóm/loại thiết bị tự tạo.
+- Mọi bảng nghiệp vụ dự kiến có `organization_id`, FK kép theo organization để ngăn liên kết chéo tenant; giữ nguyên UUID ID local khi import.
+- Checklist items và result snapshot đề xuất lưu JSONB để bảo toàn phiên bản/lịch sử.
+- Ảnh đề xuất chuyển sang private Supabase Storage, bảng `asset_images` giữ metadata/thứ tự/checksum.
+- Đề xuất quy trình import có dry-run, staging/batch, chống nhập trùng, dừng khi ID xung đột, đối chiếu ID/FK/số lượng/checksum và rollback có kiểm soát.
+- Không đề xuất replay `syncQueue`; không xóa hoặc sửa dữ liệu local.
+- Đây là tài liệu thiết kế để review, chưa phải migration SQL. Chưa chạy SQL, chưa tạo bảng nghiệp vụ, chưa tạo Storage bucket, chưa import dữ liệu và chưa thao tác project chính.
+
+### Việc cần duyệt trước khi viết Migration 002
+1. Chốt danh sách bảng/trường/quan hệ trong tài liệu thiết kế.
+2. Người dùng quyết định cách xử lý hai bản ghi mã `VT-001`.
+3. Duyệt nguyên tắc Checklist JSONB snapshot và ảnh lưu Storage.
+4. Sau khi duyệt mới soạn Migration 002 và review SQL; chỉ thử trên project `BAOTRI-Mini-Test`, không chạy project chính.
