@@ -50,7 +50,9 @@ function buildChecklistScheduleRows(assets: Asset[], templates: any[], results: 
       rows.push({asset,dueDate:'',completed:false,isMakeup:false,missingTemplate:true})
       continue
     }
-    const templateDate = String(template.createdAt || asset.updatedAt || asset.commissionedAt || asOf).slice(0,10)\n    const cycleDate = String(asset.cycleStartedAt || templateDate).slice(0,10)\n    const anchor = cycleDate > templateDate ? cycleDate : templateDate
+    const templateDate = String(template.createdAt || asset.updatedAt || asset.commissionedAt || asOf).slice(0,10)
+    const cycleDate = String(asset.cycleStartedAt || templateDate).slice(0,10)
+    const anchor = cycleDate > templateDate ? cycleDate : templateDate
     const assetResults = results.filter(item=>item.assetId===asset.id)
     for (let index=0; index<5000; index++) {
       const dueDate = checklistOccurrenceDate(anchor,frequency,index)
