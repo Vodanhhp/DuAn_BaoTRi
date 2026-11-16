@@ -199,7 +199,13 @@ Lưu ý danh mục:
 - Một số mã có thể trùng cách viết tắt thông dụng trong ngành. Trước khi ban hành chính thức, quản trị viên phải kiểm tra trùng nghĩa trong danh mục nội bộ.
 - Danh mục trên là đề xuất khởi tạo, không phải danh mục bắt buộc cho mọi công ty.
 
-================================================================
+=H. Mã loại thiết bị do doanh nghiệp bổ sung trong BAOTRI Mini
+
+Các mã dưới đây được quản trị viên tạo thêm trong danh mục thiết bị của doanh nghiệp. Khi xuất tài liệu Quy ước từ ứng dụng, danh sách nhóm, mã ABC và tên loại thiết bị trên trình duyệt sẽ được ghi vào vị trí này. Không tự ý dùng lại một mã ABC cho loại thiết bị khác.
+
+[[BAOTRI_CUSTOM_ASSET_CODES]]
+
+===============================================================
 VI. DANH MỤC MÃ VỊ TRÍ BB TẠM DÙNG CHO DỮ LIỆU DEMO
 ================================================================
 

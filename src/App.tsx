@@ -8,7 +8,12 @@ import {
 import { QRCodeSVG } from 'qrcode.react'
 import { Html5QrcodeScanner } from 'html5-qrcode'
 import * as XLSX from 'xlsx'
+<<<<<<< HEAD
 import { db, uid, now, queueChange, type Asset, type InventoryItem, type Task, type Log, type ChecklistTemplateItem, type ChecklistTemplateVersion, type ChecklistResultItem, type ChecklistResult } from './db'
+=======
+import namingConventionText from '../QUY_UOC_MA_DINH_DANH_VA_VIET_TAT_THIET_BI.txt?raw'
+import { db, uid, now, queueChange, type Asset, type InventoryItem, type Task, type Log, type ChecklistTemplateItem, type ChecklistResultItem, type ChecklistResult } from './db'
+>>>>>>> 58ce9f12d10a49ca38d39fd6747dc6762cb06027
 
 type Page = 'dashboard' | 'checklist' | 'assets' | 'inventory' | 'planning' | 'tasks' | 'logs' | 'reports' | 'settings'
 
@@ -429,6 +434,29 @@ export default function App() {
     setCustomAssetCategories(next)
     return true
   }
+  const exportAssetCodeConvention = () => {
+    const marker = '[[BAOTRI_CUSTOM_ASSET_CODES]]'
+    if (!namingConventionText.includes(marker)) {
+      alert('Không tìm thấy vị trí danh mục bổ sung trong tài liệu Quy ước mã.')
+      return
+    }
+    const customCodeList = customAssetCategories.length
+      ? customAssetCategories.map(group => [
+          group.label,
+          ...group.items.map(item => `${item.code.padEnd(8, ' ')}${item.name}`)
+        ].join('\n')).join('\n\n')
+      : 'Chưa có nhóm hoặc loại thiết bị bổ sung.'
+    const content = namingConventionText.replace(marker, customCodeList)
+    const blob = new Blob(['\uFEFF', content], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'QUY_UOC_MA_DINH_DANH_VA_VIET_TAT_THIET_BI.txt'
+    link.click()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+    flash('Đã xuất tài liệu Quy ước mã thiết bị')
+  }
+
   const saveAsset = async (a: Asset) => {
     const isNew = !a.code
     const previousAsset = isNew ? undefined : await db.assets.get(a.id)
@@ -714,7 +742,7 @@ export default function App() {
     {notice&&<div className="toast"><Check size={17}/>{notice}</div>}
     {detailItem&&<InventoryDetailModal value={detailItem} close={()=>setDetailItem(null)} edit={()=>{setEditingItem(detailItem);setDetailItem(null);setModal('item')}}/>}
     {detailAsset&&<AssetDetailModal value={detailAsset} logs={logs.filter(l=>l.assetId===detailAsset.id)} allowChecklist={checklistAccess || (CHECKLIST_TEST_MODE && page==='checklist')} checklistOccurrence={activeChecklistOccurrence} createRepairFromChecklist={createRepairFromChecklist} close={()=>{setDetailAsset(null);setChecklistAccess(false);setActiveChecklistOccurrence(null)}} edit={()=>{setEditingAsset({...detailAsset,images:detailAsset.images??[]});setDetailAsset(null);setChecklistAccess(false);setModal('asset')}} addLog={()=>{setEditingLog({id:uid(),assetId:detailAsset.id,date:today(),kind:'Sửa chữa',description:'',parts:'',readings:'',result:'',performedBy:''});setModal('log')}}/>}
-    {modal==='asset'&&editingAsset&&<AssetModal value={editingAsset} close={()=>{setModal(null);setEditingAsset(null)}} save={saveAsset} assets={assets} customCategories={customAssetCategories} onAddCategory={addAssetCategory}/>}
+    {modal==='asset'&&editingAsset&&<AssetModal value={editingAsset} close={()=>{setModal(null);setEditingAsset(null)}} save={saveAsset} assets={assets} customCategories={customAssetCategories} onAddCategory={addAssetCategory} onExportConvention={exportAssetCodeConvention}/>}
     {modal==='item'&&editingItem&&<ItemModal value={editingItem} close={()=>{setModal(null);setEditingItem(null)}} save={saveItem}/>}
     {modal==='task'&&editingTask&&<TaskModal value={editingTask} assets={assets} close={()=>{setModal(null);setEditingTask(null)}} save={saveTask}/>}
     {modal==='log'&&editingLog&&<LogEntryModal value={editingLog} close={()=>{setModal(null);setEditingLog(null)}} save={saveLog}/>}
@@ -1402,7 +1430,7 @@ function AssetModal({value,close,save,assets,customCategories=[],onAddCategory}:
   const showCategoryWarning=Boolean(suggestedCategory)&&suggestedCategory!==v.category
   return <Modal title={isNew?'Thêm thiết bị':'Thông tin thiết bị'} close={close}><form onSubmit={e=>{e.preventDefault();if(!v.name.trim())return alert('Nhập tên thiết bị');if(!categoryCodes[v.category])return alert('Chọn nhóm thiết bị hợp lệ');save(v)}} className="form-grid">
     <Field label="Tên thiết bị *"><input required value={v.name} placeholder="Ví dụ: Quạt hút khu vực đóng gói số 1" onChange={e=>set('name',e.target.value)}/></Field>
-    <Field label="Loại thiết bị *"><select required disabled={!isNew} value={v.category} onChange={e=>set('category',e.target.value)}><option value="">-- Chọn loại thiết bị --</option>{ASSET_CATEGORY_GROUPS.map(group=><optgroup key={group.label} label={group.label}>{group.items.map(item=><option key={item.name} value={item.name}>{item.name} · {item.code}</option>)}</optgroup>)}{customCategories.map((group:CustomAssetCategoryGroup)=><optgroup key={group.label} label={group.label}>{group.items.map(item=><option key={item.name} value={item.name}>{item.name} · {item.code}</option>)}</optgroup>)}</select>{isNew&&<button type="button" className="soft-btn" style={{marginTop:8}} onClick={()=>setShowAddCategory(x=>!x)}><Plus size={15}/> Thêm nhóm / loại thiết bị</button>}{showAddCategory&&isNew&&<div className="panel" style={{marginTop:10,display:'grid',gap:8}}><Field label="Thêm vào nhóm đã có (không bắt buộc)"><select value={selectedCustomGroup} onChange={e=>{setSelectedCustomGroup(e.target.value);setNewGroupName('')}}><option value="">-- Tạo nhóm mới --</option>{customCategories.map((group:CustomAssetCategoryGroup)=><option key={group.label} value={group.label}>{group.label}</option>)}</select></Field>{!addingToExistingGroup&&<Field label="Tên nhóm mới *"><input value={newGroupName} onChange={e=>setNewGroupName(e.target.value)} placeholder="Ví dụ: TB Y TẾ"/></Field>}<Field label="Tên loại thiết bị *"><input value={newCategoryName} onChange={e=>setNewCategoryName(e.target.value)} placeholder="Ví dụ: Máy làm răng"/></Field><Field label="Mã loại thiết bị *"><input value={newCategoryCode} onChange={e=>setNewCategoryCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,''))} maxLength={5} placeholder="Ví dụ: MLR"/><small className="muted">2–5 ký tự chữ không dấu hoặc số, dùng làm tiền tố mã định danh.</small></Field><div style={{display:'flex',gap:8,flexWrap:'wrap'}}><button type="button" className="primary-btn" onClick={()=>{if(onAddCategory(activeGroupName,newCategoryName,newCategoryCode,addingToExistingGroup)){set('category',newCategoryName.trim());setNewGroupName('');setSelectedCustomGroup('');setNewCategoryName('');setNewCategoryCode('');setShowAddCategory(false)}}}>Lưu danh mục và chọn loại</button><button type="button" className="soft-btn" onClick={()=>setShowAddCategory(false)}>Hủy</button></div></div>}{!isNew&&<small className="muted">Loại thiết bị đã khóa sau khi cấp mã để tránh mã định danh không còn đúng loại.</small>}</Field>
+    <Field label="Loại thiết bị *"><select required disabled={!isNew} value={v.category} onChange={e=>set('category',e.target.value)}><option value="">-- Chọn loại thiết bị --</option>{ASSET_CATEGORY_GROUPS.map(group=><optgroup key={group.label} label={group.label}>{group.items.map(item=><option key={item.name} value={item.name}>{item.name} · {item.code}</option>)}</optgroup>)}{customCategories.map((group:CustomAssetCategoryGroup)=><optgroup key={group.label} label={group.label}>{group.items.map(item=><option key={item.name} value={item.name}>{item.name} · {item.code}</option>)}</optgroup>)}</select>{isNew&&<button type="button" className="soft-btn" style={{marginTop:8}} onClick={()=>setShowAddCategory(x=>!x)}><Plus size={15}/> Thêm nhóm / loại thiết bị</button>}{showAddCategory&&isNew&&<div className="panel" style={{marginTop:10,display:'grid',gap:8}}><Field label="Thêm vào nhóm đã có (không bắt buộc)"><select value={selectedCustomGroup} onChange={e=>{setSelectedCustomGroup(e.target.value);setNewGroupName('')}}><option value="">-- Tạo nhóm mới --</option>{customCategories.map((group:CustomAssetCategoryGroup)=><option key={group.label} value={group.label}>{group.label}</option>)}</select></Field>{!addingToExistingGroup&&<Field label="Tên nhóm mới *"><input value={newGroupName} onChange={e=>setNewGroupName(e.target.value)} placeholder="Ví dụ: TB Y TẾ"/></Field>}<Field label="Tên loại thiết bị *"><input value={newCategoryName} onChange={e=>setNewCategoryName(e.target.value)} placeholder="Ví dụ: Máy làm răng"/></Field><Field label="Mã loại thiết bị *"><input value={newCategoryCode} onChange={e=>setNewCategoryCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,''))} maxLength={5} placeholder="Ví dụ: MLR"/><small className="muted">2–5 ký tự chữ không dấu hoặc số, dùng làm tiền tố mã định danh.</small></Field><div className="form-hint">Mã nhóm/loại tự tạo được lưu trên trình duyệt này. Sau khi thêm, dùng nút xuất để cập nhật danh mục vào tài liệu Quy ước chuẩn.</div><div style={{display:'flex',gap:8,flexWrap:'wrap'}}><button type="button" className="primary-btn" onClick={()=>{if(onAddCategory(activeGroupName,newCategoryName,newCategoryCode,addingToExistingGroup)){set('category',newCategoryName.trim());setNewGroupName('');setSelectedCustomGroup('');setNewCategoryName('');setNewCategoryCode('');setShowAddCategory(false)}}}>Lưu danh mục và chọn loại</button><button type="button" className="soft-btn" onClick={onExportConvention}><Download size={15}/> Xuất file Quy ước mã</button><button type="button" className="soft-btn" onClick={()=>setShowAddCategory(false)}>Hủy</button></div></div>}{!isNew&&<small className="muted">Loại thiết bị đã khóa sau khi cấp mã để tránh mã định danh không còn đúng loại.</small>}</Field>
     {showCategoryWarning&&<div className="form-hint warning-hint">Theo tên thiết bị, hệ thống gợi ý nhóm “{suggestedCategory}”. Nhóm hiện tại là “{v.category||'chưa chọn'}”. Hãy kiểm tra và chọn nhóm phù hợp; hệ thống không tự đổi nhóm hay mã định danh.</div>}
     <Field label="Vị trí lắp đặt"><input value={v.location} placeholder="Ví dụ: Nhà xưởng A" onChange={e=>set('location',e.target.value)}/></Field>
     <Field label="Hãng"><input value={v.brand} onChange={e=>set('brand',e.target.value)}/></Field><Field label="Model"><input value={v.model} onChange={e=>set('model',e.target.value)}/></Field>
