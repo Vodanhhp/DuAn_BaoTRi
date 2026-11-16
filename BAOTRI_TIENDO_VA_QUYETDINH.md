@@ -418,3 +418,19 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Commit code bổ sung nhóm tự tạo: `4af4840eb6abc729bde418659f7c107d22a06474`.
 - Commit sửa JSX và thứ tự lưu an toàn: `4bd0667f067296cc52f55a26939616132656873f`.
 - Bước tiếp theo: Pull origin trên GitHub Desktop, chạy `npm.cmd run build`; mở Thêm thiết bị, tạo thử nhóm (ví dụ Máy đóng đai / MDD), xác nhận nhóm tự được chọn và mã dự kiến bắt đầu bằng `MDD-`; tải lại trang để xác nhận nhóm còn trong danh sách.
+
+
+### Điều chỉnh lại cấu trúc danh mục thiết bị thành 2 cấp (16/11/2026) – GHI NHẬN TRƯỚC KHI SỬA
+**Lý do:** yêu cầu trước đã hiểu sai khái niệm: người dùng cần tạo *nhóm lớn* (ví dụ `TB Y TẾ`), bên trong nhóm có nhiều *loại thiết bị* (ví dụ `Máy làm răng` – mã `MLR`), không phải thêm loại thiết bị thành một nhóm phẳng.
+
+**Phạm vi sửa:**
+- Chỉ sửa `src/App.tsx` và cập nhật file tiến độ chính thức.
+- Đổi cấu trúc danh mục bổ sung thành nhóm `{label, items:[{name,code}]}`; danh mục chuẩn hiện tại giữ nguyên.
+- Trong form Thêm thiết bị, thao tác thêm danh mục phải cho phép tạo nhóm mới kèm loại thiết bị đầu tiên và mã loại; các lần sau có thể thêm loại thiết bị vào nhóm bổ sung đã tạo.
+- Danh sách chọn hiển thị đúng optgroup tên nhóm và các loại thiết bị/mã bên trong; trường `Asset.category` tiếp tục lưu tên loại thiết bị để không phá hồ sơ cũ và logic Checklist hiện có.
+- Mã loại thiết bị phải duy nhất toàn danh mục và tiếp tục được dùng làm tiền tố mã định danh; không đổi mã thiết bị đã cấp.
+- Chuyển đổi dữ liệu phẳng đã lưu từ phiên bản trước sang một nhóm tương thích khi nạp, không làm mất các loại đã tạo. Không xóa dữ liệu localStorage cũ.
+
+**Rủi ro:** dữ liệu danh mục cũ đang lưu dạng mảng phẳng; cần hỗ trợ migration khi nạp. Tên loại thiết bị phải duy nhất vì hồ sơ hiện tại chỉ lưu tên loại, chưa lưu group ID.
+
+**Kiểm thử:** kiểm tra migration dữ liệu cũ; tạo `TB Y TẾ` + `Máy làm răng` + `MLR`; thêm tiếp loại khác vào nhóm TB Y TẾ; xác nhận select hiển thị đúng nhóm/loại; xác nhận mã preview và mã lưu dùng `MLR`; xác nhận danh mục chuẩn và hồ sơ cũ không đổi; chạy `npm.cmd run build` nếu có môi trường build.
