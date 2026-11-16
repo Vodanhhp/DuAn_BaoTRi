@@ -508,3 +508,12 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Đã sửa trực tiếp trên `main`: thay hai chuỗi literal `\\n` bằng xuống dòng thật; giữ nguyên logic tính mốc lịch Checklist.
 - Commit sửa: `d8ccf9e36c71042e9241cf33c1ab3487bff7ccd2`.
 - Chưa chạy `npm.cmd run build` trong môi trường local của người dùng; cần Pull origin và chạy build để xác nhận toàn bộ dự án. Nếu còn lỗi Vite khác, gửi log mới để xử lý tiếp.
+
+
+### Kế hoạch tạo biểu mẫu Checklist mặc định cho toàn bộ thiết bị hiện có (16/11/2026) – GHI NHẬN TRƯỚC KHI SỬA
+- Yêu cầu: coi như Admin đã khởi tạo biểu mẫu Checklist cho tất cả hồ sơ thiết bị đang quản lý.
+- Phạm vi: khi ứng dụng khởi tạo dữ liệu, rà soát toàn bộ thiết bị hiện có (không lưu kho/đã lưu trữ); thiết bị chưa có biểu mẫu thì tạo riêng một biểu mẫu và version 1 từ `buildDefaultChecklist(asset)`. Thiết bị đã có biểu mẫu không bị sửa, ghi đè hoặc tạo version mới.
+- Biểu mẫu được tạo dựa trên nhóm và tên thiết bị theo logic hiện có; giữ nguyên chu kỳ đã thiết lập trong lý lịch. Không tạo phiếu kết quả, không đánh dấu công việc đã hoàn thành, không giả lập người thực hiện.
+- Không thay schema IndexedDB, không xóa lịch sử Checklist/phiếu cũ, không đổi quy tắc bắt buộc quét QR khi thực hiện.
+- Phạm vi dữ liệu: tác vụ chạy trên dữ liệu IndexedDB có sẵn trong trình duyệt/máy người dùng sau khi cập nhật ứng dụng; chưa phải dữ liệu cloud/Supabase và không tự động cập nhật các trình duyệt/máy khác.
+- Kiểm thử: kiểm tra routine chạy sau khi seed/đọc thiết bị; bảo đảm idempotent (tải lại không nhân đôi); bỏ qua thiết bị lưu kho; giữ nguyên template/version đã có; không tạo result. Chạy build nếu môi trường công cụ cho phép; nếu không phải ghi rõ người dùng cần chạy build local.
