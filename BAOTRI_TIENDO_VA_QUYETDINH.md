@@ -517,3 +517,15 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Không thay schema IndexedDB, không xóa lịch sử Checklist/phiếu cũ, không đổi quy tắc bắt buộc quét QR khi thực hiện.
 - Phạm vi dữ liệu: tác vụ chạy trên dữ liệu IndexedDB có sẵn trong trình duyệt/máy người dùng sau khi cập nhật ứng dụng; chưa phải dữ liệu cloud/Supabase và không tự động cập nhật các trình duyệt/máy khác.
 - Kiểm thử: kiểm tra routine chạy sau khi seed/đọc thiết bị; bảo đảm idempotent (tải lại không nhân đôi); bỏ qua thiết bị lưu kho; giữ nguyên template/version đã có; không tạo result. Chạy build nếu môi trường công cụ cho phép; nếu không phải ghi rõ người dùng cần chạy build local.
+
+
+### Đã bổ sung tự khởi tạo Checklist riêng cho toàn bộ thiết bị hiện có (16/11/2026)
+- Trong `src/App.tsx`, sau khi hoàn tất bước khởi tạo/đọc dữ liệu thiết bị, ứng dụng rà soát tất cả hồ sơ chưa lưu kho và gọi `ensureDefaultChecklist(asset)`.
+- Mỗi thiết bị chưa có biểu mẫu sẽ được tạo một template riêng và version 1, sử dụng `buildDefaultChecklist(asset)` để ghép tiêu chí nền + nhóm thiết bị + quy tắc theo tên thiết bị.
+- Hàm `ensureDefaultChecklist` kiểm tra theo `assetId`; nếu đã có template thì giữ nguyên, không ghi đè, không tạo bản trùng khi tải lại. Không thay đổi các template/version đã được Admin chỉnh sửa.
+- Không tạo phiếu kết quả, không đánh dấu kỳ Checklist đã hoàn thành và không giả lập người thực hiện. Chu kỳ trong lý lịch không bị thay đổi. Thực hiện Checklist vẫn bắt buộc quét QR.
+- Không thay schema IndexedDB, không xóa lịch sử. Áp dụng cho dữ liệu IndexedDB hiện có trên từng trình duyệt/máy khi chạy phiên bản mới; chưa có cloud/Supabase nên không tự đồng bộ sang thiết bị khác.
+- Kiểm tra tĩnh: xác nhận routine được gọi sau bước seed, chỉ duyệt thiết bị chưa lưu kho, gọi hàm idempotent theo assetId; hàm tạo template chỉ thêm mới khi chưa có; không có lệnh tạo Checklist result trong routine. Chưa chạy build thực tế.
+- Commit ghi kế hoạch: `ba59d320081ce61a9b0b1be7512974de6f5cac66`.
+- Commit code: `1e22de985059ea9730b34edc6c90aa3abff18eb6`.
+- Bước tiếp theo: Pull origin, chạy `npm.cmd run build`, mở ứng dụng và kiểm tra từng thiết bị trong Bảo trì – Checklist đã có biểu mẫu; xác nhận biểu mẫu cũ không bị thay đổi và chưa có kỳ nào bị đánh dấu hoàn thành giả.
