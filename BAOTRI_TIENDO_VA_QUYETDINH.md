@@ -822,3 +822,112 @@ ERD sẽ được xây quanh các nhóm:
 7. RLS theo membership của tổ chức trên mọi bảng nghiệp vụ; không tin organization_id/role do client tự khai báo.
 
 Đây mới là khung đề xuất, chưa phải schema đã chốt. Trước migration sẽ cần duyệt chính sách xóa/archive, phạm vi quyền Admin/User và cách tạo tổ chức/Admin đầu tiên.
+
+
+## 16/11/2026 – Chấp thuận ma trận quyền và thiết kế ERD/RLS bản đề xuất
+
+Người dùng đã đồng ý ma trận quyền Admin/User đề xuất. Ghi nhận đây là quyết định nghiệp vụ đã chấp thuận để làm cơ sở thiết kế; chi tiết bảng và policy dưới đây vẫn là bản thiết kế, chưa phải migration đã chạy.
+
+### 1. Ma trận quyền được chấp thuận
+
+| Nghiệp vụ | Admin | User |
+|---|---|---|
+| Xem dữ liệu thiết bị trong tổ chức | Có | Có |
+| Tạo/sửa/lưu kho/khôi phục thiết bị | Có | Không |
+| Quản lý danh mục thiết bị | Có | Không |
+| Xem vật tư và tồn kho | Có | Có |
+| Tạo/sửa/lưu kho vật tư | Có | Không |
+| Ghi nhận nhập/xuất kho | Có | Có |
+| Điều chỉnh tồn kho trực tiếp | Có | Không |
+| Quản lý kế hoạch/công việc | Có | Không |
+| Xem công việc và cập nhật tiến độ công việc được giao | Có | Có |
+| Tạo/sửa Checklist template và phiên bản | Có | Không |
+| Thực hiện Checklist, tạo phiếu kết quả | Có | Có |
+| Xem lịch sử Checklist và in lại phiếu | Có | Có |
+| Tạo nhật ký bảo dưỡng/sửa chữa | Có | Có |
+| Sửa/xóa phiếu lịch sử đã ghi | Không sửa/xóa trực tiếp; xử lý hiệu chỉnh có dấu vết | Không |
+| Quản lý thành viên và phân quyền | Có | Không |
+| Cấu hình tổ chức | Có | Không |
+
+Quy tắc bổ sung:
+- User được tạo phiếu nhập/xuất kho theo loại nghiệp vụ được phép; không được tự điều chỉnh số tồn. Mọi biến động tồn phải có movement tương ứng và được xử lý nguyên tử phía database.
+- User chỉ cập nhật tiến độ công việc được giao; thiết kế cần có `assigned_to_user_id` cho task. Nếu chưa được giao, User chỉ xem.
+- Phiếu Checklist, nhật ký bảo dưỡng/sửa chữa và movement đã ghi là lịch sử; không cho User sửa/xóa. Admin cũng không xóa cứng; nếu cần sửa sai phải có cơ chế hiệu chỉnh/ghi nhận bổ sung và audit trail.
+- Admin có toàn quyền quản trị trong tổ chức của mình, không có quyền truy cập tổ chức khác.
+
+### 2. ERD đề xuất – các bảng
+
+**Tài khoản và tổ chức**
+- `profiles`: `id` trùng `auth.users.id`; họ tên, thông tin hiển thị, thời điểm tạo/cập nhật.
+- `organizations`: tên, mã tổ chức, trạng thái, metadata và thời điểm tạo.
+- `organization_members`: `organization_id`, `user_id`, `role` (admin/user), trạng thái thành viên, thời điểm tham gia; unique theo cặp organization/user. Một user có thể thuộc nhiều tổ chức.
+
+**Thiết bị**
+- `asset_categories`: danh mục tự tạo theo tổ chức; mã/tên/nhóm và trạng thái.
+- `assets`: giữ các trường hồ sơ hiện tại (mã, tên, loại, vị trí, hãng/model, serial, thông số, ngày đưa vào sử dụng, chu kỳ, trạng thái, ghi chú); thêm organization_id, audit fields và archived_at.
+- `asset_images`: metadata ảnh và object path trong Storage, liên kết asset; không lưu Base64 trong hàng PostgreSQL.
+
+**Kho**
+- `inventory_items`: mã, tên, nhóm, đơn vị, tồn hiện tại, tồn tối thiểu, vị trí, nhà cung cấp, đơn giá, organization_id.
+- `inventory_movements`: item_id, loại movement, số lượng, thời điểm, người ghi nhận, ghi chú, tùy chọn linked_asset_id; lịch sử không xóa.
+
+**Kế hoạch và lịch sử kỹ thuật**
+- `maintenance_tasks`: asset_id, tiêu đề, nội dung/checklist công việc, hạn, chu kỳ, trạng thái, assigned_to_user_id, organization_id.
+- `maintenance_logs`: asset_id, tùy chọn task_id và checklist_result_id, loại công việc, nội dung, phụ tùng/chi phí/thời gian theo dữ liệu hiện có, người thực hiện và snapshot tên, organization_id.
+
+**Checklist**
+- `checklist_templates`: một mẫu riêng cho một asset; unique asset để giữ nguyên quy tắc mỗi thiết bị một biểu mẫu hiện hành.
+- `checklist_template_versions`: template_id, asset_id, version_no, items JSONB, người tạo và thời điểm tạo; unique (template_id, version_no). Version cũ bất biến.
+- `checklist_results`: asset_id, template_id, template_version_id, items_snapshot JSONB, kết quả tổng thể, ghi chú, performed_by_user_id, performed_by_name_snapshot, thời điểm thực hiện; phiếu bất biến sau khi ghi.
+
+Các bảng nghiệp vụ có `organization_id`. Mọi FK liên kết nghiệp vụ cần dùng ràng buộc composite theo organization_id (ví dụ organization_id + asset_id) để ngăn một record tổ chức A tham chiếu record tổ chức B, kể cả khi client gửi ID hợp lệ nhưng thuộc tenant khác.
+
+### 3. Quan hệ chính
+
+- organizations 1—N organization_members; profiles 1—N organization_members.
+- organizations 1—N assets / asset_categories / inventory_items / maintenance_tasks / maintenance_logs / inventory_movements / checklist_templates / checklist_template_versions / checklist_results.
+- asset_categories 1—N assets (nếu thiết bị dùng danh mục tùy chỉnh).
+- assets 1—N maintenance_tasks, maintenance_logs, checklist_template_versions, checklist_results; assets 1—1 checklist_templates hiện hành.
+- checklist_templates 1—N checklist_template_versions; checklist_results tham chiếu chính xác template version đã dùng.
+- maintenance_tasks 1—N maintenance_logs (liên kết tùy chọn).
+- inventory_items 1—N inventory_movements; movement có thể liên kết tùy chọn tới asset.
+- maintenance_logs có thể liên kết tới checklist_result nguồn nhưng bản ghi log độc lập.
+- auth.users 1—1 profiles; người thực hiện liên kết user ID và lưu snapshot tên để lịch sử không đổi theo hồ sơ hiện tại.
+
+### 4. Nguyên tắc RLS và bảo vệ dữ liệu
+
+1. Bật RLS trên toàn bộ bảng nghiệp vụ; mặc định không có policy nghĩa là từ chối.
+2. Mỗi SELECT/INSERT/UPDATE/DELETE phải kiểm tra membership của auth.uid() với đúng organization_id.
+3. Policy quyền Admin/User kiểm tra role từ organization_members phía database; không lấy role từ localStorage, metadata client hoặc request body.
+4. Không cho user tự INSERT membership, tự đổi role hoặc tự chuyển mình thành Admin. Tạo tổ chức/Admin đầu tiên qua quy trình bootstrap có kiểm soát; giai đoạn đầu có thể do người vận hành tạo qua Supabase Dashboard/SQL bảo mật.
+5. User được INSERT movement, maintenance_logs và checklist_results trong tổ chức; UPDATE task chỉ khi assigned_to_user_id = auth.uid(); không được thay organization_id, người tạo hoặc người thực hiện.
+6. Admin được quản lý dữ liệu master trong tổ chức; không được truy cập dữ liệu tenant khác.
+7. Dùng helper SQL SECURITY DEFINER cho kiểm tra membership/role nếu cần tránh RLS đệ quy trên organization_members; hàm phải schema-qualify đối tượng và cố định search_path an toàn.
+8. Storage bucket ảnh đặt private; object path phải chứa organization_id/asset_id. Storage policy xác minh membership đúng tenant; không dùng public bucket cho ảnh nội bộ.
+9. Không đưa service-role key vào frontend. Frontend chỉ dùng publishable key; mọi quyền nhạy cảm được thực thi trong Postgres/RLS hoặc RPC an toàn.
+10. Bảo vệ membership: không cho xóa/hạ quyền Admin cuối cùng của tổ chức; thay đổi thành viên/role qua policy hoặc RPC kiểm tra số Admin còn lại.
+11. Không dùng cascade delete cho lịch sử. Archive/soft-delete giữ record và quan hệ; hard-delete chỉ là quy trình quản trị riêng sau này, có kiểm tra ràng buộc và audit.
+
+### 5. Các thao tác phải nguyên tử ở database
+
+- Nhập/xuất kho: RPC hoặc transaction phía database khóa dòng inventory item, kiểm tra số lượng hợp lệ, ghi movement và cập nhật tồn cùng một transaction; client không được tự gửi số tồn mới.
+- Hoàn thành task: cập nhật task và tạo maintenance_log liên quan trong cùng transaction nếu nghiệp vụ vẫn giữ hành vi hiện tại.
+- Tạo phiếu Checklist: kiểm tra user là thành viên tenant, thiết bị/template/version thuộc cùng tenant, version khớp template; lấy performed_by_user_id từ auth.uid(), không nhận user ID từ client làm nguồn tin cậy.
+- Tạo log từ Checklist: liên kết result nguồn nhưng không sửa/xóa phiếu Checklist.
+
+### 6. Các điểm cần xác nhận khi chuyển thiết kế thành migration
+
+- Rà soát chính xác các trường TypeScript hiện tại trong từng interface để mapping đủ, không bỏ dữ liệu.
+- Chốt mã tổ chức và quy tắc duy nhất của mã thiết bị/vật tư: unique trong từng tổ chức, không unique toàn hệ thống.
+- Chốt loại movement và quy tắc tính tồn (nhập, xuất, điều chỉnh, hoàn trả nếu có).
+- Chốt cách khởi tạo tổ chức/Admin đầu tiên và mời thành viên.
+- Chốt quy trình sửa sai lịch sử/audit trail.
+- Kiểm thử hai tổ chức, hai vai trò, truy vấn chéo tenant, Storage, RPC nhập/xuất và các trường hợp bị từ chối trước khi migrate dữ liệu thật.
+
+### 7. Trạng thái
+
+- Ma trận quyền Admin/User: người dùng đã đồng ý.
+- ERD/RLS: đã lập bản thiết kế đề xuất; chưa chạy migration và chưa tạo bảng.
+- Mã nguồn: chưa sửa.
+- Dữ liệu local: giữ nguyên; chưa backup/import cloud.
+- Bước tiếp theo: đối chiếu chi tiết interface TypeScript và trường dữ liệu thực tế với ERD, hoàn thiện mapping và các ràng buộc trước khi trình schema SQL lần cuối.
