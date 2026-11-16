@@ -79,7 +79,7 @@ export interface Task {
   completedAt?: string; createdAt: string; updatedAt: string
 }
 export interface Log {
-  id: string; assetId: string; taskId?: string; date: string; kind: string
+  id: string; assetId: string; taskId?: string; checklistResultId?: string; date: string; kind: string
   description: string; parts: string; readings: string; result?: 'Đạt' | 'Không đạt' | ''; performedBy: string
 }
 export interface Movement {
@@ -126,6 +126,19 @@ class MaintenanceDB extends Dexie {
       inventory: 'id, code, name, group, quantity, updatedAt',
       tasks: 'id, assetId, dueDate, status, updatedAt',
       logs: 'id, assetId, taskId, date, kind',
+      movements: 'id, itemId, date, type',
+      syncQueue: 'id, tableName, recordId, queuedAt',
+      checklistTemplates: 'id, assetId, active, updatedAt',
+      checklistVersions: 'id, templateId, assetId, version, createdAt',
+      checklistResults: 'id, assetId, templateId, templateVersionId, performedAt, result'
+    })
+    // v4: bổ sung liên kết tùy chọn từ phiếu Bảo dưỡng – Sửa chữa về phiếu Checklist nguồn.
+    // Giữ nguyên toàn bộ nhật ký và các bảng Checklist hiện có.
+    this.version(4).stores({
+      assets: 'id, code, name, category, status, archivedAt, updatedAt',
+      inventory: 'id, code, name, group, quantity, updatedAt',
+      tasks: 'id, assetId, dueDate, status, updatedAt',
+      logs: 'id, assetId, taskId, checklistResultId, date, kind',
       movements: 'id, itemId, date, type',
       syncQueue: 'id, tableName, recordId, queuedAt',
       checklistTemplates: 'id, assetId, active, updatedAt',
