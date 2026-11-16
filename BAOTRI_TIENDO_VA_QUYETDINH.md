@@ -1029,3 +1029,13 @@ Người dùng xác nhận đồng ý đưa cả dữ liệu thử nghiệm đan
 - Cần kiểm thử thực tế sau khi người dùng pull `main`, chạy `npm.cmd run build`, khởi động ứng dụng với `.env.local` trỏ đúng project Test, đăng nhập và bấm nút thử ghi. Sau đó đăng xuất/đăng nhập lại để xác nhận bản ghi được tìm thấy.
 - Chưa có kết quả build hoặc API runtime từ máy người dùng; không tuyên bố phép thử đã thành công. Dữ liệu nghiệp vụ hiện tại vẫn lưu IndexedDB, chưa triển khai đồng bộ tự động.
 - Production `BAOTRI-Mini` không được thay đổi.
+
+
+## 17/11/2026 – Chuyển GitHub Pages sang build/deploy bằng GitHub Actions
+
+- Người dùng báo tên miền `baotri.vieclamhp247.com` truy cập được nhưng trang trắng. Đối chiếu mã nguồn `main`: `index.html` nạp trực tiếp `/src/main.tsx`, trong khi đây là ứng dụng React/TypeScript cần Vite build; `vite.config.ts` không đặt base path riêng nên phù hợp custom domain tại root.
+- Đã thêm workflow `.github/workflows/deploy-pages.yml` trực tiếp trên `main`, commit `adbc1b8a551a8c20f88b763094f132a794c8c76a`. Workflow chạy `npm ci`, `npm run build`, chuyển `CNAME` vào `dist`, upload Pages artifact và deploy bằng GitHub Actions.
+- Workflow đọc hai GitHub Actions secrets `VITE_SUPABASE_URL` và `VITE_SUPABASE_PUBLISHABLE_KEY` khi build. Chưa có bằng chứng các secrets này đã được cấu hình; nếu thiếu, frontend sẽ không khởi tạo Supabase client và không thể đăng nhập.
+- Chưa đổi cấu hình Pages Source trong Settings; người dùng cần chọn GitHub Actions sau khi workflow có mặt. Chưa xác nhận workflow đã chạy thành công hoặc trang đã hoạt động.
+- Bước kế tiếp: vào Settings > Pages, đổi Build and deployment Source sang GitHub Actions; sau đó vào Settings > Secrets and variables > Actions, thêm hai secrets nêu trên với URL và publishable/anon key của project BAOTRI-Mini-Test. Tuyệt đối không dùng service-role key. Kiểm tra Actions run trước khi mở lại site.
+- Không thay đổi DNS, Supabase schema/Auth users, Production project hoặc dữ liệu nghiệp vụ. Dữ liệu nghiệp vụ vẫn local IndexedDB, chưa đồng bộ cloud.
