@@ -22,6 +22,52 @@ const makeDemoAssetImage = (category: string, code: string, view: number) => {
   return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg)
 }
 const today = () => new Date().toISOString().slice(0, 10)
+
+type ChecklistFrequency = 'Hàng ngày' | 'Hàng tuần' | 'Hàng tháng' | 'Hàng quý' | 'Hàng năm'
+type ChecklistScheduleRow = { asset: Asset; dueDate: string; completed: boolean; isMakeup: boolean; result?: string; missingTemplate?: boolean }
+const CHECKLIST_FREQUENCIES: ChecklistFrequency[] = ['Hàng ngày','Hàng tuần','Hàng tháng','Hàng quý','Hàng năm']
+const parseChecklistDate = (value: string) => new Date(value.slice(0,10)+'T00:00:00.000Z')
+const formatChecklistDate = (value: Date) => value.toISOString().slice(0,10)
+function checklistOccurrenceDate(anchor: string, frequency: ChecklistFrequency, index: number) {
+  const base = parseChecklistDate(anchor)
+  if (frequency === 'Hàng ngày') base.setUTCDate(base.getUTCDate()+index)
+  else if (frequency === 'Hàng tuần') base.setUTCDate(base.getUTCDate()+index*7)
+  else {
+    const months = frequency === 'Hàng tháng' ? index : frequency === 'Hàng quý' ? index*3 : index*12
+    const day = base.getUTCDate()
+    const monthStart = new Date(Date.UTC(base.getUTCFullYear(),base.getUTCMonth()+months,1))
+    const lastDay = new Date(Date.UTC(monthStart.getUTCFullYear(),monthStart.getUTCMonth()+1,0)).getUTCDate()
+    monthStart.setUTCDate(Math.min(day,lastDay))
+    return formatChecklistDate(monthStart)
+  }
+  return formatChecklistDate(base)
+}
+function buildChecklistScheduleRows(assets: Asset[], templates: any[], results: ChecklistResult[], frequency: ChecklistFrequency, asOf: string): ChecklistScheduleRow[] {
+  const rows: ChecklistScheduleRow[] = []
+  for (const asset of assets.filter(item=>!item.archivedAt && item.cycle===frequency)) {
+    const template = templates.find(item=>item.assetId===asset.id && item.active!==false)
+    if (!template) {
+      rows.push({asset,dueDate:'',completed:false,isMakeup:false,missingTemplate:true})
+      continue
+    }
+    const anchor = String(template.createdAt || asset.updatedAt || asset.commissionedAt || asOf).slice(0,10)
+    const assetResults = results.filter(item=>item.assetId===asset.id)
+    for (let index=0; index<5000; index++) {
+      const dueDate = checklistOccurrenceDate(anchor,frequency,index)
+      if (dueDate>asOf) break
+      const nextDate = checklistOccurrenceDate(anchor,frequency,index+1)
+      const matched = assetResults.find(item=>item.scheduledFor===dueDate) ??
+        assetResults.find(item=>!item.scheduledFor && item.performedAt.slice(0,10)>=dueDate && item.performedAt.slice(0,10)<nextDate)
+      const performedDate = matched?.performedAt.slice(0,10) ?? ''
+      rows.push({asset,dueDate,completed:Boolean(matched),isMakeup:Boolean(matched && (matched.isMakeup || performedDate>dueDate)),result:matched?.result})
+    }
+  }
+  return rows.sort((a,b)=>{
+    if(a.completed!==b.completed) return a.completed?1:-1
+    return b.dueDate.localeCompare(a.dueDate) || a.asset.name.localeCompare(b.asset.name,'vi')
+  })
+}
+
 const emptyAsset = (): Asset => ({
   id: uid(), code: '', name: '', category: '', brand: '', model: '', serial: '',
   location: '', commissionedAt: '', power: '', cycle: '', status: 'Đang hoạt động',
@@ -125,6 +171,9 @@ export default function App() {
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null)
   const [detailAsset, setDetailAsset] = useState<Asset | null>(null)
   const [checklistAccess, setChecklistAccess] = useState(false)
+  const [checklistFrequency,setChecklistFrequency] = useState<ChecklistFrequency>('Hàng ngày')
+  const [pendingChecklistOccurrence,setPendingChecklistOccurrence] = useState<{assetId:string;scheduledFor?:string;isMakeup:boolean}|null>(null)
+  const [activeChecklistOccurrence,setActiveChecklistOccurrence] = useState<{scheduledFor?:string;isMakeup:boolean}|null>(null)
   const [assetCategoryFilter, setAssetCategoryFilter] = useState('')
   const [customAssetCategories, setCustomAssetCategories] = useState<CustomAssetCategoryGroup[]>(() => {
     try {
@@ -151,6 +200,8 @@ export default function App() {
   const inventory = useLiveQuery(() => db.inventory.orderBy('name').toArray(), []) ?? []
   const tasks = useLiveQuery(() => db.tasks.orderBy('dueDate').toArray(), []) ?? []
   const logs = useLiveQuery(() => db.logs.orderBy('date').reverse().toArray(), []) ?? []
+  const checklistTemplates = useLiveQuery(() => db.checklistTemplates.toArray(), []) ?? []
+  const allChecklistResults = useLiveQuery(() => db.checklistResults.toArray(), []) ?? []
   const queueCount = useLiveQuery(() => db.syncQueue.count(), []) ?? 0
 
   useEffect(() => {
@@ -344,6 +395,7 @@ export default function App() {
     })
   }, [activeAssets, search, assetCategoryFilter, assetLocationFilter, assetStatusFilter, assetSort])
   const filteredArchivedAssets = useMemo(() => archivedAssets.filter(a => `${a.code} ${a.name} ${a.category} ${a.location}`.toLocaleLowerCase('vi').includes(search.trim().toLocaleLowerCase('vi'))), [archivedAssets, search])
+  const checklistScheduleRows = useMemo(() => buildChecklistScheduleRows(activeAssets,checklistTemplates,allChecklistResults,checklistFrequency,today()).filter(row=>!search.trim() || [row.asset.code,row.asset.name,row.asset.location].join(' ').toLocaleLowerCase('vi').includes(search.trim().toLocaleLowerCase('vi'))),[activeAssets,checklistTemplates,allChecklistResults,checklistFrequency,search])
   const filteredItems = useMemo(() => inventory.filter(a => `${a.code} ${a.name} ${a.group}`.toLowerCase().includes(search.toLowerCase())), [inventory, search])
   const filteredTasks = useMemo(() => tasks.filter(t => `${t.title} ${assets.find(a=>a.id===t.assetId)?.name ?? ''}`.toLowerCase().includes(search.toLowerCase())), [tasks, assets, search])
   const overdue = tasks.filter(t => t.status !== 'Hoàn thành' && t.dueDate < today()).length
@@ -733,7 +785,7 @@ function AssetDetailModal({value,logs,allowChecklist,createRepairFromChecklist,c
   const [activePhoto,setActivePhoto]=useState<string|null>(null)
   const [printMode,setPrintMode]=useState<null|'sticker'|'detail'|'history'>(null)
   const photos: string[] = value.images ?? []
-  const rows = [['Mã định danh',value.code],['Tên thiết bị',value.name],['Nhóm',value.category],['Vị trí',value.location],['Hãng',value.brand],['Model',value.model],['Serial',value.serial],['Ngày đưa vào sử dụng',dateText(value.commissionedAt)],['Công suất / thông số',value.power],['Chu kỳ bảo trì',value.cycle],['Tình trạng',value.status],['Ghi chú',value.notes]]
+  const rows = [['Mã định danh',value.code],['Tên thiết bị',value.name],['Nhóm',value.category],['Vị trí',value.location],['Hãng',value.brand],['Model',value.model],['Serial',value.serial],['Ngày đưa vào sử dụng',dateText(value.commissionedAt)],['Công suất / thông số',value.power],['Chu kỳ Bảo trì – Checklist',value.cycle],['Tình trạng',value.status],['Ghi chú',value.notes]]
   const print = (mode:'sticker'|'detail'|'history') => { setPrintMode(mode); window.setTimeout(()=>window.print(),180) }
   return <Modal title="Chi tiết thiết bị" close={()=>{setPrintMode(null);close()}}>
     <div className="asset-qr-panel"><div><small>MÃ QR THIẾT BỊ</small><b>{value.code}</b><span>Quét mã để tra cứu hồ sơ thiết bị</span></div><QRCodeSVG value={value.code} size={116} level="M" includeMargin/></div>
@@ -1330,7 +1382,7 @@ function AssetModal({value,close,save,assets,customCategories=[],onAddCategory}:
     <Field label="Vị trí lắp đặt"><input value={v.location} placeholder="Ví dụ: Nhà xưởng A" onChange={e=>set('location',e.target.value)}/></Field>
     <Field label="Hãng"><input value={v.brand} onChange={e=>set('brand',e.target.value)}/></Field><Field label="Model"><input value={v.model} onChange={e=>set('model',e.target.value)}/></Field>
     <Field label="Serial"><input value={v.serial} onChange={e=>set('serial',e.target.value)}/></Field><Field label="Ngày đưa vào sử dụng"><input type="date" value={v.commissionedAt} onChange={e=>set('commissionedAt',e.target.value)}/></Field>
-    <Field label="Công suất / thông số"><input value={v.power} onChange={e=>set('power',e.target.value)}/></Field><Field label="Chu kỳ bảo trì"><select value={v.cycle} onChange={e=>set('cycle',e.target.value)}>{['Hàng ngày','Hàng tuần','Hàng tháng','Hàng quý','6 tháng','Hàng năm','Theo giờ chạy',''].map(x=><option key={x} value={x}>{x||'Chưa thiết lập'}</option>)}</select></Field>
+    <Field label="Công suất / thông số"><input value={v.power} onChange={e=>set('power',e.target.value)}/></Field><Field label="Chu kỳ Bảo trì – Checklist"><select value={v.cycle} onChange={e=>set('cycle',e.target.value)}><option value="">Chưa thiết lập</option>{CHECKLIST_FREQUENCIES.map(x=><option key={x} value={x}>{x}</option>)}{v.cycle&&!CHECKLIST_FREQUENCIES.includes(v.cycle as ChecklistFrequency)&&<option value={v.cycle}>{v.cycle} (giá trị cũ – cần cập nhật)</option>}</select><small className="muted">Admin thiết lập lịch Checklist định kỳ cho riêng thiết bị này.</small></Field>
     <Field label="Tình trạng thiết bị"><select value={v.status} onChange={e=>set('status',e.target.value)}>{['Đang hoạt động','Đang sửa chữa','Ngừng sử dụng','Thanh lý'].map(x=><option key={x}>{x}</option>)}</select></Field>
     <Field label="Ghi chú"><input value={v.notes} onChange={e=>set('notes',e.target.value)}/></Field>
     {isNew&&<div className="asset-transfer-option"><label><input type="checkbox" checked={!!v.transferredFromOtherFacility} onChange={e=>set('transferredFromOtherFacility',e.target.checked)}/> Thiết bị được chuyển từ cơ sở khác đến</label><small>Cơ sở tiếp nhận hiện tại: {RECEIVING_FACILITY_CODE}. Khi đánh dấu, hệ thống tự thêm đúng một dấu * vào cuối mã định danh.</small></div>}
