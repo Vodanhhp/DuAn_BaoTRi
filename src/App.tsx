@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import type { Session } from '@supabase/supabase-js'
+import { supabase } from './lib/supabase'
+import AuthScreen from './AuthScreen'
 import { useLiveQuery } from 'dexie-react-hooks'
 import {
   Activity, Archive, BarChart3, Building2, CalendarDays, Check, ChevronRight, ClipboardList,
@@ -166,7 +169,7 @@ const buildAssetCode=(asset:Asset,allAssets:Asset[],customCategories:CustomAsset
 const money = (n: number) => new Intl.NumberFormat('vi-VN').format(n) + ' đ'
 const dateText = (s: string) => s ? new Date(s + (s.length === 10 ? 'T00:00:00' : '')).toLocaleDateString('vi-VN') : '—'
 
-export default function App() {
+function AppWorkspace({ userEmail, onSignOut }: { userEmail: string; onSignOut: () => void }) {
   const [page, setPage] = useState<Page>('dashboard')
   const [search, setSearch] = useState('')
   const [theme, setTheme] = useState<'light' | 'dark'>('light')
@@ -658,10 +661,10 @@ export default function App() {
       <header className="topbar">
         <div className="page-heading"><div className="eyebrow">HỆ THỐNG QUẢN LÝ KỸ THUẬT</div><h1>{nav.find(n=>n[0]===page)?.[1] ?? (page==='tasks'?'Kế hoạch bảo dưỡng':'')}</h1></div>
         <div className="top-actions">
-          <div className="workspace-chip"><Building2 size={16}/><span><b>Đơn vị của tôi</b><small>Không gian cá nhân</small></span></div>
+          <div className="workspace-chip"><Building2 size={16}/><span><b>Dữ liệu trên thiết bị</b><small>Chưa đồng bộ lên cloud</small></span></div>
           <button className="icon-btn" title="Quét QR" onClick={()=>setModal('scan')}><QrCode size={19}/></button>
           {page!=='planning'&&page!=='checklist'&&<button className="primary-btn" onClick={()=>{ if(page==='assets'){setEditingAsset(emptyAsset());setModal('asset')} else if(page==='inventory'){setEditingItem(emptyItem());setModal('item')} else if(page==='tasks'){setEditingTask(emptyTask());setModal('task')} else if(page==='logs'){setEditingLog({id:uid(),assetId:'',date:today(),kind:'Sửa chữa',description:'',parts:'',readings:'',result:'',performedBy:''});setModal('log')} else {setPage('assets');setEditingAsset(emptyAsset());setModal('asset')} }}><Plus size={17}/><span>Thêm mới</span></button>}
-          <button className="profile-chip" title="Tài khoản mẫu"><span className="avatar"><UserRound size={16}/></span><span className="profile-text"><b>Người dùng</b><small>Quản trị viên</small></span></button>
+          <button className="profile-chip" title="Đăng xuất" onClick={onSignOut}><span className="avatar"><UserRound size={16}/></span><span className="profile-text"><b>{userEmail}</b><small>Đăng xuất</small></span></button>
         </div>
       </header>
       <div className="content">
@@ -1484,4 +1487,42 @@ function ScanModal({close,assets,openAsset,expectedAssetId}:any){
     return ()=>{scanner.clear().catch(()=>{})}
   },[])
   return <Modal title="Quét mã QR thiết bị" close={close}><div id="qr-reader" className="qr-reader"/><p className="muted">Cho phép trình duyệt truy cập camera. Checklist chỉ được mở sau khi quét đúng QR của thiết bị.</p>{result&&<p>Kết quả: {result}</p>}</Modal>
+}
+
+
+export default function App() {
+  const [session, setSession] = useState<Session | null>(null)
+  const [checkingSession, setCheckingSession] = useState(true)
+
+  useEffect(() => {
+    if (!supabase) {
+      setCheckingSession(false)
+      return
+    }
+    let active = true
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (!active) return
+      if (error) console.error('Không thể khôi phục phiên Supabase:', error.message)
+      setSession(data.session)
+      setCheckingSession(false)
+    })
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession)
+      setCheckingSession(false)
+    })
+    return () => {
+      active = false
+      subscription.unsubscribe()
+    }
+  }, [])
+
+  if (!supabase) return <AuthScreen client={null} />
+  if (checkingSession) return <div className="auth-page"><div className="auth-card auth-loading">Đang kiểm tra phiên đăng nhập…</div></div>
+  if (!session) return <AuthScreen client={supabase} />
+
+  return <AppWorkspace
+    key={session.user.id}
+    userEmail={session.user.email ?? 'Tài khoản'}
+    onSignOut={() => { void supabase.auth.signOut() }}
+  />
 }
