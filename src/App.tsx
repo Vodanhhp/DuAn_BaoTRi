@@ -397,7 +397,8 @@ function AppWorkspace({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
       (!assetLocationFilter || a.location === assetLocationFilter) &&
       (!assetStatusFilter || a.status === assetStatusFilter)
     ).sort((a,b) => {
-      if (assetSort === 'code-desc') return b.code.localeCompare(a.code,'vi')      if (assetSort === 'name-asc') return a.name.localeCompare(b.name,'vi')
+      if (assetSort === 'code-desc') return b.code.localeCompare(a.code,'vi')
+      if (assetSort === 'name-asc') return a.name.localeCompare(b.name,'vi')
       if (assetSort === 'date-newest') return (b.commissionedAt || '').localeCompare(a.commissionedAt || '')
       if (assetSort === 'date-oldest') return (a.commissionedAt || '').localeCompare(b.commissionedAt || '')
       return a.code.localeCompare(b.code,'vi')
