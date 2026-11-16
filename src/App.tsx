@@ -397,8 +397,7 @@ function AppWorkspace({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
       (!assetLocationFilter || a.location === assetLocationFilter) &&
       (!assetStatusFilter || a.status === assetStatusFilter)
     ).sort((a,b) => {
-      if (assetSort === 'code-desc') return b.code.localeCompare(a.code,'vi')
-      if (assetSort === 'name-asc') return a.name.localeCompare(b.name,'vi')
+      if (assetSort === 'code-desc') return b.code.localeCompare(a.code,'vi')      if (assetSort === 'name-asc') return a.name.localeCompare(b.name,'vi')
       if (assetSort === 'date-newest') return (b.commissionedAt || '').localeCompare(a.commissionedAt || '')
       if (assetSort === 'date-oldest') return (a.commissionedAt || '').localeCompare(b.commissionedAt || '')
       return a.code.localeCompare(b.code,'vi')
@@ -797,8 +796,7 @@ function Dashboard({assets,tasks,dueToday,lowStock,overdue,go,complete,inventory
       <section className="panel insight-panel">
         <div className="panel-head"><div><h2>Ưu tiên kho</h2><p>Vật tư cần bổ sung sớm</p></div><button className="link-btn" onClick={()=>go('inventory')}>Xem kho <ChevronRight size={15}/></button></div>
         <div className="priority-list">
-          {priorityItems.length ? priorityItems.map((item:any, index:number) => (
-            <div className="priority-item" key={`${item.code}-${index}`}>
+          {priorityItems.length ? priorityItems.map((item:any, index:number) => (            <div className="priority-item" key={`${item.code}-${index}`}>
               <div>
                 <b>{item.name}</b>
                 <small>{item.code}</small>
@@ -1197,8 +1195,7 @@ function buildDefaultChecklist(asset: Asset): ChecklistTemplateItem[] {
   const name = (asset.name || '').toLocaleLowerCase('vi')
   const nameRules: Array<{pattern:RegExp;items:string[]}> = [
     {pattern:/hàn.*xung|xung.*hàn/,items:[
-      'Kiểm tra bề mặt điện cực hàn, đầu hàn và độ đồng tâm',
-      'Kiểm tra lực ép, hành trình và cơ cấu kẹp phôi',
+      'Kiểm tra bề mặt điện cực hàn, đầu hàn và độ đồng tâm',      'Kiểm tra lực ép, hành trình và cơ cấu kẹp phôi',
       'Kiểm tra thời gian xung, dòng hàn và thông số chương trình theo quy trình đã duyệt',
       'Kiểm tra cáp hàn, đầu nối công suất và dấu hiệu quá nhiệt',
       'Kiểm tra hệ thống làm mát điện cực/biến áp nếu được trang bị',
@@ -1517,12 +1514,13 @@ export default function App() {
   }, [])
 
   if (!supabase) return <AuthScreen client={null} />
+  const authenticatedClient = supabase
   if (checkingSession) return <div className="auth-page"><div className="auth-card auth-loading">Đang kiểm tra phiên đăng nhập…</div></div>
-  if (!session) return <AuthScreen client={supabase} />
+  if (!session) return <AuthScreen client={authenticatedClient} />
 
   return <AppWorkspace
     key={session.user.id}
     userEmail={session.user.email ?? 'Tài khoản'}
-    onSignOut={() => { void supabase.auth.signOut() }}
+    onSignOut={() => { void authenticatedClient.auth.signOut() }}
   />
 }
