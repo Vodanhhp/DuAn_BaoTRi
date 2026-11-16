@@ -450,3 +450,10 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Commit ghi kế hoạch trước khi sửa: `62a53565b2cdff8e63ef09be452df858266aff8b`.
 - Commit sửa cấu trúc hai cấp: `cffcf4b8ebc8e4282cecc05cd75f8ed8202f6fd2`.
 - Bước tiếp theo: Pull origin trên GitHub Desktop, chạy `npm.cmd run build`, rồi thử quy trình nhóm/loại như trên.
+
+
+### Khóa lại Checklist: bắt buộc quét mã QR (16/11/2026) – GHI NHẬN TRƯỚC KHI SỬA
+- Yêu cầu: kết thúc chế độ thử nghiệm mở Checklist từ danh sách thiết bị; từ nay tạo mới/chỉnh sửa biểu mẫu/thực hiện Checklist phải đi qua quét QR.
+- Phạm vi: đổi duy nhất `CHECKLIST_TEST_MODE` trong `src/App.tsx` từ `true` thành `false`; giữ nguyên luồng QR, lịch sử phiếu cũ, xem chi tiết và in lại không cần QR.
+- Rủi ro: nếu còn nhánh UI nào cấp quyền từ chế độ thử nghiệm thì phải rà soát điều kiện `CHECKLIST_TEST_MODE`; không thay đổi quyền xem/in lịch sử.
+- Kiểm thử: kiểm tra tĩnh cờ chỉ còn một lần khai báo và bằng `false`; kiểm tra trang Checklist không cấp quyền thao tác khi không quét QR; kiểm tra đường quét QR vẫn cấp quyền; kiểm tra lịch sử/chi tiết/in vẫn không cần QR. Chưa chạy build thực tế.
