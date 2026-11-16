@@ -500,3 +500,11 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Bước tiếp theo: Pull origin, chạy build và thử từng tab chu kỳ; kiểm tra một kỳ quá hạn, quét QR đúng/sai, lưu Checklist bù, xác nhận kỳ chuyển xanh và lịch sử ghi lại Checklist bù.
 
 - Bổ sung thứ tự ưu tiên: kỳ chưa hoàn thành được xếp theo ngày đến hạn cũ nhất trước; kỳ hoàn thành xếp mới nhất trước. Commit: `57caf2bbd8ed748c524b06a26d329c75625d19d3`.
+
+
+### Sửa lỗi cú pháp Vite trong lịch Bảo trì – Checklist (16/11/2026)
+- Người dùng báo lỗi Vite/React Babel tại `src/App.tsx:53:115`: `Expecting Unicode escape sequence \\uXXXX`.
+- Nguyên nhân: ba câu lệnh khai báo `templateDate`, `cycleDate`, `anchor` bị ghi nhầm ký tự literal `\\n` vào cùng một dòng thay vì xuống dòng thực, khiến parser đọc sai cú pháp.
+- Đã sửa trực tiếp trên `main`: thay hai chuỗi literal `\\n` bằng xuống dòng thật; giữ nguyên logic tính mốc lịch Checklist.
+- Commit sửa: `d8ccf9e36c71042e9241cf33c1ab3487bff7ccd2`.
+- Chưa chạy `npm.cmd run build` trong môi trường local của người dùng; cần Pull origin và chạy build để xác nhận toàn bộ dự án. Nếu còn lỗi Vite khác, gửi log mới để xử lý tiếp.
