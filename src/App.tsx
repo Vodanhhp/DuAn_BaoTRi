@@ -1035,6 +1035,7 @@ function AssetChecklist({asset}:{asset:Asset}) {
   const [itemNotes,setItemNotes] = useState<Record<string,string>>({})
   const [performedBy,setPerformedBy] = useState('Người sử dụng')
   const [resultNotes,setResultNotes] = useState('')
+  const [printEntry,setPrintEntry] = useState<ChecklistResult|null>(null)
   const currentVersion = versions?.find(v=>v.version===template?.currentVersion)
   const orderedResults = results.slice().sort((a,b)=>b.performedAt.localeCompare(a.performedAt))
   const openBuilder = async () => {
@@ -1089,7 +1090,23 @@ function AssetChecklist({asset}:{asset:Asset}) {
       <div className="asset-photo-actions"><button type="button" className="soft-btn" onClick={openBuilder}>{template?'Sửa biểu mẫu':'Tạo biểu mẫu'}</button><button type="button" className="primary-btn" disabled={!template || !currentVersion} onClick={startRun}>Thực hiện Checklist</button></div>
     </div>
     {template&&currentVersion&&<div className="maintenance-history-list"><b>{currentVersion.title}</b>{currentVersion.description&&<p>{currentVersion.description}</p>}{currentVersion.items.map((item,index)=><article key={item.id}><time>{index+1}</time><div><b>{item.label}</b>{item.description&&<small>{item.description}</small>}</div></article>)}</div>}
-    {orderedResults.length>0&&<div className="maintenance-history-list"><b>Lịch sử thực hiện</b>{orderedResults.map(entry=><article key={entry.id}><time>{new Date(entry.performedAt).toLocaleString('vi-VN')}</time><div><b>{entry.templateTitle} · v{entry.templateVersion}</b><small>Người thực hiện: {entry.performedBy} · Kết quả: {entry.result}</small>{entry.notes&&<small>Ghi chú: {entry.notes}</small>}<details><summary>Xem chi tiết phiếu</summary>{entry.items.map((item,index)=><p key={item.templateItemId}>{index+1}. {item.label}: <b>{item.answer||'—'}</b>{item.note?' · '+item.note:''}</p>)}</details></div></article>)}</div>}
+    <section className="checklist-results">
+      <div className="panel-head"><div><b>Lịch sử Checklist</b><p>{orderedResults.length} phiếu đã thực hiện · lưu riêng, không tính vào lịch sử sửa chữa</p></div></div>
+      {orderedResults.length>0?<div className="maintenance-history-list">{orderedResults.map(entry=><article key={entry.id}><time>{new Date(entry.performedAt).toLocaleString('vi-VN')}</time><div><b>{entry.templateTitle} · v{entry.templateVersion}</b><small>Người thực hiện: {entry.performedBy} · Kết quả: {entry.result}</small>{entry.notes&&<small>Ghi chú: {entry.notes}</small>}<div className="checklist-result-actions"><button type="button" className="soft-btn" onClick={()=>{setPrintEntry(entry);window.setTimeout(()=>window.print(),180)}}><Printer size={14}/> In phiếu A4</button></div><details><summary>Xem chi tiết phiếu</summary>{entry.items.map((item,index)=><p key={item.templateItemId}>{index+1}. {item.label}: <b>{item.answer||'—'}</b>{item.note?' · '+item.note:''}</p>)}</details></div></article>)}</div>:<p className="muted">Chưa có phiếu Checklist nào. Sau khi nhấn “Thực hiện Checklist” và “Lưu phiếu kết quả”, phiếu sẽ xuất hiện tại đây.</p>}
+    </section>
+    {printEntry&&<div className="asset-print-sheet print-checklist"><div className="asset-print-report">
+      <h1 className="asset-print-form-title">PHIẾU KIỂM TRA CHECKLIST THIẾT BỊ</h1>
+      <div className="checklist-print-meta">
+        <div><b>Mã thiết bị:</b> {asset.code}</div><div><b>Tên thiết bị:</b> {asset.name}</div>
+        <div><b>Nhóm thiết bị:</b> {asset.category}</div><div><b>Vị trí:</b> {asset.location||'—'}</div>
+        <div><b>Biểu mẫu:</b> {printEntry.templateTitle} · Phiên bản {printEntry.templateVersion}</div>
+        <div><b>Thời gian:</b> {new Date(printEntry.performedAt).toLocaleString('vi-VN')}</div>
+        <div><b>Người thực hiện:</b> {printEntry.performedBy}</div><div><b>Kết quả chung:</b> {printEntry.result}</div>
+      </div>
+      <table className="checklist-print-table"><thead><tr><th style={{width:'7%'}}>STT</th><th>Hạng mục kiểm tra</th><th style={{width:'22%'}}>Kết quả</th><th style={{width:'27%'}}>Ghi chú</th></tr></thead><tbody>{printEntry.items.map((item,index)=><tr key={item.templateItemId}><td>{index+1}</td><td><b>{item.label}</b>{item.description&&<div>{item.description}</div>}</td><td>{item.answer||'—'}</td><td>{item.note||'—'}</td></tr>)}</tbody></table>
+      {printEntry.notes&&<p><b>Ghi chú chung:</b> {printEntry.notes}</p>}
+      <div className="checklist-signatures"><div><b>Người thực hiện</b><small>(Ký, ghi rõ họ tên)</small></div><div><b>Người kiểm tra / xác nhận</b><small>(Ký, ghi rõ họ tên)</small></div></div>
+    </div></div>}
     {builderOpen&&<Modal title={template?'Chỉnh sửa biểu mẫu Checklist':'Tạo Checklist cho thiết bị'} close={()=>setBuilderOpen(false)}><form className="form-grid" onSubmit={saveTemplate}>
       <div className="form-hint">Thiết bị: <b>{asset.code} – {asset.name}</b>. Biểu mẫu này chỉ thuộc thiết bị đang mở.</div>
       <Field label="Tên biểu mẫu *"><input required value={draftTitle} onChange={e=>setDraftTitle(e.target.value)}/></Field>
