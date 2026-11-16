@@ -62,6 +62,8 @@ const dateText = (s: string) => s ? new Date(s + (s.length === 10 ? 'T00:00:00' 
 export default function App() {
   const [page, setPage] = useState<Page>('dashboard')
   const [search, setSearch] = useState('')
+  const [theme, setTheme] = useState<'light' | 'dark'>('light')
+  const [compact, setCompact] = useState(false)
   const [modal, setModal] = useState<'asset'|'item'|'task'|'log'|'scan'|null>(null)
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null)
   const [detailAsset, setDetailAsset] = useState<Asset | null>(null)
@@ -83,6 +85,22 @@ export default function App() {
   const tasks = useLiveQuery(() => db.tasks.orderBy('dueDate').toArray(), []) ?? []
   const logs = useLiveQuery(() => db.logs.orderBy('date').reverse().toArray(), []) ?? []
   const queueCount = useLiveQuery(() => db.syncQueue.count(), []) ?? 0
+
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('baotri-theme') as 'light' | 'dark' | null
+    const savedCompact = localStorage.getItem('baotri-compact') === 'true'
+    if (savedTheme === 'dark' || savedTheme === 'light') setTheme(savedTheme)
+    setCompact(savedCompact)
+  }, [])
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    localStorage.setItem('baotri-theme', theme)
+  }, [theme])
+
+  useEffect(() => {
+    localStorage.setItem('baotri-compact', String(compact))
+  }, [compact])
 
   useEffect(() => {
     const seed = async () => {
@@ -430,7 +448,7 @@ export default function App() {
     ['tasks','Kế hoạch bảo trì',CalendarDays], ['logs','Nhật ký',ClipboardList], ['reports','Báo cáo',BarChart3], ['settings','Cài đặt',Settings]
   ] as const
 
-  return <div className="app-shell">
+  return <div className={`app-shell ${theme} ${compact ? 'compact-mode' : ''}`}>
     <aside className="sidebar">
       <div className="brand"><div className="brand-icon"><Wrench size={21}/></div><div><b>BAOTRI</b><small>QUẢN LÝ BẢO TRÌ</small></div></div>
       <div className="nav-label">MENU CHÍNH</div>
@@ -455,7 +473,7 @@ export default function App() {
       </header>
       <div className="content">
         {page!=='dashboard' && page!=='settings' && <div className="searchbar"><Search size={18}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Tìm theo mã, tên hoặc nội dung..."/></div>}
-        {page==='dashboard' && <Dashboard assets={activeAssets} tasks={tasks} dueToday={dueToday} lowStock={lowStock} overdue={overdue} go={setPage} complete={completeTask}/>}
+        {page==='dashboard' && <Dashboard assets={activeAssets} tasks={tasks} inventory={inventory} dueToday={dueToday} lowStock={lowStock} overdue={overdue} go={setPage} complete={completeTask}/>}
         {page==='assets' && <section className="panel"><div className="panel-head"><div><h2>{showArchived?'Thiết bị đã lưu kho':'Danh mục thiết bị'}</h2><p>{showArchived?'Hồ sơ được giữ lại để tra cứu hoặc khôi phục':'Quản lý lý lịch, mã QR, ảnh và tình trạng thiết bị'}</p></div><div className="asset-toolbar">
             <button className={!showArchived?'soft-btn':'text-btn'} onClick={()=>setShowArchived(false)}>Đang quản lý ({activeAssets.length})</button>
             <button className={showArchived?'soft-btn':'text-btn'} onClick={()=>setShowArchived(true)}><Archive size={15}/> Lưu kho ({archivedAssets.length})</button>
@@ -496,6 +514,7 @@ export default function App() {
             <div className="setting-row"><div><b>Xuất bản sao lưu</b><small>Tải thiết bị, vật tư, công việc và nhật ký thành JSON.</small></div><button className="primary-btn" onClick={backup}><Download size={16}/> Sao lưu</button></div>
             <div className="setting-row"><div><b>Khôi phục bản sao lưu</b><small>Nhập file JSON đã xuất từ ứng dụng.</small></div><label className="soft-btn file-btn">Chọn file<input type="file" accept=".json,application/json" onChange={e=>e.target.files?.[0]&&restore(e.target.files[0])}/></label></div>
             <div className="setting-row"><div><b>Trạng thái đồng bộ</b><small>{queueCount} thay đổi đang chờ. Chưa kết nối máy chủ cloud ở phiên bản này.</small></div><span className="status orange">Chỉ lưu cục bộ</span></div>
+            <div className="setting-row"><div><b>Giao diện</b><small>Chuyển đổi giữa tối/ sáng và thu gọn thông tin chính.</small></div><div className="setting-inline-actions"><button className={`soft-btn ${theme === 'light' ? 'active' : ''}`} onClick={()=>setTheme('light')}>Sáng</button><button className={`soft-btn ${theme === 'dark' ? 'active' : ''}`} onClick={()=>setTheme('dark')}>Tối</button><button className={`soft-btn ${compact ? 'active' : ''}`} onClick={()=>setCompact(v=>!v)}>{compact ? 'Thu gọn' : 'Mở rộng'}</button></div></div>
           </section>
           <section className="panel"><h2>Thông tin phiên bản</h2><p className="muted">BAOTRI PWA · 0.1.0</p><p>Đây là bộ khung chạy thử để cùng hoàn thiện nghiệp vụ. Dữ liệu nằm trong trình duyệt trên thiết bị hiện tại.</p><p className="warning-box">Không dùng dữ liệu này làm hồ sơ bảo trì chính thức trước khi thiết lập máy chủ, sao lưu và kiểm thử đồng bộ.</p></section>
         </div>}
@@ -516,8 +535,25 @@ export default function App() {
   </div>
 }
 
-function Dashboard({assets,tasks,dueToday,lowStock,overdue,go,complete}:any) {
+function Dashboard({assets,tasks,dueToday,lowStock,overdue,go,complete,inventory}:any) {
   const completed = tasks.filter((t:Task)=>t.status==='Hoàn thành').length
+  const repairCount = assets.filter((a:Asset)=>a.status==='Đang sửa chữa').length
+  const inventoryValue = (inventory as InventoryItem[]).reduce((sum:number, item:InventoryItem) => sum + item.quantity * item.unitPrice, 0)
+  const completionRate = tasks.length ? Math.round((completed / tasks.length) * 100) : 0
+  const categoryStats: [string, number][] = (Object.entries(
+    (assets as Asset[]).reduce((acc:Record<string, number>, asset:Asset) => {
+      const key = asset.category || 'Khác'
+      acc[key] = (acc[key] ?? 0) + 1
+      return acc
+    }, {}) as Record<string, number>
+  ) as [string, number][]).sort((a,b)=>b[1]-a[1]).slice(0,4)
+  const maxCategory = Math.max(1, ...categoryStats.map(([,count]) => count))
+  const priorityItems = lowStock.slice(0,3).map((item:InventoryItem) => ({
+    name: item.name,
+    code: item.code,
+    ratio: Math.min(100, Math.round((item.quantity / Math.max(item.minQuantity, 1)) * 100))
+  }))
+
   return <div className="dashboard">
     <div className="welcome"><div><div className="eyebrow light">BẢNG ĐIỀU KHIỂN</div><h2>Chào bạn, hôm nay cần bảo trì gì?</h2><p>{new Date().toLocaleDateString('vi-VN',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})} · Theo dõi thiết bị và công việc tại một nơi.</p></div><div className="welcome-icon"><Activity size={42}/></div></div>
     <div className="stat-grid">
@@ -525,6 +561,41 @@ function Dashboard({assets,tasks,dueToday,lowStock,overdue,go,complete}:any) {
       <Stat icon={<CalendarDays/>} label="Việc cần làm hôm nay" value={dueToday.length} hint="Đến hạn hôm nay" color="orange"/>
       <Stat icon={<ShieldAlert/>} label="Công việc quá hạn" value={overdue} hint="Cần theo dõi" color="red"/>
       <Stat icon={<Package/>} label="Vật tư sắp hết" value={lowStock.length} hint="Dưới mức tối thiểu" color="purple"/>
+    </div>
+    <div className="analytics-grid">
+      <section className="panel insight-panel">
+        <div className="panel-head"><div><h2>Hiệu suất bảo trì</h2><p>Tỷ lệ hoàn thành và phân bổ thiết bị theo nhóm</p></div><span className="mini-chip">{completionRate}%</span></div>
+        <div className="mini-stat-list">
+          <div className="mini-stat"><span>Hoàn thành</span><strong>{completed}</strong></div>
+          <div className="mini-stat"><span>Đang sửa</span><strong>{repairCount}</strong></div>
+          <div className="mini-stat"><span>Giá trị kho</span><strong>{money(inventoryValue)}</strong></div>
+        </div>
+        <div className="bar-chart">
+          {categoryStats.map(([label, count]) => (
+            <div className="bar-row" key={label}>
+              <span>{label}</span>
+              <div className="bar-track"><i style={{ width: `${(count / maxCategory) * 100}%` }} /></div>
+              <strong>{count}</strong>
+            </div>
+          ))}
+        </div>
+      </section>
+      <section className="panel insight-panel">
+        <div className="panel-head"><div><h2>Ưu tiên kho</h2><p>Vật tư cần bổ sung sớm</p></div><button className="link-btn" onClick={()=>go('inventory')}>Xem kho <ChevronRight size={15}/></button></div>
+        <div className="priority-list">
+          {priorityItems.length ? priorityItems.map((item:any) => (
+            <div className="priority-item" key={item.code}>
+              <div>
+                <b>{item.name}</b>
+                <small>{item.code}</small>
+              </div>
+              <div className="priority-meter">
+                <span style={{ width: `${item.ratio}%` }} />
+              </div>
+            </div>
+          )) : <Empty text="Kho đang ổn định."/>}
+        </div>
+      </section>
     </div>
     <div className="dash-columns">
       <section className="panel"><div className="panel-head"><div><h2>Công việc hôm nay</h2><p>Tick hoàn thành sau khi thực hiện và ghi nhận kết quả</p></div><button className="link-btn" onClick={()=>go('tasks')}>Xem tất cả <ChevronRight size={15}/></button></div>
@@ -640,10 +711,10 @@ function InventoryDetailModal({value,close,edit}:any){
 function TaskModal({value,assets,close,save}:any){
   const [v,setV]=useState<Task>(value); const set=(k:keyof Task,x:any)=>setV(p=>({...p,[k]:x}))
   return <Modal title="Công việc bảo trì" close={close}><form className="form-grid" onSubmit={e=>{e.preventDefault();if(!v.title||!v.assetId)return alert('Chọn thiết bị và nhập tên công việc');save(v)}}>
-    <Field label="Thiết bị"><select value={v.assetId} onChange={e=>set('assetId',e.target.value)}><option value="">-- Chọn thiết bị --</option>{assets.map((a:Asset)=><option value={a.id}>{a.code} - {a.name}</option>)}</select></Field>
+    <Field label="Thiết bị"><select value={v.assetId} onChange={e=>set('assetId',e.target.value)}><option value="">-- Chọn thiết bị --</option>{assets.map((a:Asset)=><option key={a.id} value={a.id}>{a.code} - {a.name}</option>)}</select></Field>
     <Field label="Tên công việc"><input required value={v.title} onChange={e=>set('title',e.target.value)}/></Field>
-    <Field label="Ngày đến hạn"><input type="date" value={v.dueDate} onChange={e=>set('dueDate',e.target.value)}/></Field><Field label="Chu kỳ"><select value={v.frequency} onChange={e=>set('frequency',e.target.value)}>{['Một lần','Hàng ngày','Hàng tuần','Hàng tháng','Hàng quý','6 tháng','Hàng năm'].map(x=><option>{x}</option>)}</select></Field>
-    <Field label="Trạng thái"><select value={v.status} onChange={e=>set('status',e.target.value)}>{['Chờ thực hiện','Đang thực hiện','Hoàn thành','Quá hạn'].map(x=><option>{x}</option>)}</select></Field>
+    <Field label="Ngày đến hạn"><input type="date" value={v.dueDate} onChange={e=>set('dueDate',e.target.value)}/></Field><Field label="Chu kỳ"><select value={v.frequency} onChange={e=>set('frequency',e.target.value)}>{['Một lần','Hàng ngày','Hàng tuần','Hàng tháng','Hàng quý','6 tháng','Hàng năm'].map(x=><option key={x}>{x}</option>)}</select></Field>
+    <Field label="Trạng thái"><select value={v.status} onChange={e=>set('status',e.target.value)}>{['Chờ thực hiện','Đang thực hiện','Hoàn thành','Quá hạn'].map(x=><option key={x}>{x}</option>)}</select></Field>
     <Field label="Checklist (mỗi dòng một mục)"><textarea rows={4} value={v.checklist} onChange={e=>set('checklist',e.target.value)}/></Field>
     <Field label="Thông số ghi nhận"><textarea rows={3} placeholder="Ví dụ: Áp suất 7 bar; nhiệt độ dầu 82°C..." value={v.readings} onChange={e=>set('readings',e.target.value)}/></Field>
     <Field label="Ghi chú"><textarea rows={2} value={v.notes} onChange={e=>set('notes',e.target.value)}/></Field>

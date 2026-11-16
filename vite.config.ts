@@ -19,9 +19,29 @@ export default defineConfig({
         icons: []
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}']
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        runtimeCaching: [
+          {
+            urlPattern: ({ request }) => request.destination === 'document',
+            handler: 'NetworkFirst'
+          }
+        ]
       }
     })
   ],
+  build: {
+    chunkSizeWarningLimit: 1200,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ['react', 'react-dom'],
+          dexie: ['dexie', 'dexie-react-hooks'],
+          data: ['xlsx'],
+          qr: ['qrcode.react', 'html5-qrcode'],
+          icons: ['lucide-react']
+        }
+      }
+    }
+  },
   server: { port: 5173 }
 })
