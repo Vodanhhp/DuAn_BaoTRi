@@ -376,6 +376,9 @@ export default function App() {
         const t2 = { ...emptyTask(), assetId: coldStore?.id ?? '', title: 'Ghi nhận nhiệt độ kho lạnh', dueDate: today(), frequency: 'Hàng ngày', checklist: 'Ghi nhiệt độ hiển thị\\nKiểm tra cửa kho\\nKiểm tra tình trạng dàn lạnh' }
         await db.tasks.bulkPut([t1, t2])
       }
+      // Khởi tạo biểu mẫu riêng cho mọi thiết bị đang quản lý; không đụng vào biểu mẫu đã có.
+      const checklistAssets = (await db.assets.toArray()).filter(asset => !asset.archivedAt)
+      for (const asset of checklistAssets) await ensureDefaultChecklist(asset)
     }
     seed()
   }, [])
