@@ -1260,3 +1260,44 @@ Commit tạo và rà soát ràng buộc:
 ### Bước tiếp theo
 Review migration 001 cùng người dùng, chỉnh các điểm cần thiết, sau đó mới lập test SQL cho hai tổ chức/hai vai trò. Chỉ chạy migration khi người dùng xác nhận rõ ràng.
 
+## 16/11/2026 – Rà soát migration 001 và bổ sung bộ test RLS
+
+Đã tiếp tục rà soát bản nháp migration 001 theo quyết định người dùng cho phép chủ động triển khai công việc, nhưng vẫn giữ nguyên nguyên tắc không chạy SQL lên Supabase nếu chưa có xác nhận riêng.
+
+### Thay đổi migration 001
+File: `supabase/migrations/20261116000100_identity_and_organizations.sql`
+
+- Bổ sung backfill `profiles` cho các Auth user đã tồn tại trước thời điểm chạy migration. Việc này cần thiết vì tài khoản Auth đầu tiên đã được tạo trước migration; nếu không backfill, khóa ngoại `organizations.created_by` sẽ không thể tham chiếu profile tương ứng.
+- Bổ sung RLS SELECT cho phép thành viên active đọc hồ sơ tên/điện thoại của thành viên active cùng tổ chức, ngoài hồ sơ của chính mình. Không có policy này, Admin/User chỉ đọc được profile bản thân và không thể hiển thị tên đồng nghiệp.
+- Giữ nguyên nguyên tắc client không có INSERT/UPDATE/DELETE trên organizations và organization_members.
+- Migration vẫn chưa chạy trên Supabase; chưa có kết quả xác nhận runtime PostgreSQL/RLS.
+
+Commit cập nhật gần nhất migration: `765f3f1cc250de3ddc074ccffdef31ff044e7749`.
+
+### Bộ kiểm thử RLS thủ công
+Đã tạo:
+`supabase/tests/001_identity_rls_manual_test.sql`
+
+Commit: `3efe3c484a5aff3b67d6a447fad0350fc78ee003`
+
+Bộ test yêu cầu project thử nghiệm đã có bốn Auth users (Admin A, User A, Admin B, User B), hai tổ chức và membership tương ứng. Script mô phỏng JWT subject bằng `request.jwt.claim.sub`, chuyển vai trò database sang `authenticated`, rồi kiểm tra:
+- Mỗi user/admin chỉ nhìn thấy tổ chức và membership thuộc tổ chức mình.
+- Chỉ nhìn thấy profile của thành viên active cùng tổ chức.
+- Helper xác nhận membership/role đúng tenant.
+- Client không có quyền INSERT/UPDATE/DELETE organization hoặc membership.
+- Profile chỉ cho cập nhật display_name, phone; không được sửa id.
+- Script dùng transaction và ROLLBACK; chỉ là smoke test đọc/kiểm tra quyền, không tạo dữ liệu lâu dài.
+
+### Lưu ý review trước khi thực thi
+- Test SQL có placeholder UUID; cần thay bằng UUID của bốn Auth user và hai organization test.
+- Chưa kiểm tra runtime bằng PostgreSQL/Supabase; chưa thể kết luận migration đã build/test thành công.
+- Trước khi chạy cần tạo môi trường thử nghiệm riêng hoặc xác nhận project Supabase hiện tại chưa có dữ liệu nghiệp vụ cần bảo vệ; không chạy trực tiếp vào project thật.
+- Cần test thêm các thao tác ghi trái phép qua API, invitation/bootstrap, bảo vệ Admin cuối cùng, RPC transaction, Storage và cross-tenant nghiệp vụ ở các migration sau.
+- Không đưa service-role key vào frontend/repository.
+
+### Trạng thái hiện tại
+- Migration 001: bản nháp đã được rà soát và bổ sung backfill/profile RLS.
+- Bộ test RLS hai tenant: đã tạo, chưa chạy.
+- Supabase project: chưa chạy migration; chưa tạo bảng nghiệp vụ; chưa import dữ liệu.
+- Bước kế tiếp: kiểm tra cấu hình Supabase hiện tại có thể dùng làm môi trường thử nghiệm hay cần tạo project test riêng; sau đó review và chạy migration 001 trong môi trường test, chỉ khi người dùng cho phép rõ ràng.
+
