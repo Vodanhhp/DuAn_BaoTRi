@@ -232,9 +232,16 @@ Các điểm bảo vệ được áp dụng trong bản nháp:
 
 ### Các giả định cần kiểm tra trước khi chạy
 1. Trường ngày thuần (commissioned_at, cycle_started_at, due_date, start_date, end_date, scheduled_for, log_date, movement_date) đang được khai báo kiểu date; các mốc thời điểm thực hiện/hoàn tất dùng timestamptz. Cần đối chiếu dữ liệu thực tế trong App.tsx trước import.
-2. Migration đang giả định danh mục thiết bị tự tạo có cấu trúc JSON object; định dạng lưu localStorage phải được xác minh trước khi kết nối.
+2. Đã đối chiếu src/App.tsx: customAssetCategories là mảng JSON; mỗi phần tử có label và items, mỗi item có name và code. Migration 002 dùng JSONB array cho organization_settings.asset_categories. Cần giữ nguyên cấu trúc này khi kết nối.
 3. Các trạng thái/giá trị period và execution đang dùng đúng các chuỗi tiếng Việt từ TypeScript hiện tại; cần rà soát dữ liệu thực tế để tránh giá trị ngoài danh sách.
 4. RLS đang cho member thao tác dữ liệu thiết bị, vật tư (trừ số tồn), công việc và kế hoạch; quyền xóa master data giới hạn Admin. Đây là chính sách đề xuất, cần review trước khi áp dụng.
 5. Bản nháp không tạo organization/membership, không tạo Storage bucket, không import dữ liệu và không sửa frontend/local data.
 
 Việc người dùng xác nhận reset toàn bộ dữ liệu nghiệp vụ trước go-live có nghĩa là không cần xử lý riêng bản ghi VT-001 trong backup phát triển. Reset chỉ được thực hiện sau này theo quy trình riêng, có backup, preview số lượng và xác nhận rõ ràng; chưa thực hiện ở giai đoạn này.
+
+
+### Đối chiếu bổ sung với src/db.ts và src/App.tsx
+- Đã kiểm tra TypeScript interfaces trong src/db.ts và các luồng ngày/giờ trong src/App.tsx: ngày lịch như commissionedAt, dueDate, startDate, endDate, scheduledFor, log.date và movement.date được lưu/so sánh theo chuỗi YYYY-MM-DD; bản nháp dùng PostgreSQL date cho các cột tương ứng. Các mốc createdAt, updatedAt, completedAt, performedAt dùng ISO timestamp; bản nháp dùng timestamptz.
+- Đã kiểm tra localStorage customAssetCategories: dữ liệu là mảng nhóm {label, items}, trong đó item có name và code. Migration 002 đã được sửa để dùng JSONB array mặc định [] và CHECK jsonb_typeof(...)=array.
+- Giá trị trạng thái thiết bị, công việc, chu kỳ kế hoạch, hình thức thực hiện và kết quả Checklist được đối chiếu với union types trong src/db.ts.
+- Chưa kiểm tra được toàn bộ luồng ghi movement trong giao diện; điều kiện quantity > 0 đang được xem là số lượng giao dịch dương, cần xác nhận trước khi áp dụng nếu nghiệp vụ điều chỉnh có thể dùng số âm.
