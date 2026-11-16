@@ -979,3 +979,22 @@ Người dùng xác nhận đồng ý đưa cả dữ liệu thử nghiệm đan
 - Đã tạo script kiểm tra chỉ đọc: supabase/tests/20261117000200_business_schema_smoke_test.sql (commit 144299085e4c424d0b725b61ad830203dbcbde25). Script kiểm tra đủ 11 bảng, RLS/policies, quyền anon, quyền helper, cấm cập nhật số tồn trực tiếp, cấm insert movement trực tiếp và tính append-only của Checklist result/maintenance log.
 - Trạng thái thực thi: chưa chạy Migration 002 và chưa chạy smoke test. Môi trường hiện tại không có kết nối/công cụ thực thi SQL trực tiếp tới Supabase; cần người dùng chạy trong SQL Editor của BAOTRI-Mini-Test hoặc cung cấp kết nối thực thi được cấp quyền. Không yêu cầu gửi service-role key hoặc mật khẩu.
 - Trước khi chạy: mở đúng project BAOTRI-Mini-Test (ref oyzhxgzltpdebpymuicb), xác nhận Migration 001 đã có trong lịch sử migration, chạy nội dung Migration 002; nếu thành công mới chạy smoke test. Nếu lỗi, dừng, gửi nguyên văn lỗi để rà soát; không chạy tiếp hoặc thử trên production.
+
+
+## 17/11/2026 – Migration 002 và Smoke test đã chạy thành công trên Test
+
+- Người dùng xác nhận Migration 002 trả về `Success. No rows returned` trên project `BAOTRI-Mini-Test`.
+- Người dùng chạy Smoke test; ảnh kết quả cho thấy cột `row_security_active` là `true` cho các bảng hiển thị và người dùng xác nhận **cả 11/11 bảng đều true**.
+- Kết luận trong phạm vi bằng chứng hiện có: Migration 002 thực thi không báo lỗi; RLS đang bật trên toàn bộ 11 bảng. Các kiểm tra khác trong Smoke test đã được script chạy nhưng chưa có ảnh/toàn bộ output để lưu từng dòng kết quả. Không diễn giải kết quả này thành kiểm thử RLS runtime dưới các vai trò authenticated/anon hoặc kiểm thử cách ly tenant thực tế.
+- Project Production `BAOTRI-Mini` chưa được thay đổi. Chưa có dữ liệu nghiệp vụ nào được import; chưa có Storage bucket; frontend vẫn chưa đồng bộ dữ liệu cloud.
+
+## 17/11/2026 – Chuẩn bị bootstrap một tổ chức cá nhân trên Test
+
+- Theo kiến trúc hiện hành, chỉ sử dụng một tài khoản Auth của người dùng; vẫn giữ `organization_id`, membership và RLS để sẵn sàng mở rộng tenant về sau. Không triển khai giao diện nhiều tổ chức/thành viên ở giai đoạn này.
+- Đã tạo `supabase/scripts/bootstrap_personal_organization.sql`: script one-time tạo tổ chức `Cá nhân`, membership active role `admin` cho đúng một Auth user được chỉ định bằng email, đồng thời tạo `organization_settings` mặc định. Script từ chối chạy nếu email chưa thay placeholder, không tìm thấy/không duy nhất Auth user, hoặc user đã có membership; không tạo Auth user và không thêm dữ liệu nghiệp vụ.
+- Đã tạo `supabase/tests/verify_personal_organization_bootstrap.sql`: kiểm tra read-only số lượng membership active, role admin, settings và helper functions sau bootstrap.
+- Các file trên được thêm trực tiếp vào `main`; chưa chạy script bootstrap, chưa tạo organization/membership thật và chưa thay đổi dữ liệu Supabase. Chỉ chạy trên `BAOTRI-Mini-Test`, tuyệt đối không chạy Production.
+- Trước khi chạy, người dùng cần thay đúng placeholder `REPLACE_WITH_AUTH_EMAIL` trong cả hai script bằng email của tài khoản Auth duy nhất sẽ dùng. Không gửi mật khẩu, access token hoặc service-role key. Nếu project Test hiện có nhiều Auth users, phải chọn đúng email tài khoản của chính người dùng; script chỉ tạo membership cho user khớp email đó.
+- Không tạo bảng/migration mới cho bootstrap vì các bảng identity và business schema đã có. Đây là script khởi tạo dữ liệu có kiểm soát, không phải migration cấu trúc.
+- Commit bootstrap: d3bd0f71e6668b6020b94f55ecf77eeaa413f53e
+- Commit verify: b10e1baadfc0bd8f09c2fa7d26bee9493ef9966c
