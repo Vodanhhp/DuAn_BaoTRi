@@ -922,7 +922,7 @@ function buildDefaultChecklist(asset: Asset): ChecklistTemplateItem[] {
 async function ensureDefaultChecklist(asset: Asset) {
   return db.transaction('rw', db.checklistTemplates, db.checklistVersions, async () => {
     const existing = await db.checklistTemplates.where('assetId').equals(asset.id).first()
-    if (existing) return null
+    if (existing) return existing.id
     const timestamp = now()
     const templateId = uid()
     const title = 'Checklist bảo trì – ' + (asset.category || 'Thiết bị')
