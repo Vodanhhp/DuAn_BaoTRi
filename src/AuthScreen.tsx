@@ -15,17 +15,22 @@ export default function AuthScreen({ client }: Props) {
     if (!client) return
     setBusy(true)
     setError('')
-    const { error: authError } = await client.auth.signInWithPassword({
-      email: email.trim(),
-      password
-    })
-    if (authError) {
-      const message = authError.message.toLowerCase()
-      if (message.includes('invalid login credentials')) setError('Email hoặc mật khẩu không chính xác.')
-      else if (message.includes('email not confirmed')) setError('Email chưa được xác nhận. Hãy xác nhận email trong hộp thư trước khi đăng nhập.')
-      else setError('Đăng nhập chưa thành công: ' + authError.message)
+    try {
+      const { error: authError } = await client.auth.signInWithPassword({
+        email: email.trim(),
+        password
+      })
+      if (authError) {
+        const message = authError.message.toLowerCase()
+        if (message.includes('invalid login credentials')) setError('Email hoặc mật khẩu không chính xác.')
+        else if (message.includes('email not confirmed')) setError('Email chưa được xác nhận. Hãy xác nhận email trong hộp thư trước khi đăng nhập.')
+        else setError('Đăng nhập chưa thành công: ' + authError.message)
+      }
+    } catch {
+      setError('Không kết nối được Supabase. Kiểm tra Internet và cấu hình project rồi thử lại.')
+    } finally {
+      setBusy(false)
     }
-    setBusy(false)
   }
 
   return <main className="auth-page">
