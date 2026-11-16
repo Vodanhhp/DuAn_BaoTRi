@@ -540,7 +540,7 @@ export default function App() {
     </nav>
     <main className="main">
       <header className="topbar">
-        <div className="page-heading"><div className="eyebrow">HỆ THỐNG QUẢN LÝ KỸ THUẬT</div><h1>{nav.find(n=>n[0]===page)?.[1]}</h1></div>
+        <div className="page-heading"><div className="eyebrow">HỆ THỐNG QUẢN LÝ KỸ THUẬT</div><h1>{nav.find(n=>n[0]===page)?.[1] ?? (page==='tasks'?'Kế hoạch bảo dưỡng':'')}</h1></div>
         <div className="top-actions">
           <div className="workspace-chip"><Building2 size={16}/><span><b>Đơn vị của tôi</b><small>Không gian cá nhân</small></span></div>
           <button className="icon-btn" title="Quét QR" onClick={()=>setModal('scan')}><QrCode size={19}/></button>
