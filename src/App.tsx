@@ -64,7 +64,8 @@ function buildChecklistScheduleRows(assets: Asset[], templates: any[], results: 
   }
   return rows.sort((a,b)=>{
     if(a.completed!==b.completed) return a.completed?1:-1
-    return b.dueDate.localeCompare(a.dueDate) || a.asset.name.localeCompare(b.asset.name,'vi')
+    const dateOrder = a.completed ? b.dueDate.localeCompare(a.dueDate) : a.dueDate.localeCompare(b.dueDate)
+    return dateOrder || a.asset.name.localeCompare(b.asset.name,'vi')
   })
 }
 
