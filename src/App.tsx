@@ -1146,7 +1146,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
           <section className="panel"><div className="panel-head"><div><h2>Dữ liệu và sao lưu</h2><p>Phiên bản thử nghiệm lưu dữ liệu cục bộ trong trình duyệt này</p></div><HardDrive/></div>
             <div className="setting-row"><div><b>Xuất bản sao lưu</b><small>Tải đầy đủ thiết bị, vật tư, kế hoạch, nhật ký, Checklist, ảnh, danh mục tự tạo và dữ liệu hàng đợi thành JSON.</small></div><button className="primary-btn" onClick={backup}><Download size={16}/> Sao lưu</button></div>
             <div className="setting-row"><div><b>Khôi phục bản sao lưu</b><small>Nhập file JSON đã xuất từ ứng dụng.</small></div><label className="soft-btn file-btn">Chọn file<input type="file" accept=".json,application/json" onChange={e=>e.target.files?.[0]&&restore(e.target.files[0])}/></label></div>
-            <div className="setting-row"><div><b>Trạng thái đồng bộ</b><small>{queueCount} thay đổi đang chờ. Chưa kết nối máy chủ cloud ở phiên bản này.</small></div><span className="status orange">Chỉ lưu cục bộ</span></div>
+            <div className="setting-row"><div><b>Trạng thái dữ liệu</b><small>{queueCount} thay đổi cục bộ đang chờ. Đăng nhập, tổ chức và phép thử ghi/đọc thiết bị đã kết nối Supabase; dữ liệu nghiệp vụ chính vẫn đang lưu trong trình duyệt, chưa đồng bộ tự động.</small></div><span className="status orange">Chưa đồng bộ nghiệp vụ</span></div>
             <div className="setting-row"><div><b>Giao diện</b><small>Chuyển đổi giữa tối/ sáng và thu gọn thông tin chính.</small></div><div className="setting-inline-actions"><button className={`soft-btn ${theme === 'light' ? 'active' : ''}`} onClick={()=>setTheme('light')}>Sáng</button><button className={`soft-btn ${theme === 'dark' ? 'active' : ''}`} onClick={()=>setTheme('dark')}>Tối</button><button className={`soft-btn ${compact ? 'active' : ''}`} onClick={()=>setCompact(v=>!v)}>{compact ? 'Thu gọn' : 'Mở rộng'}</button></div></div>
           </section>
           <section className="panel about-panel">
@@ -2059,10 +2059,9 @@ export default function App() {
     }
   }, [])
 
-  if (!supabase) return <AuthScreen client={null} />
   const authenticatedClient = supabase
   useEffect(() => {
-    if (!session) {
+    if (!authenticatedClient || !session) {
       setOrganizationContext(null)
       setOrganizationError('')
       setCheckingOrganization(false)
@@ -2095,6 +2094,7 @@ export default function App() {
     }).finally(() => { if (active) setCheckingOrganization(false) })
     return () => { active = false }
   }, [authenticatedClient, session?.user.id])
+  if (!authenticatedClient) return <AuthScreen client={null} />
   if (checkingSession) return <div className="auth-page"><div className="auth-card auth-loading">Đang kiểm tra phiên đăng nhập…</div></div>
   if (!session) return <AuthScreen client={authenticatedClient} />
   if (checkingOrganization) return <div className="auth-page"><div className="auth-card auth-loading">Đang kiểm tra tổ chức và quyền truy cập…</div></div>
