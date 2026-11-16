@@ -150,6 +150,25 @@ for select
 to authenticated
 using (id = (select auth.uid()));
 
+-- Admins and users may read profile names of people sharing an active organization.
+-- Membership RLS still limits the visible membership rows to the caller's own orgs.
+create policy profiles_select_same_org_members
+on public.profiles
+for select
+to authenticated
+using (
+  exists (
+    select 1
+    from public.organization_members as mine
+    join public.organization_members as theirs
+      on theirs.organization_id = mine.organization_id
+    where mine.user_id = (select auth.uid())
+      and mine.status = 'active'
+      and theirs.user_id = profiles.id
+      and theirs.status = 'active'
+  )
+);
+
 create policy profiles_update_self
 on public.profiles
 for update
