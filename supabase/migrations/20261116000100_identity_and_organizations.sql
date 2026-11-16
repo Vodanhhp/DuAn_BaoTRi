@@ -125,6 +125,12 @@ as $$
     where m.organization_id = p_organization_id
       and m.user_id = (select auth.uid())
       and m.status = 'active'
+      and exists (
+        select 1
+        from public.organizations as o
+        where o.id = m.organization_id
+          and o.status = 'active'
+      )
   );
 $$;
 
