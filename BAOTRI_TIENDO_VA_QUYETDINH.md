@@ -919,3 +919,22 @@ Sau reset, nơi làm việc mới bắt đầu với dữ liệu nghiệp vụ t
 6. Chỉ sau khi kiểm tra xong mới bắt đầu nhập thiết bị, vật tư và số dư tồn kho thực tế của nơi làm việc mới.
 
 Đây là yêu cầu nghiệp vụ đã được người dùng xác nhận. Chưa triển khai chức năng reset và chưa xóa dữ liệu nào. Khi triển khai phải thiết kế riêng, review phạm vi và kiểm thử trên project test trước; tuyệt đối không thực hiện reset thật khi chưa có xác nhận cuối cùng của người dùng.
+
+
+## 17/11/2026 – Bắt đầu chuẩn bị đưa dữ liệu hiện có lên Supabase (một tài khoản)
+
+Người dùng xác nhận đồng ý đưa cả dữ liệu thử nghiệm đang có trong trình duyệt lên Supabase để tiếp tục kiểm tra và sử dụng trên nhiều thiết bị. Mục tiêu vẫn là một tài khoản cá nhân; chưa bật luồng nhiều thành viên/tổ chức trong UI.
+
+### Thay đổi đã thực hiện trên main
+- Commit `38adf0c5f66b641384c5e3650ef60db9c2d88705` cập nhật `src/App.tsx`.
+- Chức năng Sao lưu hiện xuất đủ 10 Dexie stores: `assets`, `inventory`, `tasks`, `logs`, `movements`, `maintenancePlans`, `checklistTemplates`, `checklistVersions`, `checklistResults`, `syncQueue`.
+- File backup có metadata phiên bản/thời điểm/database và kèm `customAssetCategories` trong localStorage.
+- Ảnh thiết bị hiện nằm trong `Asset.images` dạng data URL nên được đóng gói cùng bản backup JSON.
+- Khôi phục vẫn dùng bulkPut theo ID và bổ sung khôi phục danh mục tự tạo; không xóa dữ liệu đang có. Backup cũ dạng JSON phẳng vẫn được chấp nhận nếu có các mảng tương ứng.
+
+### Giới hạn và bước bắt buộc tiếp theo
+- Chưa đọc được IndexedDB trên máy người dùng từ GitHub/Supabase; chưa có file backup thực tế trong cuộc trò chuyện.
+- Chưa tải dữ liệu nào lên Supabase; chưa tạo schema nghiệp vụ cloud, chưa chạy SQL/migration mới và chưa sửa project Supabase chính.
+- Người dùng cần mở BAOTRI trên đúng trình duyệt/máy đang chứa dữ liệu hiện tại, vào Cài đặt → Dữ liệu và sao lưu → Sao lưu, rồi gửi file `backup-baotri-day-du-YYYY-MM-DD.json` vừa tải xuống trong cuộc trò chuyện.
+- Khi nhận file: kiểm tra cấu trúc, số lượng từng store, quan hệ ID, dung lượng/ảnh và danh mục; sau đó mới chốt schema + import có đối chiếu trên project test. Không xóa/ghi đè dữ liệu local.
+- Chưa có kết quả build sau commit này; cần người dùng chạy `npm run build` local và báo kết quả trước khi dựa vào chức năng backup mới.
