@@ -1155,3 +1155,17 @@ Tạo tối thiểu hai tổ chức A/B; mỗi tổ chức có Admin và User ri
 - Schema PostgreSQL, quan hệ composite FK, index, RLS, RPC và Storage đã có bản dự thảo chi tiết.
 - Chưa viết hoặc chạy migration SQL; chưa tạo bảng Supabase; chưa sửa frontend; chưa đồng bộ dữ liệu.
 - Bước kế tiếp: trình người dùng các quyết định còn mở (mời thành viên, task assignment/hoàn thành, chỉnh sửa lịch sử, tồn kho ban đầu), chốt chúng rồi mới viết migration SQL đầu tiên để review.
+
+
+## 16/11/2026 – Chốt quy tắc hoàn thành công việc được giao
+
+Người dùng xác nhận: **User được phép tự bấm Hoàn thành đối với công việc đã được Admin giao cho chính mình.**
+
+Quy tắc triển khai:
+- User chỉ được cập nhật tiến độ công việc có `assigned_to_user_id = auth.uid()`.
+- User được chuyển công việc được giao sang Hoàn thành; không được tự giao việc cho mình, đổi người được giao, đổi tổ chức/thiết bị hoặc sửa nội dung kế hoạch.
+- Thao tác hoàn thành phải gọi RPC `complete_maintenance_task`; database kiểm tra membership active, người được giao, trạng thái hiện tại và các trường hợp hoàn thành hợp lệ.
+- RPC cập nhật task và tạo `maintenance_logs` trong cùng transaction. Nếu tạo log thất bại, toàn bộ thao tác hoàn thành rollback.
+- Người thực hiện lấy từ `auth.uid()`; snapshot tên lấy từ hồ sơ tài khoản tại thời điểm hoàn thành. Không nhận user ID/người thực hiện do client tự khai báo.
+- Admin vẫn được quản lý và hoàn thành công việc trong tổ chức mình; không được truy cập tenant khác.
+- Đây là quyết định nghiệp vụ đã được người dùng duyệt; chưa triển khai code hoặc SQL.
