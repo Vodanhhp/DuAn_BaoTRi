@@ -847,29 +847,46 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut }
   }
   const backup = async () => {
     const data = {
-      assets: await db.assets.toArray(), inventory: await db.inventory.toArray(),
-      tasks: await db.tasks.toArray(), logs: await db.logs.toArray(), movements: await db.movements.toArray(),
+      backupVersion: 2,
+      exportedAt: now(),
+      database: 'baotri-local-v1',
+      assets: await db.assets.toArray(),
+      inventory: await db.inventory.toArray(),
+      tasks: await db.tasks.toArray(),
+      logs: await db.logs.toArray(),
+      movements: await db.movements.toArray(),
       maintenancePlans: await db.maintenancePlans.toArray(),
       checklistTemplates: await db.checklistTemplates.toArray(),
       checklistVersions: await db.checklistVersions.toArray(),
-      checklistResults: await db.checklistResults.toArray()
+      checklistResults: await db.checklistResults.toArray(),
+      syncQueue: await db.syncQueue.toArray(),
+      customAssetCategories: customAssetCategories
     }
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `backup-baotri-${today()}.json`; a.click(); URL.revokeObjectURL(url)
+    const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `backup-baotri-day-du-${today()}.json`; a.click(); URL.revokeObjectURL(url)
   }
   const restore = async (file: File) => {
     try {
       const data = JSON.parse(await file.text())
-      await db.transaction('rw', [db.assets, db.inventory, db.tasks, db.logs, db.movements, db.maintenancePlans, db.checklistTemplates, db.checklistVersions, db.checklistResults], async () => {
+      const tableKeys = ['assets','inventory','tasks','logs','movements','maintenancePlans','checklistTemplates','checklistVersions','checklistResults','syncQueue']
+      if (!data || typeof data !== 'object' || tableKeys.some(key => data[key] !== undefined && !Array.isArray(data[key]))) {
+        throw new Error('Invalid backup structure')
+      }
+      await db.transaction('rw', [db.assets, db.inventory, db.tasks, db.logs, db.movements, db.maintenancePlans, db.checklistTemplates, db.checklistVersions, db.checklistResults, db.syncQueue], async () => {
         await db.assets.bulkPut(data.assets ?? []); await db.inventory.bulkPut(data.inventory ?? [])
         await db.tasks.bulkPut(data.tasks ?? []); await db.logs.bulkPut(data.logs ?? []); await db.movements.bulkPut(data.movements ?? [])
         await db.maintenancePlans.bulkPut(data.maintenancePlans ?? [])
         await db.checklistTemplates.bulkPut(data.checklistTemplates ?? [])
         await db.checklistVersions.bulkPut(data.checklistVersions ?? [])
         await db.checklistResults.bulkPut(data.checklistResults ?? [])
+        await db.syncQueue.bulkPut(data.syncQueue ?? [])
       })
+      if (Array.isArray(data.customAssetCategories)) {
+        localStorage.setItem('baotri-custom-asset-categories', JSON.stringify(data.customAssetCategories))
+        setCustomAssetCategories(data.customAssetCategories)
+      }
       flash('Đã nhập dữ liệu sao lưu')
-    } catch { flash('File sao lưu không hợp lệ') }
+    } catch { flash('File sao lưu không hợp lệ hoặc không thể khôi phục') }
   }
 
   const nav = [
