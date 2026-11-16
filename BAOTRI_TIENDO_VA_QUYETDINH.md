@@ -1225,3 +1225,38 @@ Người dùng đã đồng ý hai đề xuất:
 
 Hai chính sách đã được duyệt về nghiệp vụ; chưa viết/chạy migration hoặc import dữ liệu thật.
 
+## 16/11/2026 – Tạo bản nháp migration SQL đầu tiên (chưa thực thi)
+
+Đã tạo file:
+`supabase/migrations/20261116000100_identity_and_organizations.sql`
+
+Commit tạo và rà soát ràng buộc:
+- `cb65d2b5089ceb44cbd1da3a638fd618668444d1`
+- `42a74151dc3840da2394e8492a7c17970997a00f`
+
+### Phạm vi migration 001
+- Tạo `profiles` liên kết `auth.users`; profile tự sinh khi Auth user được tạo.
+- Tạo `organizations` làm ranh giới tenant.
+- Tạo `organization_members` với role `admin/user`, status `invited/active/suspended`, unique mỗi user trong một tổ chức.
+- Tạo index cho tra cứu membership theo user và theo organization/status/role.
+- Tạo helper `is_org_member` và `has_org_role` dạng SECURITY DEFINER, search_path rỗng, row_security off để tránh policy đệ quy.
+- Bật RLS cho ba bảng; user chỉ đọc profile của mình, thành viên active đọc tổ chức và danh sách membership cùng tổ chức.
+- Profile chỉ cho phép user cập nhật `display_name` và `phone`; client không được tự INSERT/UPDATE/DELETE organization hoặc membership.
+- Chưa có RPC bootstrap/invitation; tổ chức và Admin đầu tiên sẽ được tạo bằng thao tác SQL có kiểm soát trong Supabase Dashboard ở giai đoạn phù hợp.
+
+### Chưa bao gồm
+- Chưa tạo bảng nghiệp vụ (assets, inventory, tasks, logs, movements, checklist...).
+- Chưa tạo RPC nghiệp vụ, audit/đính chính, Storage bucket/policy.
+- Chưa tạo mã/slug tổ chức vì chính sách mã tổ chức chưa được chốt.
+- Chưa import dữ liệu local, chưa sửa frontend, chưa chạy migration.
+
+### Rà soát và kiểm thử
+- Đã rà soát nội dung và loại bỏ unique constraint dư thừa trên organizations.
+- Chưa chạy SQL trên PostgreSQL/Supabase; chưa có kết quả kiểm thử cú pháp hoặc RLS thực tế.
+- Trước khi chạy cần review kỹ trigger tạo profile, quyền function/trigger, RLS helper, quyền bảng và quy trình bootstrap.
+- Sau khi được duyệt, phải chạy trên môi trường thử nghiệm hoặc Supabase project chưa có dữ liệu nghiệp vụ; kiểm thử tối thiểu hai user và hai organization, bao gồm truy cập chéo tenant và thử INSERT/UPDATE/DELETE trực tiếp.
+- Không chạy trên project thật chỉ vì file đã được commit.
+
+### Bước tiếp theo
+Review migration 001 cùng người dùng, chỉnh các điểm cần thiết, sau đó mới lập test SQL cho hai tổ chức/hai vai trò. Chỉ chạy migration khi người dùng xác nhận rõ ràng.
+
