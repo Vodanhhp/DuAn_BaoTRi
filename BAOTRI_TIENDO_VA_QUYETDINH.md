@@ -282,3 +282,15 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Mỗi phiếu Checklist có nút **In phiếu A4**. Mẫu in gồm thông tin thiết bị, biểu mẫu/phiên bản, thời gian, người thực hiện, kết quả, toàn bộ hạng mục/kết quả/ghi chú và khu vực ký xác nhận.
 - Mẫu in được tách riêng khỏi mẫu in lịch sử bảo trì – sửa chữa và không thay đổi dữ liệu phiếu đã lưu.
 - Đã cập nhật trực tiếp src/App.tsx và src/style.css trên main. Chưa chạy build hoặc xác minh in trên Chrome; cần đồng bộ và kiểm thử thực tế. Không tuyên bố chức năng in hoàn tất trước khi kiểm thử.
+
+
+### Chốt tách nghiệp vụ Bảo trì – Checklist và Bảo dưỡng – Sửa chữa; giới hạn Checklist bằng QR (16/11/2026)
+- Chốt hai nghiệp vụ độc lập:
+  1. **Bảo trì – Checklist:** kiểm tra tình trạng thiết bị theo biểu mẫu riêng của từng thiết bị; mỗi lần thực hiện tạo một phiếu độc lập, giữ nguyên version và lịch sử.
+  2. **Bảo dưỡng – Sửa chữa:** ghi nhận công việc kỹ thuật thực tế, vật tư/phụ tùng, thông số, kết quả và người thực hiện; có nhật ký riêng, không cộng/trộn với phiếu Checklist.
+- Checklist chỉ được hiển thị trong hồ sơ thiết bị được mở bằng thao tác quét QR hợp lệ. Mở hồ sơ từ danh mục thiết bị không hiển thị Checklist; không có thao tác chọn thiết bị từ danh sách để thực hiện Checklist hàng loạt.
+- Khi phiếu Checklist có kết quả Không đạt, cho phép tạo phiếu Sửa chữa từ chính phiếu đó; nội dung các hạng mục không đạt được chuyển sang phần mô tả công việc và lưu liên kết nguồn bằng `checklistResultId`. Hai bản ghi vẫn độc lập.
+- Mẫu in Checklist chuyển sang bảng hàng/cột kiểu phiếu giấy: STT, nội dung kiểm tra, ô Đạt, ô Không đạt, ô KPH, kết quả/thông số và ghi chú; có lặp tiêu đề bảng khi sang trang và giữ vùng ký xác nhận.
+- Cập nhật trực tiếp trên nhánh `main`: `src/App.tsx`, `src/db.ts`, `src/style.css`. Nâng IndexedDB lên schema v4 để bổ sung chỉ mục liên kết tùy chọn từ nhật ký sang phiếu Checklist; dữ liệu cũ được giữ nguyên.
+- **Chưa chạy build/test và chưa xác minh camera QR, lưu phiếu, liên kết sửa chữa hoặc bản in thực tế.** Cần đồng bộ main về máy, chạy `npm.cmd run build`, sau đó thử: mở hồ sơ từ danh mục (không thấy Checklist), quét QR (thấy Checklist), lưu phiếu, tạo phiếu sửa chữa từ kết quả Không đạt, kiểm tra lịch sử riêng và in A4.
+- Mẫu giấy vật lý cụ thể chưa được đính kèm trong cuộc trao đổi; bảng in hiện được chuẩn hóa theo cấu trúc hàng/cột nêu trên. Nếu cần khớp chính xác từng cột của biểu mẫu đang dùng tại đơn vị, cần đối chiếu ảnh/scan mẫu giấy gốc.
