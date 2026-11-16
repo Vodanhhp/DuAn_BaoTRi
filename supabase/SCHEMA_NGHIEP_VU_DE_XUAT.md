@@ -209,3 +209,32 @@ Tất cả bảng nghiệp vụ đều có:
 - [ ] Đồng ý không import/replay 17 mục syncQueue cũ.
 
 **Chưa có migration SQL trong tài liệu này. Chưa chạy SQL, chưa import, chưa upload ảnh lên Storage và chưa thay đổi dữ liệu local hoặc Supabase.**
+
+
+## 9. Cập nhật sau khi soạn Migration 002 (17/11/2026)
+
+Đã tạo bản nháp SQL tại:
+`supabase/migrations/20261117000200_business_schema.sql`
+
+Trạng thái: **DRAFT FOR REVIEW – CHƯA CHẠY SQL**.
+
+Bản nháp hiện tạo 11 bảng nghiệp vụ đã nêu ở mục 3.2; thêm index, khóa ngoại kép theo organization, trigger cập nhật updated_at và RLS. Các policy dùng helper `is_org_member` / `has_org_role` từ Migration 001.
+
+Các điểm bảo vệ được áp dụng trong bản nháp:
+- Tất cả bảng nghiệp vụ bật RLS; không cấp quyền cho role anon.
+- Master data chỉ truy cập trong organization mà Auth user có membership active.
+- Checklist template chỉ Admin được tạo/sửa; version và result là lịch sử append-only từ client.
+- Maintenance log và inventory movement là lịch sử append-only; không cấp quyền UPDATE/DELETE cho client.
+- Chưa cấp quyền INSERT movement trực tiếp và không cho client cập nhật cột quantity của inventory_items. Cần RPC được review để cập nhật số tồn và ghi movement trong cùng transaction.
+- Không tạo unique constraint cho mã vật tư theo organization ở giai đoạn này. Hai dòng VT-001 hiện tại sẽ được loại bỏ cùng toàn bộ dữ liệu thử nghiệm trong quy trình reset trước go-live; không cần chỉnh sửa riêng.
+- Checklist version/result dùng JSONB và FK kiểm tra đúng template, thiết bị, phiên bản.
+- Bảng asset_images mới lưu metadata; bucket Storage và policy Storage chưa được tạo trong Migration 002.
+
+### Các giả định cần kiểm tra trước khi chạy
+1. Trường ngày thuần (commissioned_at, cycle_started_at, due_date, start_date, end_date, scheduled_for, log_date, movement_date) đang được khai báo kiểu date; các mốc thời điểm thực hiện/hoàn tất dùng timestamptz. Cần đối chiếu dữ liệu thực tế trong App.tsx trước import.
+2. Migration đang giả định danh mục thiết bị tự tạo có cấu trúc JSON object; định dạng lưu localStorage phải được xác minh trước khi kết nối.
+3. Các trạng thái/giá trị period và execution đang dùng đúng các chuỗi tiếng Việt từ TypeScript hiện tại; cần rà soát dữ liệu thực tế để tránh giá trị ngoài danh sách.
+4. RLS đang cho member thao tác dữ liệu thiết bị, vật tư (trừ số tồn), công việc và kế hoạch; quyền xóa master data giới hạn Admin. Đây là chính sách đề xuất, cần review trước khi áp dụng.
+5. Bản nháp không tạo organization/membership, không tạo Storage bucket, không import dữ liệu và không sửa frontend/local data.
+
+Việc người dùng xác nhận reset toàn bộ dữ liệu nghiệp vụ trước go-live có nghĩa là không cần xử lý riêng bản ghi VT-001 trong backup phát triển. Reset chỉ được thực hiện sau này theo quy trình riêng, có backup, preview số lượng và xác nhận rõ ràng; chưa thực hiện ở giai đoạn này.
