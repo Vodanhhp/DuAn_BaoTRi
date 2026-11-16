@@ -341,3 +341,19 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 **Rủi ro cần tránh:** đổi mã nhóm làm sai mã định danh đã cấp; thay mẫu tự động làm mất tùy chỉnh; tạo checklist không phù hợp hoặc yêu cầu thao tác nguy hiểm khi thiết bị đang mang điện/chạy; nhóm Khác không cấp được mã; sửa danh mục làm hỏng lọc/sắp xếp thiết bị.
 
 **Cách kiểm thử:** build TypeScript/Vite; thử tạo thiết bị Máy hàn xung, Máy khoan, Máy mài, thiết bị cơ khí/điện phổ biến và một thiết bị lạ thuộc Khác; kiểm tra mã/QR, nhóm hiển thị và bộ Checklist sinh ra; xác nhận mẫu cũ/phiếu cũ không đổi và có thể sửa version mới. Chưa đánh dấu hoàn thành trước khi có kết quả build/test.
+
+
+### Đã mở rộng danh mục thiết bị và Checklist theo tên (16/11/2026)
+- Đã sửa trực tiếp `src/App.tsx` trên nhánh `main`.
+- Mở rộng danh mục lên **97 loại thiết bị**, chia theo các nhóm: điện/điện tử/tự động hóa; cơ khí/máy móc/truyền động; công cụ điện/dụng cụ; hàn/cắt/gia công; quạt; khí nén/nhiệt/lạnh/HVAC; nguồn điện/an toàn/PCCC; thiết bị sản xuất/đóng gói/phụ trợ; **Khác**.
+- Bổ sung các loại cụ thể gồm **Máy hàn xung**, máy hàn MIG/MAG, TIG, máy hàn que, máy khoan cầm tay/khoan bàn, máy mài, máy cắt, máy siết bu lông, máy tiện/phay/ép/dập, PLC, HMI, cảm biến, bo mạch điện tử, máy đóng gói, chiết rót, dán nhãn, robot, xử lý nước và nhiều loại khác.
+- Nhóm **Khác** có mã nhóm riêng `KHC`, vì vậy vẫn cấp được mã định danh và QR; thiết bị lạ không bị chặn khi tạo hồ sơ.
+- Bổ sung gợi ý nhóm dựa trên tên nhập. Ví dụ “máy hàn xung” được gợi ý nhóm “Máy hàn xung”; gợi ý chỉ cảnh báo để người dùng xác nhận, không tự đổi nhóm hoặc mã đã cấp.
+- Checklist mặc định nay kết hợp tiêu chí nền/an toàn + tiêu chí theo nhóm + tiêu chí chuyên biệt nhận diện từ tên thiết bị (đã bổ sung các bộ từ khóa cho máy hàn xung/máy hàn, máy khoan, máy mài, máy cắt/cưa, máy siết bu lông, máy nén khí, máy in, máy đóng gói và thiết bị đo).
+- Các hạng mục sinh tự động đang được đặt `required: true`; trong trình sửa biểu mẫu, Admin vẫn có thể đánh dấu bỏ bắt buộc hoặc xóa/thêm mục theo điều kiện thực tế. Hướng dẫn từng mục nhắc tuân thủ hướng dẫn nhà sản xuất và cô lập năng lượng/điều kiện an toàn trước khi kiểm tra.
+- Không đổi schema IndexedDB; trường `Asset.category` tiếp tục là chuỗi. Không tự cập nhật/ghi đè Checklist đã tồn tại, không sửa version cũ và không ảnh hưởng phiếu đã lưu. Muốn áp dụng bộ mẫu mới cho thiết bị đã có biểu mẫu thì cần thao tác tạo version mới có kiểm soát ở bước sau.
+- Kiểm tra tĩnh danh mục: 97 loại, không phát hiện mã nhóm trùng. Đã kiểm tra mã nguồn có phần gợi ý tên và logic ghép Checklist.
+- **Chưa chạy `npm.cmd run build`, chưa kiểm thử giao diện hoặc thực hiện Checklist thực tế** vì chưa có môi trường local trong phiên này. Chưa đánh dấu chức năng hoàn tất.
+- Commit code: `c8409a5db2390e567ccba2d70f4d93fbeb637f79`.
+- Commit ghi kế hoạch trước khi sửa: `cc0945bdaa7726a4b20bff8eefdad2010bd8d6f9`.
+- Bước tiếp theo: Pull origin trên GitHub Desktop, chạy build; thử tạo Máy hàn xung và một thiết bị lạ chọn Khác; kiểm tra mã/QR, nhóm được gợi ý, nội dung Checklist và xác nhận các mẫu/phiếu cũ còn nguyên.
