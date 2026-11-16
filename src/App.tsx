@@ -50,7 +50,7 @@ function buildChecklistScheduleRows(assets: Asset[], templates: any[], results: 
       rows.push({asset,dueDate:'',completed:false,isMakeup:false,missingTemplate:true})
       continue
     }
-    const anchor = String(template.createdAt || asset.updatedAt || asset.commissionedAt || asOf).slice(0,10)
+    const templateDate = String(template.createdAt || asset.updatedAt || asset.commissionedAt || asOf).slice(0,10)\n    const cycleDate = String(asset.cycleStartedAt || templateDate).slice(0,10)\n    const anchor = cycleDate > templateDate ? cycleDate : templateDate
     const assetResults = results.filter(item=>item.assetId===asset.id)
     for (let index=0; index<5000; index++) {
       const dueDate = checklistOccurrenceDate(anchor,frequency,index)
@@ -425,6 +425,8 @@ export default function App() {
   }
   const saveAsset = async (a: Asset) => {
     const isNew = !a.code
+    const previousAsset = isNew ? undefined : await db.assets.get(a.id)
+    const cycleStartedAt = a.cycle ? (previousAsset?.cycle === a.cycle ? (previousAsset.cycleStartedAt || undefined) : today()) : undefined
     let code = a.code
     if (isNew) {
       if (!getAssetCategoryCodes(customAssetCategories)[a.category]) {
@@ -438,7 +440,7 @@ export default function App() {
         return
       }
     }
-    const value = { ...a, code, images: a.images ?? [], updatedAt: now() }
+    const value = { ...a, code, cycleStartedAt, images: a.images ?? [], updatedAt: now() }
     await db.assets.put(value)
     await queueChange('assets', value.id)
     setModal(null); setEditingAsset(null)
@@ -646,7 +648,7 @@ export default function App() {
               <td><b>{row.asset.code}</b><small>{row.asset.name}</small></td>
               <td>{row.asset.location||'—'}</td>
               <td><span className={'checklist-schedule-state '+(row.completed?'done':'pending')}>{row.missingTemplate?'Chưa tạo biểu mẫu':row.completed?(row.isMakeup?'Đã hoàn thành · Checklist bù':row.result==='Không đạt'?'Đã Checklist · Có mục không đạt':'Đã Checklist'):(row.dueDate<today()?'Chưa hoàn thành':'Đến hạn · Chưa hoàn thành')}</span>{!row.completed&&row.dueDate&&<small className="checklist-overdue-note">Chưa hoàn thành ngày {dateText(row.dueDate)}</small>}</td>
-              <td><button type="button" className={row.completed?'soft-btn':'primary-btn'} onClick={()=>{setPendingChecklistOccurrence({assetId:row.asset.id,scheduledFor:row.dueDate||undefined,isMakeup:Boolean(row.dueDate&&row.dueDate<today())});setActiveChecklistOccurrence(null);setModal('scan')}}>{row.missingTemplate?'Quét QR tạo Checklist':row.completed?'Xem hồ sơ / Checklist':row.dueDate<today()?'Checklist bù':'Quét QR thực hiện'}</button></td>
+              <td><button type="button" className={row.completed?'soft-btn':'primary-btn'} onClick={()=>{if(row.completed){setChecklistAccess(false);setActiveChecklistOccurrence(null);setDetailAsset(row.asset);return}setPendingChecklistOccurrence({assetId:row.asset.id,scheduledFor:row.dueDate||undefined,isMakeup:Boolean(row.dueDate&&row.dueDate<today())});setActiveChecklistOccurrence(null);setModal('scan')}}>{row.missingTemplate?'Quét QR tạo Checklist':row.completed?'Xem lịch sử':row.dueDate<today()?'Checklist bù':'Quét QR thực hiện'}</button></td>
             </tr>)}
           </tbody></table>{checklistScheduleRows.length===0&&<Empty text={'Chưa có thiết bị thiết lập chu kỳ '+checklistFrequency+'. Hãy mở lý lịch thiết bị và chọn Chu kỳ Bảo trì – Checklist.'}/>}</div>
           <p className="checklist-schedule-footnote">Ngày bắt đầu lịch được tính từ ngày tạo biểu mẫu Checklist riêng của thiết bị. Checklist bù vẫn lưu thành phiếu riêng và được ghi rõ trong lịch sử thiết bị.</p>
@@ -1324,7 +1326,7 @@ function AssetChecklist({asset,allowActions,scheduledFor,isMakeup,createRepairFr
   }
   return <section className="asset-maintenance-history">
     <div className="panel-head"><div><h3>1. Bảo trì – Checklist</h3><p>{template?('Biểu mẫu riêng · Phiên bản '+template.currentVersion+' · '+orderedResults.length+' lần thực hiện'):(allowActions?'Thiết bị chưa có biểu mẫu Checklist riêng':'Lịch sử các phiếu Checklist đã lưu')}</p></div>
-      {allowActions&&<div className="asset-photo-actions"><button type="button" className="soft-btn" onClick={openBuilder}>{template?'Sửa biểu mẫu':'Tạo biểu mẫu'}</button><button type="button" className="primary-btn" disabled={!template || !currentVersion} onClick={startRun}>Thực hiện Checklist</button></div>}
+      {allowActions&&<div className="asset-photo-actions"><button type="button" className="soft-btn" onClick={openBuilder}>{template?'Sửa biểu mẫu':'Tạo biểu mẫu'}</button><button type="button" className="primary-btn" disabled={!template || !currentVersion} onClick={startRun}>{isMakeup?'Thực hiện Checklist bù':'Thực hiện Checklist'}</button></div>}
     </div>
     {allowActions&&template&&currentVersion&&<div className="maintenance-history-list"><b>{currentVersion.title}</b>{currentVersion.description&&<p>{currentVersion.description}</p>}{currentVersion.items.map((item,index)=><article key={item.id}><time>{index+1}</time><div><b>{item.label}</b>{item.description&&<small>{item.description}</small>}</div></article>)}</div>}
     <section className="checklist-results">
