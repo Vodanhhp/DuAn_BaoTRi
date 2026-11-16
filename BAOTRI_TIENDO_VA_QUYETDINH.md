@@ -473,8 +473,28 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Làm rõ nghiệp vụ theo người dùng: Admin thiết lập chu kỳ Checklist cho từng thiết bị trong lý lịch thiết bị; chỉ có 5 chu kỳ ngày/tuần/tháng/quý/năm. Bảo trì là công việc có kế hoạch. Sửa chữa phát sinh tức thời. Bảo dưỡng – Sửa chữa chỉ xử lý ở giai đoạn sau; chưa triển khai chuyển phiếu tự động trong đợt này.
 - Màn hình Bảo trì – Checklist phải là bảng theo dõi lịch Checklist, không phải danh mục thiết bị. Có tab Ngày/Tuần/Tháng/Quý/Năm; hiển thị các kỳ đến hạn, kỳ đã làm (xanh), kỳ chưa làm/quá hạn (đỏ), ngày đến hạn cụ thể và nút Checklist bù.
 - Mỗi lần Checklist lưu vẫn là phiếu riêng theo template/version hiện hữu. Bổ sung metadata tùy chọn `scheduledFor` (ngày của kỳ phải làm) và `isMakeup` để liên kết phiếu với kỳ định kỳ và nhận biết Checklist bù; không ghi đè phiếu cũ. Phiếu bù hoàn thành sẽ làm kỳ đó chuyển xanh, đồng thời lịch sử hồ sơ thiết bị vẫn ghi nhận rõ Checklist bù.
-- Dùng trường `Asset.cycle` hiện có, đổi nhãn thành “Chu kỳ Bảo trì – Checklist” và giới hạn lựa chọn ngày/tuần/tháng/quý/năm; không thêm trường chu kỳ trùng lặp, không đổi schema Asset.
+- Dùng trường `Asset.cycle` hiện có, đổi nhãn thành “Chu kỳ Bảo trì – Checklist” và giới hạn lựa chọn ngày/tuần/tháng/quý/năm; không thêm trường chu kỳ trùng lặp. Bổ sung `cycleStartedAt` tùy chọn để ghi nhận ngày bắt đầu khi Admin đổi chu kỳ; đây là trường dữ liệu bổ sung không cần tạo index hoặc nâng phiên bản Dexie.
 - Dự kiến ngày bắt đầu lịch là ngày tạo biểu mẫu Checklist riêng của thiết bị (template.createdAt); từ mốc này sinh các kỳ định kỳ. Kết quả cũ chưa có `scheduledFor` được đối chiếu theo ngày thực hiện nằm trong kỳ tương ứng để giữ tính tương thích. Kỳ đã lưu `scheduledFor` được ưu tiên khớp chính xác.
 - Quyền thao tác vẫn bắt buộc quét QR: bấm Checklist bù sẽ mở luồng quét QR; chỉ quét đúng mã thiết bị mới mở phiếu Checklist cho đúng kỳ. Không bật lại `CHECKLIST_TEST_MODE`.
 - Không thay đổi nghiệp vụ Bảo dưỡng – Sửa chữa, không tự động tạo phiếu sửa chữa khi có mục Không đạt trong đợt này.
 - Rủi ro/cần kiểm thử: sinh ngày tháng qua tháng ngắn/năm nhuận; không tạo kỳ tương lai; phân biệt ngày đến hạn và quá hạn; một phiếu không hoàn thành kỳ khác; lưu phiếu bù giữ nguyên lịch sử; QR phải đúng thiết bị; lịch sử/phiếu cũ và bản in vẫn hoạt động. Chưa triển khai cho đến khi hoàn tất sửa và kiểm tra tĩnh/build.
+
+
+### Đã triển khai bảng lịch Bảo trì – Checklist theo chu kỳ (16/11/2026)
+- `src/App.tsx`: thay danh sách thiết bị bằng bảng lịch Checklist định kỳ; có 5 tab Ngày/Tuần/Tháng/Quý/Năm, tổng số kỳ, số đã hoàn thành/chưa hoàn thành, ngày đến hạn, trạng thái xanh/đỏ và nút thao tác tương ứng.
+- Dùng `Asset.cycle` làm chu kỳ Checklist; đổi nhãn trong form và lý lịch thành “Chu kỳ Bảo trì – Checklist”. Khi Admin đổi chu kỳ, ghi `cycleStartedAt` để bắt đầu lịch mới từ ngày thay đổi; giữ nguyên giá trị chu kỳ cũ chưa hỗ trợ để người dùng có thể nhận biết và cập nhật, không làm mất dữ liệu.
+- Lịch bắt đầu từ mốc muộn hơn giữa ngày tạo biểu mẫu và ngày bắt đầu chu kỳ; tự sinh ngày lặp ngày/tuần/tháng/quý/năm, có xử lý ngày cuối tháng và năm nhuận. Không sinh kỳ sau ngày hiện tại.
+- `src/db.ts`: bổ sung metadata tùy chọn `scheduledFor`, `isMakeup` cho phiếu Checklist và `cycleStartedAt` cho hồ sơ thiết bị. Không đổi các store/index của IndexedDB, không xóa hoặc ghi đè dữ liệu cũ.
+- Checklist bù: từ một kỳ chưa hoàn thành, mở camera quét QR; camera chỉ chấp nhận đúng mã thiết bị của kỳ đó. Phiếu lưu ngày kỳ gốc và cờ Checklist bù; sau khi lưu, kỳ tương ứng chuyển xanh. Lịch sử Checklist và bản in A4 ghi rõ kỳ gốc/Checklist bù.
+- Kỳ đã hoàn thành có thể mở hồ sơ/lịch sử mà không cần QR; tạo mới/thực hiện Checklist vẫn bắt buộc QR. `CHECKLIST_TEST_MODE` tiếp tục là `false`.
+- Không triển khai tự động chuyển mục Không đạt sang phiếu Bảo dưỡng – Sửa chữa; giữ nguyên phần đó cho giai đoạn sau.
+- CSS bổ sung cho tab chu kỳ, bảng, trạng thái xanh/đỏ và bố cục mobile trong `src/style.css`.
+- Kiểm tra tĩnh sau sửa: xác nhận cờ QR vẫn tắt chế độ test; 5 chu kỳ hiện diện; lịch lấy chu kỳ từ hồ sơ; lưu ngày kỳ và cờ Checklist bù; kiểm tra QR đúng thiết bị; lịch sử xem không cần QR; dữ liệu phiếu cũ giữ tương thích. Các kiểm tra tĩnh đều đạt.
+- Chưa chạy `npm.cmd run build`, chưa kiểm thử giao diện trình duyệt/camera thực tế. Chưa được coi là nghiệm thu.
+- Commit kế hoạch trước khi sửa: `349d823101e2172ad523305dc48cfea8ea903911`.
+- Commit bổ sung metadata phiếu Checklist: `863cf370d56c6f9224d0c869203fd0cfcd59a9e5`.
+- Commit mô hình lịch định kỳ: `300a7a449d9a78fb53ef3db67459a09d8f48039a`.
+- Commit giao diện lịch và luồng quét QR Checklist bù: `52ce236c80f47bd4fefcef5fd516d5777a38a786`.
+- Commit mốc bắt đầu chu kỳ: `a1171f91869875f71732d5d024d13dbd88397faa` và `780226db60cef4630fbb3d6515061182c04a4eef`.
+- Commit CSS: `56f7a22e02a85c30a772c48b73e275939d790de5`.
+- Bước tiếp theo: Pull origin, chạy build và thử từng tab chu kỳ; kiểm tra một kỳ quá hạn, quét QR đúng/sai, lưu Checklist bù, xác nhận kỳ chuyển xanh và lịch sử ghi lại Checklist bù.
