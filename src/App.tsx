@@ -635,7 +635,23 @@ export default function App() {
       <div className="content">
         {page!=='dashboard' && page!=='settings' && <div className="searchbar"><Search size={18}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Tìm theo mã, tên hoặc nội dung..."/></div>}
         {page==='dashboard' && <Dashboard assets={activeAssets} tasks={tasks} inventory={inventory} dueToday={dueToday} lowStock={lowStock} overdue={overdue} go={setPage} complete={completeTask}/>}
-        {page==='checklist' && <section className="panel"><div className="panel-head"><div><h2>Danh sách thiết bị cần bảo trì – Checklist</h2><p>{CHECKLIST_TEST_MODE?'Chế độ thử nghiệm: chọn thiết bị để tạo biểu mẫu và thực hiện Checklist, chưa cần quét QR.':'Chọn thiết bị rồi quét QR để được phép tạo và thực hiện Checklist.'}</p></div><span className={`status ${CHECKLIST_TEST_MODE?'orange':'green'}`}>{CHECKLIST_TEST_MODE?'ĐANG THỬ NGHIỆM':'BẮT BUỘC QUÉT QR'}</span></div><div className="table-wrap"><table><thead><tr><th>Mã / Tên thiết bị</th><th>Nhóm</th><th>Vị trí</th><th>Tình trạng</th><th>Thao tác</th></tr></thead><tbody>{filteredAssets.map(a=><tr key={a.id}><td><button type="button" className="asset-name-link" onClick={()=>{setChecklistAccess(CHECKLIST_TEST_MODE);setDetailAsset(a)}}><b>{a.code}</b><small>{a.name}</small></button></td><td>{a.category||'Khác'}</td><td>{a.location||'—'}</td><td><span className={`status ${a.status==='Đang hoạt động'?'green':a.status==='Đang sửa chữa'?'orange':'gray'}`}>{a.status}</span></td><td className="actions"><button type="button" className="primary-btn" onClick={()=>{setChecklistAccess(CHECKLIST_TEST_MODE);setDetailAsset(a)}}>{CHECKLIST_TEST_MODE?'Mở Checklist':'Mở hồ sơ / quét QR'}</button></td></tr>)}</tbody></table>{filteredAssets.length===0&&<Empty text="Chưa có thiết bị phù hợp."/ >}</div></section>}
+        <>
+        {page==='checklist' && <section className="panel checklist-schedule-panel">
+          <div className="panel-head"><div><h2>Lịch Bảo trì – Checklist</h2><p>Theo dõi từng kỳ Checklist định kỳ của thiết bị. Kỳ chưa thực hiện hiển thị đỏ; hoàn thành hiển thị xanh.</p></div><span className="status green">BẮT BUỘC QUÉT QR</span></div>
+          <div className="checklist-frequency-tabs">{CHECKLIST_FREQUENCIES.map(freq=><button type="button" key={freq} className={checklistFrequency===freq?'active':''} onClick={()=>setChecklistFrequency(freq)}>{freq.replace('Hàng ','')}</button>)}</div>
+          <div className="checklist-schedule-summary"><span><b>{checklistScheduleRows.length}</b> kỳ Checklist</span><span className="checklist-summary-done"><b>{checklistScheduleRows.filter(row=>row.completed).length}</b> đã hoàn thành</span><span className="checklist-summary-pending"><b>{checklistScheduleRows.filter(row=>!row.completed).length}</b> chưa hoàn thành</span></div>
+          <div className="table-wrap"><table className="checklist-schedule-table"><thead><tr><th>Ngày đến hạn</th><th>Mã / Tên thiết bị</th><th>Vị trí</th><th>Trạng thái Checklist</th><th>Thao tác</th></tr></thead><tbody>
+            {checklistScheduleRows.map((row,index)=><tr key={row.asset.id+'-'+(row.dueDate||'template')+'-'+index} className={row.completed?'checklist-row-done':'checklist-row-pending'}>
+              <td>{row.dueDate?dateText(row.dueDate):'Chưa có lịch'}</td>
+              <td><b>{row.asset.code}</b><small>{row.asset.name}</small></td>
+              <td>{row.asset.location||'—'}</td>
+              <td><span className={'checklist-schedule-state '+(row.completed?'done':'pending')}>{row.missingTemplate?'Chưa tạo biểu mẫu':row.completed?(row.isMakeup?'Đã hoàn thành · Checklist bù':row.result==='Không đạt'?'Đã Checklist · Có mục không đạt':'Đã Checklist'):(row.dueDate<today()?'Chưa hoàn thành':'Đến hạn · Chưa hoàn thành')}</span>{!row.completed&&row.dueDate&&<small className="checklist-overdue-note">Chưa hoàn thành ngày {dateText(row.dueDate)}</small>}</td>
+              <td><button type="button" className={row.completed?'soft-btn':'primary-btn'} onClick={()=>{setPendingChecklistOccurrence({assetId:row.asset.id,scheduledFor:row.dueDate||undefined,isMakeup:Boolean(row.dueDate&&row.dueDate<today())});setActiveChecklistOccurrence(null);setModal('scan')}}>{row.missingTemplate?'Quét QR tạo Checklist':row.completed?'Xem hồ sơ / Checklist':row.dueDate<today()?'Checklist bù':'Quét QR thực hiện'}</button></td>
+            </tr>)}
+          </tbody></table>{checklistScheduleRows.length===0&&<Empty text={'Chưa có thiết bị thiết lập chu kỳ '+checklistFrequency+'. Hãy mở lý lịch thiết bị và chọn Chu kỳ Bảo trì – Checklist.'}/>}</div>
+          <p className="checklist-schedule-footnote">Ngày bắt đầu lịch được tính từ ngày tạo biểu mẫu Checklist riêng của thiết bị. Checklist bù vẫn lưu thành phiếu riêng và được ghi rõ trong lịch sử thiết bị.</p>
+        </section>}
+        </>
         {page==='assets' && <section className="panel"><div className="panel-head"><div><h2>{showArchived?'Thiết bị đã lưu kho':'Danh mục thiết bị'}</h2><p>{showArchived?'Hồ sơ được giữ lại để tra cứu hoặc khôi phục':'Quản lý lý lịch, mã QR, ảnh và tình trạng thiết bị'}</p></div><div className="asset-toolbar">
             <button className={!showArchived?'soft-btn':'text-btn'} onClick={()=>setShowArchived(false)}>Đang quản lý ({activeAssets.length})</button>
             <button className={showArchived?'soft-btn':'text-btn'} onClick={()=>setShowArchived(true)}><Archive size={15}/> Lưu kho ({archivedAssets.length})</button>
@@ -689,12 +705,12 @@ export default function App() {
     </div></div>}
     {notice&&<div className="toast"><Check size={17}/>{notice}</div>}
     {detailItem&&<InventoryDetailModal value={detailItem} close={()=>setDetailItem(null)} edit={()=>{setEditingItem(detailItem);setDetailItem(null);setModal('item')}}/>}
-    {detailAsset&&<AssetDetailModal value={detailAsset} logs={logs.filter(l=>l.assetId===detailAsset.id)} allowChecklist={checklistAccess || (CHECKLIST_TEST_MODE && page==='checklist')} createRepairFromChecklist={createRepairFromChecklist} close={()=>{setDetailAsset(null);setChecklistAccess(false)}} edit={()=>{setEditingAsset({...detailAsset,images:detailAsset.images??[]});setDetailAsset(null);setChecklistAccess(false);setModal('asset')}} addLog={()=>{setEditingLog({id:uid(),assetId:detailAsset.id,date:today(),kind:'Sửa chữa',description:'',parts:'',readings:'',result:'',performedBy:''});setModal('log')}}/>}
+    {detailAsset&&<AssetDetailModal value={detailAsset} logs={logs.filter(l=>l.assetId===detailAsset.id)} allowChecklist={checklistAccess || (CHECKLIST_TEST_MODE && page==='checklist')} checklistOccurrence={activeChecklistOccurrence} createRepairFromChecklist={createRepairFromChecklist} close={()=>{setDetailAsset(null);setChecklistAccess(false);setActiveChecklistOccurrence(null)}} edit={()=>{setEditingAsset({...detailAsset,images:detailAsset.images??[]});setDetailAsset(null);setChecklistAccess(false);setModal('asset')}} addLog={()=>{setEditingLog({id:uid(),assetId:detailAsset.id,date:today(),kind:'Sửa chữa',description:'',parts:'',readings:'',result:'',performedBy:''});setModal('log')}}/>}
     {modal==='asset'&&editingAsset&&<AssetModal value={editingAsset} close={()=>{setModal(null);setEditingAsset(null)}} save={saveAsset} assets={assets} customCategories={customAssetCategories} onAddCategory={addAssetCategory}/>}
     {modal==='item'&&editingItem&&<ItemModal value={editingItem} close={()=>{setModal(null);setEditingItem(null)}} save={saveItem}/>}
     {modal==='task'&&editingTask&&<TaskModal value={editingTask} assets={assets} close={()=>{setModal(null);setEditingTask(null)}} save={saveTask}/>}
     {modal==='log'&&editingLog&&<LogEntryModal value={editingLog} close={()=>{setModal(null);setEditingLog(null)}} save={saveLog}/>}
-    {modal==='scan'&&<ScanModal close={()=>setModal(null)} assets={assets} openAsset={(a: Asset)=>{setEditingAsset(null);setChecklistAccess(true);setModal(null);setDetailAsset(a)}}/>}
+    {modal==='scan'&&<ScanModal close={()=>{setModal(null);setPendingChecklistOccurrence(null)}} assets={assets} expectedAssetId={pendingChecklistOccurrence?.assetId} openAsset={(a: Asset)=>{if(pendingChecklistOccurrence&&pendingChecklistOccurrence.assetId!==a.id)return;setEditingAsset(null);setChecklistAccess(true);setActiveChecklistOccurrence(pendingChecklistOccurrence?{scheduledFor:pendingChecklistOccurrence.scheduledFor,isMakeup:pendingChecklistOccurrence.isMakeup}:null);setPendingChecklistOccurrence(null);setModal(null);setDetailAsset(a)}}/>}
   </div>
 }
 
@@ -780,7 +796,7 @@ function ReportCard({icon,title,desc,action}:any){return <div className="panel r
 
 function Modal({title,children,close}:any){return <div className="modal-backdrop" onMouseDown={e=>e.target===e.currentTarget&&close()}><div className="modal"><div className="modal-head"><h2>{title}</h2><button className="icon-btn" onClick={close}><X/></button></div>{children}</div></div>}
 function Field({label,children}:any){return <label className="field"><span>{label}</span>{children}</label>}
-function AssetDetailModal({value,logs,allowChecklist,createRepairFromChecklist,close,edit,addLog}:any){
+function AssetDetailModal({value,logs,allowChecklist,checklistOccurrence,createRepairFromChecklist,close,edit,addLog}:any){
   const [showPhotos,setShowPhotos]=useState(false)
   const [activePhoto,setActivePhoto]=useState<string|null>(null)
   const [printMode,setPrintMode]=useState<null|'sticker'|'detail'|'history'>(null)
@@ -797,7 +813,7 @@ function AssetDetailModal({value,logs,allowChecklist,createRepairFromChecklist,c
       <button type="button" className="primary-btn" onClick={addLog}><Wrench size={16}/> Ghi nhận bảo dưỡng / sửa chữa</button>
       <button type="button" className="primary-btn" onClick={edit}>Sửa hồ sơ</button>
     </div>
-    <AssetChecklist asset={value} allowActions={allowChecklist} createRepairFromChecklist={createRepairFromChecklist}/>
+    <AssetChecklist asset={value} allowActions={allowChecklist} scheduledFor={checklistOccurrence?.scheduledFor} isMakeup={checklistOccurrence?.isMakeup} createRepairFromChecklist={createRepairFromChecklist}/>
     <section className="asset-maintenance-history"><div className="panel-head"><div><h3>Lịch sử Bảo dưỡng – Sửa chữa</h3><p>{logs.length} lần ghi nhận công việc của thiết bị</p></div><button type="button" className="soft-btn" disabled={!logs.length} onClick={()=>print('history')}><Printer size={15}/> In lịch sử sửa chữa</button></div>
       {logs.length?<div className="maintenance-history-list">{logs.slice().sort((a:any,b:any)=>b.date.localeCompare(a.date)).map((entry:any)=><article key={entry.id}><time>{dateText(entry.date)}</time><div><b>{entry.kind}</b><p>{entry.description||'Không có mô tả'}</p>{entry.parts&&<small>Vật tư/phụ tùng: {entry.parts}</small>}{entry.readings&&<small>Thông số: {entry.readings}</small>}<small>Kết quả sau thực hiện: {entry.result||'Chưa đánh giá'}</small><small>Người thực hiện: {entry.performedBy||'—'}</small>{entry.checklistResultId&&<small>Liên kết từ phiếu Checklist</small>}</div></article>)}</div>:<p className="muted">Chưa có lịch sử. Hãy chọn “Ghi nhận bảo dưỡng / sửa chữa” sau khi thực hiện công việc.</p>}
     </section>
@@ -1234,7 +1250,7 @@ async function ensureDefaultChecklist(asset: Asset) {
   })
 }
 
-function AssetChecklist({asset,allowActions,createRepairFromChecklist}:{asset:Asset;allowActions:boolean;createRepairFromChecklist:(entry:ChecklistResult)=>void}) {
+function AssetChecklist({asset,allowActions,scheduledFor,isMakeup,createRepairFromChecklist}:{asset:Asset;allowActions:boolean;scheduledFor?:string;isMakeup?:boolean;createRepairFromChecklist:(entry:ChecklistResult)=>void}) {
   const template = useLiveQuery(() => db.checklistTemplates.where('assetId').equals(asset.id).first(), [asset.id])
   useEffect(() => {
     let active = true
@@ -1299,11 +1315,12 @@ function AssetChecklist({asset,allowActions,createRepairFromChecklist}:{asset:As
     const items:ChecklistResultItem[]=currentVersion.items.map(item=>({...item,templateItemId:item.id,answer:answers[item.id]??'',note:itemNotes[item.id]??''}))
     if(items.some(item=>item.required&&!item.answer.trim())) return alert('Vui lòng hoàn thành các hạng mục bắt buộc')
     const failed=items.some(item=>item.answer==='Không đạt'||item.answer==='Không')
-    const entry={id:uid(),assetId:asset.id,templateId:template.id,templateVersionId:currentVersion.id,templateVersion:currentVersion.version,templateTitle:currentVersion.title,performedAt:now(),performedBy:performedBy.trim()||'Người sử dụng',result:failed?'Không đạt':'Đạt' as const,notes:resultNotes,items,createdAt:now()}
+    const performedAt=now()
+    const entry={id:uid(),assetId:asset.id,templateId:template.id,templateVersionId:currentVersion.id,templateVersion:currentVersion.version,templateTitle:currentVersion.title,performedAt,performedBy:performedBy.trim()||'Người sử dụng',result:failed?'Không đạt':'Đạt' as const,scheduledFor:scheduledFor||undefined,isMakeup:Boolean(scheduledFor && (isMakeup || performedAt.slice(0,10)>scheduledFor)),notes:resultNotes,items,createdAt:performedAt}
     await db.checklistResults.add(entry)
     await queueChange('checklistResults',entry.id)
     setRunOpen(false)
-    alert('Đã lưu phiếu Checklist. Kết quả được lưu thành một lần thực hiện riêng.')
+    alert(scheduledFor && (isMakeup || performedAt.slice(0,10)>scheduledFor)?'Đã lưu phiếu Checklist bù cho ngày '+dateText(scheduledFor)+'. Kỳ này đã được ghi nhận hoàn thành.':'Đã lưu phiếu Checklist. Kết quả được lưu thành một lần thực hiện riêng.')
   }
   return <section className="asset-maintenance-history">
     <div className="panel-head"><div><h3>1. Bảo trì – Checklist</h3><p>{template?('Biểu mẫu riêng · Phiên bản '+template.currentVersion+' · '+orderedResults.length+' lần thực hiện'):(allowActions?'Thiết bị chưa có biểu mẫu Checklist riêng':'Lịch sử các phiếu Checklist đã lưu')}</p></div>
@@ -1312,7 +1329,7 @@ function AssetChecklist({asset,allowActions,createRepairFromChecklist}:{asset:As
     {allowActions&&template&&currentVersion&&<div className="maintenance-history-list"><b>{currentVersion.title}</b>{currentVersion.description&&<p>{currentVersion.description}</p>}{currentVersion.items.map((item,index)=><article key={item.id}><time>{index+1}</time><div><b>{item.label}</b>{item.description&&<small>{item.description}</small>}</div></article>)}</div>}
     <section className="checklist-results">
       <div className="panel-head"><div><b>Lịch sử Bảo trì – Checklist</b><p>{orderedResults.length} phiếu đã thực hiện · lưu riêng, không tính vào lịch sử sửa chữa</p></div></div>
-      {orderedResults.length>0?<div className="maintenance-history-list">{orderedResults.map(entry=><article key={entry.id}><time>{new Date(entry.performedAt).toLocaleString('vi-VN')}</time><div><b>{entry.templateTitle} · v{entry.templateVersion}</b><small>Người thực hiện: {entry.performedBy} · Kết quả: {entry.result}</small>{entry.notes&&<small>Ghi chú: {entry.notes}</small>}<div className="checklist-result-actions"><button type="button" className="soft-btn" onClick={()=>{setPrintEntry(entry);window.setTimeout(()=>window.print(),180)}}><Printer size={14}/> In phiếu A4</button>{entry.result==='Không đạt'&&<button type="button" className="soft-btn" onClick={()=>createRepairFromChecklist(entry)}><Wrench size={14}/> Tạo phiếu Bảo dưỡng – Sửa chữa</button>}</div><details><summary>Xem chi tiết phiếu</summary>{entry.items.map((item,index)=><p key={item.templateItemId}>{index+1}. {item.label}: <b>{item.answer||'—'}</b>{item.note?' · '+item.note:''}</p>)}</details></div></article>)}</div>:<p className="muted">Chưa có phiếu Checklist nào. Sau khi nhấn “Thực hiện Checklist” và “Lưu phiếu kết quả”, phiếu sẽ xuất hiện tại đây.</p>}
+      {orderedResults.length>0?<div className="maintenance-history-list">{orderedResults.map(entry=><article key={entry.id}><time>{new Date(entry.performedAt).toLocaleString('vi-VN')}</time><div><b>{entry.templateTitle} · v{entry.templateVersion}</b><small>Người thực hiện: {entry.performedBy} · Kết quả: {entry.result}</small>{entry.scheduledFor&&<small>Kỳ Checklist: {dateText(entry.scheduledFor)}{entry.isMakeup?' · Checklist bù':''}</small>}{entry.notes&&<small>Ghi chú: {entry.notes}</small>}<div className="checklist-result-actions"><button type="button" className="soft-btn" onClick={()=>{setPrintEntry(entry);window.setTimeout(()=>window.print(),180)}}><Printer size={14}/> In phiếu A4</button>{entry.result==='Không đạt'&&<button type="button" className="soft-btn" onClick={()=>createRepairFromChecklist(entry)}><Wrench size={14}/> Tạo phiếu Bảo dưỡng – Sửa chữa</button>}</div><details><summary>Xem chi tiết phiếu</summary>{entry.items.map((item,index)=><p key={item.templateItemId}>{index+1}. {item.label}: <b>{item.answer||'—'}</b>{item.note?' · '+item.note:''}</p>)}</details></div></article>)}</div>:<p className="muted">Chưa có phiếu Checklist nào. Sau khi nhấn “Thực hiện Checklist” và “Lưu phiếu kết quả”, phiếu sẽ xuất hiện tại đây.</p>}
     </section>
     {printEntry&&<div className="asset-print-sheet print-checklist"><div className="asset-print-report">
       <h1 className="asset-print-form-title">PHIẾU KIỂM TRA CHECKLIST THIẾT BỊ</h1>
@@ -1320,7 +1337,7 @@ function AssetChecklist({asset,allowActions,createRepairFromChecklist}:{asset:As
         <div><b>Mã thiết bị:</b> {asset.code}</div><div><b>Tên thiết bị:</b> {asset.name}</div>
         <div><b>Nhóm thiết bị:</b> {asset.category}</div><div><b>Vị trí:</b> {asset.location||'—'}</div>
         <div><b>Biểu mẫu:</b> {printEntry.templateTitle} · Phiên bản {printEntry.templateVersion}</div>
-        <div><b>Thời gian:</b> {new Date(printEntry.performedAt).toLocaleString('vi-VN')}</div>
+        <div><b>Thời gian:</b> {new Date(printEntry.performedAt).toLocaleString('vi-VN')}</div>{printEntry.scheduledFor&&<div><b>Kỳ Checklist:</b> {dateText(printEntry.scheduledFor)}{printEntry.isMakeup?' · Checklist bù':''}</div>}
         <div><b>Người thực hiện:</b> {printEntry.performedBy}</div><div><b>Kết quả chung:</b> {printEntry.result}</div>
       </div>
       <table className="checklist-print-table"><thead><tr><th style={{width:'5%'}}>STT</th><th style={{width:'34%'}}>Nội dung kiểm tra</th><th style={{width:'7%'}}>Đạt</th><th style={{width:'9%'}}>Không đạt</th><th style={{width:'8%'}}>KPH</th><th style={{width:'19%'}}>Kết quả / thông số</th><th style={{width:'18%'}}>Ghi chú</th></tr></thead><tbody>{printEntry.items.map((item,index)=><tr key={item.templateItemId}><td className="checklist-print-center">{index+1}</td><td><b>{item.label}</b>{item.description&&<div className="checklist-print-description">{item.description}</div>}</td><td className="checklist-print-center">{item.answer==='Đạt'?'✓':''}</td><td className="checklist-print-center">{item.answer==='Không đạt'?'✓':''}</td><td className="checklist-print-center">{item.answer==='Không áp dụng'?'✓':''}</td><td>{['Đạt','Không đạt','Không áp dụng'].includes(item.answer)?'':(item.answer||'—')}</td><td>{item.note||'—'}</td></tr>)}</tbody></table>
@@ -1427,11 +1444,11 @@ function TaskModal({value,assets,close,save}:any){
     <div className="modal-actions"><button type="button" className="soft-btn" onClick={close}>Hủy</button><button className="primary-btn"><Check size={16}/> Lưu công việc</button></div>
   </form></Modal>
 }
-function ScanModal({close,assets,openAsset}:any){
+function ScanModal({close,assets,openAsset,expectedAssetId}:any){
   const [result,setResult]=useState('')
   useEffect(()=>{
     const scanner = new Html5QrcodeScanner('qr-reader',{fps:10,qrbox:{width:220,height:220}},false)
-    scanner.render((text)=>{setResult(text);const code=text.replace('ASSET:','');const found=assets.find((a:Asset)=>a.code===code);if(found){scanner.clear().catch(()=>{});openAsset(found)}},()=>{})
+    scanner.render((text)=>{setResult(text);const code=text.replace('ASSET:','');const found=assets.find((a:Asset)=>a.code===code);if(found){if(expectedAssetId && found.id!==expectedAssetId){setResult('Mã QR không đúng thiết bị của công việc Checklist này. Hãy quét đúng thiết bị.');return}scanner.clear().catch(()=>{});openAsset(found)}},()=>{})
     return ()=>{scanner.clear().catch(()=>{})}
   },[])
   return <Modal title="Quét mã QR thiết bị" close={close}><div id="qr-reader" className="qr-reader"/><p className="muted">Cho phép trình duyệt truy cập camera. Checklist chỉ được mở sau khi quét đúng QR của thiết bị.</p>{result&&<p>Kết quả: {result}</p>}</Modal>
