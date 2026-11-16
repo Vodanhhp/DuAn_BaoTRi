@@ -538,3 +538,15 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Không dùng GitHub token/API từ frontend, không tạo nhánh/PR. Dữ liệu custom vẫn là localStorage theo từng trình duyệt cho đến khi triển khai Supabase; xuất file là thao tác thủ công, không tự đồng bộ giữa các máy.
 - Rủi ro/kiểm thử: kiểm tra import TXT raw và TypeScript; nội dung xuất phải giữ nguyên các phần I–VII, chèn đúng nhóm custom, xử lý nhiều nhóm/nhiều loại và trường hợp rỗng; tải xuống đúng tên file; không làm thay đổi chức năng thêm nhóm/loại và cấp mã.
 - Sau sửa sẽ kiểm tra tĩnh; môi trường GitHub không cung cấp checkout/build local trong thao tác này nên nếu không chạy được build sẽ ghi rõ cần người dùng chạy `npm.cmd run build`.
+
+### Đã bổ sung chức năng xuất Quy ước mã có danh mục thiết bị tự tạo (16/11/2026)
+- `src/App.tsx`: import nội dung tài liệu TXT chuẩn bằng cơ chế raw của Vite; bổ sung hàm xuất tài liệu dựa trên nội dung gốc trong repository, thay vị trí đánh dấu bằng danh sách nhóm bổ sung và các dòng mã ABC + tên loại thiết bị đang lưu trong localStorage.
+- Trong form **Thêm thiết bị** → **Thêm nhóm / loại thiết bị**, bổ sung hướng dẫn và nút **Xuất file Quy ước mã**. Khi bấm, trình duyệt tải xuống file đúng tên `QUY_UOC_MA_DINH_DANH_VA_VIET_TAT_THIET_BI.txt`, có BOM UTF-8 để hiển thị tiếng Việt ổn định.
+- `QUY_UOC_MA_DINH_DANH_VA_VIET_TAT_THIET_BI.txt`: bổ sung mục H trong Phần V làm vị trí dành cho các mã do doanh nghiệp tự tạo. Khi xuất từ ứng dụng, nội dung đánh dấu được thay bằng danh sách thực tế; tài liệu xuất ra không còn marker kỹ thuật.
+- Danh mục tự tạo vẫn được lưu theo localStorage key hiện tại `baotri-custom-asset-categories`; không thay đổi cách tạo nhóm/loại, kiểm tra trùng tên/mã, cấp mã định danh, mã thiết bị đã cấp, IndexedDB hoặc nghiệp vụ khác. Không tự ghi vào GitHub; người dùng chủ động tải file và thay tài liệu trong repository. Dữ liệu vẫn riêng theo từng trình duyệt/máy cho đến khi có backend/Supabase.
+- Kiểm tra tĩnh sau sửa: xác nhận import raw, marker xuất hiện đúng một lần trong tài liệu gốc và nằm trước Phần VI, xuất đủ nhóm + mã + tên loại, ghép xuống dòng đúng, BOM UTF-8, tên file tải xuống, nút giao diện và callback được nối; kiểm tra cơ chế lưu localStorage và kiểm tra trùng mã cũ vẫn còn. **Tất cả 11 kiểm tra tĩnh đạt.**
+- **Chưa chạy `npm.cmd run build` và chưa thử tải file trên trình duyệt thực tế.** Cần Pull origin trên GitHub Desktop, chạy build; sau đó tạo một nhóm/loại thử nghiệm và bấm Xuất file Quy ước mã để kiểm tra nội dung tải xuống.
+- Commit ghi kế hoạch: `20791c0b9b03a17e03699375ed687af4dd60e6cc`.
+- Commit bổ sung mục H trong tài liệu TXT: `03b647aed24312b64f6aa78b9ee7f3cb028187c1`.
+- Commit bổ sung chức năng xuất trong ứng dụng: `03a5ad2049584c994d70c3d758d665e62454afe9`.
+- Commit sửa xuống dòng, BOM UTF-8 và thời điểm thu hồi URL tải: `9ccbb80ca1b2603b244aaeb94f0a571a0054eca8`.
