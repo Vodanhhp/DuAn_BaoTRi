@@ -998,3 +998,12 @@ Người dùng xác nhận đồng ý đưa cả dữ liệu thử nghiệm đan
 - Không tạo bảng/migration mới cho bootstrap vì các bảng identity và business schema đã có. Đây là script khởi tạo dữ liệu có kiểm soát, không phải migration cấu trúc.
 - Commit bootstrap: d3bd0f71e6668b6020b94f55ecf77eeaa413f53e
 - Commit verify: b10e1baadfc0bd8f09c2fa7d26bee9493ef9966c
+
+
+## 17/11/2026 – Chuẩn bị kiểm tra RLS dưới role authenticated trên Test
+
+- Đã đối chiếu lại mã nguồn Auth trên `main`: `src/lib/supabase.ts` khởi tạo Supabase client bằng `VITE_SUPABASE_URL` và `VITE_SUPABASE_PUBLISHABLE_KEY`, bật lưu/khôi phục session và tự refresh token; `src/AuthScreen.tsx` đăng nhập bằng email/mật khẩu; `src/App.tsx` gọi `getSession`, lắng nghe `onAuthStateChange`, khóa workspace khi chưa đăng nhập và gọi `signOut` khi đăng xuất.
+- Xác nhận frontend đã có lớp Supabase Auth nhưng chưa có truy vấn organization/membership hoặc đọc dữ liệu nghiệp vụ cloud; IndexedDB vẫn là nguồn dữ liệu nghiệp vụ của ứng dụng. Không được hiểu đăng nhập thành công là đã có đồng bộ cloud.
+- Đã tạo `supabase/tests/20261117000300_authenticated_rls_session_test.sql` trên `main`, commit `a25f0ec34e20c37095bdd22053ed793e288b1afa`. Đây là script chỉ đọc, chỉ chạy trên `BAOTRI-Mini-Test`: đặt JWT claims cho Auth user `tuanluongpham1980@gmail.com`, chuyển SQL role sang `authenticated`, rồi kiểm tra hồ sơ, organization, membership, hai helper phân quyền và khả năng SELECT trên 11 bảng nghiệp vụ. Script kết thúc bằng ROLLBACK.
+- Giới hạn quan trọng: script mô phỏng role/JWT claims bên trong SQL Editor; đây là kiểm tra database grants/RLS ở tầng PostgreSQL, không thay thế kiểm thử API qua một session đăng nhập thực của trình duyệt. Không dùng kết quả này để khẳng định multi-tenant isolation thực tế, vì hiện mới có một tổ chức và chưa có dữ liệu nghiệp vụ.
+- Chưa chạy script này. Chưa thay đổi cấu hình Supabase, Auth user, dữ liệu nghiệp vụ hoặc project Production. Bước kế tiếp: người dùng chạy script trên SQL Editor của Test; nếu kết quả đúng, mới thực hiện kiểm tra API Auth bằng cấu hình Test rõ ràng, không suy đoán nội dung `.env.local` và không chuyển nhầm sang Production.
