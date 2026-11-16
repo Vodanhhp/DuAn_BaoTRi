@@ -197,8 +197,7 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 
 
 ### Chuẩn hóa xuất Excel danh sách thiết bị (15/11/2026)
-- Đổi tiêu đề hiển thị trong tệp thành “Danh sách các thiết bị”.- Thay tệp HTML giả dạng `.xls` bằng workbook `.xlsx` chuẩn Open XML được tạo bằng thư viện SheetJS đang có trong dự án.- Bố cục bảng: tiêu đề gộp 10 cột, hàng tiêu đề cột, mỗi thiết bị một hàng; Hãng và Model hiển thị xuống dòng trong ô tên thiết bị; giữ nguyên dữ liệu theo bộ lọc hiện tại.
-- Thiết lập độ rộng cột, bộ lọc tự động, khổ A4 ngang, vừa một trang theo chiều rộng và không ép chiều cao; có dòng tổng số thiết bị.
+- Đổi tiêu đề hiển thị trong tệp thành “Danh sách các thiết bị”.- Thay tệp HTML giả dạng `.xls` bằng workbook `.xlsx` chuẩn Open XML được tạo bằng thư viện SheetJS đang có trong dự án.- Bố cục bảng: tiêu đề gộp 10 cột, hàng tiêu đề cột, mỗi thiết bị một hàng; Hãng và Model hiển thị xuống dòng trong ô tên thiết bị; giữ nguyên dữ liệu theo bộ lọc hiện tại.- Thiết lập độ rộng cột, bộ lọc tự động, khổ A4 ngang, vừa một trang theo chiều rộng và không ép chiều cao; có dòng tổng số thiết bị.
 - Tên file: `danh-sach-cac-thiet-bi.xlsx`. Chưa chạy build và chưa mở thử bằng Excel trên máy người dùng; cần kiểm tra nội dung, định dạng và Print Preview.
 
 
@@ -398,7 +397,6 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Nhóm do người dùng tạo được lưu trong localStorage của trình duyệt hiện tại, hiển thị ở nhóm “Nhóm tự tạo” và dùng được khi tạo thiết bị lần sau.- Kiểm tra trùng tên/mã với cả danh mục chuẩn và nhóm tự tạo; mã nhóm mới phải được dùng trong cơ chế cấp mã thiết bị hiện tại.
 - Không sửa mã nhóm chuẩn, không đổi mã thiết bị đã cấp, không đổi schema IndexedDB và không ảnh hưởng dữ liệu thiết bị cũ.
 **Rủi ro:** mã nhóm trùng làm sai chuỗi mã định danh; nhóm lưu cục bộ không tự đồng bộ sang máy/trình duyệt khác (đúng với trạng thái lưu trữ hiện tại, trước khi triển khai Supabase).
-
 **Cách kiểm thử:** kiểm tra tĩnh luồng thêm nhóm, lưu localStorage, kiểm tra trùng tên/mã, chọn nhóm tự tạo và xem mã dự kiến; chạy `npm.cmd run build`. Chưa đánh dấu hoàn thành nếu chưa chạy build thực tế.
 
 
@@ -597,8 +595,7 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Đã có Supabase Project URL và Publishable key. Chỉ dùng hai giá trị này làm cấu hình public cho frontend; tuyệt đối không ghi key thật vào repository/file tiến độ/commit.
 - Không sử dụng hướng dẫn @supabase/ssr, page.tsx, cookies, middleware.ts do đó là mẫu Next.js, trong khi BAOTRI Mini là React + Vite.- Cấu hình đúng cho Vite: VITE_SUPABASE_URL và VITE_SUPABASE_PUBLISHABLE_KEY, lưu trong .env.local ở máy triển khai; .env.local không được commit. .gitignore hiện đã loại .env.* và chỉ cho phép .env.example.
 
-**Rà soát schema IndexedDB hiện tại (src/db.ts):**
-- Database: baotri-local-v1.
+**Rà soát schema IndexedDB hiện tại (src/db.ts):**- Database: baotri-local-v1.
 - Các store: assets, inventory, tasks, logs, movements, syncQueue, checklistTemplates, checklistVersions, checklistResults.
 - Ngoài ra danh mục nhóm/loại thiết bị tự tạo đang nằm trong localStorage key baotri-custom-asset-categories; các cài đặt giao diện khác cũng có localStorage riêng.
 - Phải rà soát tiếp toàn bộ các hàm đọc/ghi và dữ liệu ảnh trước khi chốt schema cloud. Không bỏ qua dữ liệu liên kết từ logs tới task/checklist result, quan hệ template-version-result, và liên kết vật tư/thiết bị.
@@ -797,8 +794,7 @@ Hàm `seed()` trong `App.tsx` chạy khi workspace mount và hiện có thể:
 - Người dùng đã chạy file `supabase/migrations/20261116000100_identity_and_organizations.sql` trong SQL Editor của project thử nghiệm `BAOTRI-Mini-Test`, Project Reference `oyzhxgzltpdebpymuicb`.- Supabase trả kết quả **Success. No rows returned**. Đây là kết quả bình thường đối với migration DDL; xác nhận lệnh SQL chạy hoàn tất không báo lỗi.
 - Migration tạo các bảng nền `profiles`, `organizations`, `organization_members`, trigger, helper functions, index, RLS policies và quyền truy cập tối thiểu theo nội dung migration.
 - Chưa xác minh độc lập từng bảng/policy/function bằng truy vấn kiểm tra; chưa tạo tổ chức hoặc membership mẫu; chưa chạy bộ test RLS hai tổ chức/hai vai trò.
-- Chưa chạy migration trên project chính `BAOTRI-Mini`; chưa tạo bảng nghiệp vụ, chưa import dữ liệu local và chưa bật đồng bộ cloud. Dữ liệu nghiệp vụ vẫn ở IndexedDB/localStorage trên từng trình duyệt.
-- Bước tiếp theo: kiểm tra ba bảng nền trong Table Editor, sau đó chuẩn bị tổ chức và membership thử nghiệm cho bốn Auth users; chạy bộ kiểm thử RLS sau khi thay placeholder bằng UUID thật. Không sao chép thao tác sang project chính.
+- Chưa chạy migration trên project chính `BAOTRI-Mini`; chưa tạo bảng nghiệp vụ, chưa import dữ liệu local và chưa bật đồng bộ cloud. Dữ liệu nghiệp vụ vẫn ở IndexedDB/localStorage trên từng trình duyệt.- Bước tiếp theo: kiểm tra ba bảng nền trong Table Editor, sau đó chuẩn bị tổ chức và membership thử nghiệm cho bốn Auth users; chạy bộ kiểm thử RLS sau khi thay placeholder bằng UUID thật. Không sao chép thao tác sang project chính.
 
 
 ## 16/11/2026 – Điều chỉnh lộ trình: đồng bộ cloud trước với một tài khoản
@@ -973,3 +969,10 @@ Người dùng xác nhận đồng ý đưa cả dữ liệu thử nghiệm đan
 - Chưa tạo bucket Storage; asset_images hiện chỉ là bảng metadata dự kiến. Chưa có RPC nhập/xuất kho, bootstrap organization/membership, import hoặc kết nối frontend.
 - Trạng thái: bản nháp để review, chưa chạy trên bất kỳ Supabase project nào. Tuyệt đối chưa chạy trên project chính.
 - Việc tiếp theo: rà soát kiểu ngày/giờ và trường dữ liệu đối chiếu với luồng UI thực tế; kiểm tra SQL trên project test sau khi người dùng duyệt bản migration. Nếu có thay đổi schema, cập nhật file migration trước khi chạy lần đầu.
+
+### Rà soát mapping nguồn cho Migration 002 (17/11/2026)
+- Đã đối chiếu src/db.ts và các đoạn sử dụng ngày/giờ trong src/App.tsx: các trường ngày lịch dùng PostgreSQL date; các mốc thời gian ISO dùng timestamptz.
+- Đã xác minh customAssetCategories trong localStorage là mảng nhóm {label, items}, item có name và code. Migration 002 đã sửa organization_settings.asset_categories thành JSONB array, mặc định [].
+- Đã đối chiếu các union type trạng thái thiết bị/công việc, chu kỳ kế hoạch, hình thức thực hiện và kết quả Checklist với CHECK constraint trong migration.
+- Chưa xác minh đầy đủ nghiệp vụ ghi movement trong UI; CHECK quantity > 0 đang giả định quantity là trị tuyệt đối dương. Cần review nếu Điều chỉnh có thể biểu diễn số âm.
+- Commit cập nhật Migration 002 theo mapping danh mục: 1a8755782297c39261a628d2c3993d3424f968ed. Commit cập nhật tài liệu thiết kế: 03cc12adb23b617fbb5ad9864bcd987930998b35.
