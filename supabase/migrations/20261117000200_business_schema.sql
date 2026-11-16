@@ -316,11 +316,11 @@ create index asset_images_org_asset_idx on public.asset_images (organization_id,
 -- constrained until the UI's saved format is reviewed from actual app code.
 create table public.organization_settings (
   organization_id uuid primary key references public.organizations(id) on delete restrict,
-  asset_categories jsonb not null default '{}'::jsonb,
+  asset_categories jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint organization_settings_asset_categories_object check (
-    jsonb_typeof(asset_categories) = 'object'
+  constraint organization_settings_asset_categories_array check (
+    jsonb_typeof(asset_categories) = 'array'
   )
 );
 
