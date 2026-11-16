@@ -1301,3 +1301,13 @@ Bộ test yêu cầu project thử nghiệm đã có bốn Auth users (Admin A, 
 - Supabase project: chưa chạy migration; chưa tạo bảng nghiệp vụ; chưa import dữ liệu.
 - Bước kế tiếp: kiểm tra cấu hình Supabase hiện tại có thể dùng làm môi trường thử nghiệm hay cần tạo project test riêng; sau đó review và chạy migration 001 trong môi trường test, chỉ khi người dùng cho phép rõ ràng.
 
+## 16/11/2026 – Chuẩn bị môi trường Supabase thử nghiệm
+
+- Người dùng đã tạo project Supabase thử nghiệm riêng.
+- Project Reference: `oyzhxgzltpdebpymuicb`.
+- Project URL dashboard: `https://supabase.com/dashboard/project/oyzhxgzltpdebpymuicb`.
+- Không sử dụng project chính `BAOTRI-Mini` để chạy migration thử nghiệm.
+- Review tĩnh migration 001 phát hiện hàm `is_org_member` chưa kiểm tra trạng thái tổ chức; đã cập nhật để chỉ xác nhận thành viên khi tổ chức có `status = 'active'`.
+- Commit cập nhật migration: `f84bf329ac08379d2eb5cd3a23548bb9f902afbe`.
+- Chưa chạy migration trên project test; chưa tạo tổ chức/membership mẫu; chưa chạy bộ test RLS.
+- Bước tiếp theo: người dùng xác nhận project test đã hoàn tất khởi tạo (project ở trạng thái Healthy), sau đó tạo bốn tài khoản Auth thử nghiệm và thực hiện migration 001 trên đúng project test. Không gửi Database Password hoặc bất kỳ secret/service-role key nào qua chat.
