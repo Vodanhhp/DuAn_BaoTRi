@@ -155,3 +155,17 @@ button.asset-photo-thumb{text-align:left}
   .asset-print-sheet.print-checklist .checklist-signatures{break-inside:avoid}
 }
 @media(max-width:640px){.checklist-print-meta{grid-template-columns:1fr}}
+
+
+/* Phiếu Checklist in theo dạng biểu mẫu giấy có hàng, cột và ô đánh dấu */
+.checklist-print-table{width:100%;border-collapse:collapse;table-layout:fixed;white-space:normal}
+.checklist-print-table th,.checklist-print-table td{border:1px solid #333!important;padding:6px 5px;vertical-align:middle;white-space:normal;overflow-wrap:anywhere}
+.checklist-print-table th{text-align:center;font-weight:700}
+.checklist-print-center{text-align:center;font-weight:700;font-size:12pt}
+.checklist-print-description{font-size:9pt;color:#444;margin-top:3px;font-weight:400}
+@media print{
+  .asset-print-sheet.print-checklist .asset-print-report{font-family:Tahoma,sans-serif;font-size:10pt}
+  .asset-print-sheet.print-checklist .checklist-print-table th,.asset-print-sheet.print-checklist .checklist-print-table td{font-family:Tahoma,sans-serif;font-size:9pt;border:1px solid #222!important;padding:5px 4px}
+  .asset-print-sheet.print-checklist .checklist-print-center{font-size:11pt}
+  .asset-print-sheet.print-checklist .checklist-print-table thead{display:table-header-group}
+}
