@@ -357,3 +357,18 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Commit code: `c8409a5db2390e567ccba2d70f4d93fbeb637f79`.
 - Commit ghi kế hoạch trước khi sửa: `cc0945bdaa7726a4b20bff8eefdad2010bd8d6f9`.
 - Bước tiếp theo: Pull origin trên GitHub Desktop, chạy build; thử tạo Máy hàn xung và một thiết bị lạ chọn Khác; kiểm tra mã/QR, nhóm được gợi ý, nội dung Checklist và xác nhận các mẫu/phiếu cũ còn nguyên.
+
+
+### Chế độ thử Checklist không cần QR và tách menu nghiệp vụ (16/11/2026) – GHI NHẬN TRƯỚC KHI SỬA
+**Yêu cầu:** trong giai đoạn thử nghiệm cho phép mở/thực hiện Checklist từ danh mục thiết bị mà không quét QR; khi nghiệm thu xong sẽ tắt chế độ thử và bắt buộc quét QR. Tách menu trái thành “Bảo trì – Checklist”, “Bảo dưỡng – Sửa chữa” và “Kế hoạch”. Trong Kế hoạch trước mắt có lối vào “Kế hoạch bảo dưỡng” hiện hữu; “Kế hoạch bảo trì” hiển thị là phần sẽ phát triển sau.
+
+**Phạm vi dự kiến:**
+- Thêm hằng cấu hình duy nhất `CHECKLIST_TEST_MODE = true`. Khi true, mở hồ sơ từ màn hình Checklist được cấp quyền thao tác Checklist mà không cần QR; khi false, chỉ đường quét QR mới cấp quyền. Không xóa/né luồng QR hiện có.
+- Thêm trang “Bảo trì – Checklist” liệt kê thiết bị đang quản lý; mở thiết bị từ trang này là đường thử Checklist. Danh mục Thiết bị thông thường vẫn chỉ xem/in lịch sử, không được thao tác khi chế độ test tắt.
+- Tách menu “Bảo dưỡng – Sửa chữa” thành mục riêng.
+- Thêm mục “Kế hoạch” làm trang nhóm; giữ nguyên trang và dữ liệu “Kế hoạch bảo dưỡng” hiện hữu, truy cập qua mục con. Mục “Kế hoạch bảo trì” là placeholder chưa triển khai.
+- Cập nhật điều hướng mobile và nhãn trang liên quan. Không đổi schema, dữ liệu, quy tắc lưu Checklist, hay các luồng nghiệp vụ khác.
+
+**Rủi ro:** mở nhầm quyền Checklist từ màn hình danh mục thông thường sau khi chuyển sang production; làm mất đường vào kế hoạch bảo dưỡng đang chạy; điều hướng mobile/desktop không đồng nhất.
+
+**Kiểm thử:** build; xác nhận chế độ test true cho phép vào Checklist từ menu Checklist mà không quét; danh mục Thiết bị thường vẫn chỉ xem/in; quét QR vẫn vào được; trang Bảo dưỡng – Sửa chữa và Kế hoạch bảo dưỡng giữ dữ liệu cũ; menu Kế hoạch bảo trì chỉ là placeholder. Sau nghiệm thu, đổi duy nhất hằng cấu hình sang false và kiểm tra đường QR.
