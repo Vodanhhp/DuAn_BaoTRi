@@ -498,3 +498,5 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Commit mốc bắt đầu chu kỳ: `a1171f91869875f71732d5d024d13dbd88397faa` và `780226db60cef4630fbb3d6515061182c04a4eef`.
 - Commit CSS: `56f7a22e02a85c30a772c48b73e275939d790de5`.
 - Bước tiếp theo: Pull origin, chạy build và thử từng tab chu kỳ; kiểm tra một kỳ quá hạn, quét QR đúng/sai, lưu Checklist bù, xác nhận kỳ chuyển xanh và lịch sử ghi lại Checklist bù.
+
+- Bổ sung thứ tự ưu tiên: kỳ chưa hoàn thành được xếp theo ngày đến hạn cũ nhất trước; kỳ hoàn thành xếp mới nhất trước. Commit: `57caf2bbd8ed748c524b06a26d329c75625d19d3`.
