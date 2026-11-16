@@ -720,3 +720,66 @@ Người dùng xác nhận chọn **Phương án 2: triển khai nhiều tài kh
 
 ### Bước công việc kế tiếp
 Bắt đầu bằng rà soát chi tiết toàn bộ `src/db.ts`, các hàm đọc/ghi trong `src/App.tsx` và những nơi dùng localStorage để lập bản đồ dữ liệu/quan hệ. Sau đó đề xuất schema và ma trận quyền Admin/User để người dùng duyệt trước khi tạo migration SQL hoặc sửa code.
+
+
+## 16/11/2026 – Rà soát dữ liệu local và luồng ghi hiện tại (đợt 1)
+
+Đã đọc trực tiếp `src/db.ts` và rà soát các luồng đọc/ghi chính trong `src/App.tsx` trên `main`. Đây là kiểm kê hiện trạng, **chưa sửa mã nguồn, chưa tạo bảng Supabase, chưa chạy migration hoặc đồng bộ dữ liệu**.
+
+### 1. Cấu trúc IndexedDB
+
+Database: `baotri-local-v1`, dùng Dexie; schema hiện tại có 4 phiên bản nâng cấp (v1–v4), gồm 9 object stores:
+
+| Store | Nội dung / khóa liên kết đang có |
+|---|---|
+| `assets` | Hồ sơ thiết bị; ID, mã, tên, nhóm, vị trí, trạng thái, chu kỳ, ảnh dạng mảng chuỗi |
+| `inventory` | Vật tư; mã, nhóm, đơn vị, số lượng, tồn tối thiểu, đơn giá |
+| `tasks` | Kế hoạch/công việc; có `assetId` liên kết thiết bị |
+| `logs` | Lịch sử bảo dưỡng/sửa chữa; có `assetId`, tùy chọn `taskId`, `checklistResultId` |
+| `movements` | Lịch sử nhập/xuất/điều chỉnh; có `itemId`, tùy chọn `linkedAssetId` |
+| `syncQueue` | Hàng đợi thay đổi; `tableName`, `recordId`, `operation`, thời điểm xếp hàng |
+| `checklistTemplates` | Biểu mẫu Checklist; có `assetId`, `currentVersion` |
+| `checklistVersions` | Phiên bản biểu mẫu; có `templateId`, `assetId`, số phiên bản và mảng `items` |
+| `checklistResults` | Phiếu thực hiện; có `assetId`, `templateId`, `templateVersionId`, snapshot tên/phiên bản biểu mẫu và mảng kết quả `items` |
+
+Các liên kết trên hiện là trường ID trong object và chỉ mục Dexie; `src/db.ts` chưa khai báo ràng buộc foreign key kiểu cơ sở dữ liệu quan hệ. Khi thiết kế PostgreSQL cần tạo FK/ON DELETE phù hợp và quyết định cách giữ lịch sử khi lưu kho/ẩn thiết bị, vật tư hoặc biểu mẫu.
+
+### 2. localStorage và dữ liệu ngoài IndexedDB
+
+Đã xác định các khóa được dùng trong `App.tsx`:
+- `baotri-custom-asset-categories`: danh mục nhóm/loại thiết bị do người dùng tự tạo; có hỗ trợ chuyển đổi định dạng cũ.
+- `baotri-theme`: giao diện sáng/tối.
+- `baotri-compact`: tùy chọn giao diện gọn.
+
+Danh mục custom là dữ liệu nghiệp vụ/cấu hình cần được backup và chuyển sang cloud hoặc cấu hình theo tổ chức. Theme/compact là tùy chọn giao diện, không nhất thiết đưa vào bảng nghiệp vụ cloud.
+
+### 3. Ảnh và dữ liệu lồng
+
+- Ảnh thiết bị được đọc bằng FileReader thành data URL/Base64 và lưu trực tiếp trong `Asset.images`; giới hạn giao diện hiện tại là tối đa 8 ảnh/hồ sơ.
+- Checklist version lưu danh sách hạng mục trong `items`; phiếu kết quả lưu snapshot hạng mục, câu trả lời và ghi chú trong `items`.
+- Vì vậy cần tách quyết định: dữ liệu checklist có thể lưu dạng JSONB hoặc chuẩn hóa thành bảng con; ảnh cần chuyển sang Supabase Storage và lưu đường dẫn/object key trong hồ sơ, không nên giữ Base64 lớn trong hàng PostgreSQL.
+
+### 4. Các luồng ghi và điểm cần xử lý trước đồng bộ
+
+- Thiết bị, vật tư, task, log, checklist template và checklist result đang ghi vào Dexie. `queueChange` có được gọi ở một số luồng, nhưng chưa có worker/luồng đẩy hàng đợi lên Supabase; `syncQueue` hiện không đồng nghĩa đã có đồng bộ.
+- Ghi hoàn thành task tạo đồng thời task và log trong một transaction, nhưng sau transaction chỉ xếp hàng `tasks`, chưa xếp hàng `logs`.
+- Nhập/xuất kho cập nhật inventory và tạo movement trong một transaction, nhưng chỉ xếp hàng `inventory`, chưa xếp hàng `movements`.
+- Backup JSON hiện xuất 8 store nghiệp vụ, **không xuất `syncQueue`**, không chứa `baotri-custom-asset-categories`; do đó chưa phải bản backup đầy đủ theo yêu cầu multi-tenant. Chức năng restore hiện bulkPut dữ liệu vào local, không phải công cụ import cloud.
+- Khi khởi động workspace, hàm seed có thể bổ sung/cập nhật dữ liệu demo và tạo Checklist mặc định cho thiết bị chưa có mẫu. Cần rà soát và tách rõ dữ liệu demo khỏi dữ liệu tổ chức trước khi chuyển sang cloud để tránh tự tạo dữ liệu mẫu trong tổ chức thật.
+- Component Checklist hiện cho phép nhập tay `performedBy` và lưu vào phiếu. Khi triển khai multi-user, cần lấy `auth.uid()` từ phiên đăng nhập ở backend, lưu user ID và snapshot tên được xác thực; không tin trường người thực hiện từ client.
+- Workspace hiện chỉ nhận `userEmail` và callback đăng xuất; chưa truyền user ID/membership/organization context xuống các phân hệ. Đây là phần cần thiết kế cùng cơ chế chọn tổ chức và kiểm tra quyền.
+
+### 5. Quan hệ nghiệp vụ cần giữ khi thiết kế ERD
+
+1. Organization → assets, inventory, tasks, logs, movements, checklist templates/versions/results.
+2. Asset → tasks, logs, checklist templates, checklist versions, checklist results.
+3. Task → logs (liên kết tùy chọn).
+4. Inventory item → movements.
+5. Checklist template → nhiều versions; mỗi version thuộc đúng asset/template.
+6. Checklist result → đúng asset, template và version đã thực hiện; log sửa chữa có thể tham chiếu phiếu Checklist nguồn.
+7. Người thực hiện → Auth user; đồng thời giữ snapshot tên tại thời điểm lập phiếu để lịch sử không đổi khi hồ sơ tài khoản thay đổi.
+
+### 6. Kết luận và bước tiếp theo
+
+- Hiện trạng đủ để bắt đầu phác thảo ERD và ma trận quyền, nhưng chưa đủ căn cứ để viết migration cuối cùng: cần kiểm tra thêm toàn bộ luồng xóa/khôi phục, cách dùng các trường liên kết, các file ngoài App/db và chính sách xóa dữ liệu.
+- Bước kế tiếp: hoàn tất kiểm tra các thao tác xóa và quan hệ tham chiếu; sau đó trình người dùng bản ERD/schema đề xuất và ma trận quyền Admin/User để duyệt. Chưa tạo migration hoặc sửa ứng dụng trước khi được duyệt.
