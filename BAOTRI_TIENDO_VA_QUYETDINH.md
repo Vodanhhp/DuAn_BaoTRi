@@ -302,3 +302,26 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Sửa CSS in phiếu A4: gom quy tắc trang Checklist về lề trên 5mm, lề trái/phải 7mm, bỏ padding 8mm thừa của báo cáo, giảm khoảng cách tiêu đề/metadata và tránh cộng dồn lề trang với lề nội dung. Ẩn toàn bộ giao diện, chỉ in phiếu Checklist.
 - Cập nhật trực tiếp trên `main`: `src/App.tsx`, `src/style.css`, và file tiến độ này.
 - Chưa chạy build/test hoặc xem bản in thực tế; cần đồng bộ về máy, chạy `npm.cmd run build`, sau đó mở hồ sơ từ danh mục để in phiếu cũ không cần QR và kiểm tra lề trên A4.
+
+### Chốt kiến trúc tài khoản và dữ liệu tập trung bằng Supabase (16/11/2026) – GHI NHẬN TRƯỚC KHI TRIỂN KHAI
+
+**Quyết định mới nhất – thay thế các định hướng cũ về chỉ dùng một người dùng và chưa cần đăng nhập thật:**
+- Chốt dùng **Supabase** làm nền tảng backend cho xác thực tài khoản, PostgreSQL và lưu trữ tệp; giao diện React/Vite hiện tại tiếp tục được giữ, có thể triển khai tĩnh trên GitHub Pages.
+- Mục tiêu là xây nền tảng có thể thương mại hóa: nhiều tài khoản, nhiều doanh nghiệp (multi-tenant), dữ liệu được cách ly ở database/backend, không dựa vào việc ẩn giao diện.
+- Hồ sơ tài khoản dự kiến có: mã tài khoản/UUID do Auth cấp, tên đăng nhập hoặc định danh đăng nhập, họ và tên, ngày sinh; vị trí làm việc sẽ bổ sung ở giai đoạn sau. Không lưu mật khẩu dạng văn bản trong bảng hồ sơ; mật khẩu do Supabase Auth quản lý.
+- Khi tạo phiếu Checklist, người thực hiện phải được xác định từ phiên đăng nhập đã xác thực. Ứng dụng không cho tự nhập/chọn tên người thực hiện. Backend/database phải ràng buộc danh tính người tạo; phiếu lưu cả performed_by_user_id và ảnh chụp họ tên tại thời điểm thực hiện để lịch sử không đổi khi hồ sơ tài khoản được cập nhật.
+- Tài khoản khác không được ghi nhận công việc dưới danh tính người khác. Xác thực phải được kiểm tra ở backend/RLS hoặc cơ chế ghi phiếu an toàn phía server; chỉ khóa ô nhập trên frontend là không đủ.
+- Tài khoản đầu tiên/khởi tạo tổ chức và vai trò quản trị phải có quy trình an toàn; không tự tạo quyền Admin mặc định cho mọi người đăng ký.
+- Thiết kế tenant: các bảng nghiệp vụ sẽ gắn organization_id; membership liên kết user với tổ chức và role. Cần RLS kiểm soát mọi truy cập theo tổ chức. Chưa migrate dữ liệu nghiệp vụ IndexedDB hiện có lên cloud cho đến khi có kế hoạch backup/đối chiếu và được kiểm tra.
+- Dữ liệu hiện tại trong ứng dụng vẫn đang lưu bằng IndexedDB trên từng trình duyệt/máy. **Chưa có đăng nhập thật, chưa có database tập trung, chưa có đồng bộ đa thiết bị.** Không được mô tả hệ thống đã có bảo mật tài khoản hoặc dữ liệu cloud trước khi triển khai và kiểm thử thành công.
+- Storage dự kiến dùng Supabase Storage cho ảnh/tài liệu; không đưa service-role key hoặc secret vào frontend/repository. Chỉ dùng publishable/anon key ở client cùng RLS đúng chuẩn.
+- Trước khi triển khai code: rà soát toàn bộ thao tác đọc/ghi các bảng hiện tại, backup/restore, seed dữ liệu mẫu, luồng Checklist và luồng Bảo dưỡng – Sửa chữa; lập kế hoạch schema/migration và cách xử lý dữ liệu cũ. Giữ nguyên các phân hệ Thiết bị, Kho vật tư và Checklist; thay đổi từng bước.
+- Cần tạo Supabase project và cấu hình URL + publishable/anon key qua biến môi trường khi đến bước kết nối thực tế. Không commit file .env chứa bí mật. Nếu chưa có project/credentials thì chỉ có thể chuẩn bị code/schema và ghi rõ chưa kết nối, không giả định backend đã hoạt động.
+
+**Quy trình bắt buộc cho mọi thao tác lớn từ nay:**
+1. Trước khi bắt đầu: cập nhật mục này hoặc thêm ghi chú “trước khi triển khai” vào chính file BAOTRI_TIENDO_VA_QUYETDINH.md trên main, nêu mục tiêu, phạm vi, file/bảng dự kiến tác động, rủi ro và cách kiểm thử.
+2. Sau khi hoàn tất từng thao tác lớn: cập nhật ngay trong chính file này các file đã sửa, commit, migration/schema, kết quả build/test thực tế, những gì chưa làm và bước tiếp theo.
+3. Không tạo file tiến độ thứ hai. Không đánh dấu hoàn thành nếu chưa chạy kiểm thử tương ứng.
+4. Tiếp tục sửa trực tiếp trên main, không tạo branch hoặc Pull Request; bảo toàn chức năng đang hoạt động và dữ liệu hiện có.
+
+**Trạng thái trước khi bắt đầu:** mới chốt kiến trúc và ghi nhận kế hoạch. Chưa sửa mã nguồn cho Supabase/Auth/Profile/tenant; chưa tạo Supabase project; chưa có URL/key; chưa thay đổi nơi lưu dữ liệu. Ứng dụng hiện vẫn dùng IndexedDB cục bộ.
