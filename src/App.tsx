@@ -8,7 +8,7 @@ import {
 import { QRCodeSVG } from 'qrcode.react'
 import { Html5QrcodeScanner } from 'html5-qrcode'
 import * as XLSX from 'xlsx'
-import { db, uid, now, queueChange, type Asset, type InventoryItem, type Task, type Log, type ChecklistTemplateItem, type ChecklistResultItem, type ChecklistResult } from './db'
+import { db, uid, now, queueChange, type Asset, type InventoryItem, type Task, type Log, type ChecklistTemplateItem, type ChecklistTemplateVersion, type ChecklistResultItem, type ChecklistResult } from './db'
 
 type Page = 'dashboard' | 'checklist' | 'assets' | 'inventory' | 'planning' | 'tasks' | 'logs' | 'reports' | 'settings'
 
@@ -595,7 +595,7 @@ export default function App() {
   const restore = async (file: File) => {
     try {
       const data = JSON.parse(await file.text())
-      await db.transaction('rw', db.assets, db.inventory, db.tasks, db.logs, db.movements, db.checklistTemplates, db.checklistVersions, db.checklistResults, async () => {
+      await db.transaction('rw', [db.assets, db.inventory, db.tasks, db.logs, db.movements, db.checklistTemplates, db.checklistVersions, db.checklistResults], async () => {
         await db.assets.bulkPut(data.assets ?? []); await db.inventory.bulkPut(data.inventory ?? [])
         await db.tasks.bulkPut(data.tasks ?? []); await db.logs.bulkPut(data.logs ?? []); await db.movements.bulkPut(data.movements ?? [])
         await db.checklistTemplates.bulkPut(data.checklistTemplates ?? [])
@@ -770,8 +770,8 @@ function Dashboard({assets,tasks,dueToday,lowStock,overdue,go,complete,inventory
       <section className="panel insight-panel">
         <div className="panel-head"><div><h2>Ưu tiên kho</h2><p>Vật tư cần bổ sung sớm</p></div><button className="link-btn" onClick={()=>go('inventory')}>Xem kho <ChevronRight size={15}/></button></div>
         <div className="priority-list">
-          {priorityItems.length ? priorityItems.map((item:any) => (
-            <div className="priority-item" key={item.code}>
+          {priorityItems.length ? priorityItems.map((item:any, index:number) => (
+            <div className="priority-item" key={`${item.code}-${index}`}>
               <div>
                 <b>{item.name}</b>
                 <small>{item.code}</small>
@@ -1268,7 +1268,7 @@ function AssetChecklist({asset,allowActions,scheduledFor,isMakeup,createRepairFr
     }).catch(error => console.error('Không thể tạo Checklist mẫu:', error))
     return () => { active = false }
   }, [asset.id, allowActions])
-  const versions = useLiveQuery(() => template ? db.checklistVersions.where('templateId').equals(template.id).toArray() : Promise.resolve([]), [template?.id])
+  const versions = useLiveQuery(() => template ? db.checklistVersions.where('templateId').equals(template.id).toArray() : Promise.resolve([] as ChecklistTemplateVersion[]), [template?.id])
   const results = useLiveQuery(() => db.checklistResults.where('assetId').equals(asset.id).toArray(), [asset.id]) ?? []
   const [builderOpen,setBuilderOpen] = useState(false)
   const [runOpen,setRunOpen] = useState(false)
@@ -1324,7 +1324,7 @@ function AssetChecklist({asset,allowActions,scheduledFor,isMakeup,createRepairFr
     if(items.some(item=>item.required&&!item.answer.trim())) return alert('Vui lòng hoàn thành các hạng mục bắt buộc')
     const failed=items.some(item=>item.answer==='Không đạt'||item.answer==='Không')
     const performedAt=now()
-    const entry={id:uid(),assetId:asset.id,templateId:template.id,templateVersionId:currentVersion.id,templateVersion:currentVersion.version,templateTitle:currentVersion.title,performedAt,performedBy:performedBy.trim()||'Người sử dụng',result:failed?'Không đạt':'Đạt' as const,scheduledFor:scheduledFor||undefined,isMakeup:Boolean(scheduledFor && (isMakeup || performedAt.slice(0,10)>scheduledFor)),notes:resultNotes,items,createdAt:performedAt}
+    const entry: ChecklistResult = {id:uid(),assetId:asset.id,templateId:template.id,templateVersionId:currentVersion.id,templateVersion:currentVersion.version,templateTitle:currentVersion.title,performedAt,performedBy:performedBy.trim()||'Người sử dụng',result:failed?'Không đạt':'Đạt',scheduledFor:scheduledFor||undefined,isMakeup:Boolean(scheduledFor && (isMakeup || performedAt.slice(0,10)>scheduledFor)),notes:resultNotes,items,createdAt:performedAt}
     await db.checklistResults.add(entry)
     await queueChange('checklistResults',entry.id)
     setRunOpen(false)

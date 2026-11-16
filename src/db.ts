@@ -41,6 +41,7 @@ export interface ChecklistResultItem {
   label: string
   description?: string
   answerType: ChecklistAnswerType
+  required?: boolean
   answer: string
   note: string
   order: number
