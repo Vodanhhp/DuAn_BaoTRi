@@ -56,6 +56,8 @@ export interface ChecklistResult {
   performedAt: string
   performedBy: string
   result: 'Đạt' | 'Không đạt' | 'Chưa hoàn thành'
+  scheduledFor?: string
+  isMakeup?: boolean
   notes: string
   items: ChecklistResultItem[]
   createdAt: string
