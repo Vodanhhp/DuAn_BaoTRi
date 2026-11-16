@@ -467,3 +467,14 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Commit ghi kế hoạch trước khi sửa: `987970fd15aacb21e435f3284e0139a8de1e4245`.
 - Commit khóa chế độ QR: `bd584d57270b9c40a0dc6a7e5a9e3c72555dfe89`.
 - Bước tiếp theo: Pull origin trên GitHub Desktop và chạy `npm.cmd run build`; khi kiểm thử giao diện, xác nhận mở thiết bị từ menu Checklist không thao tác được, quét QR thì thao tác được, lịch sử/phiếu cũ vẫn xem và in bình thường.
+
+
+### Kế hoạch hoàn thiện Bảo trì – Checklist theo chu kỳ định kỳ (16/11/2026) – GHI NHẬN TRƯỚC KHI SỬA
+- Làm rõ nghiệp vụ theo người dùng: Admin thiết lập chu kỳ Checklist cho từng thiết bị trong lý lịch thiết bị; chỉ có 5 chu kỳ ngày/tuần/tháng/quý/năm. Bảo trì là công việc có kế hoạch. Sửa chữa phát sinh tức thời. Bảo dưỡng – Sửa chữa chỉ xử lý ở giai đoạn sau; chưa triển khai chuyển phiếu tự động trong đợt này.
+- Màn hình Bảo trì – Checklist phải là bảng theo dõi lịch Checklist, không phải danh mục thiết bị. Có tab Ngày/Tuần/Tháng/Quý/Năm; hiển thị các kỳ đến hạn, kỳ đã làm (xanh), kỳ chưa làm/quá hạn (đỏ), ngày đến hạn cụ thể và nút Checklist bù.
+- Mỗi lần Checklist lưu vẫn là phiếu riêng theo template/version hiện hữu. Bổ sung metadata tùy chọn `scheduledFor` (ngày của kỳ phải làm) và `isMakeup` để liên kết phiếu với kỳ định kỳ và nhận biết Checklist bù; không ghi đè phiếu cũ. Phiếu bù hoàn thành sẽ làm kỳ đó chuyển xanh, đồng thời lịch sử hồ sơ thiết bị vẫn ghi nhận rõ Checklist bù.
+- Dùng trường `Asset.cycle` hiện có, đổi nhãn thành “Chu kỳ Bảo trì – Checklist” và giới hạn lựa chọn ngày/tuần/tháng/quý/năm; không thêm trường chu kỳ trùng lặp, không đổi schema Asset.
+- Dự kiến ngày bắt đầu lịch là ngày tạo biểu mẫu Checklist riêng của thiết bị (template.createdAt); từ mốc này sinh các kỳ định kỳ. Kết quả cũ chưa có `scheduledFor` được đối chiếu theo ngày thực hiện nằm trong kỳ tương ứng để giữ tính tương thích. Kỳ đã lưu `scheduledFor` được ưu tiên khớp chính xác.
+- Quyền thao tác vẫn bắt buộc quét QR: bấm Checklist bù sẽ mở luồng quét QR; chỉ quét đúng mã thiết bị mới mở phiếu Checklist cho đúng kỳ. Không bật lại `CHECKLIST_TEST_MODE`.
+- Không thay đổi nghiệp vụ Bảo dưỡng – Sửa chữa, không tự động tạo phiếu sửa chữa khi có mục Không đạt trong đợt này.
+- Rủi ro/cần kiểm thử: sinh ngày tháng qua tháng ngắn/năm nhuận; không tạo kỳ tương lai; phân biệt ngày đến hạn và quá hạn; một phiếu không hoàn thành kỳ khác; lưu phiếu bù giữ nguyên lịch sử; QR phải đúng thiết bị; lịch sử/phiếu cũ và bản in vẫn hoạt động. Chưa triển khai cho đến khi hoàn tất sửa và kiểm tra tĩnh/build.
