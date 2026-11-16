@@ -625,3 +625,12 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Không được chuyển ngay sang cloud trước khi backup và đối chiếu đạt.
 
 **Trạng thái cập nhật:** đã nhận Project URL + Publishable key; đã xác định đúng nền tảng React/Vite và các store local. Chưa cài SDK, chưa tạo schema SQL/RLS, chưa tạo file backup từ trình duyệt, chưa import dữ liệu và chưa có đăng nhập/đồng bộ cloud hoạt động. Tiếp tục thực hiện trực tiếp trên main, không tạo branch/PR.
+
+### Kế hoạch triển khai Supabase Auth đợt 1 – đăng nhập an toàn (16/11/2026) – GHI NHẬN TRƯỚC KHI SỬA
+- Đã xác nhận trên `main`: `package.json` có `@supabase/supabase-js ^2.119.0`; người dùng đã tạo `.env.local` tại máy local với hai biến Vite. Không ghi giá trị Project URL/Publishable Key vào repo hoặc file tiến độ.
+- Phạm vi: tạo Supabase client đọc `VITE_SUPABASE_URL` và `VITE_SUPABASE_PUBLISHABLE_KEY`; tạo màn hình đăng nhập email/mật khẩu; khôi phục session; đăng xuất; hiển thị email tài khoản đang đăng nhập; xử lý thiếu cấu hình/lỗi Auth.
+- Đợt này chưa mở đăng ký tự do, chưa tự cấp Admin, chưa tạo tổ chức/membership, chưa chuyển dữ liệu IndexedDB lên cloud. Tài khoản đăng nhập phải được tạo/quản lý trong Supabase Dashboard trong giai đoạn đầu.
+- Không thay đổi các store IndexedDB, localStorage danh mục, nghiệp vụ thiết bị/kho/Checklist, QR, lịch sử hoặc dữ liệu hiện tại. Khi đăng xuất, chỉ khóa giao diện; không xóa dữ liệu local.
+- Rủi ro cần thông báo: IndexedDB hiện vẫn là dữ liệu cục bộ của trình duyệt và chưa cách ly theo tài khoản/tổ chức. Không coi việc có Auth là đã có multi-tenant hoặc đã bảo vệ dữ liệu nghiệp vụ. Trước khi cho nhiều tài khoản dùng trên cùng trình duyệt hoặc triển khai thương mại phải hoàn tất schema PostgreSQL, tổ chức/membership, RLS và chuyển/partition dữ liệu.
+- Kiểm thử: kiểm tra TypeScript/Vite build; kiểm tra cấu hình thiếu biến; đăng nhập sai/đúng; tải lại trang giữ session; đăng xuất trở về màn hình đăng nhập; kiểm tra không ghi credential vào repo. Nếu môi trường thao tác GitHub không chạy được build, yêu cầu người dùng chạy `npm.cmd run build` trên máy local và báo rõ chưa được xác minh build.
+- Tiếp tục sửa trực tiếp nhánh `main`, không tạo branch/PR. Chỉ sửa các file cần thiết cho Auth và cập nhật file tiến độ chính thức này sau khi hoàn tất.
