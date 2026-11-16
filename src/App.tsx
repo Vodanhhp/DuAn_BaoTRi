@@ -440,16 +440,16 @@ export default function App() {
       ? customAssetCategories.map(group => [
           group.label,
           ...group.items.map(item => `${item.code.padEnd(8, ' ')}${item.name}`)
-        ].join('\\n')).join('\\n\\n')
+        ].join('\n')).join('\n\n')
       : 'Chưa có nhóm hoặc loại thiết bị bổ sung.'
     const content = namingConventionText.replace(marker, customCodeList)
-    const blob = new Blob(['\\uFEFF', content], { type: 'text/plain;charset=utf-8' })
+    const blob = new Blob(['\uFEFF', content], { type: 'text/plain;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
     link.download = 'QUY_UOC_MA_DINH_DANH_VA_VIET_TAT_THIET_BI.txt'
     link.click()
-    URL.revokeObjectURL(url)
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
     flash('Đã xuất tài liệu Quy ước mã thiết bị')
   }
 
