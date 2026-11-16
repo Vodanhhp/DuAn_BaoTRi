@@ -657,3 +657,11 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Không thay đổi luồng xác thực, dữ liệu nghiệp vụ hoặc schema.
 - Commit code trên `main`: `e2150400dd9ae92394f09ab8413d6243d4bbc040`.
 - Chưa chạy build sau sửa; cần Pull origin trên GitHub Desktop rồi chạy lại `npm.cmd run build` tại máy local.
+
+
+## 16/11/2026 – Khắc phục lỗi cú pháp sau khi ghép nội dung App.tsx
+- Build local báo TS1005 tại dòng 400 do hai điều kiện sắp xếp thiết bị bị dính trên cùng một dòng.
+- Đã tách lại thành hai dòng độc lập trong `src/App.tsx`; không thay đổi logic sắp xếp.
+- Rà soát toàn bộ file sau sửa: 1.527 dòng; không còn phát hiện mẫu câu lệnh bị dính tương tự tại các điểm nối.
+- Commit code trên `main`: `e4373848e39a762050b7241c59720228f19e669b`.
+- Chưa chạy build local; cần Pull origin và chạy lại `npm.cmd run build`.
