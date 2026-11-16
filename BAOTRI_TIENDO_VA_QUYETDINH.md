@@ -389,3 +389,18 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Commit sửa tiêu đề trang con kế hoạch: `a5ce60de5dfe9d4b50bba889dbbb7b98c3d002e1`.
 - Commit ghi kế hoạch trước khi sửa: `b102b6303ef52898a4eccc05fba0aecdb72789db`.
 - **Bước tiếp theo:** Pull origin trên GitHub Desktop; chạy build; thử Checklist từ menu không QR; thử lại quét QR; kiểm tra riêng trang Thiết bị, Bảo dưỡng – Sửa chữa, Kế hoạch và menu mobile. Sau khi bạn xác nhận Checklist đạt yêu cầu, đổi `CHECKLIST_TEST_MODE` thành `false` và kiểm thử lại để khóa quyền về quét QR.
+
+
+### Bổ sung tạo nhóm thiết bị ngay trong form Thêm thiết bị (16/11/2026) – GHI NHẬN TRƯỚC KHI SỬA
+**Mục tiêu:** khi danh mục nhóm hiện có không phù hợp, người dùng có thể tạo nhóm mới ngay tại form Thêm thiết bị và chọn nhóm đó để cấp mã định danh.
+
+**Phạm vi dự kiến:**
+- Chỉ tác động `src/App.tsx` và file tiến độ này.
+- Thêm nút “+ Thêm nhóm” cạnh trường Nhóm thiết bị; nhập tên nhóm và mã nhóm ngắn (chữ/số, viết hoa).
+- Nhóm do người dùng tạo được lưu trong localStorage của trình duyệt hiện tại, hiển thị ở nhóm “Nhóm tự tạo” và dùng được khi tạo thiết bị lần sau.
+- Kiểm tra trùng tên/mã với cả danh mục chuẩn và nhóm tự tạo; mã nhóm mới phải được dùng trong cơ chế cấp mã thiết bị hiện tại.
+- Không sửa mã nhóm chuẩn, không đổi mã thiết bị đã cấp, không đổi schema IndexedDB và không ảnh hưởng dữ liệu thiết bị cũ.
+
+**Rủi ro:** mã nhóm trùng làm sai chuỗi mã định danh; nhóm lưu cục bộ không tự đồng bộ sang máy/trình duyệt khác (đúng với trạng thái lưu trữ hiện tại, trước khi triển khai Supabase).
+
+**Cách kiểm thử:** kiểm tra tĩnh luồng thêm nhóm, lưu localStorage, kiểm tra trùng tên/mã, chọn nhóm tự tạo và xem mã dự kiến; chạy `npm.cmd run build`. Chưa đánh dấu hoàn thành nếu chưa chạy build thực tế.
