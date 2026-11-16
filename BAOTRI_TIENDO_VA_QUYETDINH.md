@@ -550,3 +550,48 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Commit bổ sung mục H trong tài liệu TXT: `03b647aed24312b64f6aa78b9ee7f3cb028187c1`.
 - Commit bổ sung chức năng xuất trong ứng dụng: `03a5ad2049584c994d70c3d758d665e62454afe9`.
 - Commit sửa xuống dòng, BOM UTF-8 và thời điểm thu hồi URL tải: `9ccbb80ca1b2603b244aaeb94f0a571a0054eca8`.
+
+
+### Kế hoạch triển khai Supabase Auth – đăng nhập tài khoản (16/11/2026) – GHI NHẬN TRƯỚC KHI SỬA CODE
+
+**Kết quả rà soát mã nguồn trên `main`:**
+- `package.json` hiện chưa có `@supabase/supabase-js`; chưa có cấu hình `.env.example` hoặc client Supabase.
+- `src/App.tsx` hiện hiển thị tài khoản mẫu “Người dùng / Quản trị viên”; chưa có đăng nhập/đăng xuất thật.
+- `src/db.ts` đang khởi tạo một IndexedDB chung tên `baotri-local-v1`; dữ liệu thiết bị, kho, Checklist, bảo dưỡng/sửa chữa và hàng đợi vẫn ở trình duyệt.
+- Chưa có hồ sơ tài khoản, tổ chức, membership, role hoặc chính sách RLS. Chưa có Supabase project/URL/publishable key trong repository.
+- Tài liệu Supabase React hiện hướng dẫn dùng `@supabase/supabase-js`, `VITE_SUPABASE_URL` và `VITE_SUPABASE_PUBLISHABLE_KEY`; publishable key được dùng ở client, không đưa service-role key vào frontend. Tham khảo: https://supabase.com/docs/guides/auth/quickstarts/react và https://supabase.com/docs/guides/auth/passwords.
+
+**Mục tiêu đợt đầu:**
+- Kết nối Supabase Auth cho React/Vite.
+- Màn hình đăng nhập bằng email + mật khẩu; đăng xuất; khôi phục phiên đăng nhập khi tải lại trang.
+- Đăng ký tài khoản và xác nhận email chỉ bật khi đã thống nhất quy trình tạo tổ chức/tài khoản Admin đầu tiên; tuyệt đối không tự cấp role Admin cho mọi người đăng ký.
+- Hồ sơ người dùng lấy từ phiên Auth; không lưu mật khẩu trong bảng profile.
+- Thay tài khoản mẫu trên thanh trên bằng thông tin tài khoản thật sau khi Auth hoạt động.
+- Không tuyên bố dữ liệu thiết bị/vật tư/Checklist đã lên cloud trong đợt Auth.
+
+**Phạm vi dự kiến khi có Supabase project và credentials:**
+- Thêm `@supabase/supabase-js` vào dependencies và cập nhật lockfile bằng npm.
+- Tạo client Supabase đọc biến môi trường `VITE_SUPABASE_URL` và `VITE_SUPABASE_PUBLISHABLE_KEY`; bổ sung `.env.example` chỉ chứa tên biến/giá trị giả, không commit `.env.local`.
+- Tạo luồng Auth UI/context, trạng thái loading/error, sign-in/sign-out và khôi phục session.
+- Rà soát điểm khởi tạo ứng dụng và thanh topbar; giữ nguyên các phân hệ nghiệp vụ hiện tại.
+- Thiết kế bước kế tiếp cho `profiles`, `organizations`, `organization_members` và RLS; chưa bật quyền truy cập dữ liệu nghiệp vụ khi chưa có schema/policy được kiểm thử.
+
+**Rủi ro và điều kiện an toàn:**
+- IndexedDB hiện là database chung trên từng trình duyệt. Không được giả định đăng nhập Supabase tự động biến dữ liệu local thành dữ liệu riêng tư theo tài khoản. Trước khi cho nhiều tài khoản dùng chung một trình duyệt hoặc mở dữ liệu nghiệp vụ cho nhiều tổ chức, phải thiết kế cách ly/migrate dữ liệu local theo user/organization và kiểm thử.
+- Không tự động chuyển dữ liệu cũ lên cloud; phải có backup, đối chiếu số lượng và kế hoạch rollback.
+- Không dùng service-role/secret key trong frontend, GitHub hoặc file cấu hình công khai.
+- Không cấp quyền Admin bằng metadata do client tự gửi; việc khởi tạo tổ chức/Admin đầu tiên phải được kiểm soát phía SQL/server.
+- Giữ nguyên QR, version Checklist, lịch sử phiếu và các chức năng thiết bị/kho đang có.
+
+**Cách kiểm thử dự kiến:**
+- Chạy `npm.cmd install` và `npm.cmd run build` trên máy local sau khi cập nhật.
+- Kiểm thử đăng nhập đúng/sai, đăng xuất, refresh trang, session hết hạn, xác nhận email/redirect và cấu hình thiếu biến môi trường.
+- Kiểm tra không thể mở ứng dụng nghiệp vụ khi chưa đăng nhập (nếu đã bật chế độ bắt buộc Auth).
+- Sau khi có schema/RLS: kiểm thử tài khoản A không đọc/ghi dữ liệu tổ chức của B và không thể giả mạo người thực hiện Checklist.
+
+**Điều kiện cần từ người dùng trước khi kết nối thực tế:**
+- Tạo một Supabase project trong Dashboard.
+- Cung cấp Project URL và Publishable key (hoặc anon key legacy) để cấu hình môi trường local/hosting. Đây là khóa public dùng ở frontend; không gửi service-role key, secret key hay mật khẩu database.
+- Chưa có project/credentials nên chưa thể xác thực kết nối, kiểm thử đăng nhập thật hoặc chạy migration trên Supabase.
+
+**Trạng thái:** mới hoàn tất rà soát và ghi kế hoạch; chưa sửa code, chưa cài SDK, chưa tạo schema/migration, chưa có đăng nhập thật. Tiếp tục sửa trực tiếp trên `main`, không tạo branch/PR.
