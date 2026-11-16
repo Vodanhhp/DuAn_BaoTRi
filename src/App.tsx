@@ -8,7 +8,7 @@ import {
 import { QRCodeSVG } from 'qrcode.react'
 import { Html5QrcodeScanner } from 'html5-qrcode'
 import * as XLSX from 'xlsx'
-import { db, uid, now, queueChange, type Asset, type InventoryItem, type Task, type Log } from './db'
+import { db, uid, now, queueChange, type Asset, type InventoryItem, type Task, type Log, type ChecklistTemplateItem, type ChecklistResultItem } from './db'
 
 type Page = 'dashboard' | 'assets' | 'inventory' | 'tasks' | 'logs' | 'reports' | 'settings'
 const xmlEntities: Record<string, string> = {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}
@@ -643,6 +643,7 @@ function AssetDetailModal({value,logs,close,edit,addLog}:any){
       <button type="button" className="primary-btn" onClick={addLog}><Wrench size={16}/> Ghi nhận bảo trì / sửa chữa</button>
       <button type="button" className="primary-btn" onClick={edit}>Sửa hồ sơ</button>
     </div>
+    <AssetChecklist asset={value}/>
     <section className="asset-maintenance-history"><div className="panel-head"><div><h3>Lịch sử bảo trì – sửa chữa</h3><p>{logs.length} lần ghi nhận của thiết bị</p></div><button type="button" className="soft-btn" disabled={!logs.length} onClick={()=>print('history')}><Download size={15}/> In quá trình</button></div>
       {logs.length?<div className="maintenance-history-list">{logs.slice().sort((a:any,b:any)=>b.date.localeCompare(a.date)).map((entry:any)=><article key={entry.id}><time>{dateText(entry.date)}</time><div><b>{entry.kind}</b><p>{entry.description||'Không có mô tả'}</p>{entry.parts&&<small>Vật tư/phụ tùng: {entry.parts}</small>}{entry.readings&&<small>Thông số: {entry.readings}</small>}<small>Kết quả sau thực hiện: {entry.result||'Chưa đánh giá'}</small><small>Người thực hiện: {entry.performedBy||'—'}</small></div></article>)}</div>:<p className="muted">Chưa có lịch sử. Hãy chọn “Ghi nhận bảo trì / sửa chữa” sau khi thực hiện công việc.</p>}
     </section>
@@ -655,6 +656,94 @@ function AssetDetailModal({value,logs,close,edit,addLog}:any){
     </div>}
   </Modal>
 }
+
+function AssetChecklist({asset}:{asset:Asset}) {
+  const template = useLiveQuery(() => db.checklistTemplates.where('assetId').equals(asset.id).first(), [asset.id])
+  const versions = useLiveQuery(() => template ? db.checklistVersions.where('templateId').equals(template.id).toArray() : Promise.resolve([]), [template?.id])
+  const results = useLiveQuery(() => db.checklistResults.where('assetId').equals(asset.id).toArray(), [asset.id]) ?? []
+  const [builderOpen,setBuilderOpen] = useState(false)
+  const [runOpen,setRunOpen] = useState(false)
+  const [draftTitle,setDraftTitle] = useState('')
+  const [draftDescription,setDraftDescription] = useState('')
+  const [draftItems,setDraftItems] = useState<ChecklistTemplateItem[]>([])
+  const [answers,setAnswers] = useState<Record<string,string>>({})
+  const [itemNotes,setItemNotes] = useState<Record<string,string>>({})
+  const [performedBy,setPerformedBy] = useState('Người sử dụng')
+  const [resultNotes,setResultNotes] = useState('')
+  const currentVersion = versions?.find(v=>v.version===template?.currentVersion)
+  const orderedResults = results.slice().sort((a,b)=>b.performedAt.localeCompare(a.performedAt))
+  const openBuilder = async () => {
+    setDraftTitle(template?.title ?? ('Checklist - '+asset.name))
+    setDraftDescription(template?.description ?? '')
+    const current = template ? await db.checklistVersions.where('templateId').equals(template.id).toArray() : []
+    const latest = current.find(v=>v.version===template?.currentVersion)
+    setDraftItems(latest?.items.map(item=>({...item})) ?? [])
+    setBuilderOpen(true)
+  }
+  const addItem = () => setDraftItems(items=>[...items,{id:uid(),label:'',description:'',answerType:'pass-fail-na',required:true,order:items.length}])
+  const updateItem = (id:string,patch:Partial<ChecklistTemplateItem>) => setDraftItems(items=>items.map(item=>item.id===id?{...item,...patch}:item))
+  const saveTemplate = async (event:React.FormEvent) => {
+    event.preventDefault()
+    const cleanItems = draftItems.filter(item=>item.label.trim()).map((item,index)=>({...item,label:item.label.trim(),order:index}))
+    if(!draftTitle.trim()) return alert('Nhập tên biểu mẫu Checklist')
+    if(!cleanItems.length) return alert('Thêm ít nhất một hạng mục kiểm tra')
+    const timestamp=now()
+    const templateId=template?.id ?? uid()
+    const nextVersion=(template?.currentVersion ?? 0)+1
+    const versionId=uid()
+    const nextTemplate={id:templateId,assetId:asset.id,title:draftTitle.trim(),description:draftDescription,currentVersion:nextVersion,active:true,createdAt:template?.createdAt??timestamp,updatedAt:timestamp}
+    await db.transaction('rw',db.checklistTemplates,db.checklistVersions,async()=>{
+      await db.checklistTemplates.put(nextTemplate)
+      await db.checklistVersions.add({id:versionId,templateId,assetId:asset.id,version:nextVersion,title:draftTitle.trim(),description:draftDescription,items:cleanItems,createdAt:timestamp})
+    })
+    await queueChange('checklistTemplates',templateId)
+    setBuilderOpen(false)
+    alert('Đã lưu biểu mẫu phiên bản '+nextVersion+'. Các phiên bản và phiếu cũ được giữ nguyên.')
+  }
+  const startRun = () => {
+    if(!template || !currentVersion) return alert('Thiết bị này chưa có biểu mẫu Checklist')
+    setAnswers({})
+    setItemNotes({})
+    setResultNotes('')
+    setRunOpen(true)
+  }
+  const saveResult = async (event:React.FormEvent) => {
+    event.preventDefault()
+    if(!template || !currentVersion) return
+    const items:ChecklistResultItem[]=currentVersion.items.map(item=>({...item,answer:answers[item.id]??'',note:itemNotes[item.id]??''}))
+    if(items.some(item=>item.required&&!item.answer.trim())) return alert('Vui lòng hoàn thành các hạng mục bắt buộc')
+    const failed=items.some(item=>item.answer==='Không đạt'||item.answer==='Không')
+    const entry={id:uid(),assetId:asset.id,templateId:template.id,templateVersionId:currentVersion.id,templateVersion:currentVersion.version,templateTitle:currentVersion.title,performedAt:now(),performedBy:performedBy.trim()||'Người sử dụng',result:failed?'Không đạt':'Đạt' as const,notes:resultNotes,items,createdAt:now()}
+    await db.checklistResults.add(entry)
+    await queueChange('checklistResults',entry.id)
+    setRunOpen(false)
+    alert('Đã lưu phiếu Checklist. Kết quả được lưu thành một lần thực hiện riêng.')
+  }
+  return <section className="asset-maintenance-history">
+    <div className="panel-head"><div><h3>Checklist thiết bị</h3><p>{template?('Biểu mẫu riêng · Phiên bản '+template.currentVersion+' · '+orderedResults.length+' lần thực hiện'):'Thiết bị chưa có biểu mẫu Checklist riêng'}</p></div>
+      <div className="asset-photo-actions"><button type="button" className="soft-btn" onClick={openBuilder}>{template?'Sửa biểu mẫu':'Tạo biểu mẫu'}</button><button type="button" className="primary-btn" disabled={!template} onClick={startRun}>Thực hiện Checklist</button></div>
+    </div>
+    {template&&currentVersion&&<div className="maintenance-history-list"><b>{currentVersion.title}</b>{currentVersion.description&&<p>{currentVersion.description}</p>}{currentVersion.items.map((item,index)=><article key={item.id}><time>{index+1}</time><div><b>{item.label}</b>{item.description&&<small>{item.description}</small>}</div></article>)}</div>}
+    {orderedResults.length>0&&<div className="maintenance-history-list"><b>Lịch sử thực hiện</b>{orderedResults.map(entry=><article key={entry.id}><time>{new Date(entry.performedAt).toLocaleString('vi-VN')}</time><div><b>{entry.templateTitle} · v{entry.templateVersion}</b><small>Người thực hiện: {entry.performedBy} · Kết quả: {entry.result}</small>{entry.notes&&<small>Ghi chú: {entry.notes}</small>}<details><summary>Xem chi tiết phiếu</summary>{entry.items.map((item,index)=><p key={item.templateItemId}>{index+1}. {item.label}: <b>{item.answer||'—'}</b>{item.note?' · '+item.note:''}</p>)}</details></div></article>)}</div>}
+    {builderOpen&&<Modal title={template?'Chỉnh sửa biểu mẫu Checklist':'Tạo Checklist cho thiết bị'} close={()=>setBuilderOpen(false)}><form className="form-grid" onSubmit={saveTemplate}>
+      <div className="form-hint">Thiết bị: <b>{asset.code} – {asset.name}</b>. Biểu mẫu này chỉ thuộc thiết bị đang mở.</div>
+      <Field label="Tên biểu mẫu *"><input required value={draftTitle} onChange={e=>setDraftTitle(e.target.value)}/></Field>
+      <Field label="Mô tả"><textarea value={draftDescription} onChange={e=>setDraftDescription(e.target.value)}/></Field>
+      <div className="form-hint">Danh sách hạng mục kiểm tra</div>
+      {draftItems.map((item,index)=><div className="panel" key={item.id}><b>Hạng mục {index+1}</b><Field label="Nội dung kiểm tra"><input value={item.label} onChange={e=>updateItem(item.id,{label:e.target.value})} placeholder="Ví dụ: Kiểm tra áp suất làm việc"/></Field><Field label="Ghi chú hướng dẫn"><input value={item.description??''} onChange={e=>updateItem(item.id,{description:e.target.value})}/></Field><Field label="Kiểu kết quả"><select value={item.answerType} onChange={e=>updateItem(item.id,{answerType:e.target.value as ChecklistTemplateItem['answerType']})}><option value="pass-fail-na">Đạt / Không đạt / Không áp dụng</option><option value="yes-no">Có / Không</option><option value="text">Ghi nội dung</option><option value="number">Nhập số</option></select></Field><label><input type="checkbox" checked={item.required} onChange={e=>updateItem(item.id,{required:e.target.checked})}/> Bắt buộc thực hiện</label><button type="button" className="text-btn danger" onClick={()=>setDraftItems(items=>items.filter(x=>x.id!==item.id))}>Xóa hạng mục</button></div>)}
+      <button type="button" className="soft-btn" onClick={addItem}><Plus size={16}/> Thêm hạng mục</button>
+      <div className="modal-actions"><button type="button" className="soft-btn" onClick={()=>setBuilderOpen(false)}>Hủy</button><button className="primary-btn"><Check size={16}/> Lưu biểu mẫu</button></div>
+    </form></Modal>}
+    {runOpen&&currentVersion&&<Modal title="Thực hiện Checklist" close={()=>setRunOpen(false)}><form className="form-grid" onSubmit={saveResult}>
+      <div className="form-hint"><b>{asset.code} – {asset.name}</b><br/>{currentVersion.title} · Phiên bản {currentVersion.version}</div>
+      <Field label="Người thực hiện"><input value={performedBy} onChange={e=>setPerformedBy(e.target.value)}/></Field>
+      {currentVersion.items.map((item,index)=><div className="panel" key={item.id}><b>{index+1}. {item.label}{item.required?' *':''}</b>{item.description&&<small>{item.description}</small>}{item.answerType==='pass-fail-na'?<Field label="Kết quả"><select required={item.required} value={answers[item.id]??''} onChange={e=>setAnswers(a=>({...a,[item.id]:e.target.value}))}><option value="">-- Chọn kết quả --</option><option>Đạt</option><option>Không đạt</option><option>Không áp dụng</option></select></Field>:item.answerType==='yes-no'?<Field label="Kết quả"><select required={item.required} value={answers[item.id]??''} onChange={e=>setAnswers(a=>({...a,[item.id]:e.target.value}))}><option value="">-- Chọn --</option><option>Có</option><option>Không</option></select></Field>:<Field label="Giá trị ghi nhận"><input required={item.required} type={item.answerType==='number'?'number':'text'} value={answers[item.id]??''} onChange={e=>setAnswers(a=>({...a,[item.id]:e.target.value}))}/></Field>}<Field label="Ghi chú"><input value={itemNotes[item.id]??''} onChange={e=>setItemNotes(a=>({...a,[item.id]:e.target.value}))}/></Field></div>)}
+      <Field label="Ghi chú chung"><textarea value={resultNotes} onChange={e=>setResultNotes(e.target.value)}/></Field>
+      <div className="modal-actions"><button type="button" className="soft-btn" onClick={()=>setRunOpen(false)}>Hủy</button><button className="primary-btn"><Check size={16}/> Lưu phiếu kết quả</button></div>
+    </form></Modal>}
+  </section>
+}
+
 function LogEntryModal({value,close,save}:any){
   const [v,setV]=useState<Log>(value)
   const set = <K extends keyof Log,>(key: K, val: Log[K]) => setV(p => ({ ...p, [key]: val }))
