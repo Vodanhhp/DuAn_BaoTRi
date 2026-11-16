@@ -1169,3 +1169,19 @@ Quy tắc triển khai:
 - Người thực hiện lấy từ `auth.uid()`; snapshot tên lấy từ hồ sơ tài khoản tại thời điểm hoàn thành. Không nhận user ID/người thực hiện do client tự khai báo.
 - Admin vẫn được quản lý và hoàn thành công việc trong tổ chức mình; không được truy cập tenant khác.
 - Đây là quyết định nghiệp vụ đã được người dùng duyệt; chưa triển khai code hoặc SQL.
+
+## Quyết định khởi tạo tổ chức và quản lý thành viên (16/11/2026)
+
+Người dùng đã xác nhận phương án quản lý tài khoản:
+
+- Không mở đăng ký tự do.
+- Tài khoản Admin đầu tiên được tạo qua Supabase Dashboard; tổ chức và membership Admin đầu tiên được khởi tạo bằng quy trình bootstrap có kiểm soát, không để frontend tự gán role.
+- Sau khi tổ chức được khởi tạo, Admin của tổ chức được mời User mới qua luồng invitation có xác thực email.
+- Thành viên được mời mặc định có role `user`; không được tự chọn hoặc tự nâng lên Admin.
+- Admin chỉ quản lý thành viên trong tổ chức mình: mời, tạm khóa và thay đổi vai trò theo quyền.
+- Không cho xóa/hạ quyền Admin active cuối cùng của tổ chức.
+- Một tài khoản có thể thuộc nhiều tổ chức; dữ liệu vẫn được cách ly theo organization_id và RLS.
+- Giai đoạn đầu có thể tạo tài khoản Auth qua Dashboard; chức năng invitation sẽ triển khai bằng backend an toàn. Không đưa service-role key vào frontend hoặc repository.
+
+Đây là quyết định nghiệp vụ đã được duyệt; chưa triển khai migration, bootstrap SQL/RPC hoặc invitation flow.
+
