@@ -387,3 +387,11 @@ button:focus-visible,summary:focus-visible,input:focus-visible,select:focus-visi
   .print-history-table thead{display:table-header-group}
   .print-history-table tr{break-inside:avoid;page-break-inside:avoid}
 }
+
+
+/* Supabase Auth */
+.auth-page{min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 15% 15%,#d8eee6 0,transparent 32%),linear-gradient(135deg,#f3f7f5,#eaf1ee)}
+.auth-card{width:min(100%,440px);padding:34px;background:#fff;border:1px solid #e0eae5;border-radius:20px;box-shadow:0 20px 60px rgba(20,65,52,.12);color:#172b28}
+.auth-brand{display:flex;align-items:center;gap:12px;margin-bottom:30px}.auth-brand>span{width:48px;height:48px;display:grid;place-items:center;border-radius:14px;background:#176b5c;color:#fff}.auth-brand b{display:block;font-size:18px;letter-spacing:2px}.auth-brand small{display:block;font-size:9px;letter-spacing:1.2px;color:#698078}
+.auth-card h1{font-size:23px;margin:0 0 8px}.auth-intro{font-size:13px;line-height:1.6;color:#60736b;margin:0 0 24px}.auth-form{display:grid;gap:10px}.auth-form label{font-size:12px;font-weight:700;margin-top:5px}.auth-input{height:46px;display:flex;align-items:center;gap:10px;padding:0 13px;border:1px solid #dce6e1;border-radius:10px;color:#71857c}.auth-input:focus-within{border-color:#398f7b;box-shadow:0 0 0 3px #398f7b20}.auth-input input{border:0;outline:0;min-width:0;flex:1;font-size:13px;color:#172b28;background:transparent}.auth-submit{height:46px;border:0;border-radius:10px;background:#176b5c;color:#fff;font-weight:700;margin-top:12px}.auth-submit:disabled{opacity:.65;cursor:wait}.auth-error{padding:11px 13px;border-radius:9px;background:#fff0ef;color:#a9322b;font-size:12px;line-height:1.55;margin:8px 0}.auth-note{border-top:1px solid #e7eeea;margin-top:23px;padding-top:17px;font-size:11px;line-height:1.65;color:#6b7d75}.auth-note b{color:#405b50}.auth-loading{font-size:14px;text-align:center}
+@media(max-width:520px){.auth-page{padding:15px}.auth-card{padding:25px 21px;border-radius:16px}}
