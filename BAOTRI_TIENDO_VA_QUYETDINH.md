@@ -864,3 +864,30 @@ Người dùng xác nhận chọn phương án triển khai theo từng giai đo
 4. Thiết kế backup đầy đủ dữ liệu local trước khi viết import; tuyệt đối không tự xóa, ghi đè hoặc chuyển dữ liệu thật khi chưa có backup và đối chiếu.
 5. Chỉ sau khi chốt thiết kế mới bắt đầu sửa code theo từng phân hệ; giữ nguyên chức năng đang chạy ổn và cập nhật tài liệu này sau mỗi mốc.
 
+
+
+## 16/11/2026 – Chốt phương án triển khai sử dụng thực tế cá nhân
+
+Người dùng xác nhận tiếp tục xây dựng BAOTRI Mini theo kiến trúc:
+- **GitHub Pages**: host giao diện Web App/PWA, truy cập online từ máy tính và điện thoại; không cần bật máy tính cá nhân hoặc chạy Vite/PowerShell để sử dụng.
+- **Supabase**: cung cấp Auth và PostgreSQL/database tập trung; các thiết bị đăng nhập cùng tài khoản cá nhân và đọc/ghi chung dữ liệu cloud.
+- **Một người dùng cá nhân trước mắt**; chưa cần triển khai giao diện quản lý nhiều thành viên/tổ chức để đưa vào sử dụng đợt đầu. Tuy nhiên schema và bảo mật vẫn giữ khả năng mở rộng tenant, không hardcode quyền hoặc bỏ qua RLS.
+- PWA có thể cài trên điện thoại; không đồng nghĩa ứng dụng có thể ghi dữ liệu nghiệp vụ offline. Khi mất Internet, phải thể hiện rõ trạng thái và tránh báo lưu thành công nếu chưa ghi được cloud.
+
+### Mục tiêu và tiêu chí trước khi dùng tại nơi làm việc
+Người dùng mong muốn có thể sử dụng BAOTRI trong đợt đi làm sắp tới. Đây là mục tiêu ưu tiên triển khai, không phải xác nhận ứng dụng đã sẵn sàng. Trước khi dùng dữ liệu công việc thật cần hoàn thành và kiểm tra tối thiểu:
+1. Hoàn thiện schema cloud, RLS và quy trình khởi tạo tổ chức/tài khoản một cách an toàn.
+2. Có backup đầy đủ dữ liệu local và quy trình import có kiểm tra, giữ ID, quan hệ, lịch sử và ảnh; có đối chiếu trước/sau.
+3. Chuyển từng phân hệ sang đọc/ghi Supabase; không còn ghi nhầm vào IndexedDB như thể đã đồng bộ.
+4. Kiểm tra PC và điện thoại cùng tài khoản thấy dữ liệu giống nhau; thử thêm/sửa/ghi nhận ở thiết bị này và xác nhận ở thiết bị kia.
+5. Kiểm tra lỗi mạng, token/session, tải ảnh, dữ liệu trùng, lỗi ghi và khôi phục sau lỗi; giao diện phải báo rõ trạng thái lưu.
+6. Build production và triển khai GitHub Pages; kiểm tra URL thật, PWA/cài đặt điện thoại, refresh/deep links và cập nhật phiên bản.
+7. Kiểm tra dữ liệu mẫu/seed không tự chèn vào dữ liệu sử dụng thật; phân biệt dữ liệu demo và dữ liệu thật.
+8. Chỉ đưa dữ liệu công việc thật vào sau khi backup, bảo mật và các kiểm thử thiết yếu đạt yêu cầu.
+
+### Điểm tiếp tục
+- Bắt đầu buổi làm việc kế tiếp bằng việc đọc lại file tiến độ và kiểm tra nhánh main.
+- Ưu tiên chốt schema cloud tối thiểu, RLS và quy trình bootstrap cho một tài khoản; thử nghiệm trên project BAOTRI-Mini-Test.
+- Sau đó triển khai backup/import và chuyển từng phân hệ; cuối cùng triển khai GitHub Pages production.
+- Không tuyên bố sẵn sàng sử dụng tại nơi làm việc cho đến khi các tiêu chí trên được kiểm thử thực tế.
+- Chưa có code, migration hay dữ liệu nào được thay đổi chỉ bởi quyết định này.
