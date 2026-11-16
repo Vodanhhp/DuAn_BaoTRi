@@ -8,12 +8,8 @@ import {
 import { QRCodeSVG } from 'qrcode.react'
 import { Html5QrcodeScanner } from 'html5-qrcode'
 import * as XLSX from 'xlsx'
-<<<<<<< HEAD
-import { db, uid, now, queueChange, type Asset, type InventoryItem, type Task, type Log, type ChecklistTemplateItem, type ChecklistTemplateVersion, type ChecklistResultItem, type ChecklistResult } from './db'
-=======
 import namingConventionText from '../QUY_UOC_MA_DINH_DANH_VA_VIET_TAT_THIET_BI.txt?raw'
-import { db, uid, now, queueChange, type Asset, type InventoryItem, type Task, type Log, type ChecklistTemplateItem, type ChecklistResultItem, type ChecklistResult } from './db'
->>>>>>> 58ce9f12d10a49ca38d39fd6747dc6762cb06027
+import { db, uid, now, queueChange, type Asset, type InventoryItem, type Task, type Log, type ChecklistTemplateItem, type ChecklistTemplateVersion, type ChecklistResultItem, type ChecklistResult } from './db'
 
 type Page = 'dashboard' | 'checklist' | 'assets' | 'inventory' | 'planning' | 'tasks' | 'logs' | 'reports' | 'settings'
 
@@ -1413,7 +1409,7 @@ function LogEntryModal({value,close,save}:any){
   </form></Modal>
 }
 
-function AssetModal({value,close,save,assets,customCategories=[],onAddCategory}:any){
+function AssetModal({value,close,save,assets,customCategories=[],onAddCategory,onExportConvention}:any){
   const [v,setV]=useState<Asset>(value)
   const [showAddCategory,setShowAddCategory]=useState(false)
   const [newGroupName,setNewGroupName]=useState('')
