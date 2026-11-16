@@ -197,8 +197,7 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 
 
 ### Chuẩn hóa xuất Excel danh sách thiết bị (15/11/2026)
-- Đổi tiêu đề hiển thị trong tệp thành “Danh sách các thiết bị”.- Thay tệp HTML giả dạng `.xls` bằng workbook `.xlsx` chuẩn Open XML được tạo bằng thư viện SheetJS đang có trong dự án.
-- Bố cục bảng: tiêu đề gộp 10 cột, hàng tiêu đề cột, mỗi thiết bị một hàng; Hãng và Model hiển thị xuống dòng trong ô tên thiết bị; giữ nguyên dữ liệu theo bộ lọc hiện tại.
+- Đổi tiêu đề hiển thị trong tệp thành “Danh sách các thiết bị”.- Thay tệp HTML giả dạng `.xls` bằng workbook `.xlsx` chuẩn Open XML được tạo bằng thư viện SheetJS đang có trong dự án.- Bố cục bảng: tiêu đề gộp 10 cột, hàng tiêu đề cột, mỗi thiết bị một hàng; Hãng và Model hiển thị xuống dòng trong ô tên thiết bị; giữ nguyên dữ liệu theo bộ lọc hiện tại.
 - Thiết lập độ rộng cột, bộ lọc tự động, khổ A4 ngang, vừa một trang theo chiều rộng và không ép chiều cao; có dòng tổng số thiết bị.
 - Tên file: `danh-sach-cac-thiet-bi.xlsx`. Chưa chạy build và chưa mở thử bằng Excel trên máy người dùng; cần kiểm tra nội dung, định dạng và Print Preview.
 
@@ -398,7 +397,6 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Thêm nút “+ Thêm nhóm” cạnh trường Nhóm thiết bị; nhập tên nhóm và mã nhóm ngắn (chữ/số, viết hoa).
 - Nhóm do người dùng tạo được lưu trong localStorage của trình duyệt hiện tại, hiển thị ở nhóm “Nhóm tự tạo” và dùng được khi tạo thiết bị lần sau.- Kiểm tra trùng tên/mã với cả danh mục chuẩn và nhóm tự tạo; mã nhóm mới phải được dùng trong cơ chế cấp mã thiết bị hiện tại.
 - Không sửa mã nhóm chuẩn, không đổi mã thiết bị đã cấp, không đổi schema IndexedDB và không ảnh hưởng dữ liệu thiết bị cũ.
-
 **Rủi ro:** mã nhóm trùng làm sai chuỗi mã định danh; nhóm lưu cục bộ không tự đồng bộ sang máy/trình duyệt khác (đúng với trạng thái lưu trữ hiện tại, trước khi triển khai Supabase).
 
 **Cách kiểm thử:** kiểm tra tĩnh luồng thêm nhóm, lưu localStorage, kiểm tra trùng tên/mã, chọn nhóm tự tạo và xem mã dự kiến; chạy `npm.cmd run build`. Chưa đánh dấu hoàn thành nếu chưa chạy build thực tế.
@@ -597,8 +595,7 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 ### Cập nhật kế hoạch kết nối Supabase và chuyển dữ liệu IndexedDB lên cloud (16/11/2026)
 **Thông tin project đã được người dùng cung cấp trong cuộc trò chuyện:**
 - Đã có Supabase Project URL và Publishable key. Chỉ dùng hai giá trị này làm cấu hình public cho frontend; tuyệt đối không ghi key thật vào repository/file tiến độ/commit.
-- Không sử dụng hướng dẫn @supabase/ssr, page.tsx, cookies, middleware.ts do đó là mẫu Next.js, trong khi BAOTRI Mini là React + Vite.
-- Cấu hình đúng cho Vite: VITE_SUPABASE_URL và VITE_SUPABASE_PUBLISHABLE_KEY, lưu trong .env.local ở máy triển khai; .env.local không được commit. .gitignore hiện đã loại .env.* và chỉ cho phép .env.example.
+- Không sử dụng hướng dẫn @supabase/ssr, page.tsx, cookies, middleware.ts do đó là mẫu Next.js, trong khi BAOTRI Mini là React + Vite.- Cấu hình đúng cho Vite: VITE_SUPABASE_URL và VITE_SUPABASE_PUBLISHABLE_KEY, lưu trong .env.local ở máy triển khai; .env.local không được commit. .gitignore hiện đã loại .env.* và chỉ cho phép .env.example.
 
 **Rà soát schema IndexedDB hiện tại (src/db.ts):**
 - Database: baotri-local-v1.
@@ -797,8 +794,7 @@ Tiếp tục kiểm tra `src/db.ts` và toàn bộ `src/App.tsx` trên `main`. K
 Hàm `seed()` trong `App.tsx` chạy khi workspace mount và hiện có thể:
 
 ## 16/11/2026 – Migration 001 thực thi thành công trên Supabase project thử nghiệm
-- Người dùng đã chạy file `supabase/migrations/20261116000100_identity_and_organizations.sql` trong SQL Editor của project thử nghiệm `BAOTRI-Mini-Test`, Project Reference `oyzhxgzltpdebpymuicb`.
-- Supabase trả kết quả **Success. No rows returned**. Đây là kết quả bình thường đối với migration DDL; xác nhận lệnh SQL chạy hoàn tất không báo lỗi.
+- Người dùng đã chạy file `supabase/migrations/20261116000100_identity_and_organizations.sql` trong SQL Editor của project thử nghiệm `BAOTRI-Mini-Test`, Project Reference `oyzhxgzltpdebpymuicb`.- Supabase trả kết quả **Success. No rows returned**. Đây là kết quả bình thường đối với migration DDL; xác nhận lệnh SQL chạy hoàn tất không báo lỗi.
 - Migration tạo các bảng nền `profiles`, `organizations`, `organization_members`, trigger, helper functions, index, RLS policies và quyền truy cập tối thiểu theo nội dung migration.
 - Chưa xác minh độc lập từng bảng/policy/function bằng truy vấn kiểm tra; chưa tạo tổ chức hoặc membership mẫu; chưa chạy bộ test RLS hai tổ chức/hai vai trò.
 - Chưa chạy migration trên project chính `BAOTRI-Mini`; chưa tạo bảng nghiệp vụ, chưa import dữ liệu local và chưa bật đồng bộ cloud. Dữ liệu nghiệp vụ vẫn ở IndexedDB/localStorage trên từng trình duyệt.
@@ -965,3 +961,15 @@ Người dùng xác nhận đồng ý đưa cả dữ liệu thử nghiệm đan
 2. Người dùng quyết định cách xử lý hai bản ghi mã `VT-001`.
 3. Duyệt nguyên tắc Checklist JSONB snapshot và ảnh lưu Storage.
 4. Sau khi duyệt mới soạn Migration 002 và review SQL; chỉ thử trên project `BAOTRI-Mini-Test`, không chạy project chính.
+
+### Migration 002 – bản nháp schema nghiệp vụ (17/11/2026)
+- Đã tạo supabase/migrations/20261117000200_business_schema.sql trên main.
+- Commit tạo bản nháp: a6325a8b3e93859bfb89a051f490105290cca294; commit rà soát quyền và ràng buộc: 1520e4b8aafaab28f844cdac7c6a3efcf953637e.
+- Phạm vi gồm 11 bảng: assets, inventory_items, maintenance_tasks, maintenance_plans, checklist_templates, checklist_template_versions, checklist_results, maintenance_logs, inventory_movements, asset_images, organization_settings.
+- Các quan hệ FK nghiệp vụ đều gắn organization_id; bảng con tham chiếu cả ID bản ghi cha và organization để chặn liên kết chéo tenant.
+- Bật RLS cho toàn bộ bảng nghiệp vụ; SELECT/ghi được giới hạn theo membership active thông qua helper Migration 001. Các thao tác quản trị biểu mẫu Checklist và cấu hình danh mục yêu cầu role admin.
+- Checklist version và result là lịch sử append-only; snapshot items dùng JSONB. Maintenance log độc lập với Checklist result.
+- Inventory: chưa tạo unique code constraint vì dữ liệu phát triển có hai dòng VT-001. Người dùng xác nhận dữ liệu thử nghiệm sẽ được xử lý bằng quy trình reset toàn bộ dữ liệu nghiệp vụ trước go-live; không cần làm sạch riêng VT-001 hiện tại. Số tồn không được cập nhật trực tiếp qua quyền client; cần RPC nguyên tử để ghi movement và cập nhật balance cùng transaction.
+- Chưa tạo bucket Storage; asset_images hiện chỉ là bảng metadata dự kiến. Chưa có RPC nhập/xuất kho, bootstrap organization/membership, import hoặc kết nối frontend.
+- Trạng thái: bản nháp để review, chưa chạy trên bất kỳ Supabase project nào. Tuyệt đối chưa chạy trên project chính.
+- Việc tiếp theo: rà soát kiểu ngày/giờ và trường dữ liệu đối chiếu với luồng UI thực tế; kiểm tra SQL trên project test sau khi người dùng duyệt bản migration. Nếu có thay đổi schema, cập nhật file migration trước khi chạy lần đầu.
