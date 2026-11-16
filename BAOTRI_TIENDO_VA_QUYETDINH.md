@@ -372,3 +372,20 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 **Rủi ro:** mở nhầm quyền Checklist từ màn hình danh mục thông thường sau khi chuyển sang production; làm mất đường vào kế hoạch bảo dưỡng đang chạy; điều hướng mobile/desktop không đồng nhất.
 
 **Kiểm thử:** build; xác nhận chế độ test true cho phép vào Checklist từ menu Checklist mà không quét; danh mục Thiết bị thường vẫn chỉ xem/in; quét QR vẫn vào được; trang Bảo dưỡng – Sửa chữa và Kế hoạch bảo dưỡng giữ dữ liệu cũ; menu Kế hoạch bảo trì chỉ là placeholder. Sau nghiệm thu, đổi duy nhất hằng cấu hình sang false và kiểm tra đường QR.
+
+
+### Đã thêm chế độ thử Checklist và tách menu (16/11/2026)
+- Sửa trực tiếp `src/App.tsx` trên nhánh `main`; không đổi schema IndexedDB.
+- Thêm cấu hình duy nhất `CHECKLIST_TEST_MODE = true`. Khi đang true, vào menu **Bảo trì – Checklist**, chọn thiết bị và mở hồ sơ thì được tạo/sửa biểu mẫu và thực hiện Checklist không cần quét QR. Cờ này chỉ cấp quyền cho luồng vào từ trang Checklist thử nghiệm; mở thiết bị từ menu **Thiết bị** thông thường vẫn chỉ xem/in lịch sử.
+- Giữ nguyên đường quét QR: quét QR thành công vẫn cấp quyền thao tác Checklist. Khi thử nghiệm hoàn tất, chỉ cần đổi `CHECKLIST_TEST_MODE` từ `true` thành `false`; khi đó trang Checklist không tự cấp quyền nữa và phải quét QR. Không xóa hoặc làm tắt chức năng QR.
+- Tách menu trái desktop thành các mục riêng: **Bảo trì – Checklist**, **Thiết bị**, **Kho vật tư**, **Kế hoạch**, **Bảo dưỡng – Sửa chữa**, **Báo cáo**, **Cài đặt**.
+- Trang **Bảo trì – Checklist** liệt kê thiết bị đang quản lý; nhấp tên hoặc nút Mở Checklist để mở hồ sơ và thao tác theo chế độ thử hiện tại.
+- Thêm trang nhóm **Kế hoạch**. Có lối vào **Kế hoạch bảo dưỡng** đang dùng (giữ nguyên trang, dữ liệu và bảng công việc cũ); **Kế hoạch bảo trì** là mục giới thiệu sẽ phát triển sau, chưa tạo nghiệp vụ hoặc dữ liệu giả.
+- Cập nhật menu mobile: có lối tắt Checklist và Kế hoạch; Kho vật tư, Kế hoạch bảo dưỡng, Bảo dưỡng – Sửa chữa, Báo cáo, Cài đặt nằm trong mục Thêm.
+- Bổ sung tiêu đề đúng cho trang con Kế hoạch bảo dưỡng.
+- Kiểm tra tĩnh mã nguồn sau cập nhật: xác nhận chỉ có một cấu hình test; menu Checklist cấp quyền khi test bật; quyền QR vẫn được cấp; menu Kế hoạch và đường vào trang Kế hoạch bảo dưỡng cũ tồn tại. Tất cả kiểm tra tĩnh trên đều đạt.
+- **Chưa chạy `npm.cmd run build` và chưa kiểm thử giao diện desktop/mobile hoặc luồng camera thật.** Không khẳng định build thành công.
+- Commit code chế độ test/menu: `aee6e715b4a5bced36098c53991d756b1fdbb322`.
+- Commit sửa tiêu đề trang con kế hoạch: `a5ce60de5dfe9d4b50bba889dbbb7b98c3d002e1`.
+- Commit ghi kế hoạch trước khi sửa: `b102b6303ef52898a4eccc05fba0aecdb72789db`.
+- **Bước tiếp theo:** Pull origin trên GitHub Desktop; chạy build; thử Checklist từ menu không QR; thử lại quét QR; kiểm tra riêng trang Thiết bị, Bảo dưỡng – Sửa chữa, Kế hoạch và menu mobile. Sau khi bạn xác nhận Checklist đạt yêu cầu, đổi `CHECKLIST_TEST_MODE` thành `false` và kiểm thử lại để khóa quyền về quét QR.
