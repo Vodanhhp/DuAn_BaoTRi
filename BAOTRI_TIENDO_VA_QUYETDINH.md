@@ -675,3 +675,11 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Xác nhận: mã nguồn hiện tại build production thành công trên máy local.
 - Chưa xác nhận đăng nhập thực tế với Supabase, đăng xuất, hoặc kiểm thử các chức năng nghiệp vụ sau đăng nhập.
 - Bước tiếp theo: tạo tài khoản Auth đầu tiên trong Supabase Dashboard (nếu chưa tạo), chạy ứng dụng local và kiểm tra đăng nhập/đăng xuất; tiếp tục giữ dữ liệu nghiệp vụ local, chưa đồng bộ cloud.
+
+
+## 16/11/2026 – Kiểm thử đăng nhập Supabase Auth lần đầu
+- Người dùng chạy ứng dụng local bằng Vite; do cổng 5173 và 5174 đang được sử dụng, Vite tự chọn cổng 5175 (http://localhost:5175/). Đây là hành vi bình thường, không phải lỗi.
+- Người dùng xác nhận đăng nhập thành công bằng tài khoản đã tạo trong Supabase Dashboard.
+- Kết quả đã xác nhận: cấu hình môi trường local, kết nối Supabase Auth và luồng đăng nhập email/mật khẩu hoạt động ở mức cơ bản.
+- Chưa xác nhận riêng các bước tải lại trang để khôi phục session, hiển thị email tài khoản, đăng xuất và đăng nhập lại; đang chờ người dùng kiểm tra các bước này.
+- Chưa có schema nghiệp vụ, PostgreSQL tables/RLS hoặc đồng bộ cloud. Dữ liệu thiết bị, vật tư, Checklist và các nghiệp vụ vẫn ở IndexedDB/localStorage trên trình duyệt.
