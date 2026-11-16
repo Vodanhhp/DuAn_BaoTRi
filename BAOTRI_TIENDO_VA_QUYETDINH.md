@@ -529,3 +529,12 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Commit ghi kế hoạch: `ba59d320081ce61a9b0b1be7512974de6f5cac66`.
 - Commit code: `1e22de985059ea9730b34edc6c90aa3abff18eb6`.
 - Bước tiếp theo: Pull origin, chạy `npm.cmd run build`, mở ứng dụng và kiểm tra từng thiết bị trong Bảo trì – Checklist đã có biểu mẫu; xác nhận biểu mẫu cũ không bị thay đổi và chưa có kỳ nào bị đánh dấu hoàn thành giả.
+
+### Kế hoạch đồng bộ mã loại thiết bị tự tạo vào tài liệu Quy ước (16/11/2026) – GHI NHẬN TRƯỚC KHI SỬA
+- Người dùng xác nhận phương án an toàn: ứng dụng tiếp tục lưu danh mục nhóm/loại thiết bị tự tạo trong localStorage; bổ sung chức năng xuất lại tài liệu `QUY_UOC_MA_DINH_DANH_VA_VIET_TAT_THIET_BI.txt` có ghép các mã ABC tự tạo. Người dùng tải file và thay tài liệu trong repository khi cần; ứng dụng không tự ghi GitHub.
+- Phạm vi dự kiến: chỉ sửa `src/App.tsx`, tài liệu quy ước TXT và file tiến độ chính thức. Giữ nguyên danh mục chuẩn, cấu trúc mã thiết bị, mã đã cấp, localStorage key, IndexedDB và các nghiệp vụ khác.
+- Dùng cơ chế import TXT dạng raw của Vite để file xuất luôn dựa trên tài liệu chuẩn đang nằm trong repository; chèn danh mục bổ sung vào đúng mục riêng ở Phần V. Không hard-code bản sao toàn bộ tài liệu trong mã nguồn.
+- Trong form Thêm thiết bị, thêm nút xuất tài liệu Quy ước; khi bấm, lấy toàn bộ nhóm/loại bổ sung đang lưu trên trình duyệt, tạo file TXT cùng tên chuẩn và tải xuống. Nếu chưa có mã bổ sung, ghi rõ chưa có mục bổ sung. Mỗi mã chỉ xuất một lần; không thay đổi các mã chuẩn.
+- Không dùng GitHub token/API từ frontend, không tạo nhánh/PR. Dữ liệu custom vẫn là localStorage theo từng trình duyệt cho đến khi triển khai Supabase; xuất file là thao tác thủ công, không tự đồng bộ giữa các máy.
+- Rủi ro/kiểm thử: kiểm tra import TXT raw và TypeScript; nội dung xuất phải giữ nguyên các phần I–VII, chèn đúng nhóm custom, xử lý nhiều nhóm/nhiều loại và trường hợp rỗng; tải xuống đúng tên file; không làm thay đổi chức năng thêm nhóm/loại và cấp mã.
+- Sau sửa sẽ kiểm tra tĩnh; môi trường GitHub không cung cấp checkout/build local trong thao tác này nên nếu không chạy được build sẽ ghi rõ cần người dùng chạy `npm.cmd run build`.
