@@ -265,3 +265,12 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Đã đọc lại các tệp trên `main` sau khi cập nhật; xác nhận mã Checklist và schema v3 hiện diện.
 - **Chưa chạy được build/test trong môi trường này.** Người dùng cần đồng bộ nhánh `main` bằng GitHub Desktop, sau đó chạy `npm.cmd run build` và kiểm tra giao diện Checklist trong hồ sơ một thiết bị.
 - Lưu ý: PR #1/nhánh thử nghiệm trước đó không phải quy trình triển khai nữa; các thay đổi Checklist đã được ghi trực tiếp vào `main`. Không tiếp tục tạo nhánh/PR mới cho các lần sửa sau.
+
+
+### Nâng cấp Checklist tự sinh mẫu theo loại thiết bị (16/11/2026)
+- Khi mở hồ sơ thiết bị chưa có Checklist, hệ thống tự tạo và lưu biểu mẫu nền phiên bản 1 theo nhóm thiết bị; mỗi thiết bị vẫn có biểu mẫu riêng, không dùng chung dữ liệu.
+- Bổ sung bộ tiêu chí kỹ thuật chuyên biệt cho các nhóm phổ biến: động cơ điện, máy bơm, máy nén khí, máy sấy khí, tủ điện (tổng/phân phối/điều khiển), biến tần, UPS, máy biến áp, máy phát điện, Chiller, kho lạnh, điều hòa thông gió, quạt, tháp giải nhiệt, nồi hơi, PCCC, thang máy và băng tải. Nhóm chưa có bộ riêng dùng bộ tiêu chí nền an toàn và có thể chỉnh sửa.
+- Mỗi mẫu tự sinh có sẵn các hạng mục bắt buộc theo dạng Đạt / Không đạt / Không áp dụng; Admin chỉ cần sửa, thêm hoặc bỏ hạng mục theo cấu hình thực tế, không phải tạo từ đầu.
+- Việc tạo mẫu được thực hiện trong transaction và kiểm tra biểu mẫu đã tồn tại trước khi thêm, tránh tạo trùng khi component khởi tạo lại. Không ghi đè biểu mẫu đã tùy chỉnh, không ảnh hưởng phiên bản và phiếu kết quả cũ.
+- Nút Thực hiện Checklist chỉ được kích hoạt khi biểu mẫu và phiên bản hiện hành đã sẵn sàng; bổ sung điều kiện kiểm tra phiên bản để tránh mở phiếu rỗng.
+- Đã cập nhật trực tiếp src/App.tsx trên main. Chưa chạy build/test và chưa kiểm thử thao tác thực tế; cần người dùng Pull origin, chạy build, thử mở nhiều loại thiết bị, thực hiện và lưu phiếu. Chưa tuyên bố chức năng đã hoàn tất.
