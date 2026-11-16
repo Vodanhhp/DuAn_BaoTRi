@@ -19,6 +19,15 @@ create table public.profiles (
   )
 );
 
+-- Backfill profiles for Auth users that already existed before this migration.
+-- This is important when applying the migration to a project with an existing first Admin account.
+insert into public.profiles (id, display_name)
+select
+  u.id,
+  nullif(btrim(u.raw_user_meta_data ->> 'display_name'), '')
+from auth.users as u
+on conflict (id) do nothing;
+
 create table public.organizations (
   id uuid primary key default gen_random_uuid(),
   name text not null,
