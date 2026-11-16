@@ -649,3 +649,11 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Commits: ghi kế hoạch `1dca87c15d423c5d47ca194b0145bb38c4a59f62`; tích hợp App `216e5eaa5aaf70744fd303e8a09ce5d4da979758`; Supabase client `36484837057b10674bc467ddef9df71b655d9352`; màn hình Auth `97fb5f536eb3f1599986c4af1663eab0eeee3540`; style `3e27bc51cc739152cb2d66e5613d7e58918c632c`; `.env.example` `27a5ad0c0e13c6a82c72a55f665e2453ba933c69`; xử lý lỗi mạng `46ba8c3329938ca9598e3722c7616153f7542877`.
 - SHA hiện tại: `src/App.tsx` `90da22923ee7762446de32922f044e74bfdd0730`; `src/AuthScreen.tsx` `a7fc0520d14caeef36da7fa354c1779be313de2a`; `src/lib/supabase.ts` `a967c625b9e9a0e123d307dd0bf5239628716a0c`; `src/style.css` `1a74f9683e211f091dbf1a423cf2a574d940a6c8`; `.env.example` `4ef03358816266d65abe2c56bef75e57c5771a4a`.
 - Bước tiếp theo: người dùng Pull origin trên GitHub Desktop; chạy `npm.cmd run build`; trong Supabase Dashboard tạo user tại Authentication → Users → Add user, xác nhận email/đặt mật khẩu theo tùy chọn Dashboard; chạy app và thử đăng nhập, refresh, đăng xuất. Sau khi Auth hoạt động, lên kế hoạch schema profiles/organizations/memberships/RLS và partition dữ liệu local trước khi mở nhiều tài khoản.
+
+
+## 16/11/2026 – Sửa lỗi TypeScript khi build Supabase Auth
+- Phát hiện lỗi TS18047 tại callback `onSignOut`: TypeScript không giữ narrowing của biến import `supabase` bên trong callback.
+- Sửa trong `src/App.tsx`: sau khi kiểm tra `if (!supabase) return ...`, gán client đã được thu hẹp kiểu vào hằng `authenticatedClient`; dùng hằng này cho AuthScreen và callback đăng xuất.
+- Không thay đổi luồng xác thực, dữ liệu nghiệp vụ hoặc schema.
+- Commit code trên `main`: `e2150400dd9ae92394f09ab8413d6243d4bbc040`.
+- Chưa chạy build sau sửa; cần Pull origin trên GitHub Desktop rồi chạy lại `npm.cmd run build` tại máy local.
