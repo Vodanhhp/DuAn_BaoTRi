@@ -783,3 +783,42 @@ Danh mục custom là dữ liệu nghiệp vụ/cấu hình cần được backu
 
 - Hiện trạng đủ để bắt đầu phác thảo ERD và ma trận quyền, nhưng chưa đủ căn cứ để viết migration cuối cùng: cần kiểm tra thêm toàn bộ luồng xóa/khôi phục, cách dùng các trường liên kết, các file ngoài App/db và chính sách xóa dữ liệu.
 - Bước kế tiếp: hoàn tất kiểm tra các thao tác xóa và quan hệ tham chiếu; sau đó trình người dùng bản ERD/schema đề xuất và ma trận quyền Admin/User để duyệt. Chưa tạo migration hoặc sửa ứng dụng trước khi được duyệt.
+
+
+## 16/11/2026 – Rà soát xóa/khôi phục và dữ liệu khởi tạo (đợt 2)
+
+Tiếp tục kiểm tra `src/db.ts` và toàn bộ `src/App.tsx` trên `main`. Không phát hiện lệnh xóa cứng record qua các API Dexie trong workspace hiện tại.
+
+### Kết quả rà soát xóa và lưu trữ
+- Thiết bị có cơ chế lưu kho mềm bằng trường `archivedAt`; thao tác khôi phục xóa giá trị trường này. Hồ sơ và lịch sử liên quan được giữ lại.
+- Trạng thái `Thanh lý` là trạng thái nghiệp vụ, không phải xóa record.
+- Chưa thấy giao diện/xử lý xóa cứng cho vật tư, task, log, movement hoặc Checklist template/version/result.
+- Vì vậy schema cloud nên mặc định bảo toàn lịch sử; không thiết kế cascade delete làm mất log/phiếu Checklist. Cần chốt quy tắc archive/soft-delete riêng cho từng nhóm dữ liệu nếu sau này bổ sung chức năng xóa.
+- `syncQueue` chưa có xử lý xóa record; khi triển khai đồng bộ cần có tombstone/operation delete nếu sau này có xóa mềm hoặc xóa theo chính sách.
+
+### Phát hiện quan trọng về dữ liệu demo
+Hàm `seed()` trong `App.tsx` chạy khi workspace mount và hiện có thể:
+- Bổ sung/chuẩn hóa 30 thiết bị demo.
+- Bổ sung 40 vật tư demo.
+- Tạo hai task mẫu nếu bảng task đang rỗng.
+- Tạo Checklist mặc định cho mọi thiết bị đang quản lý chưa có biểu mẫu.
+
+Đây là hành vi hữu ích cho bản thử nghiệm local nhưng **không được để chạy tự động trong tổ chức cloud thật**. Trước khi mở dữ liệu multi-tenant cần tách rõ chế độ demo/seed, chỉ chạy có chủ đích trong môi trường demo hoặc dữ liệu mẫu được đánh dấu; không để seed tự ghi vào tổ chức người dùng thật.
+
+### Kết luận rà soát hiện tại
+- Đã kiểm kê 9 stores IndexedDB, các khóa localStorage, ảnh Base64, dữ liệu lồng Checklist, luồng ghi, quan hệ ID và cơ chế archive.
+- Đã xác định những thiếu sót cần xử lý trước migration: backup thiếu custom categories; các transaction tạo log/movement chưa queue đủ; seed demo chạy tự động; người thực hiện Checklist nhập tay; ảnh cần chuyển Storage; chưa có user/org context trong workspace.
+- Chưa có hard-delete workflow hiện hữu cần ánh xạ; giữ nguyên nguyên tắc không cascade xóa lịch sử.
+- Chưa sửa mã nguồn, chưa tạo bảng/migration, chưa thay đổi dữ liệu local.
+
+### Hướng thiết kế sơ bộ để trình duyệt
+ERD sẽ được xây quanh các nhóm:
+1. `profiles`, `organizations`, `organization_members` (Auth user – tổ chức – vai trò).
+2. `assets`, `asset_images`, `asset_categories` (thiết bị và ảnh/danh mục theo tổ chức).
+3. `inventory_items`, `inventory_movements`.
+4. `maintenance_tasks`, `maintenance_logs`.
+5. `checklist_templates`, `checklist_template_versions`, `checklist_results` (giữ snapshot/version).
+6. Supabase Storage bucket riêng tư cho ảnh; metadata/object path gắn organization và asset.
+7. RLS theo membership của tổ chức trên mọi bảng nghiệp vụ; không tin organization_id/role do client tự khai báo.
+
+Đây mới là khung đề xuất, chưa phải schema đã chốt. Trước migration sẽ cần duyệt chính sách xóa/archive, phạm vi quyền Admin/User và cách tạo tổ chức/Admin đầu tiên.
