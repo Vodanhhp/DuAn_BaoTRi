@@ -35,13 +35,64 @@ const emptyTask = (): Task => ({
 
 // Danh mục chuẩn: mã nhóm không phụ thuộc tên người dùng nhập.
 const ASSET_CATEGORY_GROUPS = [
- {label:'Điện – điện tử',items:[{name:'Thiết bị điện',code:'TDE'},{name:'Tủ điện',code:'TDI'},{name:'Tủ điện tổng',code:'TDT'},{name:'Tủ điện phân phối',code:'TDP'},{name:'Tủ điều khiển',code:'TDC'},{name:'Biến tần',code:'BT'},{name:'UPS',code:'UPS'},{name:'Máy biến áp',code:'MBA'},{name:'Thiết bị đo lường',code:'DDL'},{name:'Động cơ điện',code:'DCD'},{name:'Bộ chuyển nguồn ATS',code:'ATS'},{name:'Tủ tụ bù',code:'TCB'}]},
- {label:'Cơ khí – truyền động',items:[{name:'Máy bơm',code:'MB'},{name:'Thiết bị xưởng',code:'TBX'},{name:'Thang máy',code:'TM'},{name:'Hộp giảm tốc',code:'HGT'},{name:'Băng tải',code:'BTA'}]},
- {label:'Quạt công nghiệp',items:[{name:'Quạt công nghiệp',code:'QCN'},{name:'Quạt hút',code:'QH'},{name:'Quạt cấp',code:'QC'},{name:'Quạt thông gió',code:'QTG'},{name:'Quạt làm mát',code:'QLM'},{name:'Quạt hướng trục',code:'QK'},{name:'Quạt ly tâm',code:'QLT'}]},
- {label:'Khí nén – nhiệt – lạnh',items:[{name:'Máy nén khí',code:'MNA'},{name:'Máy sấy khí',code:'MSK'},{name:'Bộ lọc khí nén',code:'BLK'},{name:'Khí nén',code:'KN'},{name:'Kho lạnh',code:'KLA'},{name:'Điều hòa thông gió',code:'DHT'},{name:'Chiller',code:'CHL'},{name:'Tháp giải nhiệt',code:'TGN'},{name:'Nồi hơi',code:'NH'},{name:'Nồi hấp',code:'NHA'}]},
- {label:'Nguồn điện – an toàn',items:[{name:'Máy phát điện',code:'MPD'},{name:'Phòng cháy chữa cháy',code:'PCCC'}]}
+ {label:'Điện – điện tử – tự động hóa',items:[
+  {name:'Thiết bị điện',code:'TDE'},{name:'Tủ điện',code:'TDI'},{name:'Tủ điện tổng',code:'TDT'},{name:'Tủ điện phân phối',code:'TDP'},{name:'Tủ điều khiển',code:'TDC'},
+  {name:'Biến tần',code:'BT'},{name:'UPS',code:'UPS'},{name:'Máy biến áp',code:'MBA'},{name:'Thiết bị đo lường',code:'DDL'},{name:'Động cơ điện',code:'DCD'},
+  {name:'Bộ chuyển nguồn ATS',code:'ATS'},{name:'Tủ tụ bù',code:'TCB'},{name:'PLC',code:'PLC'},{name:'HMI',code:'HMI'},{name:'Cảm biến',code:'CBI'},
+  {name:'Bộ nguồn điện',code:'BND'},{name:'Thiết bị điện tử',code:'TDTU'},{name:'Bo mạch điện tử',code:'BMD'},{name:'Rơ le – contactor',code:'RLC'}
+ ]},
+ {label:'Cơ khí – máy móc – truyền động',items:[
+  {name:'Máy bơm',code:'MB'},{name:'Thiết bị xưởng',code:'TBX'},{name:'Thang máy',code:'TM'},{name:'Hộp giảm tốc',code:'HGT'},{name:'Băng tải',code:'BTA'},
+  {name:'Máy tiện',code:'MTI'},{name:'Máy phay',code:'MPH'},{name:'Máy khoan bàn',code:'MKB'},{name:'Máy cưa',code:'MCA'},{name:'Máy ép',code:'MEP'},
+  {name:'Máy dập',code:'MDP'},{name:'Máy CNC',code:'CNC'},{name:'Máy nén thủy lực',code:'NTH'},{name:'Hệ thống thủy lực',code:'HTL'},
+  {name:'Thiết bị nâng hạ',code:'TNH'},{name:'Pa lăng – tời',code:'PLT'},{name:'Cầu trục',code:'CTR'},{name:'Xe nâng',code:'XNA'}
+ ]},
+ {label:'Công cụ – dụng cụ điện',items:[
+  {name:'Công cụ điện cầm tay',code:'CDT'},{name:'Máy khoan cầm tay',code:'MKT'},{name:'Máy mài',code:'MMA'},{name:'Máy cắt',code:'MCA2'},
+  {name:'Máy siết bu lông',code:'MSB'},{name:'Máy chà nhám',code:'MCN'},{name:'Máy thổi bụi',code:'MTB'},{name:'Máy hút bụi công nghiệp',code:'HBI'},
+  {name:'Dụng cụ đo điện',code:'DDE'},{name:'Dụng cụ cơ khí',code:'DCK'}
+ ]},
+ {label:'Hàn – cắt – gia công',items:[
+  {name:'Máy hàn',code:'HAN'},{name:'Máy hàn xung',code:'MHX'},{name:'Máy hàn MIG/MAG',code:'MIG'},{name:'Máy hàn TIG',code:'TIG'},
+  {name:'Máy hàn que',code:'MHQ'},{name:'Máy cắt plasma',code:'MCP'},{name:'Máy cắt gas',code:'MCG'},{name:'Máy cắt kim loại',code:'MCK'},
+  {name:'Máy uốn',code:'MUN'},{name:'Máy đột lỗ',code:'MDL'}
+ ]},
+ {label:'Quạt công nghiệp',items:[
+  {name:'Quạt công nghiệp',code:'QCN'},{name:'Quạt hút',code:'QH'},{name:'Quạt cấp',code:'QC'},{name:'Quạt thông gió',code:'QTG'},
+  {name:'Quạt làm mát',code:'QLM'},{name:'Quạt hướng trục',code:'QK'},{name:'Quạt ly tâm',code:'QLT'}
+ ]},
+ {label:'Khí nén – nhiệt – lạnh – HVAC',items:[
+  {name:'Máy nén khí',code:'MNA'},{name:'Máy sấy khí',code:'MSK'},{name:'Bộ lọc khí nén',code:'BLK'},{name:'Khí nén',code:'KN'},
+  {name:'Kho lạnh',code:'KLA'},{name:'Điều hòa thông gió',code:'DHT'},{name:'Chiller',code:'CHL'},{name:'Tháp giải nhiệt',code:'TGN'},
+  {name:'Nồi hơi',code:'NH'},{name:'Nồi hấp',code:'NHA'},{name:'Máy lạnh',code:'MLA'},{name:'Máy hút ẩm',code:'MHA2'},
+  {name:'Máy sưởi',code:'MSU'},{name:'Hệ thống HVAC',code:'HVAC'}
+ ]},
+ {label:'Nguồn điện – an toàn – PCCC',items:[
+  {name:'Máy phát điện',code:'MPD'},{name:'Phòng cháy chữa cháy',code:'PCCC'},{name:'Hệ thống tiếp địa',code:'HTD'},
+  {name:'Chống sét',code:'CSE'},{name:'Đèn chiếu sáng',code:'DCS'},{name:'Thiết bị an toàn',code:'TBA'}
+ ]},
+ {label:'Thiết bị sản xuất – đóng gói – phụ trợ',items:[
+  {name:'Máy đóng gói',code:'MDG'},{name:'Máy chiết rót',code:'MCR'},{name:'Máy dán nhãn',code:'MDN'},{name:'Máy in công nghiệp',code:'MIC'},
+  {name:'Máy trộn',code:'MTR'},{name:'Máy nghiền',code:'MNG'},{name:'Máy sàng',code:'MSA'},{name:'Máy sấy công nghiệp',code:'MSC'},
+  {name:'Máy ép nhựa',code:'MEN'},{name:'Robot công nghiệp',code:'RBT'},{name:'Thiết bị xử lý nước',code:'XLN'},{name:'Hệ thống lọc bụi',code:'LBU'}
+ ]},
+ {label:'Nhóm khác',items:[{name:'Khác',code:'KHC'}]}
 ] as const
 const ASSET_CATEGORY_CODES: Record<string,string> = Object.fromEntries(ASSET_CATEGORY_GROUPS.flatMap(g=>g.items.map(i=>[i.name,i.code])))
+const suggestAssetCategory = (name:string) => {
+ const n=name.toLocaleLowerCase('vi')
+ const rules:[RegExp,string][]=[
+  [/hàn.*xung|xung.*hàn/,'Máy hàn xung'],[/hàn.*mig|mig.*hàn/,'Máy hàn MIG/MAG'],[/hàn.*tig|tig.*hàn/,'Máy hàn TIG'],
+  [/hàn.*que|que.*hàn/,'Máy hàn que'],[/máy hàn/,'Máy hàn'],[/plasma/,'Máy cắt plasma'],
+  [/máy khoan.*bàn|khoan bàn/,'Máy khoan bàn'],[/máy khoan|khoan pin/,'Máy khoan cầm tay'],
+  [/máy mài|máy mài góc/,'Máy mài'],[/máy cắt/,'Máy cắt'],[/siết.*bu lông|siết.*bulong/,'Máy siết bu lông'],
+  [/máy tiện/,'Máy tiện'],[/máy phay/,'Máy phay'],[/máy ép/,'Máy ép'],[/máy dập/,'Máy dập'],
+  [/máy nén khí/,'Máy nén khí'],[/máy bơm|bơm nước/,'Máy bơm'],[/động cơ/,'Động cơ điện'],
+  [/quạt hút/,'Quạt hút'],[/quạt cấp/,'Quạt cấp'],[/quạt/,'Quạt công nghiệp'],
+  [/chiller/,'Chiller'],[/kho lạnh/,'Kho lạnh'],[/ups/,'UPS'],[/biến tần/,'Biến tần'],[/plc/,'PLC']
+ ]
+ return rules.find(([pattern])=>pattern.test(n))?.[1] ?? ''
+}
 const ASSET_LOCATION_CODES: Record<string,string> = {'Phòng máy nén khí':'01','Khu sản xuất':'02','Phòng bơm tầng hầm':'03','Dây chuyền 1':'04','Khu xử lý bụi':'05','Nhà xưởng A':'06','Khu kỹ thuật':'07','Phòng kỹ thuật tầng 1':'08','Tầng 2':'09','Khu vực Chiller':'10','Sân kỹ thuật mái':'11','Phòng máy phát điện':'12','Phòng điện tổng':'13','Tầng 1':'14','Phòng bơm':'15','Phòng IT':'16','Trạm biến áp':'17','Nhà lò hơi':'18','Xưởng bảo trì':'19','Sảnh chính':'20','Phòng bơm PCCC':'21','Đường ống khí nén':'22','Hố gom tầng hầm':'23'}
 const RECEIVING_FACILITY_CODE='HP01'
 const buildAssetCode=(asset:Asset,allAssets:Asset[])=>{
@@ -990,15 +1041,80 @@ function buildDefaultChecklist(asset: Asset): ChecklistTemplateItem[] {
       'Kiểm tra vệ sinh, bôi trơn và tình trạng phụ kiện'
     ]
   })
+  // Ghép tiêu chí theo nhóm và theo chính tên thiết bị; tên cụ thể được ưu tiên bổ sung vào bộ nhóm.
   let labels = byCategory[category]
   if (!labels && category.toLowerCase().includes('quạt')) labels = byCategory['Quạt công nghiệp']
   if (!labels && category.toLowerCase().includes('điều hòa')) labels = byCategory['Điều hòa thông gió']
   if (!labels && category.toLowerCase().includes('tủ điện')) labels = byCategory['Tủ điện']
   if (!labels && category.toLowerCase().includes('máy bơm')) labels = byCategory['Máy bơm']
   if (!labels && category.toLowerCase().includes('máy nén')) labels = byCategory['Máy nén khí']
-  if (!labels) labels = [...common, 'Kiểm tra nguồn cấp và thông số vận hành theo nhãn thiết bị', 'Kiểm tra cơ cấu bảo vệ, liên động và nút dừng khẩn', 'Ghi nhận thông số vận hành và hiện tượng bất thường']
-  return labels.map((label, order) => ({
-    id: uid(), label, description: 'Đánh giá theo hướng dẫn nhà sản xuất và quy trình an toàn tại cơ sở.',
+  const name = (asset.name || '').toLocaleLowerCase('vi')
+  const nameRules: Array<{pattern:RegExp;items:string[]}> = [
+    {pattern:/hàn.*xung|xung.*hàn/,items:[
+      'Kiểm tra bề mặt điện cực hàn, đầu hàn và độ đồng tâm',
+      'Kiểm tra lực ép, hành trình và cơ cấu kẹp phôi',
+      'Kiểm tra thời gian xung, dòng hàn và thông số chương trình theo quy trình đã duyệt',
+      'Kiểm tra cáp hàn, đầu nối công suất và dấu hiệu quá nhiệt',
+      'Kiểm tra hệ thống làm mát điện cực/biến áp nếu được trang bị',
+      'Kiểm tra che chắn, bàn đạp/công tắc kích hoạt và dừng khẩn cấp'
+    ]},
+    {pattern:/máy hàn|hàn mig|hàn tig|hàn que/,items:[
+      'Kiểm tra nguồn hàn, dây hàn, kìm hàn/súng hàn và đầu nối',
+      'Kiểm tra kẹp mass, tiếp xúc điện và cách điện dây dẫn',
+      'Kiểm tra lưu lượng khí bảo vệ và đường ống khí nếu có',
+      'Kiểm tra quạt làm mát, chu kỳ tải và cảnh báo quá nhiệt',
+      'Kiểm tra tiếp địa, màn chắn hồ quang và phương tiện PCCC khu vực hàn'
+    ]},
+    {pattern:/máy khoan|khoan pin/,items:[
+      'Kiểm tra đầu kẹp/mâm cặp, độ đảo và khả năng giữ mũi khoan',
+      'Kiểm tra công tắc cò, đảo chiều, điều tốc và khóa an toàn',
+      'Kiểm tra pin, bộ sạc hoặc dây nguồn và đầu nối',
+      'Kiểm tra tay cầm phụ, vỏ cách điện và tình trạng mũi khoan'
+    ]},
+    {pattern:/máy mài/,items:[
+      'Kiểm tra đá mài/lưỡi cắt đúng chủng loại, tốc độ cho phép và không nứt vỡ',
+      'Kiểm tra vành chắn bảo vệ, tay cầm phụ và công tắc',
+      'Kiểm tra trục chính, mặt bích kẹp đá và rung bất thường',
+      'Kiểm tra dây nguồn/pin, vỏ cách điện và tình trạng phát nhiệt'
+    ]},
+    {pattern:/máy cắt|cưa đĩa|máy cưa/,items:[
+      'Kiểm tra lưỡi cắt, độ chắc chắn và tình trạng mẻ/nứt',
+      'Kiểm tra cơ cấu chắn lưỡi, khóa liên động và nút dừng',
+      'Kiểm tra bàn/kẹp phôi, cơ cấu dẫn hướng và độ rung',
+      'Kiểm tra động cơ, dây nguồn và dấu hiệu quá nhiệt'
+    ]},
+    {pattern:/máy siết|súng siết|siết bu lông/,items:[
+      'Kiểm tra đầu khẩu, cơ cấu đảo chiều và lực siết cài đặt',
+      'Kiểm tra cò điều khiển, khóa cò và cơ cấu giữ đầu khẩu',
+      'Kiểm tra pin/bộ sạc hoặc dây cấp nguồn'
+    ]},
+    {pattern:/máy nén khí/,items:[
+      'Ghi nhận áp suất cài đặt, áp suất tải/ngắt và giờ chạy',
+      'Kiểm tra mức dầu, lọc hút, bộ tách dầu và xả nước ngưng',
+      'Kiểm tra van an toàn, rơ le áp suất và cảnh báo'
+    ]},
+    {pattern:/máy in|printer/,items:[
+      'Kiểm tra đầu in, cơ cấu kéo giấy/vật liệu và chất lượng bản in',
+      'Kiểm tra cảm biến giấy/vật liệu, nắp che và cảnh báo kẹt',
+      'Kiểm tra nguồn cấp, dây tín hiệu và kết nối điều khiển'
+    ]},
+    {pattern:/máy đóng gói|đóng gói/,items:[
+      'Kiểm tra cơ cấu cấp liệu, định lượng và độ kín/đúng quy cách đóng gói',
+      'Kiểm tra cảm biến, công tắc hành trình và liên động cửa che',
+      'Kiểm tra bộ gia nhiệt/hàn miệng túi nếu có',
+      'Kiểm tra nút dừng khẩn cấp và che chắn bộ phận chuyển động'
+    ]},
+    {pattern:/máy đo|đồng hồ đo|ampe kìm|đồng hồ vạn năng/,items:[
+      'Kiểm tra que đo, dây đo, cầu chì bảo vệ và đầu cắm đúng cổng',
+      'Kiểm tra tình trạng vỏ, màn hình, pin và cấp an toàn đo lường',
+      'Đối chiếu tình trạng hiệu chuẩn/kiểm định và tem nhận diện'
+    ]}
+  ]
+  const matchedNameItems = nameRules.filter(rule=>rule.pattern.test(name)).flatMap(rule=>rule.items)
+  const fallback = ['Kiểm tra nguồn cấp và thông số vận hành theo nhãn thiết bị','Kiểm tra cơ cấu bảo vệ, liên động và nút dừng khẩn cấp nếu có','Ghi nhận thông số vận hành và hiện tượng bất thường']
+  const merged = [...new Set([...common,...(labels??fallback),...matchedNameItems])]
+  return merged.map((label, order) => ({
+    id: uid(), label, description: 'Hạng mục mặc định. Thực hiện theo hướng dẫn nhà sản xuất và quy trình an toàn của cơ sở; chỉ kiểm tra/thử nghiệm khi đã cô lập năng lượng và đủ điều kiện an toàn.',
     answerType: 'pass-fail-na', required: true, order
   }))
 }
@@ -1154,14 +1270,12 @@ function AssetModal({value,close,save,assets}:any){
   const isNew=!value.code
   const set=(k:keyof Asset,x:any)=>setV(p=>({...p,[k]:x}))
   const previewCode=isNew&&ASSET_CATEGORY_CODES[v.category]?buildAssetCode(v,assets):''
-  const fanCategories=['Quạt công nghiệp','Quạt hút','Quạt cấp','Quạt thông gió','Quạt làm mát','Quạt hướng trục','Quạt ly tâm']
-  const nameSuggestsFan=/quạt/i.test(v.name)
-  const categoryIsFan=fanCategories.includes(v.category)
-  const showCategoryWarning=Boolean(v.name.trim())&&nameSuggestsFan!==categoryIsFan
+  const suggestedCategory=suggestAssetCategory(v.name)
+  const showCategoryWarning=Boolean(suggestedCategory)&&suggestedCategory!==v.category
   return <Modal title={isNew?'Thêm thiết bị':'Thông tin thiết bị'} close={close}><form onSubmit={e=>{e.preventDefault();if(!v.name.trim())return alert('Nhập tên thiết bị');if(!ASSET_CATEGORY_CODES[v.category])return alert('Chọn nhóm thiết bị hợp lệ trong danh mục chuẩn');save(v)}} className="form-grid">
     <Field label="Tên thiết bị *"><input required value={v.name} placeholder="Ví dụ: Quạt hút khu vực đóng gói số 1" onChange={e=>set('name',e.target.value)}/></Field>
     <Field label="Nhóm thiết bị *"><select required disabled={!isNew} value={v.category} onChange={e=>set('category',e.target.value)}><option value="">-- Chọn nhóm thiết bị --</option>{ASSET_CATEGORY_GROUPS.map(group=><optgroup key={group.label} label={group.label}>{group.items.map(item=><option key={item.name} value={item.name}>{item.name} · {item.code}</option>)}</optgroup>)}</select>{!isNew&&<small className="muted">Nhóm đã khóa sau khi cấp mã để tránh mã định danh không còn đúng loại thiết bị.</small>}</Field>
-    {showCategoryWarning&&<div className="form-hint warning-hint">Tên thiết bị có từ “quạt” nhưng nhóm đang chọn không thuộc danh mục quạt (hoặc ngược lại). Hãy kiểm tra lại; hệ thống không tự đổi nhóm.</div>}
+    {showCategoryWarning&&<div className="form-hint warning-hint">Theo tên thiết bị, hệ thống gợi ý nhóm “{suggestedCategory}”. Nhóm hiện tại là “{v.category||'chưa chọn'}”. Hãy kiểm tra và chọn nhóm phù hợp; hệ thống không tự đổi nhóm hay mã định danh.</div>}
     <Field label="Vị trí lắp đặt"><input value={v.location} placeholder="Ví dụ: Nhà xưởng A" onChange={e=>set('location',e.target.value)}/></Field>
     <Field label="Hãng"><input value={v.brand} onChange={e=>set('brand',e.target.value)}/></Field><Field label="Model"><input value={v.model} onChange={e=>set('model',e.target.value)}/></Field>
     <Field label="Serial"><input value={v.serial} onChange={e=>set('serial',e.target.value)}/></Field><Field label="Ngày đưa vào sử dụng"><input type="date" value={v.commissionedAt} onChange={e=>set('commissionedAt',e.target.value)}/></Field>
