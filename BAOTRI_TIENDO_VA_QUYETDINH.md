@@ -404,3 +404,17 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 **Rủi ro:** mã nhóm trùng làm sai chuỗi mã định danh; nhóm lưu cục bộ không tự đồng bộ sang máy/trình duyệt khác (đúng với trạng thái lưu trữ hiện tại, trước khi triển khai Supabase).
 
 **Cách kiểm thử:** kiểm tra tĩnh luồng thêm nhóm, lưu localStorage, kiểm tra trùng tên/mã, chọn nhóm tự tạo và xem mã dự kiến; chạy `npm.cmd run build`. Chưa đánh dấu hoàn thành nếu chưa chạy build thực tế.
+
+
+### Đã bổ sung tạo nhóm thiết bị ngay trong form Thêm thiết bị (16/11/2026)
+- Sửa trực tiếp `src/App.tsx` trên `main`; không tạo branch/PR và không đổi schema IndexedDB.
+- Bên cạnh trường **Nhóm thiết bị** có nút **Thêm nhóm**. Khi mở, người dùng nhập tên nhóm và mã nhóm 2–5 ký tự chữ không dấu/số; bấm **Lưu nhóm và chọn** để lưu và tự chọn nhóm vừa tạo cho thiết bị đang nhập.
+- Nhóm tự tạo được lưu trong `localStorage` với khóa `baotri-custom-asset-categories`, tự nạp lại khi mở ứng dụng và hiển thị trong nhóm chọn **Nhóm tự tạo** ở những lần thêm thiết bị tiếp theo. Lưu ý: dữ liệu nhóm hiện chỉ có trên trình duyệt/máy đã tạo, chưa đồng bộ sang máy khác vì ứng dụng chưa kết nối Supabase.
+- Kiểm tra trùng tên và mã với toàn bộ danh mục chuẩn + nhóm tự tạo; mã mới chỉ chấp nhận 2–5 ký tự A–Z/0–9. Mã nhóm tự tạo được đưa vào cả phần xem trước và bước cấp mã thiết bị thực tế; không thay đổi mã đã cấp cho thiết bị cũ.
+- Khi sửa hồ sơ thiết bị hiện có, trường nhóm vẫn bị khóa như trước để tránh làm sai mã định danh.
+- Kiểm tra tĩnh mã nguồn: đạt các mục nạp/lưu localStorage, xác thực tên/mã trùng, định dạng mã, hiển thị nhóm tự tạo, tự chọn nhóm mới, dùng mã tự tạo cho preview và lưu thiết bị; đã sửa cú pháp JSX của AssetModal.
+- **Chưa chạy `npm.cmd run build` và chưa kiểm thử trực tiếp trên giao diện/trình duyệt.** Vì vậy chưa xác nhận build thành công; cần chạy build và thử tạo một nhóm mới, tải lại trang, tạo thiết bị dùng nhóm đó để xác nhận mã.
+- Commit ghi kế hoạch trước khi sửa: `fb29ec6cbb1a6b5494964c2cd846d6de8c4a8db7`.
+- Commit code bổ sung nhóm tự tạo: `4af4840eb6abc729bde418659f7c107d22a06474`.
+- Commit sửa JSX và thứ tự lưu an toàn: `4bd0667f067296cc52f55a26939616132656873f`.
+- Bước tiếp theo: Pull origin trên GitHub Desktop, chạy `npm.cmd run build`; mở Thêm thiết bị, tạo thử nhóm (ví dụ Máy đóng đai / MDD), xác nhận nhóm tự được chọn và mã dự kiến bắt đầu bằng `MDD-`; tải lại trang để xác nhận nhóm còn trong danh sách.
