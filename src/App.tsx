@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import type { Session } from '@supabase/supabase-js'
+import type { Session, SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
 import AuthScreen from './AuthScreen'
 import { useLiveQuery } from 'dexie-react-hooks'
@@ -229,14 +229,21 @@ const dateTimeText = (s?: string) => s ? new Date(s).toLocaleString('vi-VN') : '
 
 type EmployeeProfile = { fullName: string; phone: string; dateOfBirth: string; position: string }
 
-function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut }: {
+function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, organizationId, organizationName, organizationRole, cloudClient }: {
   userName: string
   userEmail: string
   profile: EmployeeProfile
   onSaveProfile: (value: EmployeeProfile) => Promise<void>
   onSignOut: () => void
+  organizationId: string
+  organizationName: string
+  organizationRole: string
+  cloudClient: SupabaseClient
 }) {
   const [page, setPage] = useState<Page>('dashboard')
+  const [cloudTestBusy, setCloudTestBusy] = useState(false)
+  const [cloudTestRecord, setCloudTestRecord] = useState<{id:string;code:string;name:string;created_at:string}|null>(null)
+  const [cloudTestMessage, setCloudTestMessage] = useState('Đang kiểm tra dữ liệu cloud…')
   const [search, setSearch] = useState('')
   const [theme, setTheme] = useState<'light' | 'dark'>('light')
   const [compact, setCompact] = useState(false)
@@ -287,6 +294,26 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut }
   const checklistTemplates = useLiveQuery(() => db.checklistTemplates.toArray(), []) ?? []
   const allChecklistResults = useLiveQuery(() => db.checklistResults.toArray(), []) ?? []
   const queueCount = useLiveQuery(() => db.syncQueue.count(), []) ?? 0
+
+  useEffect(() => {
+    let active = true
+    cloudClient.from('assets')
+      .select('id,code,name,created_at')
+      .eq('organization_id', organizationId)
+      .like('code', 'TEST-CLOUD-%')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (!active) return
+        if (error) setCloudTestMessage('Không đọc được bản ghi kiểm thử: ' + error.message)
+        else if (data) {
+          setCloudTestRecord(data)
+          setCloudTestMessage('Đã tìm thấy bản ghi cloud từ lần đăng nhập trước.')
+        } else setCloudTestMessage('Đã đọc được tổ chức và membership. Chưa có bản ghi thiết bị kiểm thử.')
+      })
+    return () => { active = false }
+  }, [cloudClient, organizationId])
 
   useEffect(() => {
     const savedTheme = localStorage.getItem('baotri-theme') as 'light' | 'dark' | null
@@ -537,6 +564,45 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut }
   const lowStock = inventory.filter(i => i.quantity <= i.minQuantity)
 
   const flash = (s: string) => { setNotice(s); setTimeout(() => setNotice(''), 2800) }
+  const createCloudTestAsset = async () => {
+    if (cloudTestBusy) return
+    setCloudTestBusy(true)
+    setCloudTestMessage('Đang ghi và đọc lại bản ghi trên Supabase…')
+    const id = crypto.randomUUID()
+    const code = `TEST-CLOUD-${id.slice(0, 8).toUpperCase()}`
+    try {
+      const payload = {
+        id,
+        organization_id: organizationId,
+        code,
+        name: 'Thiết bị kiểm tra kết nối cloud',
+        category: 'Kiểm thử',
+        brand: '',
+        model: '',
+        serial: '',
+        location: 'Môi trường Test',
+        power: '',
+        cycle: '',
+        status: 'Đang hoạt động',
+        notes: 'BẢN GHI KIỂM THỬ SUPABASE – có thể xóa sau khi hoàn tất kiểm tra.',
+      }
+      const { data: inserted, error: insertError } = await cloudClient
+        .from('assets').insert(payload).select('id,code,name,created_at').single()
+      if (insertError) throw insertError
+      const { data: verified, error: readError } = await cloudClient
+        .from('assets').select('id,code,name,created_at')
+        .eq('organization_id', organizationId).eq('id', id).single()
+      if (readError) throw readError
+      if (!inserted || !verified || verified.id !== id) throw new Error('Không đối chiếu được bản ghi vừa tạo.')
+      setCloudTestRecord(verified)
+      setCloudTestMessage('Thành công: Supabase đã ghi và đọc lại được thiết bị kiểm thử. Bản ghi được giữ lại để kiểm tra sau khi đăng nhập lại.')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setCloudTestMessage('Kiểm tra ghi cloud thất bại: ' + message)
+    } finally {
+      setCloudTestBusy(false)
+    }
+  }
   const addAssetCategory = (groupName: string, itemName: string, code: string, existingGroup = false) => {
     const cleanGroup = groupName.trim()
     const cleanName = itemName.trim()
@@ -917,13 +983,22 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut }
       <header className="topbar">
         <div className="page-heading"><div className="eyebrow">HỆ THỐNG QUẢN LÝ KỸ THUẬT</div><h1>{nav.find(n=>n[0]===page)?.[1] ?? (page==='tasks'?'Lịch bảo dưỡng định kỳ':'')}</h1></div>
         <div className="top-actions">
-          <div className="workspace-chip"><Building2 size={16}/><span><b>Dữ liệu trên thiết bị</b><small>Chưa đồng bộ lên cloud</small></span></div>
+          <div className="workspace-chip"><Building2 size={16}/><span><b>{organizationName}</b><small>Supabase · quyền {organizationRole}</small></span></div>
+          <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+            <button type="button" className="soft-btn" disabled={cloudTestBusy || Boolean(cloudTestRecord)} onClick={createCloudTestAsset}>{cloudTestBusy?'Đang thử…':cloudTestRecord?'Đã có bản ghi Test':'Thử ghi thiết bị lên cloud'}</button>
+          </div>
           <button className="icon-btn" title="Quét QR" onClick={()=>setModal('scan')}><QrCode size={19}/></button>
           {page!=='planning'&&page!=='checklist'&&<button className="primary-btn" onClick={()=>{ if(page==='assets'){setEditingAsset(emptyAsset());setModal('asset')} else if(page==='inventory'){setEditingItem(emptyItem());setModal('item')} else if(page==='tasks'){setEditingTask(emptyTask());setModal('task')} else if(page==='logs'){setEditingLog({id:uid(),assetId:'',date:today(),kind:'Sửa chữa',description:'',parts:'',readings:'',result:'',performedBy:userName});setModal('log')} else {setPage('assets');setEditingAsset(emptyAsset());setModal('asset')} }}><Plus size={17}/><span>Thêm mới</span></button>}
           <button className="profile-chip" title="Mở hồ sơ trong Cài đặt" onClick={()=>{setPage('settings');setSearch('');setMobileMore(false)}}><span className="avatar"><UserRound size={16}/></span><span className="profile-text"><b>{userName}</b><small>Hồ sơ · Cài đặt</small></span></button>
         </div>
       </header>
       <div className="content">
+        <section className="panel" style={{marginBottom:16,padding:12}}>
+          <div style={{display:'flex',justifyContent:'space-between',gap:12,alignItems:'center',flexWrap:'wrap'}}>
+            <div><b>Trạng thái kết nối Supabase Test</b><div className="muted" style={{marginTop:4}}>{cloudTestMessage}</div>{cloudTestRecord&&<small>Mã: {cloudTestRecord.code} · {cloudTestRecord.name} · {new Date(cloudTestRecord.created_at).toLocaleString('vi-VN')}</small>}</div>
+            {cloudTestRecord&&<span className="status green">Đã ghi và đọc lại</span>}
+          </div>
+        </section>
         {page!=='dashboard' && page!=='settings' && <div className="searchbar"><Search size={18}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Tìm theo mã, tên hoặc nội dung..."/></div>}
         {page==='dashboard' && <Dashboard assets={activeAssets} tasks={tasks} inventory={inventory} dueToday={dueToday} lowStock={lowStock} overdue={overdue} go={setPage} complete={completeTask}/>}
         <>
@@ -1958,6 +2033,9 @@ function ScanModal({close,assets,openAsset,expectedAssetId}:any){
 export default function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [checkingSession, setCheckingSession] = useState(true)
+  const [organizationContext, setOrganizationContext] = useState<{id:string;name:string;role:string}|null>(null)
+  const [organizationError, setOrganizationError] = useState('')
+  const [checkingOrganization, setCheckingOrganization] = useState(false)
 
   useEffect(() => {
     if (!supabase) {
@@ -1983,8 +2061,44 @@ export default function App() {
 
   if (!supabase) return <AuthScreen client={null} />
   const authenticatedClient = supabase
+  useEffect(() => {
+    if (!session) {
+      setOrganizationContext(null)
+      setOrganizationError('')
+      setCheckingOrganization(false)
+      return
+    }
+    let active = true
+    setCheckingOrganization(true)
+    setOrganizationContext(null)
+    setOrganizationError('')
+    const loadOrganization = async () => {
+      const { data: membership, error: membershipError } = await authenticatedClient
+        .from('organization_members')
+        .select('organization_id,role')
+        .eq('user_id', session.user.id)
+        .eq('status', 'active')
+        .maybeSingle()
+      if (membershipError) throw membershipError
+      if (!membership) throw new Error('Tài khoản chưa có membership active trong tổ chức.')
+      const { data: organization, error: organizationLoadError } = await authenticatedClient
+        .from('organizations')
+        .select('id,name,status')
+        .eq('id', membership.organization_id)
+        .eq('status', 'active')
+        .single()
+      if (organizationLoadError) throw organizationLoadError
+      if (active) setOrganizationContext({id:organization.id,name:organization.name,role:membership.role})
+    }
+    loadOrganization().catch(error => {
+      if (active) setOrganizationError(error instanceof Error ? error.message : String(error))
+    }).finally(() => { if (active) setCheckingOrganization(false) })
+    return () => { active = false }
+  }, [authenticatedClient, session?.user.id])
   if (checkingSession) return <div className="auth-page"><div className="auth-card auth-loading">Đang kiểm tra phiên đăng nhập…</div></div>
   if (!session) return <AuthScreen client={authenticatedClient} />
+  if (checkingOrganization) return <div className="auth-page"><div className="auth-card auth-loading">Đang kiểm tra tổ chức và quyền truy cập…</div></div>
+  if (organizationError || !organizationContext) return <div className="auth-page"><div className="auth-card"><h1>Không thể mở dữ liệu tổ chức</h1><p className="auth-error">{organizationError || 'Tài khoản chưa được gắn với tổ chức hoạt động.'}</p><button className="auth-submit" onClick={() => { void authenticatedClient.auth.signOut() }}>Đăng xuất</button></div></div>
   const metadata = session.user.user_metadata
   const profile: EmployeeProfile = {
     fullName: typeof metadata.full_name === 'string' ? metadata.full_name : typeof metadata.name === 'string' ? metadata.name : '',
@@ -2006,6 +2120,10 @@ export default function App() {
 
   return <AppWorkspace
     key={session.user.id}
+    cloudClient={authenticatedClient}
+    organizationId={organizationContext.id}
+    organizationName={organizationContext.name}
+    organizationRole={organizationContext.role}
     userName={userName}
     userEmail={userEmail}
     profile={profile}
