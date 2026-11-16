@@ -683,3 +683,6 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Kết quả đã xác nhận: cấu hình môi trường local, kết nối Supabase Auth và luồng đăng nhập email/mật khẩu hoạt động ở mức cơ bản.
 - Chưa xác nhận riêng các bước tải lại trang để khôi phục session, hiển thị email tài khoản, đăng xuất và đăng nhập lại; đang chờ người dùng kiểm tra các bước này.
 - Chưa có schema nghiệp vụ, PostgreSQL tables/RLS hoặc đồng bộ cloud. Dữ liệu thiết bị, vật tư, Checklist và các nghiệp vụ vẫn ở IndexedDB/localStorage trên trình duyệt.
+
+- Người dùng tiếp tục kiểm tra trên giao diện local: email tài khoản hiển thị đúng; đăng xuất đưa về màn hình đăng nhập và đăng nhập lại thành công. Xác nhận các thao tác này hoạt động trong lần kiểm thử đầu tiên.
+- Chưa có kiểm thử riêng về session sau khi đóng/mở trình duyệt hoặc hết hạn token; chưa kiểm thử các chức năng nghiệp vụ với dữ liệu cloud vì chưa triển khai schema/RLS.
