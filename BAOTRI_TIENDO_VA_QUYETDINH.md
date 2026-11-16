@@ -457,3 +457,13 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Phạm vi: đổi duy nhất `CHECKLIST_TEST_MODE` trong `src/App.tsx` từ `true` thành `false`; giữ nguyên luồng QR, lịch sử phiếu cũ, xem chi tiết và in lại không cần QR.
 - Rủi ro: nếu còn nhánh UI nào cấp quyền từ chế độ thử nghiệm thì phải rà soát điều kiện `CHECKLIST_TEST_MODE`; không thay đổi quyền xem/in lịch sử.
 - Kiểm thử: kiểm tra tĩnh cờ chỉ còn một lần khai báo và bằng `false`; kiểm tra trang Checklist không cấp quyền thao tác khi không quét QR; kiểm tra đường quét QR vẫn cấp quyền; kiểm tra lịch sử/chi tiết/in vẫn không cần QR. Chưa chạy build thực tế.
+
+
+### Đã khóa lại Checklist về chế độ bắt buộc quét QR (16/11/2026)
+- Đổi `CHECKLIST_TEST_MODE` từ `true` thành `false` trong `src/App.tsx` trên `main`.
+- Trang Bảo trì – Checklist vẫn có thể hiển thị danh sách thiết bị, nhưng mở thiết bị từ trang này không còn cấp quyền tạo/sửa/thực hiện Checklist. Các thao tác đó phải đi qua luồng quét QR.
+- Đã kiểm tra tĩnh: cờ cấu hình là `false`; nhánh cấp quyền từ trang Checklist vẫn phụ thuộc cờ này; luồng QR vẫn có `setChecklistAccess(true)`; thành phần lịch sử Checklist vẫn được render. Do đó xem lịch sử, xem chi tiết phiếu cũ và in lại vẫn giữ nguyên, không bắt quét QR.
+- Chưa chạy `npm.cmd run build` hoặc kiểm thử camera/QR thực tế.
+- Commit ghi kế hoạch trước khi sửa: `987970fd15aacb21e435f3284e0139a8de1e4245`.
+- Commit khóa chế độ QR: `bd584d57270b9c40a0dc6a7e5a9e3c72555dfe89`.
+- Bước tiếp theo: Pull origin trên GitHub Desktop và chạy `npm.cmd run build`; khi kiểm thử giao diện, xác nhận mở thiết bị từ menu Checklist không thao tác được, quét QR thì thao tác được, lịch sử/phiếu cũ vẫn xem và in bình thường.
