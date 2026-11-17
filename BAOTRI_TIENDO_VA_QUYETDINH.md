@@ -1648,3 +1648,12 @@ Trạng thái:
 - Hỗ trợ xuất Excel riêng một phiếu ngay trên dòng, xuất nhiều phiếu đã chọn, hoặc xuất toàn bộ danh sách.
 - Tệp xuất có mã thiết bị, tên thiết bị, nội dung yêu cầu, trạng thái/kết quả, người yêu cầu, người hoàn thành và thời điểm hoàn thành.
 - Phần đếm tổng công việc trên Dashboard đang được rà soát theo đúng hạn của từng loại công việc. Kế hoạch bảo trì hiện chỉ có ngày bắt đầu/kết thúc, chưa có trạng thái hoàn thành; cần chốt quy tắc tính hạn trước khi đưa vào bộ đếm để không báo sai.
+
+
+## Tổng hợp bộ đếm Dashboard và hạn Phiếu YC – 17/11/2026
+
+- Kế hoạch bảo trì chỉ là kế hoạch định hướng và phục vụ in báo cáo; tạm thời không đưa vào bộ đếm công việc hôm nay hoặc quá hạn, không bổ sung hạn hay trạng thái hoàn thành cho phân hệ này.
+- Dashboard tổng hợp công việc thực tế từ ba nguồn: tác vụ bảo trì định kỳ, các kỳ Checklist theo lịch của từng thiết bị và Phiếu YC Bảo dưỡng – Sửa chữa chưa hoàn thành.
+- “Việc cần làm hôm nay” đếm các tác vụ/kỳ Checklist/Phiếu YC chưa hoàn thành có hạn đúng ngày hiện tại. “Công việc quá hạn” đếm các mục chưa hoàn thành có hạn trước ngày hiện tại.
+- Phiếu YC có trường “Hạn hoàn thành” bắt buộc khi tạo/cập nhật; phiếu tạo từ Checklist được gán hạn mặc định là ngày tạo phiếu. Phiếu cũ chưa có hạn được đánh dấu “Chưa đặt hạn” và không tự suy diễn ngày lập phiếu thành hạn.
+- Không tạo bảng IndexedDB mới, không migration dữ liệu, không thay đổi Supabase hoặc bật đồng bộ nghiệp vụ.
