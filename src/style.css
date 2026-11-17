@@ -634,3 +634,54 @@ button:disabled{opacity:.42!important;filter:grayscale(.35);cursor:not-allowed!i
   .work-module-panel .table-wrap{border-radius:8px}
   .work-module-panel th,.work-module-panel td{padding:10px}
 }
+
+
+/* Giao diện nhận diện thiết bị bằng QR / mã thủ công */
+.scan-modal{display:grid;gap:15px}
+.scan-intro{display:flex;align-items:center;gap:14px;padding:16px;border:1px solid #d7e9e1;border-radius:14px;background:linear-gradient(120deg,#edf8f3,#f8fbf9)}
+.scan-intro-icon{width:54px;height:54px;flex:0 0 54px;display:grid;place-items:center;border-radius:15px;background:linear-gradient(145deg,#176b5c,#26977d);color:#fff;box-shadow:0 7px 16px #176b5c2b}
+.scan-intro-copy{min-width:0}
+.scan-eyebrow{display:block;margin-bottom:5px;color:#32816e;font-size:9px;font-weight:800;letter-spacing:.11em}
+.scan-intro-copy h3{margin:0;color:#173e34;font-size:17px;line-height:1.3}
+.scan-intro-copy p{margin:5px 0 0;color:#647b72;font-size:11px;line-height:1.55}
+.scan-camera-card{padding:13px;border:1px solid var(--border);border-radius:13px;background:var(--panel);box-shadow:0 5px 18px #193e3210}
+.scan-section-heading{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}
+.scan-section-heading>span{display:flex;align-items:center;gap:7px;color:var(--text);font-size:12px;font-weight:750}
+.scan-section-heading>span svg{color:#27836d}
+.scan-section-heading small{color:var(--muted);font-size:10px}
+.scan-camera-note{display:flex;align-items:center;gap:8px;margin-top:10px;color:var(--muted);font-size:10px;line-height:1.5}
+.scan-camera-dot{width:8px;height:8px;flex:0 0 8px;border-radius:50%;background:#32a47e;box-shadow:0 0 0 4px #32a47e1c}
+.scan-modal .qr-reader{width:100%;max-width:440px;margin:0 auto}
+.scan-modal #qr-reader{border:0!important}
+.scan-modal #qr-reader__scan_region{min-height:210px;border:1px dashed #b8d9ca!important;border-radius:10px;background:#f4faf6;overflow:hidden}
+.scan-modal #qr-reader__scan_region video{border-radius:9px;object-fit:cover}
+.scan-modal #qr-reader__scan_region img{object-fit:contain}
+.scan-modal #qr-reader__dashboard{padding-top:9px}
+.scan-modal #qr-reader__dashboard_section_csr{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap}
+.scan-modal #qr-reader__dashboard select,.scan-modal #qr-reader__dashboard button,.scan-modal .html5-qrcode-element{min-height:34px;border:1px solid #d5e5dc!important;border-radius:8px!important;padding:6px 10px!important;background:#f5faf7!important;color:#245b4c!important;font-size:10px!important}
+.scan-modal #qr-reader__dashboard a{color:#247b65;font-size:10px}
+.scan-divider{display:flex;align-items:center;gap:12px;color:#91a29a;font-size:9px;font-weight:800;letter-spacing:.1em}
+.scan-divider:before,.scan-divider:after{content:"";height:1px;flex:1;background:var(--border)}
+.scan-manual-form{display:grid;gap:8px;padding:14px;border:1px solid #dce9e2;border-radius:12px;background:var(--panel-alt)}
+.scan-manual-label{color:var(--text);font-size:11px;font-weight:750}
+.scan-manual-control{display:flex;gap:8px}
+.scan-manual-control input{flex:1;min-width:0;height:43px;border:1px solid var(--border);border-radius:9px;padding:0 12px;background:var(--panel);color:var(--text);font-size:12px;outline:0}
+.scan-manual-control input:focus{border-color:#31977c;box-shadow:0 0 0 3px #31977c20}
+.scan-manual-control .primary-btn{display:flex;align-items:center;justify-content:center;gap:7px;min-height:43px;border-radius:9px;padding:0 14px;white-space:nowrap;font-size:11px}
+.scan-manual-help{margin:0;color:var(--muted);font-size:10px;line-height:1.5}
+.scan-error{display:flex;align-items:flex-start;gap:9px;padding:11px 12px;border:1px solid #f0d4d0;border-radius:9px;background:#fff5f3;color:#a64d43;font-size:11px;line-height:1.5}
+.scan-error>span{width:17px;height:17px;flex:0 0 17px;display:grid;place-items:center;border-radius:50%;background:#f7d9d4;font-weight:800}
+.scan-checklist-note{padding:9px 11px;border-radius:8px;background:#fff8e9;color:#80632c;font-size:10px;line-height:1.5}
+@media(max-width:680px){
+  .scan-modal{gap:12px}
+  .scan-intro{align-items:flex-start;padding:13px}
+  .scan-intro-icon{width:45px;height:45px;flex-basis:45px;border-radius:12px}
+  .scan-intro-copy h3{font-size:15px}
+  .scan-intro-copy p{font-size:10px}
+  .scan-camera-card{padding:10px}
+  .scan-section-heading{align-items:flex-start;flex-direction:column;gap:4px}
+  .scan-modal #qr-reader__scan_region{min-height:190px}
+  .scan-manual-form{padding:12px}
+  .scan-manual-control{flex-direction:column}
+  .scan-manual-control .primary-btn{width:100%}
+}
