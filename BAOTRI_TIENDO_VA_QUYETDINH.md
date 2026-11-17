@@ -1530,3 +1530,12 @@ Trạng thái:
 - `src/style.css`: bổ sung kiểu disabled màu mờ, con trỏ không cho thao tác; vô hiệu hóa vùng chọn file khôi phục sao lưu.
 - Các commit triển khai: `6851d3b`, `81fc8ea`, `70fdc9a`, `565c13e`.
 - Trạng thái kiểm tra: đã rà soát mã nguồn và xác nhận các handler chính có guard. Chưa chạy `npm.cmd run build` hoặc kiểm thử giao diện trên máy người dùng; cần người dùng pull và build/test Admin, Technician, Viewer trước khi xác nhận hoàn tất.
+
+
+### Sửa lỗi nhận diện Viewer và khóa nút thao tác – 17/11/2026
+- Nguyên nhân lỗi trước: App đọc `organization_members.role` (legacy chỉ có `admin/user`) rồi so sánh với `viewer`; vì vậy tài khoản Viewer bị hiểu nhầm là user và `isViewer=false`.
+- Đã sửa `src/App.tsx`: xác định vai trò hiệu lực bằng RPC `has_org_role` cho Admin/Viewer/Technician từ bảng phân vai thực tế. Nếu RPC lỗi hoặc không có vai trò hợp lệ, ứng dụng không mở Workspace thay vì mặc định cấp quyền Technician.
+- Đã chỉnh Checklist: các nút tạo/sửa biểu mẫu và thực hiện Checklist luôn hiển thị nhưng disabled/làm mờ đối với Viewer; các handler lưu vẫn kiểm tra `allowActions`.
+- Nút xuất kế hoạch Excel trong hộp thoại cũng bị khóa; các nút kho, sao lưu, khôi phục, xuất Excel và thao tác nghiệp vụ khác dùng trạng thái `isViewer` sau khi vai trò được xác định đúng.
+- Commit sửa vai trò: `30637a0`; commit hiển thị nút Checklist disabled: `7ec8754`.
+- Trạng thái: đã rà soát mã nguồn sau commit. Chưa chạy build và chưa kiểm thử trên trình duyệt thực tế; cần pull/build và đăng nhập đúng tài khoản được gán role Viewer để xác nhận.
