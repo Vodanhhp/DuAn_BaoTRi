@@ -1590,3 +1590,12 @@ Trạng thái:
 - Không xóa dữ liệu nghiệp vụ Local/IndexedDB trên trình duyệt. Vì BAOTRI Mini hiện vẫn giữ dữ liệu Local theo trình duyệt, việc gỡ membership không tự xóa dữ liệu Local trên thiết bị người đó; dữ liệu Cloud bị RLS từ chối khi không còn membership.
 - Đã tạo SQL test Migration 014 kiểm tra quyền EXECUTE, chặn Admin tự xóa, gỡ membership/role assignments và bảo đảm profile/Auth user vẫn tồn tại; test dùng transaction + ROLLBACK.
 - Trạng thái: mã nguồn cập nhật trên `main`; CHƯA build, CHƯA áp dụng Migration 014, CHƯA chạy SQL test 014 và CHƯA deploy lại Edge Function trên Test. Chỉ kiểm thử BAOTRI-Mini-Test; không thay đổi Production.
+
+
+## Khắc phục luồng Reset mật khẩu – 17/11/2026
+
+- Kiểm tra GitHub Actions: người dùng xác nhận lần triển khai mới nhất có tick xanh; frontend được triển khai tự động qua GitHub Pages.
+- Rà soát code trên `main`: Edge Function đã gửi reset email với redirect về `APP_BASE_URL`; frontend chỉ mở form recovery khi nhận sự kiện `PASSWORD_RECOVERY`. Trường hợp SDK xử lý liên kết trước khi React đăng ký listener có thể làm mất sự kiện và khiến người dùng không thấy form.
+- Điều chỉnh redirect reset email thành URL có dấu nhận diện `?flow=recovery`; frontend khởi tạo trạng thái recovery từ dấu này, vẫn giữ xử lý sự kiện `PASSWORD_RECOVERY` và xóa dấu nhận diện sau khi lưu mật khẩu thành công. Luồng mời tài khoản không thay đổi.
+- Chỉ thay đổi Edge Function `manage-organization-members` và frontend `src/App.tsx`; không thay đổi schema, dữ liệu nghiệp vụ hoặc Production.
+- **Cần triển khai lại Edge Function lên BAOTRI-Mini-Test và chờ GitHub Actions tự deploy frontend; sau đó gửi email reset mới để kiểm thử.** Email reset cũ không dùng để xác nhận bản sửa.
