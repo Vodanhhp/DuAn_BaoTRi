@@ -14,6 +14,19 @@ from pg_temp.rls_fixture;
 create temporary table rls_results (
   role_code text, operation text, expected text, actual text, passed boolean
 );
+-- Allow the simulated authenticated role to access these session-local test tables.
+do $grant_temp$
+declare
+  v_temp_schema text;
+begin
+  select nspname into v_temp_schema
+  from pg_namespace
+  where oid = pg_my_temp_schema();
+
+  execute format('grant usage on schema %I to authenticated', v_temp_schema);
+end
+$grant_temp$;
+
 grant select on table pg_temp.rls_fixture to authenticated;
 grant insert on table pg_temp.rls_results to authenticated;
 
