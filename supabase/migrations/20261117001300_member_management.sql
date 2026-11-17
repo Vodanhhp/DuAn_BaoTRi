@@ -58,6 +58,8 @@ for each row execute function public.sync_auth_user_profile();
 revoke select on table public.profiles from authenticated;
 grant select (id, display_name, phone, created_at, updated_at)
   on table public.profiles to authenticated;
+grant select on table public.profiles, public.organization_members,
+  public.member_roles, public.roles to service_role;
 
 drop policy if exists profiles_select_same_org_members on public.profiles;
 create policy profiles_select_same_org_members
