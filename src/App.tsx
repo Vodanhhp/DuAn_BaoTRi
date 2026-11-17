@@ -648,27 +648,35 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
 
   const saveAsset = async (a: Asset) => {
     const isNew = !a.code
-    const previousAsset = isNew ? undefined : await db.assets.get(a.id)
-    const cycleStartedAt = a.cycle ? (previousAsset?.cycle === a.cycle ? (previousAsset.cycleStartedAt || undefined) : today()) : undefined
-    let code = a.code
-    if (isNew) {
-      if (!getAssetCategoryCodes(customAssetCategories)[a.category]) {
-        alert('Bạn cần chọn một nhóm thiết bị hợp lệ để hệ thống cấp mã định danh.')
-        return
-      }
-      const existing = await db.assets.toArray()
-      code = buildAssetCode(a, existing, customAssetCategories)
-      if (!code) {
-        alert('Không thể tạo mã định danh. Hãy kiểm tra lại nhóm thiết bị.')
-        return
-      }
+    if (isNew && !getAssetCategoryCodes(customAssetCategories)[a.category]) {
+      alert('Bạn cần chọn một nhóm thiết bị hợp lệ để hệ thống cấp mã định danh.')
+      return
     }
-    const value = { ...a, code, cycleStartedAt, images: a.images ?? [], updatedAt: now() }
-    await db.assets.put(value)
-    await queueChange('assets', value.id)
-    setModal(null); setEditingAsset(null)
-    if (isNew) setDetailAsset(value)
-    flash(isNew ? 'Đã thêm thiết bị và cấp mã định danh' : 'Đã lưu thiết bị')
+    try {
+      // Cấp số trong cùng transaction với thao tác ghi để hai tab trên cùng trình duyệt
+      // không cùng đọc một số thứ tự rồi tạo ra hai mã giống nhau.
+      const value = await db.transaction('rw', [db.assets, db.syncQueue], async () => {
+        const previousAsset = isNew ? undefined : await db.assets.get(a.id)
+        const allAssets = await db.assets.toArray()
+        const code = isNew ? buildAssetCode(a, allAssets, customAssetCategories) : a.code
+        if (!code) throw new Error('Không thể tạo mã định danh. Hãy kiểm tra lại nhóm thiết bị.')
+        if (isNew && allAssets.some(item => item.code === code)) {
+          throw new Error('Mã định danh vừa được sử dụng. Vui lòng lưu lại để hệ thống cấp số tiếp theo.')
+        }
+        const cycleStartedAt = a.cycle
+          ? (previousAsset?.cycle === a.cycle ? (previousAsset.cycleStartedAt || undefined) : today())
+          : undefined
+        const saved: Asset = { ...a, code, cycleStartedAt, images: a.images ?? [], updatedAt: now() }
+        await db.assets.put(saved)
+        await db.syncQueue.put({ id: uid(), tableName: 'assets', recordId: saved.id, operation: 'upsert', queuedAt: now() })
+        return saved
+      })
+      setModal(null); setEditingAsset(null)
+      if (isNew) setDetailAsset(value)
+      flash(isNew ? 'Đã thêm thiết bị và cấp mã định danh' : 'Đã lưu thiết bị')
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Không thể lưu thiết bị. Vui lòng thử lại.')
+    }
   }
   const saveItem = async (i: InventoryItem) => {
     const value = { ...i, updatedAt: now() }
@@ -1325,7 +1333,7 @@ function AssetDetailModal({value,logs,allowChecklist,checklistOccurrence,createR
   const rows = [['Mã định danh',value.code],['Tên thiết bị',value.name],['Nhóm',value.category],['Vị trí',value.location],['Hãng',value.brand],['Model',value.model],['Serial',value.serial],['Ngày đưa vào sử dụng',dateText(value.commissionedAt)],['Công suất / thông số',value.power],['Chu kỳ Bảo trì – Checklist',value.cycle],['Tình trạng',value.status],['Ghi chú',value.notes]]
   const print = (mode:'sticker'|'detail'|'history') => { setPrintMode(mode); window.setTimeout(()=>window.print(),180) }
   return <Modal title="Chi tiết thiết bị" close={()=>{setPrintMode(null);close()}}>
-    <div className="asset-qr-panel"><div><small>MÃ QR THIẾT BỊ</small><b>{value.code}</b><span>Quét mã để tra cứu hồ sơ thiết bị</span></div><QRCodeSVG value={value.code} size={116} level="M" includeMargin/></div>
+    <div className="asset-qr-panel"><div><small>MÃ QR THIẾT BỊ</small><b>{value.code}</b><span>Quét mã để tra cứu hồ sơ thiết bị</span></div><QRCodeSVG value={`ASSET:${value.id}`} size={116} level="M" includeMargin/></div>
     <div className="asset-detail-grid">{rows.map(([label,val])=><div className="asset-detail-field" key={label}><small>{label}</small><b>{val||'—'}</b></div>)}</div>
     <div className="asset-photo-actions">
       <button type="button" className="soft-btn" onClick={()=>setShowPhotos(v=>!v)}><ImageIcon size={16}/> {showPhotos?'Ẩn ảnh':'Xem ảnh ('+photos.length+')'}</button>
@@ -1341,8 +1349,8 @@ function AssetDetailModal({value,logs,allowChecklist,checklistOccurrence,createR
     {showPhotos&&<div className="asset-photo-grid">{photos.length?photos.map((src:string,i:number)=><button type="button" className="asset-photo-thumb" key={i} onClick={()=>setActivePhoto(src)}><img src={src} alt={'Ảnh '+(i+1)+' của '+value.name}/><span>Ảnh {i+1}</span></button>):<p className="muted">Thiết bị này chưa có ảnh. Chọn “Sửa hồ sơ” để bổ sung ảnh.</p>}</div>}
     {activePhoto&&<div className="photo-lightbox" onClick={()=>setActivePhoto(null)}><button type="button" className="icon-btn" onClick={()=>setActivePhoto(null)}><X/></button><img src={activePhoto} alt={'Ảnh thiết bị '+value.name}/></div>}
     {printMode&&<div className={'asset-print-sheet print-'+printMode}>
-      {printMode==='sticker'&&<div className="asset-sticker"><QRCodeSVG value={value.code} size={78} level="M"/><strong>{value.code}</strong></div>}
-      {printMode==='detail'&&<div className="asset-print-report"><h1 className="asset-print-form-title">BẢNG CHI TIẾT THIẾT BỊ</h1><div className="asset-print-header"><div className="company-logo-placeholder"><span className="company-logo-mark">BT</span><span className="company-logo-wording"><strong>BAOTRI</strong><small>LOGO THỬ NGHIỆM</small></span></div><QRCodeSVG className="asset-print-header-qr" value={value.code} size={104} level="M"/></div><h2 className="asset-print-device-name">{value.name}</h2><table><tbody>{rows.map(([label,val])=><tr key={label}><th>{label}</th><td>{val||'—'}</td></tr>)}</tbody></table></div>}
+      {printMode==='sticker'&&<div className="asset-sticker"><QRCodeSVG value={`ASSET:${value.id}`} size={78} level="M"/><strong>{value.code}</strong></div>}
+      {printMode==='detail'&&<div className="asset-print-report"><h1 className="asset-print-form-title">BẢNG CHI TIẾT THIẾT BỊ</h1><div className="asset-print-header"><div className="company-logo-placeholder"><span className="company-logo-mark">BT</span><span className="company-logo-wording"><strong>BAOTRI</strong><small>LOGO THỬ NGHIỆM</small></span></div><QRCodeSVG className="asset-print-header-qr" value={`ASSET:${value.id}`} size={104} level="M"/></div><h2 className="asset-print-device-name">{value.name}</h2><table><tbody>{rows.map(([label,val])=><tr key={label}><th>{label}</th><td>{val||'—'}</td></tr>)}</tbody></table></div>}
       {printMode==='history'&&<div className="asset-print-report print-history-report"><h1>LỊCH SỬ BẢO DƯỠNG – SỬA CHỮA</h1><h2>{value.name}</h2><b>Mã thiết bị: {value.code}</b><table className="print-history-table"><colgroup><col style={{width:'8%'}}/><col style={{width:'11%'}}/><col style={{width:'22%'}}/><col style={{width:'14%'}}/><col style={{width:'12%'}}/><col style={{width:'10%'}}/><col style={{width:'12%'}}/><col style={{width:'11%'}}/></colgroup><thead><tr><th>Ngày lập phiếu</th><th>Loại</th><th>Nội dung</th><th>Phụ tùng</th><th>Thông số</th><th>Kết quả</th><th>Hoàn thành lúc</th><th>Người thực hiện</th></tr></thead><tbody>{logs.map((entry:any)=><tr key={entry.id}><td>{dateText(entry.date)}</td><td>{entry.kind}</td><td>{entry.description}</td><td>{entry.parts||'—'}</td><td>{entry.readings||'—'}</td><td>{entry.result||'Chưa hoàn thành'}</td><td>{dateTimeText(entry.completedAt)}</td><td>{entry.performedBy||'—'}</td></tr>)}</tbody></table></div>}
     </div>}
   </Modal>
@@ -2023,7 +2031,7 @@ function ScanModal({close,assets,openAsset,expectedAssetId}:any){
   const [result,setResult]=useState('')
   useEffect(()=>{
     const scanner = new Html5QrcodeScanner('qr-reader',{fps:10,qrbox:{width:220,height:220}},false)
-    scanner.render((text)=>{setResult(text);const code=text.replace('ASSET:','');const found=assets.find((a:Asset)=>a.code===code);if(found){if(expectedAssetId && found.id!==expectedAssetId){setResult('Mã QR không đúng thiết bị của công việc Checklist này. Hãy quét đúng thiết bị.');return}scanner.clear().catch(()=>{});openAsset(found)}},()=>{})
+    scanner.render((text)=>{setResult(text);const payload=text.trim().startsWith('ASSET:')?text.trim().slice(6):text.trim();const found=assets.find((a:Asset)=>a.id===payload)||assets.find((a:Asset)=>a.code===payload);if(found){if(expectedAssetId && found.id!==expectedAssetId){setResult('Mã QR không đúng thiết bị của công việc Checklist này. Hãy quét đúng thiết bị.');return}scanner.clear().catch(()=>{});openAsset(found)}},()=>{})
     return ()=>{scanner.clear().catch(()=>{})}
   },[])
   return <Modal title="Quét mã QR thiết bị" close={close}><div id="qr-reader" className="qr-reader"/><p className="muted">Cho phép trình duyệt truy cập camera. Checklist chỉ được mở sau khi quét đúng QR của thiết bị.</p>{result&&<p>Kết quả: {result}</p>}</Modal>
