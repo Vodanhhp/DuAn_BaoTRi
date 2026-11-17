@@ -28,6 +28,10 @@ create table if not exists public.asset_code_counters (
 alter table public.asset_code_counters enable row level security;
 revoke all on table public.asset_code_counters from public, anon, authenticated;
 
+-- All authenticated asset creation must use the atomic RPC; otherwise a direct
+-- PostgREST INSERT could bypass the organization/category sequence allocator.
+revoke insert on table public.assets from authenticated;
+
 create or replace function public.create_asset_with_code(
   p_organization_id uuid,
   p_name text,
