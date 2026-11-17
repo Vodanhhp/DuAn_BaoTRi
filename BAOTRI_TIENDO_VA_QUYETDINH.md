@@ -1611,3 +1611,12 @@ Trạng thái:
   - App điều hướng và nút chuyển qua lại: `c86412a`
   - CSS tinh gọn giao diện: `6bc7fb3`
 - Trạng thái: đã cập nhật mã nguồn trực tiếp trên `main`; chưa chạy build và chưa kiểm thử giao diện trên trình duyệt. GitHub Actions cần hoàn tất build/deploy GitHub Pages trước khi kiểm tra thực tế. Không thay đổi Supabase, dữ liệu Cloud hoặc Production.
+
+
+## Sửa lỗi nút tạo phiếu từ Lịch bảo dưỡng định kỳ – 17/11/2026
+
+- Người dùng phản ánh nút “Phiếu bảo dưỡng – sửa chữa” chỉ điều hướng sang trang danh sách Bảo dưỡng – Sửa chữa, chưa mở biểu mẫu tạo phiếu như kỳ vọng.
+- Đã đổi nút thành **“Tạo phiếu bảo dưỡng – sửa chữa”** và gọi trực tiếp luồng mở Modal tạo phiếu mới, khởi tạo dữ liệu rỗng theo đúng cấu trúc Log hiện có. Không điều hướng sang trang danh sách.
+- Sửa đồng thời trạng thái menu mobile: khi đang ở Lịch bảo dưỡng định kỳ, mục Bảo dưỡng – Sửa chữa được đánh dấu đang chọn.
+- Commit: `9c65d1e`.
+- Chưa kiểm thử trực tiếp trên trình duyệt; chờ GitHub Actions deploy xong rồi xác nhận nút mở thẳng biểu mẫu.
