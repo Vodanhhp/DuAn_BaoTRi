@@ -1599,3 +1599,15 @@ Trạng thái:
 - Điều chỉnh redirect reset email thành URL có dấu nhận diện `?flow=recovery`; frontend khởi tạo trạng thái recovery từ dấu này, vẫn giữ xử lý sự kiện `PASSWORD_RECOVERY` và xóa dấu nhận diện sau khi lưu mật khẩu thành công. Luồng mời tài khoản không thay đổi.
 - Chỉ thay đổi Edge Function `manage-organization-members` và frontend `src/App.tsx`; không thay đổi schema, dữ liệu nghiệp vụ hoặc Production.
 - **Cần triển khai lại Edge Function lên BAOTRI-Mini-Test và chờ GitHub Actions tự deploy frontend; sau đó gửi email reset mới để kiểm thử.** Email reset cũ không dùng để xác nhận bản sửa.
+
+
+## Chuyển lịch bảo dưỡng định kỳ vào Bảo dưỡng – Sửa chữa và tinh gọn giao diện – 17/11/2026
+
+- Đã chuyển lối vào **Lịch bảo dưỡng định kỳ** khỏi trang **Kế hoạch bảo trì** sang trang **Bảo dưỡng – Sửa chữa**. Tại trang Bảo dưỡng – Sửa chữa có nút mở Lịch bảo dưỡng định kỳ; tại màn hình lịch có nút quay lại Phiếu bảo dưỡng – sửa chữa.
+- Trên menu desktop, khi đang ở Lịch bảo dưỡng định kỳ, mục **Bảo dưỡng – Sửa chữa** được đánh dấu đang chọn. Trên menu mobile, bỏ mục lịch định kỳ khỏi danh sách “Thêm”; người dùng mở lịch từ trang Bảo dưỡng – Sửa chữa.
+- Giữ nguyên route nội bộ `tasks`, dữ liệu `tasks`, các handler thêm/sửa/hoàn thành, bộ lọc, xuất Excel và cấu trúc IndexedDB. Không di chuyển hoặc chuyển đổi dữ liệu.
+- Tinh gọn phần đầu trang Bảo dưỡng – Sửa chữa và Lịch bảo dưỡng định kỳ: gom các nút thao tác thành cụm, giảm khoảng cách/padding bảng và bổ sung bố cục nút dọc trên điện thoại.
+- Các commit trên `main`:
+  - App điều hướng và nút chuyển qua lại: `c86412a`
+  - CSS tinh gọn giao diện: `6bc7fb3`
+- Trạng thái: đã cập nhật mã nguồn trực tiếp trên `main`; chưa chạy build và chưa kiểm thử giao diện trên trình duyệt. GitHub Actions cần hoàn tất build/deploy GitHub Pages trước khi kiểm tra thực tế. Không thay đổi Supabase, dữ liệu Cloud hoặc Production.
