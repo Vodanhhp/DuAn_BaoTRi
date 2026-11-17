@@ -53,6 +53,12 @@ create trigger on_auth_user_profile_sync_update
 after update of email, raw_user_meta_data, email_confirmed_at on auth.users
 for each row execute function public.sync_auth_user_profile();
 
+-- Email addresses are returned to Admins by the trusted Edge Function only.
+-- Ordinary members may still read permitted profile fields, but not the email column.
+revoke select on table public.profiles from authenticated;
+grant select (id, display_name, phone, created_at, updated_at)
+  on table public.profiles to authenticated;
+
 drop policy if exists profiles_select_same_org_members on public.profiles;
 create policy profiles_select_same_org_members
 on public.profiles
