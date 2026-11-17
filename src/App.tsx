@@ -1345,7 +1345,7 @@ function OrganizationMembersPanel({client,organizationId}:{client:SupabaseClient
       const result=await callManagement({action:'invite',email:cleanEmail,roleCode})
       setEmail('')
       setMessage(result?.invitationSent
-        ? 'Đã gửi email mời. Tài khoản sẽ hoạt động sau khi người nhận xác nhận email.'
+        ? 'Đã gửi email mời. Người nhận cần xác nhận email và tạo mật khẩu để kích hoạt tài khoản.'
         : 'Đã thêm tài khoản đã xác thực vào tổ chức.')
       await loadMembers()
     } catch(reason) {
