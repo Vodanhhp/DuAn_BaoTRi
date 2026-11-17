@@ -73,6 +73,50 @@ Deno.serve(async (req) => {
   });
 
   try {
+    if (body.action === "list") {
+      const { data: membershipRows, error: membershipError } = await admin
+        .from("organization_members")
+        .select("id,user_id,status,role,created_at")
+        .eq("organization_id", organizationId)
+        .order("created_at", { ascending: true });
+      if (membershipError) return json({ error: membershipError.message }, 400);
+
+      const rows = membershipRows ?? [];
+      const memberIds = rows.map((row: any) => row.id);
+      const userIds = rows.map((row: any) => row.user_id);
+      const [profileResult, assignmentResult, roleResult] = await Promise.all([
+        userIds.length
+          ? admin.from("profiles").select("id,email,display_name").in("id", userIds)
+          : Promise.resolve({ data: [], error: null }),
+        memberIds.length
+          ? admin.from("member_roles").select("member_id,role_id").eq("organization_id", organizationId).in("member_id", memberIds)
+          : Promise.resolve({ data: [], error: null }),
+        admin.from("roles").select("id,code,name").eq("organization_id", organizationId),
+      ]);
+      if (profileResult.error) return json({ error: profileResult.error.message }, 400);
+      if (assignmentResult.error) return json({ error: assignmentResult.error.message }, 400);
+      if (roleResult.error) return json({ error: roleResult.error.message }, 400);
+
+      const profiles = new Map((profileResult.data ?? []).map((item: any) => [item.id, item]));
+      const roles = new Map((roleResult.data ?? []).map((item: any) => [item.id, item]));
+      const assignments = new Map((assignmentResult.data ?? []).map((item: any) => [item.member_id, item.role_id]));
+      const members = rows.map((row: any) => {
+        const profile: any = profiles.get(row.user_id);
+        const role: any = roles.get(assignments.get(row.id));
+        return {
+          id: row.id,
+          userId: row.user_id,
+          email: profile?.email ?? "Không có email",
+          displayName: profile?.display_name ?? "",
+          status: row.status,
+          roleCode: role?.code ?? (row.role === "admin" ? "admin" : "unknown"),
+          roleName: role?.name ?? (row.role === "admin" ? "Admin" : "Chưa gán vai trò"),
+          createdAt: row.created_at,
+        };
+      });
+      return json({ success: true, members });
+    }
+
     if (body.action === "invite") {
       const email = body.email?.trim().toLowerCase();
       const roleCode = body.roleCode;
