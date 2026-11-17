@@ -948,7 +948,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
     </aside>
     <nav className="mobile-nav" aria-label="Điều hướng chính">
       {([['dashboard','Tổng quan',LayoutDashboard],['checklist','Checklist',ClipboardList],['assets','Thiết bị',HardDrive],['planning','Kế hoạch bảo trì',CalendarDays]] as const).map(([key,label,Icon]) =>
-        <button key={key} className={`mobile-nav-item ${page===key || (key==='logs'&&page==='tasks')?'active':''}`} onClick={()=>{setPage(key);setSearch('');setMobileMore(false)}}><Icon size={19}/><span>{label}</span>{key==='planning'&&overdue>0&&<i>{overdue}</i>}</button>
+        <button key={key} className={`mobile-nav-item ${page===key?'active':''}`} onClick={()=>{setPage(key);setSearch('');setMobileMore(false)}}><Icon size={19}/><span>{label}</span>{key==='planning'&&overdue>0&&<i>{overdue}</i>}</button>
       )}
       <button className={`mobile-nav-item ${mobileMore||(['inventory','logs','tasks','reports','settings'] as Page[]).includes(page)?'active':''}`} onClick={()=>setMobileMore(v=>!v)}><MoreHorizontal size={20}/><span>Thêm</span></button>
     </nav>
