@@ -145,6 +145,22 @@ Tài liệu này ghi lại các quyết định kiến trúc và tiến độ th
 - Kết quả sau thực hiện có lựa chọn Đạt/Không đạt và phải xuất hiện trong lịch sử/bản in.
 
 ### Quy ước mã định danh và tự cấp mã
+### Làm rõ ba lớp định danh thiết bị – cập nhật 17/11/2026
+
+Quyết định làm rõ từ buổi thảo luận ngày 17/11/2026; nội dung này bổ sung và ưu tiên áp dụng khi có điểm chưa thống nhất với mô tả mã định danh cũ:
+
+1. **ID nội bộ hệ thống (primary key):** mỗi thiết bị có một UUID duy nhất, do hệ thống tự sinh; bất biến suốt vòng đời, không hiển thị như mã quản lý và không yêu cầu nhân viên nhập. ID này dùng làm khóa chính và liên kết các bảng nghiệp vụ/lịch sử.
+2. **Mã quản lý/mã định danh hiển thị:** là mã theo quy ước riêng của doanh nghiệp, dùng để nhận biết và tra cứu thiết bị trong công việc. Mã có thể theo cấu trúc đã quy định trong tài liệu `QUY_UOC_MA_DINH_DANH_VA_VIET_TAT_THIET_BI.txt` hoặc theo quy ước được Admin chọn khi khởi tạo doanh nghiệp. Không dùng mã hiển thị làm khóa chính database.
+3. **QR Code:** là phương tiện mở đúng hồ sơ thiết bị; có thể cấp lại mà không tạo thiết bị mới hoặc thay đổi ID nội bộ. Nội dung QR phải được thiết kế để tra cứu hồ sơ an toàn, không coi QR là bằng chứng xác thực hay quyền truy cập. Người không có quyền vẫn phải đăng nhập/được phân quyền trước khi xem dữ liệu được bảo vệ.
+
+Quy tắc mã quản lý:
+- Doanh nghiệp chọn một quy ước mã khi khởi tạo; phần mềm hỗ trợ lựa chọn từ đơn giản đến chi tiết. Ví dụ: `TB-001`, `MAY-001`, hoặc cấu trúc theo cơ sở/nhóm như tài liệu quy chuẩn hiện có.
+- Hệ thống tự cấp mã theo quy ước đã chọn; số thứ tự phải được cấp an toàn, không trùng khi có nhiều người cùng tạo thiết bị. Không dựa vào phép đọc số lớn nhất rồi cộng 1 ở frontend.
+- Mã quản lý phải duy nhất trong phạm vi doanh nghiệp theo chính sách đã chọn. Nếu mã có thành phần cơ sở/nhóm, cần quy định rõ cách xử lý khi chuyển cơ sở hoặc đổi nhóm; không tự ý đổi mã lịch sử.
+- Mã cũ được giữ trong lịch sử/alias khi chuyển đổi; mọi đổi mã phải có kiểm tra trùng, lưu dấu vết ai đổi/khi nào/vì sao và bảo toàn toàn bộ liên kết bằng ID nội bộ.
+- Cấu trúc mã cũ `ABC-ABXY-xxx-BB-MM-YY` và hậu tố `*` cho thiết bị chuyển cơ sở là quy ước mã hiển thị, không phải ID nội bộ. Cần đối chiếu tài liệu quy chuẩn hiện hành trước khi thay đổi cách cấp mã.
+- Chưa triển khai thay đổi schema hoặc code cho phần làm rõ này.
+
 - Cấu trúc mã: `ABC-ABXY-xxx-BB-MM-YY`; xxx tối thiểu 3 chữ số và tự tăng, không giới hạn độ dài.
 - Thiết bị chuyển từ cơ sở khác đến: đổi ABXY theo cơ sở tiếp nhận và thêm một dấu `*` ở cuối mã.
 - Tài liệu quy chuẩn viết tắt: `QUY_UOC_MA_DINH_DANH_VA_VIET_TAT_THIET_BI.txt`.
@@ -1039,3 +1055,70 @@ Người dùng xác nhận đồng ý đưa cả dữ liệu thử nghiệm đan
 - Chưa đổi cấu hình Pages Source trong Settings; người dùng cần chọn GitHub Actions sau khi workflow có mặt. Chưa xác nhận workflow đã chạy thành công hoặc trang đã hoạt động.
 - Bước kế tiếp: vào Settings > Pages, đổi Build and deployment Source sang GitHub Actions; sau đó vào Settings > Secrets and variables > Actions, thêm hai secrets nêu trên với URL và publishable/anon key của project BAOTRI-Mini-Test. Tuyệt đối không dùng service-role key. Kiểm tra Actions run trước khi mở lại site.
 - Không thay đổi DNS, Supabase schema/Auth users, Production project hoặc dữ liệu nghiệp vụ. Dữ liệu nghiệp vụ vẫn local IndexedDB, chưa đồng bộ cloud.
+
+
+## 17/11/2026 – Chốt nguyên tắc xây dựng hệ thống bảo mật BAOTRI Mini (ghi nhận thiết kế, chưa triển khai đầy đủ)
+
+### 1. Mục tiêu và mô hình bảo mật
+- Bảo vệ dữ liệu thiết bị, vật tư, công việc, Checklist, ảnh/tài liệu và thông tin tài khoản; ngăn người chưa đăng nhập, tài khoản bị khóa hoặc người thuộc doanh nghiệp khác truy cập trái phép.
+- Áp dụng bảo mật nhiều lớp: xác thực danh tính, phân quyền nghiệp vụ, cô lập dữ liệu ở database, bảo vệ API/Storage, quản lý phiên đăng nhập, nhật ký kiểm toán, backup/khôi phục và kiểm thử bảo mật.
+- Kiến trúc thương mại đã định hướng: một bộ mã nguồn dùng chung; mỗi doanh nghiệp khách hàng có **Supabase Project riêng** (Database, Auth, Storage riêng), định tuyến bằng subdomain doanh nghiệp. Không dùng chung một Supabase Project để chứa dữ liệu của nhiều khách hàng ở mô hình thương mại cuối cùng.
+- Project Test hiện tại chỉ phục vụ phát triển/kiểm thử; Production tách biệt. Không đưa dữ liệu/secret của Production vào Test và không chạy migration thử nghiệm trên Production.
+- Trong từng project doanh nghiệp, vẫn dùng organization/membership và RLS phù hợp để kiểm soát phạm vi dữ liệu, đồng thời bảo vệ trước lỗi truy vấn hoặc cấu hình ứng dụng. Việc mỗi doanh nghiệp có project riêng không phải lý do để bỏ qua RLS.
+
+### 2. Xác thực và vòng đời tài khoản
+- Supabase Auth là nguồn xác thực email/mật khẩu và quản lý session; không tự xây cơ chế lưu mật khẩu riêng. Không bao giờ lưu mật khẩu dạng rõ trong profile hoặc bảng nghiệp vụ.
+- Admin quản lý tài khoản ngay trong giao diện BAOTRI; thao tác tạo/invite, đổi vai trò, khóa/mở khóa, thu hồi quyền và reset mật khẩu phải đi qua backend an toàn. Không đưa Supabase service-role key/secret vào frontend, file cấu hình public, GitHub hoặc log.
+- Tạo Admin đầu tiên theo quy trình khởi tạo do nhà cung cấp kiểm soát: chỉ email đã được ủy quyền nhận liên kết có hạn dùng, dùng một lần và xác thực đúng email; không cho người ngoài tự đăng ký rồi nhận quyền Admin.
+- Hỗ trợ Admin dự phòng; không để dữ liệu/doanh nghiệp phụ thuộc duy nhất vào một tài khoản cá nhân. Quy trình đổi email, chuyển quyền Admin hoặc khôi phục quyền phải xác minh người đại diện và ghi audit log.
+- Khi nhân viên nghỉ việc/không còn nhiệm vụ: khóa hoặc thu hồi membership/quyền ngay ở backend/database, thu hồi phiên/token phù hợp; không chỉ ẩn nút trên giao diện.
+- Cân nhắc MFA cho tài khoản Admin và các thao tác nhạy cảm; chính sách bắt buộc hay tùy chọn sẽ chốt trước khi triển khai chức năng tài khoản thương mại.
+
+### 3. Phân quyền và kiểm soát dữ liệu
+- Vai trò nghiệp vụ ban đầu: Admin, Kỹ thuật viên, Người xem. Quyền phải được kiểm tra ở database/backend cho từng thao tác; frontend chỉ phản ánh quyền, không phải lớp bảo mật cuối cùng.
+- Mọi bảng nghiệp vụ phải có phạm vi tổ chức phù hợp; RLS mặc định từ chối nếu không có membership active/đúng tổ chức. Truy vấn và quan hệ khóa ngoại phải ngăn tham chiếu chéo organization.
+- Quyền Admin chỉ cấp qua quy trình bootstrap/invitation được kiểm soát. Không cho client tự ghi role, organization_id, performed_by_user_id hoặc trường kiểm soát quyền.
+- Danh tính người tạo/thực hiện phiếu phải lấy từ session đã xác thực ở backend/database; không cho người dùng giả danh người khác. Lưu user ID và snapshot tên người thực hiện tại thời điểm phát sinh để bảo toàn lịch sử.
+- Các thao tác nhạy cảm như xóa vĩnh viễn, thay đổi quyền, sửa cấu hình mã, sửa/khóa tài khoản và điều chỉnh tồn kho cần xác nhận, kiểm tra quyền phía server và lưu lịch sử.
+- Các phép ghi cần tính nhất quán (ví dụ nhập/xuất/điều chỉnh kho, cấp số mã duy nhất) phải dùng RPC/transaction hoặc backend an toàn; không để client tự cập nhật số tồn hay tự cấp số thứ tự bằng cách đọc rồi cộng 1.
+
+### 4. API, khóa bí mật và Storage
+- Frontend chỉ được dùng publishable/anon key; key này không thay thế RLS. Service-role key và mọi secret chỉ được giữ ở môi trường server/secret manager có quyền truy cập giới hạn.
+- Không commit `.env`, token, mật khẩu, private key hoặc dữ liệu cá nhân thật vào repository. Cấu hình Test/Production phải tách riêng; rà soát GitHub Actions secrets và quyền workflow.
+- Ảnh/tài liệu thiết bị lưu trong bucket private; đọc/tải qua session và policy đúng tổ chức, hoặc signed URL thời hạn ngắn. Không dùng bucket public cho hồ sơ nội bộ nếu không có quyết định riêng.
+- Kiểm tra loại file, dung lượng, tên file và quyền upload/download; không tin MIME type hoặc đường dẫn do client tự khai báo.
+- Validate dữ liệu ở backend/database; chống SQL injection bằng truy vấn có tham số/RPC an toàn; kiểm soát CORS, HTTPS, security headers và chính sách CSP phù hợp khi triển khai web.
+- Giới hạn tốc độ/giám sát các luồng đăng nhập, gửi lời mời, reset mật khẩu và các thao tác có nguy cơ bị lạm dụng; không ghi mật khẩu, token hoặc dữ liệu bí mật vào log.
+
+### 5. Nhật ký, backup và ứng phó sự cố
+- Có audit log cho các sự kiện quan trọng: đăng nhập/đăng xuất và thay đổi bảo mật khi nền tảng hỗ trợ; tạo/khóa tài khoản; thay đổi vai trò; thay đổi cấu hình doanh nghiệp/mã thiết bị; xóa/khôi phục dữ liệu; thao tác kho và các thao tác quản trị.
+- Audit log ghi actor, hành động, đối tượng, thời điểm, kết quả và thông tin cần thiết để truy vết; hạn chế quyền sửa/xóa log. Không ghi password, access token hoặc secret.
+- Có lịch backup database và Storage; quy định thời gian lưu, quyền truy cập bản backup, mã hóa và quy trình khôi phục. Phải kiểm thử restore định kỳ, không chỉ kiểm tra backup đã tạo.
+- Có quy trình xử lý sự cố: khóa tài khoản/phiên bị nghi lộ, thu hồi/đổi secret, xác định phạm vi dữ liệu bị ảnh hưởng, khôi phục từ backup và ghi nhận sự kiện.
+
+### 6. Kiểm thử bảo mật bắt buộc trước khi đưa vào sử dụng thật
+- Kiểm tra chưa đăng nhập không thể đọc/ghi dữ liệu nghiệp vụ.
+- Kiểm tra User bị khóa hoặc membership inactive không thể tiếp tục truy cập qua API.
+- Kiểm tra Kỹ thuật viên/Người xem không thể thực hiện thao tác vượt quyền dù gọi API trực tiếp, bỏ qua giao diện.
+- Kiểm tra không thể sửa organization_id, role, created_by/performed_by hoặc đọc/ghi hồ sơ của tổ chức khác.
+- Kiểm tra Storage private: user không có quyền không thể xem/tải ảnh/tài liệu bằng URL đoán được hoặc URL cũ đã hết hạn.
+- Kiểm tra cấp mã đồng thời không trùng; thao tác kho đồng thời không làm sai số tồn; lịch sử Checklist và nhật ký không bị sửa/xóa trái phép.
+- Kiểm tra reset mật khẩu/invitation dùng đúng email, có hạn dùng, không dùng lại được; kiểm tra Admin dự phòng và quy trình thu hồi quyền.
+- Kiểm tra backup/restore trên môi trường Test và đối chiếu số lượng, quan hệ dữ liệu, ảnh/tài liệu sau khôi phục.
+- Tạo các ca kiểm thử âm tính và kiểm thử qua API với ít nhất hai danh tính/nhóm quyền; khi có môi trường doanh nghiệp thử nghiệm, kiểm tra cách ly giữa hai project/subdomain khác nhau.
+
+### 7. Trạng thái bảo mật thực tế tại thời điểm ghi nhận
+- Đã có Supabase Auth frontend, đọc membership/organization bằng session người dùng và Migration 001/002 trên project Test; RLS đã bật trên 11/11 bảng nghiệp vụ theo xác nhận của người dùng.
+- Đã có phép thử ghi/đọc một thiết bị thử qua API trong code, nhưng chưa có kết quả runtime xác nhận người dùng đã chạy thành công.
+- Chưa đủ bằng chứng kiểm thử RLS runtime đầy đủ cho các vai trò; chưa kiểm thử cách ly giữa hai tổ chức hoặc hai doanh nghiệp; chưa triển khai hoàn chỉnh quản lý User/Admin, MFA, audit log, Storage private, backup/restore định kỳ, RPC kho và quy trình sự cố.
+- Dữ liệu nghiệp vụ hiện vẫn chưa được đồng bộ/import đầy đủ từ IndexedDB lên cloud. Không được quảng bá BAOTRI Mini là đã hoàn thiện/bảo đảm an toàn bảo mật trước khi hoàn tất các bài kiểm thử nêu trên.
+- Nội dung trong mục này là **nguyên tắc/đặc tả bảo mật cần thực hiện**, không phải xác nhận các chức năng đã được code hoặc kiểm thử.
+
+### 8. Thứ tự triển khai đề xuất
+1. Hoàn tất kiểm tra Auth, membership và RLS qua API với danh tính thực; kiểm tra negative cases và quyền từng vai trò.
+2. Hoàn thiện bootstrap/invitation và quản lý vòng đời tài khoản an toàn.
+3. Hoàn thiện các RPC/transaction cho cấp mã và nghiệp vụ kho; kiểm tra quyền ở database.
+4. Thiết lập Storage private và policy cho ảnh/tài liệu.
+5. Xây audit log, backup/restore và quy trình khôi phục.
+6. Thực hiện kiểm thử bảo mật tổng thể trên Test trước khi xem xét triển khai Production.
+
