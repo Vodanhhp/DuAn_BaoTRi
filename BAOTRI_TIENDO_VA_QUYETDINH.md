@@ -1240,3 +1240,5 @@ Người dùng xác nhận đồng ý đưa cả dữ liệu thử nghiệm đan
 3. Chạy smoke test với UUID tài khoản Admin Test và lưu kết quả.
 4. Thiết kế Migration 004 để chuyển các policy nghiệp vụ từ kiểm tra membership rộng sang `has_org_permission` theo ma trận quyền; bổ sung test âm tính cho Admin/Kỹ thuật viên/Người xem.
 5. Sau khi RLS granular đạt kiểm thử, xây Edge Functions quản lý User/Role và giao diện Admin.
+
+- Đã sửa smoke test để kiểm tra placeholder UUID trước khi ép kiểu UUID; commit sửa test: `a7dcfb7d53d3f928751327e8c63b558cb44dcbdc`. Đã fetch lại xác nhận migration 003 và file tiến độ tồn tại trên `main`; chưa chạy SQL trên Supabase.
