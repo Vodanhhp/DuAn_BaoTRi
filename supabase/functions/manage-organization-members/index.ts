@@ -179,6 +179,59 @@ Deno.serve(async (req) => {
       });
     }
 
+    if (body.action === "reset_password") {
+      if (!body.memberId) return json({ error: "member_id_required" }, 400);
+
+      const { data: membership, error: membershipError } = await admin
+        .from("organization_members")
+        .select("id,user_id,status,role")
+        .eq("organization_id", organizationId)
+        .eq("id", body.memberId)
+        .maybeSingle();
+      if (membershipError) return json({ error: membershipError.message }, 400);
+      if (!membership) return json({ error: "member_not_found" }, 404);
+      if (membership.status === "invited") {
+        return json({ error: "email_confirmation_pending" }, 409);
+      }
+
+      const { data: roleAssignments, error: assignmentError } = await admin
+        .from("member_roles")
+        .select("role_id")
+        .eq("organization_id", organizationId)
+        .eq("member_id", membership.id);
+      if (assignmentError) return json({ error: assignmentError.message }, 400);
+      const roleIds = (roleAssignments ?? []).map((item: any) => item.role_id);
+      const { data: assignedRoles, error: rolesError } = roleIds.length
+        ? await admin.from("roles").select("code").eq("organization_id", organizationId).in("id", roleIds)
+        : { data: [], error: null };
+      if (rolesError) return json({ error: rolesError.message }, 400);
+
+      const roleCodes = (assignedRoles ?? []).map((item: any) => item.code);
+      if (membership.role === "admin" || roleCodes.includes("admin")) {
+        return json({ error: "admin_password_reset_not_allowed" }, 403);
+      }
+      if (!roleCodes.some((code: string) => code === "technician" || code === "viewer")) {
+        return json({ error: "member_role_not_supported" }, 409);
+      }
+
+      const { data: targetResult, error: targetError } = await admin.auth.admin.getUserById(membership.user_id);
+      if (targetError || !targetResult.user?.email) {
+        return json({ error: targetError?.message ?? "member_email_not_found" }, 404);
+      }
+      if (!targetResult.user.email_confirmed_at) {
+        return json({ error: "email_confirmation_pending" }, 409);
+      }
+
+      const appBaseUrl = Deno.env.get("APP_BASE_URL");
+      const { error: resetError } = await admin.auth.resetPasswordForEmail(
+        targetResult.user.email,
+        appBaseUrl ? { redirectTo: appBaseUrl } : undefined,
+      );
+      if (resetError) return json({ error: resetError.message }, 400);
+
+      return json({ success: true, emailSent: true });
+    }
+
     if (body.action === "update_role") {
       if (!body.memberId || (body.roleCode !== "technician" && body.roleCode !== "viewer")) {
         return json({ error: "invalid_role_change" }, 400);
