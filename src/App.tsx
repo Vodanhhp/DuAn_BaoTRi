@@ -1380,6 +1380,23 @@ function OrganizationMembersPanel({client,organizationId}:{client:SupabaseClient
     finally {setBusyMember('')}
   }
 
+  const removeMember=async(member:OrganizationMemberView)=>{
+    if(member.roleCode!=='technician'&&member.roleCode!=='viewer')return
+    const confirmed=confirm(
+      'XÓA '+member.email+' KHỎI TỔ CHỨC?\\n\\nNgười này sẽ mất quyền truy cập BAOTRI Mini của công ty. Tài khoản đăng nhập Supabase và hồ sơ Auth vẫn được giữ; dữ liệu nghiệp vụ/lịch sử hiện có không bị xóa. Thao tác gỡ thành viên không thể tự hoàn tác; muốn thêm lại phải mời/thêm lại tài khoản.'
+    )
+    if(!confirmed)return
+    setBusyMember(member.id);setError('');setMessage('')
+    try {
+      await callManagement({action:'remove_member',memberId:member.id})
+      setMessage('Đã xóa '+member.email+' khỏi tổ chức. Tài khoản Supabase và hồ sơ đăng nhập vẫn được giữ; người này không còn membership để truy cập tổ chức.')
+      await loadMembers()
+    } catch(reason) {
+      const raw=reason instanceof Error?reason.message:String(reason)
+      setError(raw.includes('cannot_remove_self')?'Không thể tự xóa tài khoản đang đăng nhập.':raw.includes('cannot_remove_admin_member')?'Không thể xóa tài khoản Admin.':raw.includes('member_not_found')?'Không tìm thấy thành viên trong tổ chức.':raw)
+    } finally {setBusyMember('')}
+  }
+
   const resetPassword=async(member:OrganizationMemberView)=>{
     if(member.roleCode!=='technician'&&member.roleCode!=='viewer')return
     if(!confirm('Gửi email đặt lại mật khẩu đến '+member.email+'? Người dùng sẽ tự tạo mật khẩu mới qua liên kết trong email.'))return
@@ -1409,7 +1426,7 @@ function OrganizationMembersPanel({client,organizationId}:{client:SupabaseClient
         <td><b>{member.displayName||member.email}</b>{member.displayName&&<small>{member.email}</small>}</td>
         <td>{member.roleCode==='admin'?<span className="status green">Admin</span>:member.roleCode==='unknown'?member.roleName:<select aria-label={'Vai trò '+member.email} value={member.roleCode} disabled={busyMember===member.id||member.roleCode==='unknown'} onChange={event=>void changeRole(member,event.target.value)}><option value="technician">Kỹ thuật viên</option><option value="viewer">Người xem</option></select>}</td>
         <td><span className={'status '+(member.status==='active'?'green':member.status==='invited'?'orange':'gray')}>{member.status==='active'?'Đang hoạt động':member.status==='invited'?'Chờ xác nhận email':'Đã tạm khóa'}</span></td>
-        <td>{member.roleCode==='admin'?<small className="muted">Không quản lý Admin tại đây</small>:member.status==='invited'?<small className="muted">Chờ kích hoạt</small>:<div className="member-row-actions">{(member.roleCode==='technician'||member.roleCode==='viewer')&&<button type="button" className="text-btn" disabled={busyMember===member.id} onClick={()=>void resetPassword(member)}>Reset mật khẩu</button>}{member.roleCode!=='unknown'&&<button type="button" className={member.status==='active'?'text-btn danger':'text-btn success-text'} disabled={busyMember===member.id} onClick={()=>void changeStatus(member)}>{member.status==='active'?'Tạm khóa':'Mở lại'}</button>}</div>}</td>
+        <td>{member.roleCode==='admin'?<small className="muted">Không quản lý Admin tại đây</small>:<div className="member-row-actions">{(member.roleCode==='technician'||member.roleCode==='viewer')&&member.status!=='invited'&&<button type="button" className="text-btn" disabled={busyMember===member.id} onClick={()=>void resetPassword(member)}>Reset mật khẩu</button>}{member.roleCode!=='unknown'&&member.status!=='invited'&&<button type="button" className={member.status==='active'?'text-btn danger':'text-btn success-text'} disabled={busyMember===member.id} onClick={()=>void changeStatus(member)}>{member.status==='active'?'Tạm khóa':'Mở lại'}</button>}{(member.roleCode==='technician'||member.roleCode==='viewer')&&<button type="button" className="text-btn danger" disabled={busyMember===member.id} onClick={()=>void removeMember(member)}>Xóa khỏi tổ chức</button>}</div>}</td>
       </tr>)}
       {members.length===0&&<tr><td colSpan={4}>Chưa có thành viên.</td></tr>}
     </tbody></table></div>}
