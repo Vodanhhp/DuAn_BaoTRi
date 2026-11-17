@@ -1539,3 +1539,22 @@ Trạng thái:
 - Nút xuất kế hoạch Excel trong hộp thoại cũng bị khóa; các nút kho, sao lưu, khôi phục, xuất Excel và thao tác nghiệp vụ khác dùng trạng thái `isViewer` sau khi vai trò được xác định đúng.
 - Commit sửa vai trò: `30637a0`; commit hiển thị nút Checklist disabled: `7ec8754`.
 - Trạng thái: đã rà soát mã nguồn sau commit. Chưa chạy build và chưa kiểm thử trên trình duyệt thực tế; cần pull/build và đăng nhập đúng tài khoản được gán role Viewer để xác nhận.
+
+
+## Xây dựng phân hệ Quản lý tài khoản trong ứng dụng – 17/11/2026
+
+- Người dùng xác nhận ba tài khoản thử nghiệm hiện có đã hoạt động đúng vai trò Admin, Technician và Viewer; yêu cầu tiếp theo là Admin có thể thêm tài khoản Technician/Viewer ngay trong BAOTRI Mini.
+- Phạm vi đợt đầu:
+  - Bổ sung khu vực **Quản lý tài khoản** trong Cài đặt, chỉ Admin được truy cập.
+  - Admin nhập email và chọn vai trò Kỹ thuật viên hoặc Người xem; không cho tạo thêm Admin từ giao diện.
+  - Nếu email chưa có tài khoản trong Supabase Project: gửi email mời, người nhận tự xác thực và thiết lập mật khẩu. Membership ở trạng thái `invited`, chỉ chuyển `active` sau khi xác nhận email.
+  - Nếu email đã có Auth user hợp lệ trong chính Supabase Project nhưng chưa là thành viên tổ chức: thêm vào tổ chức với vai trò đã chọn.
+  - Hiển thị email, vai trò và trạng thái; Admin được đổi giữa Technician/Viewer, tạm khóa và mở lại thành viên. Không xóa Auth user hoặc dữ liệu lịch sử; không cho quản lý/đổi vai trò Admin khác hoặc tự khóa tài khoản Admin đang đăng nhập.
+  - Technician và Viewer không nhìn thấy khu vực quản lý và mọi thao tác backend phải kiểm tra quyền `users.manage`.
+- Ranh giới bảo mật:
+  - Không đưa `service_role` key vào frontend. Mọi thao tác Auth Admin chạy trong Supabase Edge Function, xác thực JWT người gọi và kiểm tra `has_org_permission(organization_id, 'users.manage')`.
+  - Các thao tác ghi membership/role/status chạy qua RPC nội bộ chỉ cấp EXECUTE cho `service_role`; role code được giới hạn `technician` hoặc `viewer`.
+  - Bổ sung email vào `profiles` để Admin xem danh sách thành viên cùng tổ chức; RLS chỉ cho thành viên active cùng tổ chức xem hồ sơ thành viên trong tổ chức.
+  - Khi người nhận xác thực email mời, trigger chuyển membership `invited` thành `active`. Khóa thành viên bằng `status='suspended'`, không xóa dữ liệu.
+- Phạm vi môi trường: chỉ xây và kiểm thử trên BAOTRI-Mini-Test. Không thay đổi Production, không tác động ba tài khoản thử nghiệm hiện có, không chuyển dữ liệu Local lên Cloud.
+- Trạng thái: đã chốt hướng triển khai; chưa tạo migration, Edge Function hoặc giao diện cho đến khi các phần được triển khai và kiểm thử riêng.
