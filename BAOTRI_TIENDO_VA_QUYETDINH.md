@@ -1676,3 +1676,13 @@ Trạng thái:
 - Giữ nguyên logic camera QR, xử lý mã/ID thủ công, kiểm tra đúng thiết bị Checklist và thông báo lỗi; không thay đổi dữ liệu hoặc backend.
 - Commit trên `main`: giao diện `745a048259e4ba1f836d11328c3a71eb4de43a4a`; CSS responsive `10370bbe64306e059815e9cd4363f8acf1c720d7`.
 - **Trạng thái:** đã cập nhật mã nguồn trên `main`; CHƯA chạy build và CHƯA kiểm tra thực tế trên điện thoại. Cần chờ GitHub Actions deploy, sau đó mở giao diện quét QR trên điện thoại để nghiệm thu kích thước.
+
+
+
+## Điều chỉnh lần 2 kích thước ô nhập mã QR trên mobile – 18/11/2026
+
+- Người dùng phản ánh ô nhập mã thủ công vẫn quá nhỏ so với nút Tìm thiết bị trên điện thoại.
+- Trong `src/style.css`, bổ sung quy tắc mobile có độ ưu tiên rõ ràng: vùng nhập chuyển thành lưới một cột; ô input chiếm 100% chiều ngang, khóa chiều cao 68px, cỡ chữ 18px, bỏ flex co giãn gây sai kích thước. Nút tìm thiết bị giữ chiều cao tối thiểu 54px.
+- Chỉ thay đổi trình bày responsive của ô nhập mã QR; không thay đổi logic quét camera, tra cứu mã thiết bị, Checklist hoặc dữ liệu.
+- Commit trên `main`: `296f9e9a411baa38c65c976dd1177faa72e02bb6`.
+- Chưa xác nhận GitHub Actions build/deploy và chưa nghiệm thu trực tiếp trên điện thoại.
