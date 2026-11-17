@@ -1505,3 +1505,18 @@ Trạng thái:
 - Đã sửa `src/CloudAssetsPanel.tsx`: kiểm tra quyền `settings.manage` trực tiếp qua RPC `has_org_permission`; ẩn nút và biểu mẫu khi không có quyền; chặn thêm ở hàm lưu cấu hình. Quyền ghi cuối cùng vẫn do RLS Supabase bảo vệ.
 - Commit: `48402b2ae9c75387eb2877b8703b3c57963d1e58` trên nhánh `main`.
 - Chưa chạy build hoặc kiểm thử bằng tài khoản Viewer/Admin sau thay đổi. Cần pull, build, đăng nhập Viewer xác nhận không còn nút cấu hình; đăng nhập Admin xác nhận nút và thao tác lưu vẫn hoạt động.
+
+
+### Quy tắc Viewer chỉ xem trên toàn bộ ứng dụng – thống nhất 17/11/2026
+- Người dùng xác nhận: vai trò Viewer chỉ được xem, không được thực hiện thao tác thay đổi dữ liệu hoặc nghiệp vụ trên toàn bộ ứng dụng, áp dụng cả khu vực dữ liệu Local và Cloud.
+- Các thao tác Viewer phải bị vô hiệu hóa và hiển thị mờ/disabled, không chỉ ẩn nút:
+  - Thực hiện Checklist và tạo phiếu kết quả.
+  - Xuất Excel.
+  - Thêm, sửa, xóa vật tư; nhập, xuất và điều chỉnh kho.
+  - Sao lưu dữ liệu.
+  - Thêm, sửa, xóa hoặc thay đổi dữ liệu nghiệp vụ ở mọi phân hệ Local.
+  - Các thao tác ghi tương ứng ở Cloud.
+- Viewer vẫn được xem danh sách, chi tiết, lịch sử, Checklist đã có và báo cáo theo quyền xem.
+- Admin và Technician tiếp tục sử dụng chức năng theo quyền hiện hành; không khóa chung các vai trò này.
+- Đây là quy tắc phân quyền giao diện và nghiệp vụ cần triển khai đồng bộ. Không được coi việc làm mờ nút là lớp bảo mật duy nhất: các thao tác ghi Cloud vẫn phải bị RLS/RPC kiểm soát ở Supabase. Với Local, cần chặn cả handler/luồng ghi, không chỉ CSS hoặc disabled nút.
+- Trạng thái: đã thống nhất yêu cầu, chưa triển khai code và chưa kiểm thử.
