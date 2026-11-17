@@ -138,8 +138,8 @@ Deno.serve(async (req) => {
         }
       } else {
         const appBaseUrl = Deno.env.get("APP_BASE_URL");
-        const inviteOptions: { data: Record<string, string>; redirectTo?: string } = {
-          data: { display_name: email.split("@")[0] },
+        const inviteOptions: { data: Record<string, unknown>; redirectTo?: string } = {
+          data: { display_name: email.split("@")[0], must_set_password: true },
         };
         if (appBaseUrl) inviteOptions.redirectTo = appBaseUrl;
         const { data, error } = await admin.auth.admin.inviteUserByEmail(email, inviteOptions);
