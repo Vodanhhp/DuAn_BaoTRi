@@ -2213,16 +2213,36 @@ function ScanModal({close,assets,openAsset,expectedAssetId}:any){
     },()=>{})
     return ()=>{scanner.clear().catch(()=>{})}
   },[])
-  return <Modal title="Quét mã QR thiết bị" close={close}>
-    <div id="qr-reader" className="qr-reader"/>
-    <p className="muted">Cho phép trình duyệt truy cập camera để quét QR. Nếu mã QR bị hỏng, thiếu sáng hoặc không thể dán trên thiết bị, bạn có thể nhập mã thiết bị thủ công bên dưới.</p>
-    <form className="form-grid" onSubmit={submitManual}>
-      <Field label="Nhập mã thiết bị hoặc ID thiết bị">
-        <input value={manualCode} onChange={event=>setManualCode(event.target.value)} placeholder="Ví dụ: MNA-HP01-001-01-06-26" autoComplete="off"/>
-      </Field>
-      <div className="modal-actions"><button type="submit" className="primary-btn">Tìm thiết bị</button></div>
-    </form>
-    {result&&<p role="status" className="form-hint">Kết quả: {result}</p>}
+  return <Modal title="Truy cập thiết bị" close={close}>
+    <div className="scan-modal">
+      <div className="scan-intro">
+        <div className="scan-intro-icon"><QrCode size={27}/></div>
+        <div className="scan-intro-copy">
+          <span className="scan-eyebrow">BAOTRI MINI · NHẬN DIỆN THIẾT BỊ</span>
+          <h3>Quét mã QR để mở hồ sơ</h3>
+          <p>Đưa camera về phía tem QR trên thiết bị. Bạn cũng có thể tìm bằng mã thiết bị nếu không quét được.</p>
+        </div>
+      </div>
+      <section className="scan-camera-card">
+        <div className="scan-section-heading">
+          <span><QrCode size={16}/> Quét bằng camera</span>
+          <small>Giữ mã QR trong khung hình</small>
+        </div>
+        <div id="qr-reader" className="qr-reader"/>
+        <div className="scan-camera-note"><span className="scan-camera-dot"/> Cấp quyền camera khi trình duyệt yêu cầu để bắt đầu quét</div>
+      </section>
+      <div className="scan-divider"><span>HOẶC NHẬP MÃ THỦ CÔNG</span></div>
+      <form className="scan-manual-form" onSubmit={submitManual}>
+        <label className="scan-manual-label" htmlFor="scan-manual-code">Mã thiết bị</label>
+        <div className="scan-manual-control">
+          <input id="scan-manual-code" value={manualCode} onChange={event=>setManualCode(event.target.value)} placeholder="Nhập mã hoặc ID thiết bị..." autoComplete="off"/>
+          <button type="submit" className="primary-btn"><Search size={16}/> Tìm thiết bị</button>
+        </div>
+        <p className="scan-manual-help">Dùng cách này khi tem QR bị hỏng, thiếu sáng, quá nhỏ hoặc không thể dán lên thiết bị.</p>
+      </form>
+      {result&&<div role="status" className="scan-error"><span>!</span>{result}</div>}
+      {expectedAssetId&&<div className="scan-checklist-note">Lưu ý: Chỉ thiết bị được giao trong công việc Checklist hiện tại mới được mở.</div>}
+    </div>
   </Modal>
 }
 
