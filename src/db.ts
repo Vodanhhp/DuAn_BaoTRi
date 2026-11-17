@@ -90,7 +90,7 @@ export interface MaintenancePlan {
 }
 export interface Log {
   id: string; assetId: string; taskId?: string; checklistResultId?: string; date: string; kind: string
-  description: string; parts: string; readings: string; result?: 'Đạt' | 'Không đạt' | ''; completedAt?: string; performedBy: string
+  description: string; parts: string; readings: string; requestedBy?: string; result?: 'Đạt' | 'Không đạt' | ''; completedAt?: string; performedBy: string
 }
 export interface Movement {
   id: string; itemId: string; date: string; type: 'Nhập' | 'Xuất' | 'Điều chỉnh'
