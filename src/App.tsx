@@ -241,6 +241,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
   organizationRole: string
   cloudClient: SupabaseClient
 }) {
+  const isViewer = organizationRole.trim().toLowerCase() === 'viewer'
   const [page, setPage] = useState<Page>('dashboard')
   const [showCloudAssets, setShowCloudAssets] = useState(false)
   const [search, setSearch] = useState('')
@@ -545,7 +546,13 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
   const lowStock = inventory.filter(i => i.quantity <= i.minQuantity)
 
   const flash = (s: string) => { setNotice(s); setTimeout(() => setNotice(''), 2800) }
+  const blockViewer = (action: string) => {
+    if (!isViewer) return false
+    flash(`Tài khoản Viewer chỉ có quyền xem, không được phép ${action}.`)
+    return true
+  }
   const addAssetCategory = (groupName: string, itemName: string, code: string, existingGroup = false) => {
+    if (blockViewer('thay đổi danh mục thiết bị')) return false
     const cleanGroup = groupName.trim()
     const cleanName = itemName.trim()
     const cleanCode = code.trim().toUpperCase()
@@ -589,6 +596,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
   }
 
   const saveAsset = async (a: Asset) => {
+    if (blockViewer('thêm hoặc sửa thiết bị')) return
     const isNew = !a.code
     if (isNew && !getAssetCategoryCodes(customAssetCategories)[a.category]) {
       alert('Bạn cần chọn một nhóm thiết bị hợp lệ để hệ thống cấp mã định danh.')
@@ -621,14 +629,17 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
     }
   }
   const saveItem = async (i: InventoryItem) => {
+    if (blockViewer('thêm hoặc sửa vật tư')) return
     const value = { ...i, updatedAt: now() }
     await db.inventory.put(value); await queueChange('inventory', value.id); setModal(null); setEditingItem(null); flash('Đã lưu vật tư')
   }
   const saveTask = async (t: Task) => {
+    if (blockViewer('thêm hoặc sửa công việc')) return
     const value = { ...t, updatedAt: now() }
     await db.tasks.put(value); await queueChange('tasks', value.id); setModal(null); setEditingTask(null); flash('Đã lưu công việc')
   }
   const saveMaintenancePlans = async (plans: MaintenancePlan[]) => {
+    if (blockViewer('thêm hoặc sửa kế hoạch bảo trì')) return
     if (plans.some(plan => plan.startDate > plan.endDate)) {
       alert('Ngày kết thúc phải bằng hoặc sau ngày bắt đầu.')
       return
@@ -643,12 +654,14 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
     flash(values.length > 1 ? `Đã lưu kế hoạch cho ${values.length} thiết bị` : 'Đã lưu kế hoạch bảo trì')
   }
   const deleteMaintenancePlan = async (plan: MaintenancePlan) => {
+    if (blockViewer('xóa kế hoạch bảo trì')) return
     if (!confirm(`Xóa kế hoạch “${plan.title}”?`)) return
     await db.maintenancePlans.delete(plan.id)
     await queueChange('maintenancePlans', plan.id, 'delete')
     flash('Đã xóa kế hoạch bảo trì')
   }
   const saveLog = async (entry: Log) => {
+    if (blockViewer('tạo hoặc cập nhật phiếu bảo dưỡng – sửa chữa')) return
     const existing = await db.logs.get(entry.id)
     const completedAt = entry.result ? entry.completedAt || existing?.completedAt || now() : undefined
     const value: Log = { ...entry, performedBy: entry.performedBy.trim() || userName, result: entry.result || '', completedAt }
@@ -657,6 +670,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
     flash(value.result ? 'Đã lưu phiếu hoàn thành' : 'Đã lưu phiếu, đang chờ kết quả')
   }
   const createRepairFromChecklist = (entry: ChecklistResult) => {
+    if (blockViewer('tạo phiếu sửa chữa từ Checklist')) return
     const failedItems = entry.items.filter(item => item.answer === 'Không đạt' || item.answer === 'Không')
     const description = `Phát hiện từ Checklist ${entry.templateTitle} · phiên bản ${entry.templateVersion} · ${new Date(entry.performedAt).toLocaleString('vi-VN')}\n` +
       failedItems.map((item, index) => `${index + 1}. ${item.label}${item.note ? ` — ${item.note}` : ''}`).join('\n')
@@ -664,6 +678,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
     setDetailAsset(null); setChecklistAccess(false); setModal('log')
   }
   const completeTask = async (t: Task) => {
+    if (blockViewer('ghi nhận hoàn thành công việc')) return
     const completedAt = now()
     const completed = { ...t, status: 'Hoàn thành' as const, completedAt, updatedAt: completedAt }
     await db.transaction('rw', db.tasks, db.logs, async () => {
@@ -673,20 +688,24 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
     await queueChange('tasks', t.id); flash('Đã ghi nhận hoàn thành')
   }
   const archiveAsset = async (a: Asset) => {
+    if (blockViewer('đưa thiết bị vào lưu kho')) return
     if (!confirm(`Đưa “${a.name}” vào Lưu kho? Hồ sơ, ảnh và lịch sử liên quan vẫn được giữ để tra cứu hoặc khôi phục.`)) return
     const value = { ...a, archivedAt: now(), updatedAt: now() }
     await db.assets.put(value); await queueChange('assets', a.id); flash('Đã đưa thiết bị vào Lưu kho')
   }
   const restoreAsset = async (a: Asset) => {
+    if (blockViewer('khôi phục thiết bị')) return
     const value = { ...a, archivedAt: undefined, updatedAt: now() }
     await db.assets.put(value); await queueChange('assets', a.id); flash('Đã khôi phục thiết bị khỏi Lưu kho')
   }
   const changeAssetStatus = async (a: Asset, status: Asset['status']) => {
+    if (blockViewer('thay đổi tình trạng thiết bị')) return
     if (status === 'Thanh lý' && !confirm(`Xác nhận thanh lý “${a.name}”? Hồ sơ và lịch sử vẫn được giữ để tra cứu; đây không phải xóa vĩnh viễn.`)) return
     const value = { ...a, status, updatedAt: now() }
     await db.assets.put(value); await queueChange('assets', a.id); flash(`Đã cập nhật trạng thái: ${status}`)
   }
   const addMovement = async (item: InventoryItem, type: 'Nhập'|'Xuất', qty: number) => {
+    if (blockViewer('nhập hoặc xuất kho')) return
     if (!qty || qty <= 0) return
     if (type === 'Xuất' && qty > item.quantity) { flash('Số lượng xuất vượt tồn kho'); return }
     const next = { ...item, quantity: item.quantity + (type === 'Nhập' ? qty : -qty), updatedAt: now() }
@@ -697,6 +716,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
     await queueChange('inventory', item.id); flash(`Đã ${type.toLowerCase()} ${qty} ${item.unit}`)
   }
   const exportRows = async (rows: Record<string, string | number>[], filename: string, title: string, sheetName: string, headers: string[], orientation: 'portrait' | 'landscape' = 'landscape') => {
+    if (blockViewer('xuất Excel')) return
     flash('Đang chuẩn bị tệp Excel…')
     try {
       await downloadExcelReport(rows, filename, title, sheetName, headers, orientation)
@@ -762,6 +782,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
     setModal('planExport')
   }
   const exportMaintenancePlans = () => {
+    if (blockViewer('xuất Excel')) return
     const exportAllInYear = planExportPeriod !== 'Năm' && planExportAllPeriods
     const exportRange = exportAllInYear
       ? maintenancePlanRange('Năm', `${planExportAnchorDate.slice(0, 4)}-01-01`)
@@ -862,6 +883,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
     exportRows(rows, `bao-cao-tinh-trang-thiet-bi-${today()}.xlsx`, `BÁO CÁO TÌNH TRẠNG THIẾT BỊ · ${dateText(today())}`, 'Tình trạng thiết bị', headers, 'landscape')
   }
   const backup = async () => {
+    if (blockViewer('sao lưu dữ liệu')) return
     const data = {
       backupVersion: 2,
       exportedAt: now(),
@@ -882,6 +904,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
     const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `backup-baotri-day-du-${today()}.json`; a.click(); URL.revokeObjectURL(url)
   }
   const restore = async (file: File) => {
+    if (blockViewer('khôi phục dữ liệu từ bản sao lưu')) return
     try {
       const data = JSON.parse(await file.text())
       const tableKeys = ['assets','inventory','tasks','logs','movements','maintenancePlans','checklistTemplates','checklistVersions','checklistResults','syncQueue']
@@ -935,13 +958,13 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
         <div className="top-actions">
           <div className="workspace-chip"><Building2 size={16}/><span><b>{organizationName}</b><small>Supabase · quyền {organizationRole}</small></span></div>
           <button className="icon-btn" title="Quét QR" onClick={()=>setModal('scan')}><QrCode size={19}/></button>
-          {page!=='planning'&&page!=='checklist'&&<button className="primary-btn" onClick={()=>{ if(page==='assets'){setEditingAsset(emptyAsset());setModal('asset')} else if(page==='inventory'){setEditingItem(emptyItem());setModal('item')} else if(page==='tasks'){setEditingTask(emptyTask());setModal('task')} else if(page==='logs'){setEditingLog({id:uid(),assetId:'',date:today(),kind:'Sửa chữa',description:'',parts:'',readings:'',result:'',performedBy:userName});setModal('log')} else {setPage('assets');setEditingAsset(emptyAsset());setModal('asset')} }}><Plus size={17}/><span>Thêm mới</span></button>}
+          {page!=='planning'&&page!=='checklist'&&<button className="primary-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>{ if(page==='assets'){setEditingAsset(emptyAsset());setModal('asset')} else if(page==='inventory'){setEditingItem(emptyItem());setModal('item')} else if(page==='tasks'){setEditingTask(emptyTask());setModal('task')} else if(page==='logs'){setEditingLog({id:uid(),assetId:'',date:today(),kind:'Sửa chữa',description:'',parts:'',readings:'',result:'',performedBy:userName});setModal('log')} else {setPage('assets');setEditingAsset(emptyAsset());setModal('asset')} }}><Plus size={17}/><span>Thêm mới</span></button>}
           <button className="profile-chip" title="Mở hồ sơ trong Cài đặt" onClick={()=>{setPage('settings');setSearch('');setMobileMore(false)}}><span className="avatar"><UserRound size={16}/></span><span className="profile-text"><b>{userName}</b><small>Hồ sơ · Cài đặt</small></span></button>
         </div>
       </header>
       <div className="content">
         {page!=='dashboard' && page!=='settings' && <div className="searchbar"><Search size={18}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Tìm theo mã, tên hoặc nội dung..."/></div>}
-        {page==='dashboard' && <Dashboard assets={activeAssets} tasks={tasks} inventory={inventory} dueToday={dueToday} lowStock={lowStock} overdue={overdue} go={setPage} complete={completeTask}/>}
+        {page==='dashboard' && <Dashboard assets={activeAssets} tasks={tasks} inventory={inventory} dueToday={dueToday} lowStock={lowStock} overdue={overdue} go={setPage} complete={completeTask} readOnly={isViewer}/>}
         <>
         {page==='checklist' && <section className="panel checklist-schedule-panel">
           <div className="panel-head"><div><h2>Lịch Bảo trì – Checklist</h2><p>Theo dõi từng kỳ Checklist định kỳ của thiết bị. Kỳ chưa thực hiện hiển thị đỏ; hoàn thành hiển thị xanh.</p></div><span className="status green">BẮT BUỘC QUÉT QR</span></div>
@@ -953,7 +976,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
               <td><b>{row.asset.code}</b><small>{row.asset.name}</small></td>
               <td>{row.asset.location||'—'}</td>
               <td><span className={'checklist-schedule-state '+(row.completed?'done':'pending')}>{row.missingTemplate?'Chưa tạo biểu mẫu':row.completed?(row.isMakeup?'Đã hoàn thành · Checklist bù':row.result==='Không đạt'?'Đã Checklist · Có mục không đạt':'Đã Checklist'):(row.dueDate<today()?'Chưa hoàn thành':'Đến hạn · Chưa hoàn thành')}</span>{!row.completed&&row.dueDate&&<small className="checklist-overdue-note">Chưa hoàn thành ngày {dateText(row.dueDate)}</small>}</td>
-              <td><button type="button" className={row.completed?'soft-btn':'primary-btn'} onClick={()=>{if(row.completed){setChecklistAccess(false);setActiveChecklistOccurrence(null);setDetailAsset(row.asset);return}setPendingChecklistOccurrence({assetId:row.asset.id,scheduledFor:row.dueDate||undefined,isMakeup:Boolean(row.dueDate&&row.dueDate<today())});setActiveChecklistOccurrence(null);setModal('scan')}}>{row.missingTemplate?'Quét QR tạo Checklist':row.completed?'Xem lịch sử':row.dueDate<today()?'Checklist bù':'Quét QR thực hiện'}</button></td>
+              <td><button type="button" className={row.completed?'soft-btn':'primary-btn'} disabled={isViewer&&!row.completed} title={isViewer&&!row.completed?'Viewer không được thực hiện Checklist':undefined} onClick={()=>{if(row.completed){setChecklistAccess(false);setActiveChecklistOccurrence(null);setDetailAsset(row.asset);return}setPendingChecklistOccurrence({assetId:row.asset.id,scheduledFor:row.dueDate||undefined,isMakeup:Boolean(row.dueDate&&row.dueDate<today())});setActiveChecklistOccurrence(null);setModal('scan')}}>{row.missingTemplate?'Quét QR tạo Checklist':row.completed?'Xem lịch sử':row.dueDate<today()?'Checklist bù':'Quét QR thực hiện'}</button></td>
             </tr>)}
           </tbody></table>{checklistScheduleRows.length===0&&<Empty text={'Chưa có thiết bị thiết lập chu kỳ '+checklistFrequency+'. Hãy mở lý lịch thiết bị và chọn Chu kỳ Bảo trì – Checklist.'}/>}</div>
           <p className="checklist-schedule-footnote">Ngày bắt đầu lịch được tính từ ngày tạo biểu mẫu Checklist riêng của thiết bị. Checklist bù vẫn lưu thành phiếu riêng và được ghi rõ trong lịch sử thiết bị.</p>
@@ -969,26 +992,26 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
               <label>Sắp xếp<select value={assetSort} onChange={e=>{setAssetSort(e.target.value);e.currentTarget.closest('details')?.removeAttribute('open')}}><option value="code-asc">Mã thiết bị: A → Z</option><option value="code-desc">Mã thiết bị: Z → A</option><option value="name-asc">Tên thiết bị: A → Z</option><option value="date-newest">Ngày sử dụng: mới nhất</option><option value="date-oldest">Ngày sử dụng: cũ nhất</option></select></label>
               <button type="button" className="text-btn" onClick={e=>{setAssetCategoryFilter('');setAssetLocationFilter('');setAssetStatusFilter('');setAssetSort('code-asc');e.currentTarget.closest('details')?.removeAttribute('open')}}>Đặt lại bộ lọc</button>
             </div></details>}
-            {!showArchived&&<><button className="soft-btn" onClick={exportAssets}><Download size={16}/> Xuất Excel</button><button className="soft-btn" onClick={printAssets}><Printer size={16}/> In danh sách</button></>}
+            {!showArchived&&<><button className="soft-btn" disabled={isViewer} title={isViewer?'Viewer không được xuất Excel':undefined} onClick={exportAssets}><Download size={16}/> Xuất Excel</button><button className="soft-btn" onClick={printAssets}><Printer size={16}/> In danh sách</button></>}
           </div></div>
           <div className="asset-result-count">{showArchived?'Đang lưu kho: '+filteredArchivedAssets.length+'/'+archivedAssets.length+' thiết bị':'Hiển thị '+filteredAssets.length+'/'+activeAssets.length+' thiết bị đang hoạt động'}</div>
           <div className="table-wrap"><table><thead><tr><th>Mã / Tên thiết bị</th><th>Nhóm</th><th>Vị trí</th><th>Ngày sử dụng</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
-          {(showArchived?filteredArchivedAssets:filteredAssets).map(a=><tr key={a.id}><td><button className="asset-name-link" onClick={()=>{setChecklistAccess(false);setDetailAsset(a)}}><b>{a.code}</b><small>{a.name}</small></button></td><td>{a.category}</td><td>{a.location||'—'}</td><td>{dateText(a.commissionedAt)}</td><td><span className={'status '+(a.archivedAt?'gray':a.status==='Đang hoạt động'?'green':a.status==='Đang sửa chữa'?'orange':a.status==='Thanh lý'?'red':'gray')}>{a.archivedAt?'Đã lưu kho':a.status}</span></td><td className="actions">{showArchived?<><button className="text-btn success-text" onClick={()=>restoreAsset(a)}>Khôi phục</button><button className="text-btn danger" title="Chỉ Admin sau khi có đăng nhập và xác thực máy chủ" disabled><Trash2 size={14}/> Xóa vĩnh viễn</button></>:<><button className="text-btn" onClick={()=>{setEditingAsset({...a,images:a.images??[]});setModal('asset')}}>Sửa</button><details className="asset-row-menu"><summary>Thao tác</summary><div><button onClick={e=>{changeAssetStatus(a,'Đang hoạt động');e.currentTarget.closest('details')?.removeAttribute('open')}}>Đánh dấu đang hoạt động</button><button onClick={e=>{changeAssetStatus(a,'Đang sửa chữa');e.currentTarget.closest('details')?.removeAttribute('open')}}>Đang sửa chữa / hỏng</button><button onClick={e=>{changeAssetStatus(a,'Ngừng sử dụng');e.currentTarget.closest('details')?.removeAttribute('open')}}>Ngừng sử dụng</button><button onClick={e=>{archiveAsset(a);e.currentTarget.closest('details')?.removeAttribute('open')}}>Đưa vào Lưu kho</button><button onClick={e=>{changeAssetStatus(a,'Thanh lý');e.currentTarget.closest('details')?.removeAttribute('open')}}>Thanh lý / bán ve chai</button><button className="danger" disabled title="Chờ đăng nhập Admin và xác thực máy chủ">Xóa vĩnh viễn (Admin)</button></div></details></>}</td></tr>)}
+          {(showArchived?filteredArchivedAssets:filteredAssets).map(a=><tr key={a.id}><td><button className="asset-name-link" onClick={()=>{setChecklistAccess(false);setDetailAsset(a)}}><b>{a.code}</b><small>{a.name}</small></button></td><td>{a.category}</td><td>{a.location||'—'}</td><td>{dateText(a.commissionedAt)}</td><td><span className={'status '+(a.archivedAt?'gray':a.status==='Đang hoạt động'?'green':a.status==='Đang sửa chữa'?'orange':a.status==='Thanh lý'?'red':'gray')}>{a.archivedAt?'Đã lưu kho':a.status}</span></td><td className="actions">{showArchived?<><button className="text-btn success-text" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>restoreAsset(a)}>Khôi phục</button><button className="text-btn danger" title="Chỉ Admin sau khi có đăng nhập và xác thực máy chủ" disabled><Trash2 size={14}/> Xóa vĩnh viễn</button></>:<><button className="text-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>{setEditingAsset({...a,images:a.images??[]});setModal('asset')}}>Sửa</button><details className="asset-row-menu"><summary>Thao tác</summary><div><button disabled={isViewer} onClick={e=>{changeAssetStatus(a,'Đang hoạt động');e.currentTarget.closest('details')?.removeAttribute('open')}}>Đánh dấu đang hoạt động</button><button disabled={isViewer} onClick={e=>{changeAssetStatus(a,'Đang sửa chữa');e.currentTarget.closest('details')?.removeAttribute('open')}}>Đang sửa chữa / hỏng</button><button disabled={isViewer} onClick={e=>{changeAssetStatus(a,'Ngừng sử dụng');e.currentTarget.closest('details')?.removeAttribute('open')}}>Ngừng sử dụng</button><button disabled={isViewer} onClick={e=>{archiveAsset(a);e.currentTarget.closest('details')?.removeAttribute('open')}}>Đưa vào Lưu kho</button><button disabled={isViewer} onClick={e=>{changeAssetStatus(a,'Thanh lý');e.currentTarget.closest('details')?.removeAttribute('open')}}>Thanh lý / bán ve chai</button><button className="danger" disabled title="Chờ đăng nhập Admin và xác thực máy chủ">Xóa vĩnh viễn (Admin)</button></div></details></>}</td></tr>)}
           </tbody></table>{(showArchived?filteredArchivedAssets:filteredAssets).length===0&&<Empty text={showArchived?'Chưa có thiết bị nào trong Lưu kho.':'Chưa có thiết bị phù hợp.'}/>}</div>
           {showArchived&&<p className="archive-security-note">Xóa vĩnh viễn sẽ chỉ mở khi BAOTRI có đăng nhập và xác thực Admin ở máy chủ. Bản thử nghiệm lưu cục bộ chưa có bảo mật tài khoản thật.</p>}
         </section>}
         {page==='assets' && showCloudAssets && <CloudAssetsPanel client={cloudClient} organizationId={organizationId} organizationName={organizationName} organizationRole={organizationRole} onBack={()=>setShowCloudAssets(false)}/>}
-         {page==='inventory' && <section className="panel"><div className="panel-head"><div><h2>Kho vật tư</h2><p>Nhập xuất tồn và cảnh báo mức tồn tối thiểu</p></div><div className="asset-photo-actions"><button className="soft-btn" onClick={exportInventory}><Download size={16}/> Xuất Excel</button><button className="soft-btn" onClick={printInventory}><Printer size={16}/> In danh sách</button></div></div>
+         {page==='inventory' && <section className="panel"><div className="panel-head"><div><h2>Kho vật tư</h2><p>Nhập xuất tồn và cảnh báo mức tồn tối thiểu</p></div><div className="asset-photo-actions"><button className="soft-btn" disabled={isViewer} title={isViewer?'Viewer không được xuất Excel':undefined} onClick={exportInventory}><Download size={16}/> Xuất Excel</button><button className="soft-btn" onClick={printInventory}><Printer size={16}/> In danh sách</button></div></div>
           <div className="table-wrap"><table><thead><tr><th>Mã / Tên vật tư</th><th>Nhóm</th><th>Tồn kho</th><th>Tồn tối thiểu</th><th>Vị trí</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
-          {filteredItems.map(i=><tr key={i.id}><td><button type="button" className="inventory-name-link" onClick={()=>setDetailItem(i)}><b>{i.code}</b><small>{i.name}</small></button></td><td>{i.group}</td><td><b>{i.quantity} {i.unit}</b></td><td>{i.minQuantity} {i.unit}</td><td>{i.location||'—'}</td><td><span className={`status ${i.quantity<=i.minQuantity?'red':'green'}`}>{i.quantity<=i.minQuantity?'Sắp hết':'Đủ tồn'}</span></td><td className="actions"><button className="text-btn" onClick={()=>addMovement(i,'Nhập',Number(prompt('Số lượng nhập?','1')))}>Nhập</button><button className="text-btn" onClick={()=>addMovement(i,'Xuất',Number(prompt('Số lượng xuất?','1')))}>Xuất</button><button className="text-btn" onClick={()=>{setEditingItem(i);setModal('item')}}>Sửa</button></td></tr>)}
+          {filteredItems.map(i=><tr key={i.id}><td><button type="button" className="inventory-name-link" onClick={()=>setDetailItem(i)}><b>{i.code}</b><small>{i.name}</small></button></td><td>{i.group}</td><td><b>{i.quantity} {i.unit}</b></td><td>{i.minQuantity} {i.unit}</td><td>{i.location||'—'}</td><td><span className={`status ${i.quantity<=i.minQuantity?'red':'green'}`}>{i.quantity<=i.minQuantity?'Sắp hết':'Đủ tồn'}</span></td><td className="actions"><button className="text-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>addMovement(i,'Nhập',Number(prompt('Số lượng nhập?','1')))}>Nhập</button><button className="text-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>addMovement(i,'Xuất',Number(prompt('Số lượng xuất?','1')))}>Xuất</button><button className="text-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>{setEditingItem(i);setModal('item')}}>Sửa</button></td></tr>)}
           </tbody></table>{filteredItems.length===0&&<Empty text="Chưa có vật tư."/ >}</div></section>}
         {page==='planning' && <section className="panel maintenance-plan-panel">
           <div className="panel-head">
             <div><h2>Kế hoạch bảo trì</h2><p>Lập lịch bảo trì thiết bị, phân công nội bộ hoặc thuê ngoài</p></div>
             <div className="maintenance-plan-actions">
               <button type="button" className="soft-btn" onClick={()=>setPage('tasks')}><CalendarDays size={16}/> Lịch bảo dưỡng định kỳ</button>
-              <button type="button" className="soft-btn" onClick={openMaintenancePlanExport}><Download size={16}/> Xuất kế hoạch Excel</button>
-              <button type="button" className="primary-btn" onClick={()=>{setEditingPlan(emptyMaintenancePlan(planPeriod,planAnchorDate));setModal('plan')}}><Plus size={16}/> Thêm kế hoạch</button>
+              <button type="button" className="soft-btn" disabled={isViewer} title={isViewer?'Viewer không được xuất Excel':undefined} onClick={openMaintenancePlanExport}><Download size={16}/> Xuất kế hoạch Excel</button>
+              <button type="button" className="primary-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>{setEditingPlan(emptyMaintenancePlan(planPeriod,planAnchorDate));setModal('plan')}}><Plus size={16}/> Thêm kế hoạch</button>
             </div>
           </div>
           <div className="plan-period-tabs" role="tablist" aria-label="Kỳ kế hoạch bảo trì">
@@ -1019,18 +1042,18 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
             <table className="maintenance-plan-table"><thead><tr><th>Kỳ</th><th>Thời gian dự kiến</th><th>Thiết bị</th><th>Nội dung bảo trì</th><th>Thực hiện</th><th>Đơn vị thuê ngoài</th><th>Thao tác</th></tr></thead><tbody>
               {filteredMaintenancePlans.map(plan=>{
                 const asset=assets.find(item=>item.id===plan.assetId)
-                return <tr key={plan.id}><td><span className="status gray">{plan.period}</span></td><td>{dateText(plan.startDate)}{plan.endDate!==plan.startDate&&<> – {dateText(plan.endDate)}</>}</td><td><b>{asset?.code||'—'}</b><small>{asset?.name||'Thiết bị không còn trong danh mục'}</small></td><td><b>{plan.title}</b>{plan.notes&&<small>{plan.notes}</small>}</td><td><span className={`status ${plan.execution==='Nội bộ'?'green':'orange'}`}>{plan.execution}</span></td><td>{plan.execution==='Thuê ngoài'?(plan.contractor||'Chưa xác định'):'—'}</td><td className="actions"><button type="button" className="text-btn" onClick={()=>{setEditingPlan(plan);setModal('plan')}}>Sửa</button><button type="button" className="text-btn danger" title="Xóa kế hoạch" onClick={()=>deleteMaintenancePlan(plan)}><Trash2 size={15}/></button></td></tr>
+                return <tr key={plan.id}><td><span className="status gray">{plan.period}</span></td><td>{dateText(plan.startDate)}{plan.endDate!==plan.startDate&&<> – {dateText(plan.endDate)}</>}</td><td><b>{asset?.code||'—'}</b><small>{asset?.name||'Thiết bị không còn trong danh mục'}</small></td><td><b>{plan.title}</b>{plan.notes&&<small>{plan.notes}</small>}</td><td><span className={`status ${plan.execution==='Nội bộ'?'green':'orange'}`}>{plan.execution}</span></td><td>{plan.execution==='Thuê ngoài'?(plan.contractor||'Chưa xác định'):'—'}</td><td className="actions"><button type="button" className="text-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>{setEditingPlan(plan);setModal('plan')}}>Sửa</button><button type="button" className="text-btn danger" title="Xóa kế hoạch" disabled={isViewer} onClick={()=>deleteMaintenancePlan(plan)}><Trash2 size={15}/></button></td></tr>
               })}
             </tbody></table>
             {filteredMaintenancePlans.length===0&&<Empty text="Chưa có kế hoạch trong kỳ này. Hãy thêm hạng mục bảo trì đầu tiên."/>}
           </div>
         </section>}
-        {page==='tasks' && <section className="panel"><div className="panel-head"><div><h2>Lịch bảo dưỡng định kỳ</h2><p>Công việc lặp lại, hạn thực hiện và tiến độ; không phải kế hoạch bảo trì theo kỳ.</p></div><button className="soft-btn" onClick={exportTasks}><Download size={16}/> Xuất lịch bảo dưỡng Excel</button></div>
+        {page==='tasks' && <section className="panel"><div className="panel-head"><div><h2>Lịch bảo dưỡng định kỳ</h2><p>Công việc lặp lại, hạn thực hiện và tiến độ; không phải kế hoạch bảo trì theo kỳ.</p></div><button className="soft-btn" disabled={isViewer} title={isViewer?'Viewer không được xuất Excel':undefined} onClick={exportTasks}><Download size={16}/> Xuất lịch bảo dưỡng Excel</button></div>
           <div className="table-wrap"><table><thead><tr><th>Ngày đến hạn</th><th>Thiết bị</th><th>Công việc</th><th>Chu kỳ</th><th>Trạng thái</th><th></th></tr></thead><tbody>
-          {filteredTasks.map(t=><tr key={t.id}><td>{dateText(t.dueDate)}</td><td>{assets.find(a=>a.id===t.assetId)?.name??'Chưa gắn thiết bị'}</td><td><b>{t.title}</b><small>{t.checklist.split('\n').filter(Boolean).length} bước công việc</small></td><td>{t.frequency}</td><td><span className={`status ${t.status==='Hoàn thành'?'green':t.dueDate<today()?'red':'orange'}`}>{t.status==='Hoàn thành'?'Hoàn thành':t.dueDate<today()?'Quá hạn':t.status}</span></td><td className="actions"><button className="text-btn" onClick={()=>{setEditingTask(t);setModal('task')}}>Chi tiết</button>{t.status!=='Hoàn thành'&&<button className="text-btn success-text" onClick={()=>completeTask(t)}>Hoàn thành</button>}</td></tr>)}
+          {filteredTasks.map(t=><tr key={t.id}><td>{dateText(t.dueDate)}</td><td>{assets.find(a=>a.id===t.assetId)?.name??'Chưa gắn thiết bị'}</td><td><b>{t.title}</b><small>{t.checklist.split('\n').filter(Boolean).length} bước công việc</small></td><td>{t.frequency}</td><td><span className={`status ${t.status==='Hoàn thành'?'green':t.dueDate<today()?'red':'orange'}`}>{t.status==='Hoàn thành'?'Hoàn thành':t.dueDate<today()?'Quá hạn':t.status}</span></td><td className="actions"><button className="text-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>{setEditingTask(t);setModal('task')}}>Chi tiết</button>{t.status!=='Hoàn thành'&&<button className="text-btn success-text" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>completeTask(t)}>Hoàn thành</button>}</td></tr>)}
           </tbody></table>{filteredTasks.length===0&&<Empty text="Chưa có công việc."/ >}</div></section>}
-        {page==='logs' && <section className="panel"><div className="panel-head"><div><h2>Bảo dưỡng – Sửa chữa</h2><p>Phiếu công việc và lịch sử xử lý kỹ thuật thực tế</p></div><button className="soft-btn" onClick={exportLogs}><Download size={16}/> Xuất Excel</button></div>
-          <div className="table-wrap"><table><thead><tr><th>Ngày lập phiếu</th><th>Thiết bị</th><th>Loại công việc</th><th>Nội dung</th><th>Trạng thái</th><th>Kết quả</th><th>Người thực hiện</th><th>Hoàn thành lúc</th><th>Thao tác</th></tr></thead><tbody>{logs.map(l=><tr key={l.id}><td>{dateText(l.date)}</td><td>{assets.find(a=>a.id===l.assetId)?.name??'—'}</td><td>{l.kind}</td><td>{l.description}</td><td><span className={`status ${l.result?'green':'orange'}`}>{l.result?'Hoàn thành':'Chưa hoàn thành'}</span></td><td>{l.result||'Chưa có kết quả'}</td><td>{l.performedBy||'—'}</td><td>{dateTimeText(l.completedAt)}</td><td className="actions"><button type="button" className="text-btn" onClick={()=>{setEditingLog(l);setModal('log')}}>{l.result?'Sửa phiếu':'Cập nhật phiếu'}</button></td></tr>)}</tbody></table>{logs.length===0&&<Empty text="Chưa có nhật ký."/ >}</div></section>}
+        {page==='logs' && <section className="panel"><div className="panel-head"><div><h2>Bảo dưỡng – Sửa chữa</h2><p>Phiếu công việc và lịch sử xử lý kỹ thuật thực tế</p></div><button className="soft-btn" disabled={isViewer} title={isViewer?'Viewer không được xuất Excel':undefined} onClick={exportLogs}><Download size={16}/> Xuất Excel</button></div>
+          <div className="table-wrap"><table><thead><tr><th>Ngày lập phiếu</th><th>Thiết bị</th><th>Loại công việc</th><th>Nội dung</th><th>Trạng thái</th><th>Kết quả</th><th>Người thực hiện</th><th>Hoàn thành lúc</th><th>Thao tác</th></tr></thead><tbody>{logs.map(l=><tr key={l.id}><td>{dateText(l.date)}</td><td>{assets.find(a=>a.id===l.assetId)?.name??'—'}</td><td>{l.kind}</td><td>{l.description}</td><td><span className={`status ${l.result?'green':'orange'}`}>{l.result?'Hoàn thành':'Chưa hoàn thành'}</span></td><td>{l.result||'Chưa có kết quả'}</td><td>{l.performedBy||'—'}</td><td>{dateTimeText(l.completedAt)}</td><td className="actions"><button type="button" className="text-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>{setEditingLog(l);setModal('log')}}>{l.result?'Sửa phiếu':'Cập nhật phiếu'}</button></td></tr>)}</tbody></table>{logs.length===0&&<Empty text="Chưa có nhật ký."/ >}</div></section>}
         {page==='reports' && <div className="reports-dashboard">
           <section className="panel report-period-panel">
             <div className="panel-head"><div><h2>Báo cáo hoạt động thực tế</h2><p>Thống kê phiếu đã ghi nhận và vật tư đã xuất kho; không bao gồm kế hoạch dự kiến.</p></div><FileSpreadsheet/></div>
@@ -1049,7 +1072,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
           </section>
 
           <section className="panel report-data-panel">
-            <div className="panel-head"><div><h2>Công việc bảo trì, bảo dưỡng, sửa chữa</h2><p>{periodRangeLabel(reportPeriod, reportPeriodRange)} · chỉ tính phiếu đã hoàn thành, theo ngày hoàn thành</p></div><button type="button" className="soft-btn" onClick={exportReportWork}><Download size={16}/> Xuất báo cáo công việc Excel</button></div>
+            <div className="panel-head"><div><h2>Công việc bảo trì, bảo dưỡng, sửa chữa</h2><p>{periodRangeLabel(reportPeriod, reportPeriodRange)} · chỉ tính phiếu đã hoàn thành, theo ngày hoàn thành</p></div><button type="button" className="soft-btn" disabled={isViewer} title={isViewer?'Viewer không được xuất Excel':undefined} onClick={exportReportWork}><Download size={16}/> Xuất báo cáo công việc Excel</button></div>
             <div className="report-summary"><span><b>{reportWorkLogs.length}</b> phiếu đã hoàn thành</span><span><b>{reportWorkLogs.filter(log=>/bảo dưỡng|bảo trì/i.test(log.kind)).length}</b> bảo trì / bảo dưỡng</span><span><b>{reportWorkLogs.filter(log=>log.kind.toLocaleLowerCase('vi').includes('sửa chữa')).length}</b> sửa chữa</span></div>
             <div className="table-wrap"><table className="period-report-table"><thead><tr><th>Ngày hoàn thành</th><th>Thiết bị</th><th>Loại công việc</th><th>Nội dung đã thực hiện</th><th>Vật tư ghi trên phiếu</th><th>Người thực hiện</th></tr></thead><tbody>
               {reportWorkLogs.map(log=>{const asset=assets.find(item=>item.id===log.assetId);return <tr key={log.id}><td>{dateText(completedWorkDate(log))}</td><td><b>{asset?.code||'—'}</b><small>{asset?.name||'Thiết bị không còn trong danh mục'}</small></td><td>{log.kind}</td><td>{log.description||'—'}</td><td>{log.parts||'—'}</td><td>{log.performedBy||'—'}</td></tr>})}
@@ -1057,7 +1080,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
           </section>
 
           <section className="panel report-data-panel">
-            <div className="panel-head"><div><h2>Vật tư đã xuất và tồn kho hiện tại</h2><p>{periodRangeLabel(reportPeriod, reportPeriodRange)} · số lượng sử dụng tính theo giao dịch Xuất kho</p></div><button type="button" className="soft-btn" onClick={exportReportMaterials}><Download size={16}/> Xuất báo cáo vật tư Excel</button></div>
+            <div className="panel-head"><div><h2>Vật tư đã xuất và tồn kho hiện tại</h2><p>{periodRangeLabel(reportPeriod, reportPeriodRange)} · số lượng sử dụng tính theo giao dịch Xuất kho</p></div><button type="button" className="soft-btn" disabled={isViewer} title={isViewer?'Viewer không được xuất Excel':undefined} onClick={exportReportMaterials}><Download size={16}/> Xuất báo cáo vật tư Excel</button></div>
             <div className="report-summary"><span><b>{reportMaterialUsage.length}</b> loại vật tư đã xuất</span><span><b>{reportMaterialUsage.reduce((sum,row)=>sum+row.transactions,0)}</b> lượt xuất kho</span></div>
             <div className="table-wrap"><table className="period-report-table"><thead><tr><th>Vật tư</th><th>Nhóm</th><th>Đã xuất trong kỳ</th><th>Tồn kho hiện tại</th><th>Vị trí</th></tr></thead><tbody>
               {reportMaterialUsage.map(row=><tr key={row.itemId}><td><b>{row.item?.code||'—'}</b><small>{row.item?.name||'Vật tư không còn trong danh mục'}</small></td><td>{row.item?.group||'—'}</td><td><b>{row.quantity} {row.item?.unit||''}</b><small>{row.transactions} lượt xuất</small></td><td><b>{row.item?`${row.item.quantity} ${row.item.unit}`:'—'}</b></td><td>{row.item?.location||'—'}</td></tr>)}
@@ -1065,7 +1088,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
           </section>
 
           <section className="panel report-data-panel">
-            <div className="panel-head"><div><h2>Tình trạng thiết bị hiện tại</h2><p>Ảnh chụp hiện tại, không thay đổi theo kỳ thời gian đã chọn</p></div><button type="button" className="soft-btn" onClick={exportReportAssets}><Download size={16}/> Xuất báo cáo thiết bị Excel</button></div>
+            <div className="panel-head"><div><h2>Tình trạng thiết bị hiện tại</h2><p>Ảnh chụp hiện tại, không thay đổi theo kỳ thời gian đã chọn</p></div><button type="button" className="soft-btn" disabled={isViewer} title={isViewer?'Viewer không được xuất Excel':undefined} onClick={exportReportAssets}><Download size={16}/> Xuất báo cáo thiết bị Excel</button></div>
             <div className="report-summary"><span><b>{activeAssets.length}</b> thiết bị chưa lưu kho</span><span><b>{activeAssets.filter(asset=>asset.status==='Đang hoạt động').length}</b> đang hoạt động</span><span className="report-summary-alert"><b>{reportBrokenAssets.length}</b> hỏng / đang sửa chữa</span><span><b>{activeAssets.filter(asset=>asset.status==='Ngừng sử dụng'||asset.status==='Thanh lý').length}</b> ngừng sử dụng / thanh lý</span></div>
             <div className="table-wrap"><table className="period-report-table"><thead><tr><th>Mã thiết bị hỏng</th><th>Tên thiết bị</th><th>Nhóm</th><th>Vị trí</th><th>Tình trạng</th></tr></thead><tbody>
               {reportBrokenAssets.map(asset=><tr key={asset.id}><td><b>{asset.code}</b></td><td>{asset.name}</td><td>{asset.category||'—'}</td><td>{asset.location||'—'}</td><td><span className="status orange">Đang sửa chữa / hỏng</span></td></tr>)}
@@ -1086,8 +1109,8 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
             <div className="setting-row"><div><b>Thao tác hồ sơ</b><small>Thông tin chỉ được thay đổi khi chọn Sửa hồ sơ.</small></div><div className="setting-inline-actions"><button className="soft-btn" onClick={()=>setProfileEditOpen(true)}>Sửa hồ sơ</button><button className="soft-btn" onClick={onSignOut}>Đăng xuất</button></div></div>
           </section>
           <section className="panel"><div className="panel-head"><div><h2>Dữ liệu và sao lưu</h2><p>Phiên bản thử nghiệm lưu dữ liệu cục bộ trong trình duyệt này</p></div><HardDrive/></div>
-            <div className="setting-row"><div><b>Xuất bản sao lưu</b><small>Tải đầy đủ thiết bị, vật tư, kế hoạch, nhật ký, Checklist, ảnh, danh mục tự tạo và dữ liệu hàng đợi thành JSON.</small></div><button className="primary-btn" onClick={backup}><Download size={16}/> Sao lưu</button></div>
-            <div className="setting-row"><div><b>Khôi phục bản sao lưu</b><small>Nhập file JSON đã xuất từ ứng dụng.</small></div><label className="soft-btn file-btn">Chọn file<input type="file" accept=".json,application/json" onChange={e=>e.target.files?.[0]&&restore(e.target.files[0])}/></label></div>
+            <div className="setting-row"><div><b>Xuất bản sao lưu</b><small>Tải đầy đủ thiết bị, vật tư, kế hoạch, nhật ký, Checklist, ảnh, danh mục tự tạo và dữ liệu hàng đợi thành JSON.</small></div><button className="primary-btn" disabled={isViewer} title={isViewer?'Viewer không được sao lưu dữ liệu':undefined} onClick={backup}><Download size={16}/> Sao lưu</button></div>
+            <div className="setting-row"><div><b>Khôi phục bản sao lưu</b><small>Nhập file JSON đã xuất từ ứng dụng.</small></div><label className={`soft-btn file-btn ${isViewer?'disabled':''}`} title={isViewer?'Viewer không được khôi phục dữ liệu':undefined}>Chọn file<input type="file" accept=".json,application/json" disabled={isViewer} onChange={e=>e.target.files?.[0]&&restore(e.target.files[0])}/></label></div>
             <div className="setting-row"><div><b>Trạng thái dữ liệu</b><small>{queueCount} thay đổi cục bộ đang chờ. Đăng nhập, tổ chức và phép thử ghi/đọc thiết bị đã kết nối Supabase; dữ liệu nghiệp vụ chính vẫn đang lưu trong trình duyệt, chưa đồng bộ tự động.</small></div><span className="status orange">Chưa đồng bộ nghiệp vụ</span></div>
             <div className="setting-row"><div><b>Giao diện</b><small>Chuyển đổi giữa tối/ sáng và thu gọn thông tin chính.</small></div><div className="setting-inline-actions"><button className={`soft-btn ${theme === 'light' ? 'active' : ''}`} onClick={()=>setTheme('light')}>Sáng</button><button className={`soft-btn ${theme === 'dark' ? 'active' : ''}`} onClick={()=>setTheme('dark')}>Tối</button><button className={`soft-btn ${compact ? 'active' : ''}`} onClick={()=>setCompact(v=>!v)}>{compact ? 'Thu gọn' : 'Mở rộng'}</button></div></div>
           </section>
@@ -1118,8 +1141,8 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
     </div></div>}
     {notice&&<div className="toast"><Check size={17}/>{notice}</div>}
     {profileEditOpen&&<EmployeeProfileEditModal email={userEmail} profile={profile} close={()=>setProfileEditOpen(false)} onSave={async value=>{await onSaveProfile(value);setNotice('Đã lưu hồ sơ nhân viên')}}/>}
-    {detailItem&&<InventoryDetailModal value={detailItem} close={()=>setDetailItem(null)} edit={()=>{setEditingItem(detailItem);setDetailItem(null);setModal('item')}}/>}
-    {detailAsset&&<AssetDetailModal value={detailAsset} logs={logs.filter(l=>l.assetId===detailAsset.id)} allowChecklist={checklistAccess || (CHECKLIST_TEST_MODE && page==='checklist')} checklistOccurrence={activeChecklistOccurrence} createRepairFromChecklist={createRepairFromChecklist} editLog={(entry:Log)=>{setEditingLog(entry);setModal('log')}} close={()=>{setDetailAsset(null);setChecklistAccess(false);setActiveChecklistOccurrence(null)}} edit={()=>{setEditingAsset({...detailAsset,images:detailAsset.images??[]});setDetailAsset(null);setChecklistAccess(false);setModal('asset')}} addLog={()=>{setEditingLog({id:uid(),assetId:detailAsset.id,date:today(),kind:'Sửa chữa',description:'',parts:'',readings:'',result:'',performedBy:userName});setModal('log')}}/>}
+    {detailItem&&<InventoryDetailModal value={detailItem} readOnly={isViewer} close={()=>setDetailItem(null)} edit={()=>{setEditingItem(detailItem);setDetailItem(null);setModal('item')}}/>}
+    {detailAsset&&<AssetDetailModal value={detailAsset} logs={logs.filter(l=>l.assetId===detailAsset.id)} allowChecklist={!isViewer && (checklistAccess || (CHECKLIST_TEST_MODE && page==='checklist'))} checklistOccurrence={activeChecklistOccurrence} createRepairFromChecklist={createRepairFromChecklist} readOnly={isViewer} editLog={(entry:Log)=>{if(isViewer)return;setEditingLog(entry);setModal('log')}} close={()=>{setDetailAsset(null);setChecklistAccess(false);setActiveChecklistOccurrence(null)}} edit={()=>{setEditingAsset({...detailAsset,images:detailAsset.images??[]});setDetailAsset(null);setChecklistAccess(false);setModal('asset')}} addLog={()=>{setEditingLog({id:uid(),assetId:detailAsset.id,date:today(),kind:'Sửa chữa',description:'',parts:'',readings:'',result:'',performedBy:userName});setModal('log')}}/>}
     {modal==='asset'&&editingAsset&&<AssetModal value={editingAsset} close={()=>{setModal(null);setEditingAsset(null)}} save={saveAsset} assets={assets} customCategories={customAssetCategories} onAddCategory={addAssetCategory} onExportConvention={exportAssetCodeConvention}/>}
     {modal==='item'&&editingItem&&<ItemModal value={editingItem} close={()=>{setModal(null);setEditingItem(null)}} save={saveItem}/>}
     {modal==='task'&&editingTask&&<TaskModal value={editingTask} assets={assets} close={()=>{setModal(null);setEditingTask(null)}} save={saveTask}/>}
@@ -1151,7 +1174,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
   </div>
 }
 
-function Dashboard({assets,tasks,dueToday,lowStock,overdue,go,complete,inventory}:any) {
+function Dashboard({assets,tasks,dueToday,lowStock,overdue,go,complete,inventory,readOnly=false}:any) {
   const completed = tasks.filter((t:Task)=>t.status==='Hoàn thành').length
   const repairCount = assets.filter((a:Asset)=>a.status==='Đang sửa chữa').length
   const inventoryValue = (inventory as InventoryItem[]).reduce((sum:number, item:InventoryItem) => sum + item.quantity * item.unitPrice, 0)
@@ -1214,7 +1237,7 @@ function Dashboard({assets,tasks,dueToday,lowStock,overdue,go,complete,inventory
     </div>
     <div className="dash-columns">
       <section className="panel"><div className="panel-head"><div><h2>Công việc hôm nay</h2><p>Tick hoàn thành sau khi thực hiện và ghi nhận kết quả</p></div><button className="link-btn" onClick={()=>go('tasks')}>Xem tất cả <ChevronRight size={15}/></button></div>
-        {dueToday.length===0?<Empty text="Không có công việc đến hạn hôm nay."/>:dueToday.map((t:Task)=><div className="task-row" key={t.id}><div className="task-icon"><Wrench size={17}/></div><div className="task-info"><b>{t.title}</b><small>{assets.find((a:Asset)=>a.id===t.assetId)?.name??'Chưa gắn thiết bị'} · {t.frequency}</small></div><button className="complete-btn" onClick={()=>complete(t)}><Check size={16}/> Xong</button></div>)}
+        {dueToday.length===0?<Empty text="Không có công việc đến hạn hôm nay."/>:dueToday.map((t:Task)=><div className="task-row" key={t.id}><div className="task-icon"><Wrench size={17}/></div><div className="task-info"><b>{t.title}</b><small>{assets.find((a:Asset)=>a.id===t.assetId)?.name??'Chưa gắn thiết bị'} · {t.frequency}</small></div><button className="complete-btn" disabled={readOnly} title={readOnly?'Viewer chỉ có quyền xem':undefined} onClick={()=>complete(t)}><Check size={16}/> Xong</button></div>)}
       </section>
       <div className="side-stack">
         <section className="panel"><div className="panel-head"><div><h2>Vật tư cần chú ý</h2><p>Đạt hoặc dưới ngưỡng tồn tối thiểu</p></div><Package size={19}/></div>
@@ -1259,7 +1282,7 @@ function EmployeeProfileEditModal({email,profile,close,onSave}:{email:string;pro
     <div className="modal-actions"><button type="button" className="soft-btn" onClick={close}>Hủy</button><button type="submit" className="primary-btn" disabled={busy}>{busy?'Đang lưu…':'Lưu hồ sơ'}</button></div>
   </form></Modal>
 }
-function AssetDetailModal({value,logs,allowChecklist,checklistOccurrence,createRepairFromChecklist,editLog,close,edit,addLog}:any){
+function AssetDetailModal({value,logs,allowChecklist,checklistOccurrence,createRepairFromChecklist,editLog,close,edit,addLog,readOnly=false}:any){
   const [showPhotos,setShowPhotos]=useState(false)
   const [activePhoto,setActivePhoto]=useState<string|null>(null)
   const [printMode,setPrintMode]=useState<null|'sticker'|'detail'|'history'>(null)
@@ -1273,12 +1296,12 @@ function AssetDetailModal({value,logs,allowChecklist,checklistOccurrence,createR
       <button type="button" className="soft-btn" onClick={()=>setShowPhotos(v=>!v)}><ImageIcon size={16}/> {showPhotos?'Ẩn ảnh':'Xem ảnh ('+photos.length+')'}</button>
       <button type="button" className="soft-btn" onClick={()=>print('sticker')}><QrCode size={16}/> In tem QR</button>
       <button type="button" className="soft-btn" onClick={()=>print('detail')}><Download size={16}/> In chi tiết</button>
-      <button type="button" className="primary-btn" onClick={addLog}><Wrench size={16}/> Ghi nhận bảo dưỡng / sửa chữa</button>
-      <button type="button" className="primary-btn" onClick={edit}>Sửa hồ sơ</button>
+      <button type="button" className="primary-btn" disabled={readOnly} title={readOnly?'Viewer chỉ có quyền xem':undefined} onClick={addLog}><Wrench size={16}/> Ghi nhận bảo dưỡng / sửa chữa</button>
+      <button type="button" className="primary-btn" disabled={readOnly} title={readOnly?'Viewer chỉ có quyền xem':undefined} onClick={edit}>Sửa hồ sơ</button>
     </div>
     <AssetChecklist asset={value} allowActions={allowChecklist} scheduledFor={checklistOccurrence?.scheduledFor} isMakeup={checklistOccurrence?.isMakeup} createRepairFromChecklist={createRepairFromChecklist}/>
     <section className="asset-maintenance-history"><div className="panel-head"><div><h3>Lịch sử Bảo dưỡng – Sửa chữa</h3><p>{logs.length} lần ghi nhận công việc của thiết bị</p></div><button type="button" className="soft-btn" disabled={!logs.length} onClick={()=>print('history')}><Printer size={15}/> In lịch sử sửa chữa</button></div>
-      {logs.length?<div className="maintenance-history-list">{logs.slice().sort((a:any,b:any)=>b.date.localeCompare(a.date)).map((entry:any)=><article key={entry.id}><time>{dateText(entry.date)}</time><div><b>{entry.kind}</b><p>{entry.description||'Không có mô tả'}</p>{entry.parts&&<small>Vật tư/phụ tùng: {entry.parts}</small>}{entry.readings&&<small>Thông số: {entry.readings}</small>}<small>Kết quả: {entry.result||'Chưa có kết quả · Chưa hoàn thành'}</small><small>Người thực hiện: {entry.performedBy||'—'}</small>{entry.result&&<small>Hoàn thành lúc: {dateTimeText(entry.completedAt)}</small>}{entry.checklistResultId&&<small>Liên kết từ phiếu Checklist</small>}<button type="button" className="text-btn" onClick={()=>editLog(entry)}>{entry.result?'Sửa phiếu':'Cập nhật phiếu sửa chữa'}</button></div></article>)}</div>:<p className="muted">Chưa có lịch sử. Hãy chọn “Ghi nhận bảo dưỡng / sửa chữa” sau khi thực hiện công việc.</p>}
+      {logs.length?<div className="maintenance-history-list">{logs.slice().sort((a:any,b:any)=>b.date.localeCompare(a.date)).map((entry:any)=><article key={entry.id}><time>{dateText(entry.date)}</time><div><b>{entry.kind}</b><p>{entry.description||'Không có mô tả'}</p>{entry.parts&&<small>Vật tư/phụ tùng: {entry.parts}</small>}{entry.readings&&<small>Thông số: {entry.readings}</small>}<small>Kết quả: {entry.result||'Chưa có kết quả · Chưa hoàn thành'}</small><small>Người thực hiện: {entry.performedBy||'—'}</small>{entry.result&&<small>Hoàn thành lúc: {dateTimeText(entry.completedAt)}</small>}{entry.checklistResultId&&<small>Liên kết từ phiếu Checklist</small>}<button type="button" className="text-btn" disabled={readOnly} title={readOnly?'Viewer chỉ có quyền xem':undefined} onClick={()=>editLog(entry)}>{entry.result?'Sửa phiếu':'Cập nhật phiếu sửa chữa'}</button></div></article>)}</div>:<p className="muted">Chưa có lịch sử. Hãy chọn “Ghi nhận bảo dưỡng / sửa chữa” sau khi thực hiện công việc.</p>}
     </section>
     {showPhotos&&<div className="asset-photo-grid">{photos.length?photos.map((src:string,i:number)=><button type="button" className="asset-photo-thumb" key={i} onClick={()=>setActivePhoto(src)}><img src={src} alt={'Ảnh '+(i+1)+' của '+value.name}/><span>Ảnh {i+1}</span></button>):<p className="muted">Thiết bị này chưa có ảnh. Chọn “Sửa hồ sơ” để bổ sung ảnh.</p>}</div>}
     {activePhoto&&<div className="photo-lightbox" onClick={()=>setActivePhoto(null)}><button type="button" className="icon-btn" onClick={()=>setActivePhoto(null)}><X/></button><img src={activePhoto} alt={'Ảnh thiết bị '+value.name}/></div>}
@@ -1890,10 +1913,10 @@ function ItemModal({value,close,save}:any){
     <div className="modal-actions"><button type="button" className="soft-btn" onClick={close}>Hủy</button><button className="primary-btn"><Check size={16}/> Lưu vật tư</button></div>
   </form></Modal>
 }
-function InventoryDetailModal({value,close,edit}:any){
+function InventoryDetailModal({value,close,edit,readOnly=false}:any){
   const rows=[['Mã vật tư',value.code],['Mã số',value.partNumber],['Tên vật tư',value.name],['Nhóm',value.group],['Kích cỡ / quy cách',value.size],['Đơn vị tính',value.unit],['Số lượng tồn',String(value.quantity)+' '+value.unit],['Tồn tối thiểu',String(value.minQuantity)+' '+value.unit],['Vị trí lưu kho',value.location],['Nhà cung cấp',value.supplier],['Đơn giá tham khảo',Number(value.unitPrice||0).toLocaleString('vi-VN')+' VNĐ'],['Cập nhật lần cuối',value.updatedAt?new Date(value.updatedAt).toLocaleString('vi-VN'):'—']]
   const print=()=>{window.setTimeout(()=>window.print(),100)}
-  return <Modal title="Chi tiết vật tư" close={close}><div className="asset-detail-grid">{rows.map(([label,val])=><div className="asset-detail-field" key={label}><small>{label}</small><b>{val||'—'}</b></div>)}</div><div className="asset-photo-actions"><button className="soft-btn" onClick={print}><Printer size={16}/> In chi tiết</button><button className="primary-btn" onClick={edit}>Sửa vật tư</button></div><div className="asset-print-sheet print-detail"><div className="asset-print-report"><h1 className="asset-print-form-title">BẢNG CHI TIẾT VẬT TƯ</h1><div className="asset-print-header"><div className="company-logo-placeholder"><span className="company-logo-mark">BT</span><span className="company-logo-wording"><strong>BAOTRI</strong><small>LOGO THỬ NGHIỆM</small></span></div></div><h2 className="asset-print-device-name">{value.name}</h2><table><tbody>{rows.map(([label,val])=><tr key={label}><th>{label}</th><td>{val||'—'}</td></tr>)}</tbody></table></div></div></Modal>
+  return <Modal title="Chi tiết vật tư" close={close}><div className="asset-detail-grid">{rows.map(([label,val])=><div className="asset-detail-field" key={label}><small>{label}</small><b>{val||'—'}</b></div>)}</div><div className="asset-photo-actions"><button className="soft-btn" onClick={print}><Printer size={16}/> In chi tiết</button><button className="primary-btn" disabled={readOnly} title={readOnly?'Viewer chỉ có quyền xem':undefined} onClick={edit}>Sửa vật tư</button></div><div className="asset-print-sheet print-detail"><div className="asset-print-report"><h1 className="asset-print-form-title">BẢNG CHI TIẾT VẬT TƯ</h1><div className="asset-print-header"><div className="company-logo-placeholder"><span className="company-logo-mark">BT</span><span className="company-logo-wording"><strong>BAOTRI</strong><small>LOGO THỬ NGHIỆM</small></span></div></div><h2 className="asset-print-device-name">{value.name}</h2><table><tbody>{rows.map(([label,val])=><tr key={label}><th>{label}</th><td>{val||'—'}</td></tr>)}</tbody></table></div></div></Modal>
 }
 function TaskModal({value,assets,close,save}:any){
   const [v,setV]=useState<Task>(value); const set=(k:keyof Task,x:any)=>setV(p=>({...p,[k]:x}))
