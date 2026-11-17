@@ -18,13 +18,13 @@ const dateText = (value?: string) => value
   : '—'
 type CodeEntry = { name: string; code: string }
 const suggestCode = (value: string, maxLength: number): string => {
-  const normalized = value.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[đĐ]/g, 'D').toUpperCase()
+  const normalized = value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, 'D').toUpperCase()
   const words = normalized.split(/[^A-Z0-9]+/).filter(Boolean)
   if (!words.length) return ''
   const initials = words.map(word => word[0]).join('')
   return (initials.length >= 2 ? initials : words[0]).slice(0, maxLength)
 }
-const entriesToMap = (entries: CodeEntry[], label: string, maxLength: number): Record<string, string> => {
+const entriesToMap = (entries: CodeEntry[], label: string, maxLength: number, required = true): Record<string, string> => {
   const result: Record<string, string> = {}
   const used = new Set<string>()
   for (const [index, entry] of entries.entries()) {
@@ -37,7 +37,7 @@ const entriesToMap = (entries: CodeEntry[], label: string, maxLength: number): R
     result[name] = code
     used.add(code)
   }
-  if (!Object.keys(result).length) throw new Error(label + ': hãy thêm ít nhất một mục.')
+  if (required && !Object.keys(result).length) throw new Error(label + ': hãy thêm ít nhất một mục.')
   return result
 }
 
@@ -110,7 +110,7 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
       const next: AssetCodeConfig = {
         facility_code: facilityCode.trim().toUpperCase(),
         category_codes: entriesToMap(categoryEntries, 'Loại thiết bị', 5),
-        location_codes: { ...entriesToMap(locationEntries, 'Vị trí', 4), __UNASSIGNED__: '99' }
+        location_codes: { ...entriesToMap(locationEntries, 'Vị trí', 4, false), __UNASSIGNED__: '99' }
       }
       await saveCloudAssetCodeConfig(client, organizationId, next)
       setConfig(next)
