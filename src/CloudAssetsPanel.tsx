@@ -24,7 +24,7 @@ const fromLines = (value: string, label: string, maxCodeLength = 5): Record<stri
     const clean = line.trim()
     if (!clean) continue
     const parts = clean.split('|')
-    if (parts.length !== 2 || !parts[0].trim() || !new RegExp('^[A-Z0-9]{2,' + maxCodeLength + '}
+    if (parts.length !== 2 || !parts[0].trim() || !new RegExp('^[A-Z0-9]{2,' + maxCodeLength + '}$').test(parts[1]?.trim().toUpperCase() ?? '')) {
       throw new Error(label + ': dòng ' + (index + 1) + ' phải có dạng Tên|' + 'MÃ (2–5 ký tự A-Z/0-9).')
     }
     const name = parts[0].trim()
