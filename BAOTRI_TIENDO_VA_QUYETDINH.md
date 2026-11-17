@@ -1520,3 +1520,13 @@ Trạng thái:
 - Admin và Technician tiếp tục sử dụng chức năng theo quyền hiện hành; không khóa chung các vai trò này.
 - Đây là quy tắc phân quyền giao diện và nghiệp vụ cần triển khai đồng bộ. Không được coi việc làm mờ nút là lớp bảo mật duy nhất: các thao tác ghi Cloud vẫn phải bị RLS/RPC kiểm soát ở Supabase. Với Local, cần chặn cả handler/luồng ghi, không chỉ CSS hoặc disabled nút.
 - Trạng thái: đã thống nhất yêu cầu, chưa triển khai code và chưa kiểm thử.
+
+
+### Triển khai Viewer chỉ xem trên toàn bộ ứng dụng – 17/11/2026
+- Đã triển khai trên nhánh `main` sau khi người dùng xác nhận áp dụng cho Viewer; Admin và Technician không bị khóa bởi thay đổi này.
+- `src/App.tsx`: nhận diện role Viewer; khóa thao tác thêm/sửa thiết bị, thay đổi trạng thái/lưu kho/khôi phục thiết bị, thêm/sửa vật tư, nhập/xuất kho, thêm/sửa/hoàn thành công việc, sửa/xóa kế hoạch, tạo/cập nhật phiếu bảo dưỡng – sửa chữa và thao tác ghi Checklist. Các handler ghi dữ liệu đều có chặn Viewer, không chỉ dựa vào trạng thái nút.
+- Viewer không thể thực hiện Checklist, sửa biểu mẫu, tạo phiếu Checklist, tạo phiếu sửa chữa từ Checklist, xuất Excel, sao lưu hoặc khôi phục bản sao lưu. Các nút thao tác tương ứng bị disabled/làm mờ; lịch sử, danh sách, dữ liệu chi tiết và nội dung biểu mẫu Checklist hiện có vẫn cho phép xem. In/tra cứu không bị khóa chỉ vì là Viewer.
+- Phân hệ Cloud Assets tiếp tục dùng kiểm tra permission/RLS hiện có; thay đổi này tập trung khóa các luồng Local vốn trước đó chưa kiểm tra role.
+- `src/style.css`: bổ sung kiểu disabled màu mờ, con trỏ không cho thao tác; vô hiệu hóa vùng chọn file khôi phục sao lưu.
+- Các commit triển khai: `6851d3b`, `81fc8ea`, `70fdc9a`, `565c13e`.
+- Trạng thái kiểm tra: đã rà soát mã nguồn và xác nhận các handler chính có guard. Chưa chạy `npm.cmd run build` hoặc kiểm thử giao diện trên máy người dùng; cần người dùng pull và build/test Admin, Technician, Viewer trước khi xác nhận hoàn tất.
