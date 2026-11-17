@@ -108,11 +108,9 @@ begin
     raise exception 'TEST FAIL: member was not suspended';
   end if;
 
-  set local role service_role;
   perform public.admin_update_org_member_status(
     v_org_id, v_viewer_member_id, 'active', v_admin_user_id
   );
-  reset role;
 
   select status into v_status
   from public.organization_members
@@ -122,14 +120,14 @@ begin
   end if;
 
   begin
-    set local role service_role;
+
     perform public.admin_update_org_member_role(
       v_org_id, v_admin_member_id, 'viewer', v_admin_user_id
     );
-    reset role;
+
     raise exception 'TEST FAIL: Admin self-role change should have been rejected';
   exception when insufficient_privilege then
-    reset role;
+
   end;
 end;
 $$;
