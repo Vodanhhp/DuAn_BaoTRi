@@ -281,6 +281,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
   const [reportPeriod, setReportPeriod] = useState<MaintenancePlanPeriod>('Tháng')
   const [reportAnchorDate, setReportAnchorDate] = useState(today())
   const [editingLog, setEditingLog] = useState<Log | null>(null)
+  const [selectedLogIds, setSelectedLogIds] = useState<string[]>([])
   const [notice, setNotice] = useState('')
   const [mobileMore, setMobileMore] = useState(false)
   const assets = useLiveQuery(() => db.assets.orderBy('name').toArray(), []) ?? []
@@ -292,6 +293,8 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
   const maintenancePlans = useLiveQuery(() => db.maintenancePlans.orderBy('startDate').toArray(), []) ?? []
   const logs = useLiveQuery(() => db.logs.orderBy('date').reverse().toArray(), []) ?? []
   const pendingRequests = logs.filter(entry => !entry.result)
+  const selectedLogs = logs.filter(entry => selectedLogIds.includes(entry.id))
+  const allLogsSelected = logs.length > 0 && logs.every(entry => selectedLogIds.includes(entry.id))
   const checklistTemplates = useLiveQuery(() => db.checklistTemplates.toArray(), []) ?? []
   const allChecklistResults = useLiveQuery(() => db.checklistResults.toArray(), []) ?? []
   const queueCount = useLiveQuery(() => db.syncQueue.count(), []) ?? 0
@@ -830,16 +833,23 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
     exportRows(rows, `ke-hoach-bao-tri-${MAINTENANCE_PLAN_PERIOD_SLUG[planExportPeriod]}-${periodId}.xlsx`, reportTitle, 'Kế hoạch bảo trì', headers, 'landscape')
     setModal(null)
   }
-  const exportLogs = () => exportRows(logs.map(l => ({
-    'Ngày lập phiếu':dateText(l.date),
-    'Thiết bị':assets.find(a=>a.id===l.assetId)?.name ?? '',
-    'Nội dung yêu cầu':[l.kind,l.description].filter(Boolean).join('\n'),
-    'Thông số / vật tư':[l.readings?`Thông số: ${l.readings}`:'',l.parts?`Vật tư: ${l.parts}`:''].filter(Boolean).join('\n'),
-    'Kết quả / trạng thái':[`Trạng thái: ${l.result?'Hoàn thành':'Chưa hoàn thành'}`,`Kết quả: ${l.result||'Chưa cập nhật'}`].join('\n'),
-    'Người yêu cầu':l.requestedBy||'',
-    'Người hoàn thành':l.performedBy||'',
-    'Hoàn thành lúc':l.completedAt?dateTimeText(l.completedAt):''
-  })), 'phieu-yc-bao-duong-sua-chua.xlsx', 'PHIẾU YC BẢO DƯỠNG – SỬA CHỮA', 'Phiếu bảo dưỡng', ['Ngày yêu cầu','Thiết bị','Nội dung yêu cầu','Thông số / vật tư','Kết quả / trạng thái','Người yêu cầu','Người hoàn thành','Hoàn thành lúc'], 'portrait')
+  const exportLogs = (records: Log[] = logs) => {
+    if (!records.length) { flash('Chưa có phiếu được chọn để xuất Excel.'); return }
+    const rows = records.map(l => ({
+      'Ngày yêu cầu':dateText(l.date),
+      'Mã thiết bị':assets.find(a=>a.id===l.assetId)?.code ?? '',
+      'Tên thiết bị':assets.find(a=>a.id===l.assetId)?.name ?? '',
+      'Loại yêu cầu':l.kind,
+      'Nội dung yêu cầu':l.description,
+      'Thông số / vật tư':[l.readings?`Thông số: ${l.readings}`:'',l.parts?`Vật tư: ${l.parts}`:''].filter(Boolean).join('\\n'),
+      'Kết quả / trạng thái':[`Trạng thái: ${l.result?'Hoàn thành':'Chưa hoàn thành'}`,`Kết quả: ${l.result||'Chưa cập nhật'}`].join('\\n'),
+      'Người yêu cầu':l.requestedBy||'',
+      'Người hoàn thành':l.performedBy||'',
+      'Hoàn thành lúc':l.completedAt?dateTimeText(l.completedAt):''
+    }))
+    const suffix = records.length === 1 ? `phieu-${records[0].id.slice(0,8)}` : records.length === logs.length ? 'tat-ca' : 'da-chon'
+    exportRows(rows, `phieu-yc-bao-duong-sua-chua-${suffix}.xlsx`, 'PHIẾU YC BẢO DƯỠNG – SỬA CHỮA', 'Phiếu bảo dưỡng', ['Ngày yêu cầu','Mã thiết bị','Tên thiết bị','Loại yêu cầu','Nội dung yêu cầu','Thông số / vật tư','Kết quả / trạng thái','Người yêu cầu','Người hoàn thành','Hoàn thành lúc'], 'landscape')
+  }
   const reportTitleSuffix = periodRangeLabel(reportPeriod, reportPeriodRange).toLocaleUpperCase('vi')
   const exportReportWork = () => exportRows(reportWorkLogs.map(log => {
     const asset = assets.find(item => item.id === log.assetId)
@@ -1053,8 +1063,8 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
           <div className="table-wrap"><table><thead><tr><th>Ngày đến hạn</th><th>Thiết bị</th><th>Công việc</th><th>Chu kỳ</th><th>Trạng thái</th><th></th></tr></thead><tbody>
           {filteredTasks.map(t=><tr key={t.id}><td>{dateText(t.dueDate)}</td><td>{assets.find(a=>a.id===t.assetId)?.name??'Chưa gắn thiết bị'}</td><td><b>{t.title}</b><small>{t.checklist.split('\n').filter(Boolean).length} bước công việc</small></td><td>{t.frequency}</td><td><span className={`status ${t.status==='Hoàn thành'?'green':t.dueDate<today()?'red':'orange'}`}>{t.status==='Hoàn thành'?'Hoàn thành':t.dueDate<today()?'Quá hạn':t.status}</span></td><td className="actions"><button className="text-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>{setEditingTask(t);setModal('task')}}>Chi tiết</button>{t.status!=='Hoàn thành'&&<button className="text-btn success-text" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>completeTask(t)}>Hoàn thành</button>}</td></tr>)}
           </tbody></table>{filteredTasks.length===0&&<Empty text="Chưa có công việc."/ >}</div></section>}
-        {page==='logs' && <section className="panel work-module-panel"><div className="panel-head"><div><h2>Phiếu YC Bảo dưỡng – Sửa chữa</h2><p>Theo dõi yêu cầu đến khi người hoàn thành xác nhận; mọi phiếu đều gắn với lý lịch thiết bị</p></div><div className="module-actions"><button type="button" className="primary-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>{setEditingLog({id:uid(),assetId:'',date:today(),kind:'Sửa chữa',description:'',parts:'',readings:'',requestedBy:userName,result:'',performedBy:''});setModal('log')}}><Plus size={16}/> Tạo Phiếu YC</button><button type="button" className="soft-btn" onClick={()=>setPage('tasks')}><CalendarDays size={16}/> Lịch bảo dưỡng định kỳ</button><button className="soft-btn" disabled={isViewer} title={isViewer?'Viewer không được xuất Excel':undefined} onClick={exportLogs}><Download size={16}/> Xuất Excel</button></div></div>
-          <div className="table-wrap"><table><thead><tr><th>Ngày yêu cầu</th><th>Thiết bị</th><th>Loại yêu cầu</th><th>Nội dung yêu cầu</th><th>Trạng thái</th><th>Kết quả</th><th>Người yêu cầu</th><th>Người hoàn thành</th><th>Thao tác</th></tr></thead><tbody>{logs.map(l=><tr key={l.id}><td>{dateText(l.date)}</td><td>{assets.find(a=>a.id===l.assetId)?.name??'—'}</td><td>{l.kind}</td><td>{l.description}</td><td><span className={`status ${l.result?'green':'red'}`}>{l.result?'Hoàn thành':'Chưa hoàn thành'}</span></td><td>{l.result||'Đang chờ xử lý'}</td><td>{l.requestedBy||'—'}</td><td>{l.performedBy||'—'}{l.completedAt&&<small>{dateTimeText(l.completedAt)}</small>}</td><td className="actions"><button type="button" className="text-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>{setEditingLog(l);setModal('log')}}>{l.result?'Sửa Phiếu YC':'Cập nhật Phiếu YC'}</button></td></tr>)}</tbody></table>{logs.length===0&&<Empty text="Chưa có Phiếu YC nào."/ >}</div></section>}
+        {page==='logs' && <section className="panel work-module-panel"><div className="panel-head"><div><h2>Phiếu YC Bảo dưỡng – Sửa chữa</h2><p>Theo dõi yêu cầu đến khi người hoàn thành xác nhận; mọi phiếu đều gắn với lý lịch thiết bị</p></div><div className="module-actions"><button type="button" className="primary-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>{setEditingLog({id:uid(),assetId:'',date:today(),kind:'Sửa chữa',description:'',parts:'',readings:'',requestedBy:userName,result:'',performedBy:''});setModal('log')}}><Plus size={16}/> Tạo Phiếu YC</button><button type="button" className="soft-btn" onClick={()=>setPage('tasks')}><CalendarDays size={16}/> Lịch bảo dưỡng định kỳ</button><button className="soft-btn" disabled={isViewer} title={isViewer?'Viewer không được xuất Excel':undefined} onClick={()=>exportLogs(logs)}><Download size={16}/> Xuất tất cả ({logs.length})</button><button className="soft-btn" disabled={isViewer||selectedLogs.length===0} title={isViewer?'Viewer không được xuất Excel':undefined} onClick={()=>exportLogs(selectedLogs)}><FileSpreadsheet size={16}/> Xuất đã chọn ({selectedLogs.length})</button></div></div>
+          <div className="table-wrap"><table><thead><tr><th><input type="checkbox" aria-label="Chọn tất cả Phiếu YC" checked={allLogsSelected} onChange={event=>setSelectedLogIds(event.target.checked?logs.map(entry=>entry.id):[])}/></th><th>Ngày yêu cầu</th><th>Thiết bị</th><th>Loại yêu cầu</th><th>Nội dung yêu cầu</th><th>Trạng thái</th><th>Kết quả</th><th>Người yêu cầu</th><th>Người hoàn thành</th><th>Thao tác</th></tr></thead><tbody>{logs.map(l=><tr key={l.id}><td><input type="checkbox" aria-label={`Chọn phiếu ${l.id}`} checked={selectedLogIds.includes(l.id)} onChange={event=>setSelectedLogIds(current=>event.target.checked?[...current.filter(id=>id!==l.id),l.id]:current.filter(id=>id!==l.id))}/></td><td>{dateText(l.date)}</td><td>{assets.find(a=>a.id===l.assetId)?.name??'—'}</td><td>{l.kind}</td><td>{l.description}</td><td><span className={`status ${l.result?'green':'red'}`}>{l.result?'Hoàn thành':'Chưa hoàn thành'}</span></td><td>{l.result||'Đang chờ xử lý'}</td><td>{l.requestedBy||'—'}</td><td>{l.performedBy||'—'}{l.completedAt&&<small>{dateTimeText(l.completedAt)}</small>}</td><td className="actions"><button type="button" className="text-btn" disabled={isViewer} title={isViewer?'Viewer không được xuất Excel':undefined} onClick={()=>exportLogs([l])}>Xuất phiếu</button><button type="button" className="text-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>{setEditingLog(l);setModal('log')}}>{l.result?'Sửa Phiếu YC':'Cập nhật Phiếu YC'}</button></td></tr>)}</tbody></table>{logs.length===0&&<Empty text="Chưa có Phiếu YC nào."/ >}</div></section>}
         {page==='reports' && <div className="reports-dashboard">
           <section className="panel report-period-panel">
             <div className="panel-head"><div><h2>Báo cáo hoạt động thực tế</h2><p>Thống kê phiếu đã ghi nhận và vật tư đã xuất kho; không bao gồm kế hoạch dự kiến.</p></div><FileSpreadsheet/></div>
