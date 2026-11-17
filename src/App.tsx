@@ -1380,6 +1380,19 @@ function OrganizationMembersPanel({client,organizationId}:{client:SupabaseClient
     finally {setBusyMember('')}
   }
 
+  const resetPassword=async(member:OrganizationMemberView)=>{
+    if(member.roleCode!=='technician'&&member.roleCode!=='viewer')return
+    if(!confirm('Gửi email đặt lại mật khẩu đến '+member.email+'? Người dùng sẽ tự tạo mật khẩu mới qua liên kết trong email.'))return
+    setBusyMember(member.id);setError('');setMessage('')
+    try {
+      await callManagement({action:'reset_password',memberId:member.id})
+      setMessage('Đã gửi email đặt lại mật khẩu đến '+member.email+'. Người dùng mở email và làm theo liên kết để tạo mật khẩu mới.')
+    } catch(reason) {
+      const raw=reason instanceof Error?reason.message:String(reason)
+      setError(raw.includes('email_confirmation_pending')?'Tài khoản chưa xác nhận email nên chưa thể đặt lại mật khẩu.':raw.includes('member_not_found')?'Không tìm thấy thành viên trong tổ chức.':raw)
+    } finally {setBusyMember('')}
+  }
+
   return <section className="panel organization-members-panel">
     <div className="panel-head"><div><h2>Quản lý tài khoản</h2><p>Thêm Kỹ thuật viên / Người xem và quản lý quyền truy cập của thành viên tổ chức</p></div><UserRound/></div>
     <form className="form-grid member-invite-form" onSubmit={invite}>
@@ -1396,7 +1409,7 @@ function OrganizationMembersPanel({client,organizationId}:{client:SupabaseClient
         <td><b>{member.displayName||member.email}</b>{member.displayName&&<small>{member.email}</small>}</td>
         <td>{member.roleCode==='admin'?<span className="status green">Admin</span>:member.roleCode==='unknown'?member.roleName:<select aria-label={'Vai trò '+member.email} value={member.roleCode} disabled={busyMember===member.id||member.roleCode==='unknown'} onChange={event=>void changeRole(member,event.target.value)}><option value="technician">Kỹ thuật viên</option><option value="viewer">Người xem</option></select>}</td>
         <td><span className={'status '+(member.status==='active'?'green':member.status==='invited'?'orange':'gray')}>{member.status==='active'?'Đang hoạt động':member.status==='invited'?'Chờ xác nhận email':'Đã tạm khóa'}</span></td>
-        <td>{member.roleCode!=='admin'&&member.status!=='invited'&&<button type="button" className={member.status==='active'?'text-btn danger':'text-btn success-text'} disabled={busyMember===member.id} onClick={()=>void changeStatus(member)}>{member.status==='active'?'Tạm khóa':'Mở lại'}</button>}{member.roleCode==='admin'&&<small className="muted">Không quản lý Admin tại đây</small>}</td>
+        <td>{member.roleCode==='admin'?<small className="muted">Không quản lý Admin tại đây</small>:member.status==='invited'?<small className="muted">Chờ kích hoạt</small>:<div className="member-row-actions">{(member.roleCode==='technician'||member.roleCode==='viewer')&&<button type="button" className="text-btn" disabled={busyMember===member.id} onClick={()=>void resetPassword(member)}>Reset mật khẩu</button>}{member.roleCode!=='unknown'&&<button type="button" className={member.status==='active'?'text-btn danger':'text-btn success-text'} disabled={busyMember===member.id} onClick={()=>void changeStatus(member)}>{member.status==='active'?'Tạm khóa':'Mở lại'}</button>}</div>}</td>
       </tr>)}
       {members.length===0&&<tr><td colSpan={4}>Chưa có thành viên.</td></tr>}
     </tbody></table></div>}
@@ -2121,7 +2134,7 @@ function ScanModal({close,assets,openAsset,expectedAssetId}:any){
 
 
 
-function SetPasswordScreen({client,onComplete}:{client:SupabaseClient;onComplete:(user:Session['user'])=>void}) {
+function SetPasswordScreen({client,onComplete,mode='invite'}:{client:SupabaseClient;onComplete:(user:Session['user'])=>void;mode?:'invite'|'recovery'}) {
   const [password,setPassword]=useState('')
   const [confirmPassword,setConfirmPassword]=useState('')
   const [busy,setBusy]=useState(false)
@@ -2147,15 +2160,15 @@ function SetPasswordScreen({client,onComplete}:{client:SupabaseClient;onComplete
 
   return <main className="auth-page"><section className="auth-card">
     <div className="auth-brand"><span><LockKeyhole size={25}/></span><div><b>BAOTRI</b><small>THIẾT LẬP TÀI KHOẢN</small></div></div>
-    <h1>Tạo mật khẩu đăng nhập</h1>
-    <p className="auth-intro">Email đã được xác nhận. Hãy tạo mật khẩu riêng để hoàn tất tham gia tổ chức.</p>
+    <h1>{mode==='recovery'?'Đặt lại mật khẩu':'Tạo mật khẩu đăng nhập'}</h1>
+    <p className="auth-intro">{mode==='recovery'?'Hãy nhập mật khẩu mới để tiếp tục sử dụng BAOTRI Mini.':'Email đã được xác nhận. Hãy tạo mật khẩu riêng để hoàn tất tham gia tổ chức.'}</p>
     <form onSubmit={submit} className="auth-form">
       <label>Mật khẩu mới</label>
       <div className="auth-input"><LockKeyhole size={17}/><input type="password" autoComplete="new-password" minLength={8} required value={password} onChange={event=>setPassword(event.target.value)} placeholder="Ít nhất 8 ký tự"/></div>
       <label>Nhập lại mật khẩu</label>
       <div className="auth-input"><LockKeyhole size={17}/><input type="password" autoComplete="new-password" minLength={8} required value={confirmPassword} onChange={event=>setConfirmPassword(event.target.value)} placeholder="Nhập lại mật khẩu"/></div>
       {error&&<div className="auth-error" role="alert">{error}</div>}
-      <button className="auth-submit" type="submit" disabled={busy}>{busy?'Đang lưu mật khẩu…':'Hoàn tất và vào ứng dụng'}</button>
+      <button className="auth-submit" type="submit" disabled={busy}>{busy?'Đang lưu mật khẩu…':mode==='recovery'?'Lưu mật khẩu mới':'Hoàn tất và vào ứng dụng'}</button>
     </form>
     <div className="auth-note">Không chia sẻ mật khẩu với người khác. Sau khi hoàn tất, bạn sẽ vào BAOTRI Mini theo đúng vai trò được Admin cấp.</div>
   </section></main>
@@ -2164,6 +2177,7 @@ function SetPasswordScreen({client,onComplete}:{client:SupabaseClient;onComplete
 export default function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [checkingSession, setCheckingSession] = useState(true)
+  const [passwordRecovery, setPasswordRecovery] = useState(false)
   const [organizationContext, setOrganizationContext] = useState<{id:string;name:string;role:string}|null>(null)
   const [organizationError, setOrganizationError] = useState('')
   const [checkingOrganization, setCheckingOrganization] = useState(false)
@@ -2180,7 +2194,9 @@ export default function App() {
       setSession(data.session)
       setCheckingSession(false)
     })
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (event === 'PASSWORD_RECOVERY') setPasswordRecovery(true)
+      if (event === 'SIGNED_OUT') setPasswordRecovery(false)
       setSession(nextSession)
       setCheckingSession(false)
     })
@@ -2244,6 +2260,7 @@ export default function App() {
   if (!authenticatedClient) return <AuthScreen client={null} />
   if (checkingSession) return <div className="auth-page"><div className="auth-card auth-loading">Đang kiểm tra phiên đăng nhập…</div></div>
   if (!session) return <AuthScreen client={authenticatedClient} />
+  if (passwordRecovery) return <SetPasswordScreen client={authenticatedClient} mode="recovery" onComplete={user=>{setPasswordRecovery(false);setSession(current=>current?{...current,user}:current)}}/>
   if (session.user.user_metadata?.must_set_password === true) return <SetPasswordScreen client={authenticatedClient} onComplete={user=>setSession(current=>current?{...current,user}:current)}/>
   if (checkingOrganization) return <div className="auth-page"><div className="auth-card auth-loading">Đang kiểm tra tổ chức và quyền truy cập…</div></div>
   if (organizationError || !organizationContext) return <div className="auth-page"><div className="auth-card"><h1>Không thể mở dữ liệu tổ chức</h1><p className="auth-error">{organizationError || 'Tài khoản chưa được gắn với tổ chức hoạt động.'}</p><button className="auth-submit" onClick={() => { void authenticatedClient.auth.signOut() }}>Đăng xuất</button></div></div>
