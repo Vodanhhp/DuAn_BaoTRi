@@ -2194,7 +2194,7 @@ function SetPasswordScreen({client,onComplete,mode='invite'}:{client:SupabaseCli
 export default function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [checkingSession, setCheckingSession] = useState(true)
-  const [passwordRecovery, setPasswordRecovery] = useState(false)
+  const [passwordRecovery, setPasswordRecovery] = useState(() => new URLSearchParams(window.location.search).get('flow') === 'recovery')
   const [organizationContext, setOrganizationContext] = useState<{id:string;name:string;role:string}|null>(null)
   const [organizationError, setOrganizationError] = useState('')
   const [checkingOrganization, setCheckingOrganization] = useState(false)
@@ -2277,7 +2277,7 @@ export default function App() {
   if (!authenticatedClient) return <AuthScreen client={null} />
   if (checkingSession) return <div className="auth-page"><div className="auth-card auth-loading">Đang kiểm tra phiên đăng nhập…</div></div>
   if (!session) return <AuthScreen client={authenticatedClient} />
-  if (passwordRecovery) return <SetPasswordScreen client={authenticatedClient} mode="recovery" onComplete={user=>{setPasswordRecovery(false);setSession(current=>current?{...current,user}:current)}}/>
+  if (passwordRecovery) return <SetPasswordScreen client={authenticatedClient} mode="recovery" onComplete={user=>{setPasswordRecovery(false);const url=new URL(window.location.href);url.searchParams.delete('flow');window.history.replaceState({},'',url.toString());setSession(current=>current?{...current,user}:current)}}/>
   if (session.user.user_metadata?.must_set_password === true) return <SetPasswordScreen client={authenticatedClient} onComplete={user=>setSession(current=>current?{...current,user}:current)}/>
   if (checkingOrganization) return <div className="auth-page"><div className="auth-card auth-loading">Đang kiểm tra tổ chức và quyền truy cập…</div></div>
   if (organizationError || !organizationContext) return <div className="auth-page"><div className="auth-card"><h1>Không thể mở dữ liệu tổ chức</h1><p className="auth-error">{organizationError || 'Tài khoản chưa được gắn với tổ chức hoạt động.'}</p><button className="auth-submit" onClick={() => { void authenticatedClient.auth.signOut() }}>Đăng xuất</button></div></div>
