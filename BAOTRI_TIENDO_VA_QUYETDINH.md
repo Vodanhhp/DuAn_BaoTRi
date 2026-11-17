@@ -1453,3 +1453,23 @@ Trạng thái:
   - Cập nhật test 008: `1b61b24d91d9406eb2a978c1c66f848ff472e2a1`.
 - Đã fetch lại các file từ `main` để xác minh nội dung sau commit.
 - **Trạng thái: mới tạo và rà soát mã SQL; CHƯA áp dụng Migration 012, CHƯA chạy test 008 phiên bản mới hoặc test 012 trên Supabase Test.** Chưa tạo UI cấu hình mã theo tổ chức và chưa bật nút tạo thiết bị Cloud. Chỉ tiếp tục sau khi Migration 012 và hai test được người dùng xác nhận đạt trên BAOTRI-Mini-Test.
+
+## Cập nhật 17/11/2026 – xác nhận Migration 012 và giao diện tạo Cloud Assets
+
+- Người dùng xác nhận đã chạy Migration 012 trên BAOTRI-Mini-Test thành công (SQL Editor báo successful); test 008 bản cập nhật và test 012 đều PASS toàn bộ.
+- Từ xác nhận này, bộ cấp mã Cloud trên Test được xem là đã nghiệm thu ở mức SQL/RLS. Chưa có thao tác nào trên Production.
+- Phát hiện nút thử nghiệm Cloud cũ trong `src/App.tsx` vẫn INSERT trực tiếp vào `assets`, không còn phù hợp sau khi Migration 012 thu hồi quyền INSERT trực tiếp. Đã xóa nút, state, truy vấn và helper thử ghi trực tiếp để tránh tạo đường thao tác lỗi thời. Bản ghi thử nghiệm đã có trên Test được giữ nguyên.
+- Mở rộng `src/lib/assetsCloud.ts`:
+  - Đọc/lưu cấu hình mã `organization_settings.asset_code_config`.
+  - Tạo hồ sơ qua RPC `create_asset_with_code`, truyền UUID mới và các trường hồ sơ; không tự cấp mã ở client.
+- Mở rộng `src/CloudAssetsPanel.tsx`:
+  - UI cấu hình mã cơ sở, danh mục mã loại và mã vị trí theo tổ chức (dòng `Tên|MÃ`); lưu bằng quyền settings của Supabase.
+  - UI tạo mới Cloud khi đã có cấu hình; chọn loại/vị trí từ cấu hình Cloud và gọi RPC để cấp mã/tạo hồ sơ.
+  - Local IndexedDB, 30 thiết bị mẫu và syncQueue không bị thay đổi; không tự import dữ liệu Local.
+  - Chỉnh sửa, lưu kho/khôi phục, ảnh vẫn chưa bật trên Cloud.
+- Các commit mới:
+  - Xóa direct Cloud test insert cũ: `16161ea94239d01a9f3402ebc5826539df1e5970`.
+  - Repository cấu hình và RPC create: `ed01c388ff465f64c28485eaf1b7785b1db367f2`.
+  - UI cấu hình và tạo Cloud: `3fe671ae6844acc4cbf28a2beaff57dd1f291978`.
+- Đã fetch file từ `main` trước mỗi lần sửa; cần fetch xác minh cuối cùng và người dùng cần chạy `npm.cmd run build` cùng kiểm thử giao diện trên localhost/Test.
+- **Trạng thái:** SQL Migration 012 + test 008/012 đã PASS theo xác nhận người dùng. Code UI cấu hình/tạo Cloud vừa cập nhật nhưng CHƯA build và CHƯA kiểm thử runtime; chưa bật sửa/lưu kho/khôi phục; không thay đổi Production.
