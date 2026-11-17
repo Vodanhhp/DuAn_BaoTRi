@@ -1271,3 +1271,30 @@ Kiểm tra:
 - Đã rà soát và cập nhật ba vị trí tạo QR trong `src/App.tsx`, cùng logic quét QR.
 - Đã cập nhật quy ước trong `QUY_UOC_MA_DINH_DANH_VA_VIET_TAT_THIET_BI.txt`.
 - Chưa chạy được `npm run build`: môi trường thực thi không truy cập được GitHub để clone/cài dependencies. Vì vậy chưa đánh dấu build hoặc kiểm thử runtime là thành công.
+
+## Cập nhật 17/11/2026 – Chuẩn bị phân quyền RLS theo vai trò
+
+Đã rà soát toàn bộ Migration 002, Migration 005 và các lệnh truy cập Supabase trong `src/App.tsx`:
+
+- 11 bảng nghiệp vụ trong Migration 002 hiện có RLS nhưng phần lớn đang cho mọi thành viên active đọc/ghi theo chính sách rộng.
+- Migration 005 đã có danh mục quyền chi tiết và hàm `has_org_permission(organization_id, permission_code)`; thành viên bị suspended hoặc tổ chức bị suspended không được hàm này cấp quyền.
+- `src/App.tsx` hiện chưa có CRUD nghiệp vụ cloud: dữ liệu thiết bị, kho, công việc, Checklist, kế hoạch và nhật ký vẫn thao tác qua IndexedDB. Các truy vấn Supabase hiện có chủ yếu là membership/organization và bản ghi thiết bị kiểm thử. Vì vậy chưa được coi đồng bộ nghiệp vụ đã hoạt động.
+
+Đã tạo trên `main`:
+- `supabase/migrations/20261117000600_permission_based_business_rls.sql`: thay các policy broad-member bằng policy dựa trên quyền cụ thể cho 11 bảng nghiệp vụ.
+- `supabase/tests/20261117000600_permission_based_business_rls_smoke_test.sql`: kiểm tra read-only, gồm RLS của 11 bảng, 32 policy theo quyền, việc loại bỏ policy cũ và giữ chặn ghi trực tiếp số lượng kho/phiếu nhập xuất.
+
+Các nguyên tắc được giữ:
+- Admin có quyền theo toàn bộ permission catalog.
+- Kỹ thuật viên chỉ được thao tác nghiệp vụ đã cấp quyền; không được xóa dữ liệu hoặc quản trị người dùng/vai trò.
+- Người xem chỉ có quyền đọc.
+- Checklist template/version chỉ được tạo/sửa bởi người có `checklist.template.manage`; kết quả Checklist và nhật ký là dữ liệu lịch sử append-only.
+- Không cấp INSERT trực tiếp cho `inventory_movements`; không cấp UPDATE cột `inventory_items.quantity`. Hai thao tác này phải đi qua RPC nguyên tử để tránh sai lệch tồn kho.
+- Ảnh thiết bị được kiểm soát theo quyền tạo/sửa/xem/xóa thiết bị.
+- Migration mới đánh số 006 vì Migration 005 đã tồn tại; không đổi tên hoặc sửa migration đã chạy.
+
+Trạng thái:
+- Đã tạo migration và smoke test trên GitHub.
+- Chưa chạy Migration 006 hoặc smoke test trên Supabase Test; không có thay đổi database nào được thực hiện trong bước này.
+- Chưa chạy build frontend do môi trường hiện tại không truy cập được GitHub để clone/cài dependencies.
+- Trước khi đồng bộ nghiệp vụ cloud, cần chạy migration + smoke test trên Test, sau đó bổ sung kiểm thử quyền thực tế cho Admin/Kỹ thuật viên/Người xem và suspended membership.
