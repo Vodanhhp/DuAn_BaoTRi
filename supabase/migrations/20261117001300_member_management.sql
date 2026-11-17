@@ -30,7 +30,7 @@ begin
   )
   on conflict (id) do update
     set email = excluded.email,
-        display_name = coalesce(excluded.display_name, public.profiles.display_name);
+        display_name = coalesce(excluded.display_name, profiles.display_name);
 
   if new.email_confirmed_at is not null then
     update public.organization_members
