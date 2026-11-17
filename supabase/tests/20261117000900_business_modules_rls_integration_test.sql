@@ -186,21 +186,17 @@ begin
   values (gen_random_uuid(),f.org_id,f.asset_id,'Technician log');
   insert into pg_temp.rls_results values ('technician','maintenance log','INSERT','1 row','1 row',true);
 
-  v_blocked := false;
-  begin
-    insert into public.checklist_templates (id,organization_id,asset_id,title)
-    values (gen_random_uuid(),f.org_id,gen_random_uuid(),'Technician must not manage template');
-  exception when insufficient_privilege or foreign_key_violation then v_blocked := true;
-  end;
-  insert into pg_temp.rls_results values ('technician','checklist template','INSERT','blocked','blocked='||v_blocked::text,v_blocked);
+  update public.checklist_templates set description='Technician must not edit'
+    where id=f.template_id and organization_id=f.org_id;
+  get diagnostics v_rows = row_count;
+  insert into pg_temp.rls_results values
+    ('technician','checklist template','UPDATE','0 rows',v_rows::text||' rows',v_rows=0);
 
-  v_blocked := false;
-  begin
-    insert into public.organization_settings (organization_id,asset_categories)
-    values (gen_random_uuid(),'[]'::jsonb);
-  exception when insufficient_privilege or foreign_key_violation then v_blocked := true;
-  end;
-  insert into pg_temp.rls_results values ('technician','settings','INSERT','blocked','blocked='||v_blocked::text,v_blocked);
+  update public.organization_settings set asset_categories='["Technician must not edit"]'::jsonb
+    where organization_id=f.org_id;
+  get diagnostics v_rows = row_count;
+  insert into pg_temp.rls_results values
+    ('technician','settings','UPDATE','0 rows',v_rows::text||' rows',v_rows=0);
 
   v_blocked := false;
   begin
