@@ -127,7 +127,7 @@ begin
 
     raise exception 'TEST FAIL: Admin self-role change should have been rejected';
   exception when insufficient_privilege then
-
+    null;
   end;
 end;
 $$;
