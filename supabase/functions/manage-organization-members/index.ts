@@ -12,7 +12,7 @@ const json = (body: Record<string, unknown>, status = 200) =>
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 
-async function findAuthUserByEmail(admin: ReturnType<typeof createClient>, email: string) {
+async function findAuthUserByEmail(admin: any, email: string) {
   for (let page = 1; page <= 20; page += 1) {
     const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 500 });
     if (error) throw error;
@@ -84,7 +84,7 @@ Deno.serve(async (req) => {
       }
 
       const existingUser = await findAuthUserByEmail(admin, email);
-      let targetUser = existingUser;
+      let targetUserId = existingUser?.id ?? '';
       let createdByInvite = false;
       let memberStatus: "active" | "invited" = "active";
 
@@ -102,23 +102,25 @@ Deno.serve(async (req) => {
         if (error || !data.user) {
           return json({ error: error?.message ?? "invite_failed" }, 400);
         }
-        targetUser = data.user;
+        targetUserId = data.user.id;
         createdByInvite = true;
         memberStatus = "invited";
       }
+
+      if (!targetUserId) return json({ error: 'target_user_not_found' }, 500);
 
       const { data: memberId, error: membershipError } = await admin.rpc(
         "admin_create_org_membership",
         {
           p_organization_id: organizationId,
-          p_user_id: targetUser.id,
+          p_user_id: targetUserId,
           p_role_code: roleCode,
           p_invited_by_user_id: authData.user.id,
           p_status: memberStatus,
         },
       );
       if (membershipError) {
-        if (createdByInvite) await admin.auth.admin.deleteUser(targetUser.id);
+        if (createdByInvite) await admin.auth.admin.deleteUser(targetUserId);
         if (membershipError.code === "23505") {
           return json({ error: "already_a_member" }, 409);
         }
