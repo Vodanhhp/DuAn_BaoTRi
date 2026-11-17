@@ -232,6 +232,55 @@ Deno.serve(async (req) => {
       return json({ success: true, emailSent: true });
     }
 
+    if (body.action === "remove_member") {
+      if (!body.memberId) return json({ error: "member_id_required" }, 400);
+
+      const { data: membership, error: membershipError } = await admin
+        .from("organization_members")
+        .select("id,user_id,role")
+        .eq("organization_id", organizationId)
+        .eq("id", body.memberId)
+        .maybeSingle();
+      if (membershipError) return json({ error: membershipError.message }, 400);
+      if (!membership) return json({ error: "member_not_found" }, 404);
+
+      const { data: roleAssignments, error: assignmentError } = await admin
+        .from("member_roles")
+        .select("role_id")
+        .eq("organization_id", organizationId)
+        .eq("member_id", membership.id);
+      if (assignmentError) return json({ error: assignmentError.message }, 400);
+      const roleIds = (roleAssignments ?? []).map((item: any) => item.role_id);
+      const { data: assignedRoles, error: rolesError } = roleIds.length
+        ? await admin.from("roles").select("code").eq("organization_id", organizationId).in("id", roleIds)
+        : { data: [], error: null };
+      if (rolesError) return json({ error: rolesError.message }, 400);
+
+      const roleCodes = (assignedRoles ?? []).map((item: any) => item.code);
+      if (membership.role === "admin" || roleCodes.includes("admin")) {
+        return json({ error: "cannot_remove_admin_member" }, 403);
+      }
+      if (!roleCodes.some((code: string) => code === "technician" || code === "viewer")) {
+        return json({ error: "member_role_not_supported" }, 409);
+      }
+
+      const { error: removeError } = await admin.rpc("admin_remove_org_membership", {
+        p_organization_id: organizationId,
+        p_member_id: body.memberId,
+        p_actor_user_id: authData.user.id,
+      });
+      if (removeError) {
+        if (removeError.message.includes("cannot_remove_self")) {
+          return json({ error: "cannot_remove_self" }, 403);
+        }
+        if (removeError.message.includes("cannot_remove_admin_member")) {
+          return json({ error: "cannot_remove_admin_member" }, 403);
+        }
+        return json({ error: removeError.message }, 400);
+      }
+      return json({ success: true, membershipRemoved: true, authUserPreserved: true });
+    }
+
     if (body.action === "update_role") {
       if (!body.memberId || (body.roleCode !== "technician" && body.roleCode !== "viewer")) {
         return json({ error: "invalid_role_change" }, 400);
