@@ -1358,3 +1358,16 @@ Trạng thái:
 - Đã fetch lại file test 010 từ GitHub và xác minh nội dung có các phép thử cần thiết cùng lệnh ROLLBACK. Commit tạo file: `86ae428b506a3a545574ebd92d14efb5cc45723a`.
 - **Trạng thái: mới tạo và rà soát mã; chưa chạy trên Supabase. Chưa được ghi nhận PASS.**
 - Bước tiếp theo: người dùng chạy toàn bộ file test 010 một lần trên `BAOTRI-Mini-Test`, gửi bảng kết quả. Chỉ khi nhận được kết quả mới kết luận suspended membership và tenant isolation đạt hay cần sửa.
+
+## Cập nhật 17/11/2026 – kết quả test 010 và chuẩn bị test 011
+
+- Người dùng xác nhận đã chạy `supabase/tests/20261117001000_suspended_membership_tenant_isolation_test.sql` trên `BAOTRI-Mini-Test` và **PASS toàn bộ**. Ghi nhận test 008, 009, 010 đều PASS theo xác nhận kết quả chạy thực tế của người dùng.
+- Đã tạo `supabase/tests/20261117001100_unauthenticated_no_membership_permission_revoked_test.sql` trên nhánh `main`.
+- Test 011 gồm ba nhóm:
+  1. **Unauthenticated/anon:** kiểm tra SELECT bảng nghiệp vụ, gọi helper phân quyền và INSERT đều bị từ chối.
+  2. **Authenticated nhưng không có membership tại tenant:** dùng tài khoản Technician hiện có ở Org A để thử quyền với Org B không có membership; kiểm tra helper trả false, SELECT không thấy dữ liệu, UPDATE không tác động dòng và INSERT bị RLS chặn.
+  3. **Permission bị thu hồi:** tạm xóa đúng grant `assets.update` khỏi role Technician trong transaction; kiểm tra helper trả false và UPDATE không tác động dòng.
+- Test có preflight xác nhận tài khoản, membership, role assignment và permission ban đầu; tạo fixture trong transaction và kết thúc bằng `ROLLBACK`, nên permission bị thu hồi tạm thời và fixture sẽ được hoàn nguyên.
+- Đã fetch lại file test 011 từ `main` và kiểm tra có đủ ba nhóm, cảnh báo chỉ chạy Test và lệnh ROLLBACK. Commit tạo file: `cd53608b683be3655fd4f6905a4ce8cf5bd5c093`.
+- **Trạng thái test 011: đã tạo và rà soát mã, CHƯA chạy trên Supabase; chưa được ghi nhận PASS.**
+- Chỉ chạy file test 011 trên project `BAOTRI-Mini-Test`, tuyệt đối không chạy trên Production. Sau khi người dùng xác nhận kết quả, mới kết luận và chuyển sang bước tiếp theo.
