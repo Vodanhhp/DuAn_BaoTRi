@@ -1667,3 +1667,12 @@ Trạng thái:
 - Trạng thái kiểm thử: build/deploy đã thành công, nhưng người dùng chưa xác nhận kiểm tra trực tiếp giao diện QR sau lần triển khai này.
 - **Việc tiếp theo khi quay lại:** mở ứng dụng đã triển khai, tải lại cứng bằng Ctrl+F5; kiểm tra hộp thoại QR, nhập mã thiết bị thủ công và quét bằng camera. Nếu phát sinh lỗi, ghi nhận hiện tượng và xử lý đúng phạm vi; không sửa các chức năng khác đang hoạt động ổn định.
 - Trong thời gian tạm dừng, giữ nguyên mã nguồn, dữ liệu, cấu hình Supabase và các quyết định kiến trúc hiện tại; không thực hiện thay đổi Production hoặc đồng bộ dữ liệu nghiệp vụ.
+
+
+## Cập nhật 18/11/2026 – tinh gọn giao diện quét QR trên điện thoại
+
+- Trong `src/App.tsx`, bỏ khối giới thiệu lớn ở đầu cửa sổ quét QR (icon, dòng tiêu đề “Quét mã QR để mở hồ sơ” và đoạn mô tả) để giảm chiều cao giao diện.
+- Trong `src/style.css`, bổ sung responsive riêng cho modal quét QR trên màn hình rộng tối đa 680px: tăng kích thước chữ nhãn, ô nhập mã (cao 58px, chữ 17px), nút tìm thiết bị (cao tối thiểu 54px, chữ 15px), tăng khoảng đệm và tối ưu chiều cao modal.
+- Giữ nguyên logic camera QR, xử lý mã/ID thủ công, kiểm tra đúng thiết bị Checklist và thông báo lỗi; không thay đổi dữ liệu hoặc backend.
+- Commit trên `main`: giao diện `745a048259e4ba1f836d11328c3a71eb4de43a4a`; CSS responsive `10370bbe64306e059815e9cd4363f8acf1c720d7`.
+- **Trạng thái:** đã cập nhật mã nguồn trên `main`; CHƯA chạy build và CHƯA kiểm tra thực tế trên điện thoại. Cần chờ GitHub Actions deploy, sau đó mở giao diện quét QR trên điện thoại để nghiệm thu kích thước.
