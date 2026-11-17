@@ -1628,3 +1628,15 @@ Trạng thái:
 - Đã sửa điều kiện active của các tab mobile về `page===key`. Mục “Thêm” vốn đã xử lý trạng thái active cho các trang logs/tasks, nên không cần so sánh `logs` trong danh sách tab mobile.
 - Commit sửa: `1594c87`. Chỉ sửa điều hướng giao diện; không thay đổi nghiệp vụ, dữ liệu hay Supabase.
 - Trạng thái: chờ GitHub Actions build/deploy lại. Chỉ hướng dẫn người dùng kiểm tra sau khi workflow mới hoàn tất thành công.
+
+
+## Chốt và triển khai Phiếu YC Bảo dưỡng – Sửa chữa – 17/11/2026
+
+- Người dùng chốt chỉ sử dụng **một loại phiếu duy nhất: Phiếu YC Bảo dưỡng – Sửa chữa**; không tạo phiếu thực hiện riêng.
+- Phiếu ghi nhận thiết bị, ngày yêu cầu, loại yêu cầu, nội dung yêu cầu, người yêu cầu; khi xử lý xong cập nhật ngay trên phiếu các thông tin người hoàn thành, vật tư/nội dung xử lý, thông số và kết quả.
+- Phiếu chưa hoàn thành phải luôn hiển thị màu đỏ trong Tổng quan → Công việc hôm nay, không phụ thuộc ngày tạo. Khi người hoàn thành xác nhận kết quả (Đạt hoặc Không đạt/Còn tồn tại), phiếu chuyển hoàn thành và hết cảnh báo đỏ.
+- Phiếu YC gắn vào lý lịch thiết bị ngay từ lúc tạo. Phiếu phát sinh từ Checklist không đạt giữ liên kết đến đúng Checklist nguồn; lịch sử Checklist đạt/không đạt tiếp tục được lưu độc lập trong hồ sơ thiết bị.
+- **Thiết kế lưu trữ an toàn:** tái sử dụng bảng IndexedDB `logs` hiện có làm kho Phiếu YC duy nhất, bổ sung trường tùy chọn `requestedBy`; không tạo bảng mới, không xóa/chuyển đổi dữ liệu cũ, không cần migration Dexie. Phiếu cũ được giữ nguyên; các phiếu chưa có kết quả tiếp tục được coi là đang chờ xử lý.
+- Tab **Bảo dưỡng – Sửa chữa** hiển thị danh sách Phiếu YC, có nút tạo phiếu; tab **Lịch bảo dưỡng định kỳ** chỉ có hai thao tác: thêm tác vụ bảo dưỡng – sửa chữa và xuất lịch Excel.
+- Trạng thái code: cập nhật trực tiếp trên `main` trong các file `src/App.tsx`, `src/db.ts` và tài liệu tiến độ. Chưa xác nhận build hoặc GitHub Actions; cần chờ workflow xanh và kiểm thử giao diện thực tế.
+- Không thay đổi Supabase, không bật đồng bộ dữ liệu nghiệp vụ, không sửa Production.
