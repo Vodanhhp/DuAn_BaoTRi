@@ -1578,3 +1578,15 @@ Trạng thái:
 - App bắt sự kiện Supabase Auth `PASSWORD_RECOVERY` và hiển thị màn hình **Đặt lại mật khẩu**, dùng lại form cập nhật mật khẩu hiện có; không yêu cầu người dùng biết mật khẩu cũ.
 - Không cần migration SQL mới. Không thay đổi Production. Cần deploy lại Edge Function trên BAOTRI-Mini-Test và build/kiểm thử giao diện.
 - Trạng thái lúc cập nhật: code đã cập nhật trên `main`; CHƯA chạy build và CHƯA deploy phiên bản Edge Function có action reset_password. Người dùng cần pull main, chạy `npm.cmd run build`, sau đó deploy lại Function lên Test và kiểm thử email reset.
+
+
+## Bổ sung Xóa thành viên khỏi tổ chức – 17/11/2026
+
+- Người dùng yêu cầu Admin có thể xóa Technician/Viewer khi nhân sự nghỉ việc.
+- Chốt semantics an toàn: nút **Xóa khỏi tổ chức** chỉ gỡ membership và role assignments của người đó khỏi tổ chức hiện tại; KHÔNG xóa `auth.users`, KHÔNG xóa `profiles`, KHÔNG xóa tài khoản Supabase toàn cục. Người đó mất quyền truy cập tổ chức do không còn membership; muốn quay lại phải được thêm/mời lại.
+- Migration 014 tạo RPC `admin_remove_org_membership`, chỉ `service_role` được EXECUTE; từ chối tự xóa, từ chối xóa Admin và chỉ chấp nhận Technician/Viewer. Xóa membership làm FK cascade xóa role assignments; giữ nguyên Auth user và profile.
+- Edge Function action `remove_member` vẫn kiểm tra JWT và `users.manage`, xác minh membership thuộc đúng organization và role assignment thực tế trước khi gọi RPC.
+- UI Admin có nút **Xóa khỏi tổ chức** cho Technician/Viewer, kể cả thành viên đang chờ xác nhận email. Có confirm cảnh báo hậu quả; Admin không có nút này. Thành viên đã xóa được loại khỏi danh sách sau khi tải lại.
+- Không xóa dữ liệu nghiệp vụ Local/IndexedDB trên trình duyệt. Vì BAOTRI Mini hiện vẫn giữ dữ liệu Local theo trình duyệt, việc gỡ membership không tự xóa dữ liệu Local trên thiết bị người đó; dữ liệu Cloud bị RLS từ chối khi không còn membership.
+- Đã tạo SQL test Migration 014 kiểm tra quyền EXECUTE, chặn Admin tự xóa, gỡ membership/role assignments và bảo đảm profile/Auth user vẫn tồn tại; test dùng transaction + ROLLBACK.
+- Trạng thái: mã nguồn cập nhật trên `main`; CHƯA build, CHƯA áp dụng Migration 014, CHƯA chạy SQL test 014 và CHƯA deploy lại Edge Function trên Test. Chỉ kiểm thử BAOTRI-Mini-Test; không thay đổi Production.
