@@ -2120,6 +2120,47 @@ function ScanModal({close,assets,openAsset,expectedAssetId}:any){
 }
 
 
+
+function SetPasswordScreen({client,onComplete}:{client:SupabaseClient;onComplete:(user:Session['user'])=>void}) {
+  const [password,setPassword]=useState('')
+  const [confirmPassword,setConfirmPassword]=useState('')
+  const [busy,setBusy]=useState(false)
+  const [error,setError]=useState('')
+
+  const submit=async(event:FormEvent<HTMLFormElement>)=>{
+    event.preventDefault()
+    setError('')
+    if(password.length<8){setError('Mật khẩu phải có ít nhất 8 ký tự.');return}
+    if(password!==confirmPassword){setError('Hai mật khẩu không khớp.');return}
+    setBusy(true)
+    try {
+      const {data:currentData,error:currentError}=await client.auth.getUser()
+      if(currentError||!currentData.user)throw currentError??new Error('Phiên mời không hợp lệ. Hãy mở lại liên kết trong email.')
+      const metadata={...(currentData.user.user_metadata??{}),must_set_password:false}
+      const {data,error:updateError}=await client.auth.updateUser({password,data:metadata})
+      if(updateError||!data.user)throw updateError??new Error('Không nhận được hồ sơ tài khoản sau khi cập nhật.')
+      onComplete(data.user)
+    } catch(reason) {
+      setError(reason instanceof Error?reason.message:'Không thể thiết lập mật khẩu. Vui lòng thử lại.')
+    } finally {setBusy(false)}
+  }
+
+  return <main className="auth-page"><section className="auth-card">
+    <div className="auth-brand"><span><LockKeyhole size={25}/></span><div><b>BAOTRI</b><small>THIẾT LẬP TÀI KHOẢN</small></div></div>
+    <h1>Tạo mật khẩu đăng nhập</h1>
+    <p className="auth-intro">Email đã được xác nhận. Hãy tạo mật khẩu riêng để hoàn tất tham gia tổ chức.</p>
+    <form onSubmit={submit} className="auth-form">
+      <label>Mật khẩu mới</label>
+      <div className="auth-input"><LockKeyhole size={17}/><input type="password" autoComplete="new-password" minLength={8} required value={password} onChange={event=>setPassword(event.target.value)} placeholder="Ít nhất 8 ký tự"/></div>
+      <label>Nhập lại mật khẩu</label>
+      <div className="auth-input"><LockKeyhole size={17}/><input type="password" autoComplete="new-password" minLength={8} required value={confirmPassword} onChange={event=>setConfirmPassword(event.target.value)} placeholder="Nhập lại mật khẩu"/></div>
+      {error&&<div className="auth-error" role="alert">{error}</div>}
+      <button className="auth-submit" type="submit" disabled={busy}>{busy?'Đang lưu mật khẩu…':'Hoàn tất và vào ứng dụng'}</button>
+    </form>
+    <div className="auth-note">Không chia sẻ mật khẩu với người khác. Sau khi hoàn tất, bạn sẽ vào BAOTRI Mini theo đúng vai trò được Admin cấp.</div>
+  </section></main>
+}
+
 export default function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [checkingSession, setCheckingSession] = useState(true)
@@ -2203,6 +2244,7 @@ export default function App() {
   if (!authenticatedClient) return <AuthScreen client={null} />
   if (checkingSession) return <div className="auth-page"><div className="auth-card auth-loading">Đang kiểm tra phiên đăng nhập…</div></div>
   if (!session) return <AuthScreen client={authenticatedClient} />
+  if (session.user.user_metadata?.must_set_password === true) return <SetPasswordScreen client={authenticatedClient} onComplete={user=>setSession(current=>current?{...current,user}:current)}/>
   if (checkingOrganization) return <div className="auth-page"><div className="auth-card auth-loading">Đang kiểm tra tổ chức và quyền truy cập…</div></div>
   if (organizationError || !organizationContext) return <div className="auth-page"><div className="auth-card"><h1>Không thể mở dữ liệu tổ chức</h1><p className="auth-error">{organizationError || 'Tài khoản chưa được gắn với tổ chức hoạt động.'}</p><button className="auth-submit" onClick={() => { void authenticatedClient.auth.signOut() }}>Đăng xuất</button></div></div>
   const metadata = session.user.user_metadata
