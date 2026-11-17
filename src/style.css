@@ -608,6 +608,7 @@ button:disabled{opacity:.42!important;filter:grayscale(.35);cursor:not-allowed!i
 
 
 /* Quản lý tài khoản thành viên */
+.member-row-actions{display:flex;align-items:center;flex-wrap:wrap;gap:5px}
 .member-invite-form{grid-template-columns:minmax(0,1.5fr) minmax(0,1fr) auto;align-items:end}
 .member-invite-action{display:flex;align-items:flex-end}
 .member-invite-note{margin-top:-4px;line-height:1.6}
