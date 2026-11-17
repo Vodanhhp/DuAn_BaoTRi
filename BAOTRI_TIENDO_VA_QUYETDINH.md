@@ -1191,3 +1191,13 @@ Người dùng xác nhận đồng ý đưa cả dữ liệu thử nghiệm đan
 - Trước khi tạo migration, phải đọc toàn bộ Migration hiện có (đặc biệt Migration 001/002), kiểm tra schema thực tế và các bảng/enum/function/policy đã tồn tại; tái sử dụng hoặc điều chỉnh đúng cấu trúc hiện hữu, không tạo bảng trùng và không phá luồng Auth/membership đang chạy.
 - Tiếp theo: rà soát schema hiện tại → lập ma trận quyền cụ thể theo từng phân hệ/hành động → thiết kế migration tương thích → xây backend/Edge Function invitation và quản trị membership/role → xây giao diện Admin → kiểm thử RLS/API với từng vai trò và các trường hợp âm tính trên Test.
 - Chỉ chuyển trạng thái sang “đã triển khai/đã kiểm thử” khi có code thực tế và kết quả chạy xác nhận; nội dung trên không phải bằng chứng chức năng đã hoàn thành.
+
+
+### 9. Đối chiếu Migration hiện có – 17/11/2026
+Đã đọc trực tiếp ba file migration đang có trên nhánh `main`:
+- `20261116000100_identity_and_organizations.sql` (Migration 001): đã có `profiles`, `organizations`, `organization_members`; `profiles.id` liên kết `auth.users.id`; `organization_members.role` hiện chỉ chấp nhận `admin` hoặc `user`; trạng thái membership gồm `invited`, `active`, `suspended`. Client hiện chỉ được SELECT membership, chưa được INSERT/UPDATE/DELETE; có helper `is_org_member(uuid)` và `has_org_role(uuid,text)`.
+- `20261117000100_maintenance_records.sql`: bảng đồng bộ dữ liệu JSON theo owner của tài khoản, phục vụ rollout một tài khoản; không phải bảng quản lý User.
+- `20261117000200_business_schema.sql` (Migration 002): 11 bảng nghiệp vụ đang dùng RLS dựa trên membership và các helper hiện tại; một số quyền nghiệp vụ hiện vẫn đang cấp rộng cho member, chưa phân biệt granular giữa Kỹ thuật viên và Người xem.
+- Vì đã có bảng `profiles`, **không tạo thêm bảng `user_profiles` trùng chức năng**. Có thể mở rộng `profiles` khi có yêu cầu hồ sơ phù hợp.
+- Không thể chỉ thêm ba chuỗi role vào giao diện: phải thiết kế migration nâng cấp `organization_members.role` và thay thế/mở rộng helper `has_org_role` cùng các policy RLS hiện tại. Nếu không, role tùy chỉnh sẽ không được RLS hiểu và quyền có thể không đúng.
+- Trước khi code phân hệ này, cần kiểm tra thêm toàn bộ frontend auth/session, cấu hình Supabase Functions và trạng thái migration thực tế trên project Test. Các file migration trong repository tự ghi là draft/review; không được suy ra rằng chúng đã được áp dụng thành công chỉ vì có trong GitHub.
