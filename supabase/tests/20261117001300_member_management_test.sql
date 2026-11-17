@@ -75,6 +75,13 @@ begin
     raise exception 'TEST FAIL: service_role must execute admin_create_org_membership';
   end if;
 
+  if has_column_privilege('authenticated', 'public.profiles', 'email', 'SELECT') then
+    raise exception 'TEST FAIL: ordinary authenticated members must not read profile email directly';
+  end if;
+  if not has_column_privilege('service_role', 'public.profiles', 'email', 'SELECT') then
+    raise exception 'TEST FAIL: trusted service_role must read profile email for Admin directory';
+  end if;
+
   select count(*) into v_email_mismatches
   from public.profiles p
   join auth.users u on u.id = p.id
