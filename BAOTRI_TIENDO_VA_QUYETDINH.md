@@ -1298,3 +1298,14 @@ Trạng thái:
 - Chưa chạy Migration 006 hoặc smoke test trên Supabase Test; không có thay đổi database nào được thực hiện trong bước này.
 - Chưa chạy build frontend do môi trường hiện tại không truy cập được GitHub để clone/cài dependencies.
 - Trước khi đồng bộ nghiệp vụ cloud, cần chạy migration + smoke test trên Test, sau đó bổ sung kiểm thử quyền thực tế cho Admin/Kỹ thuật viên/Người xem và suspended membership.
+
+
+## Cập nhật 17/11/2026 – chuẩn bị kiểm thử phân quyền thực tế
+
+- Người dùng xác nhận Migration 006 trên `BAOTRI-Mini-Test` trả về `Success. No rows returned`.
+- Người dùng xác nhận smoke test Migration 006 cũng trả về `Success. No rows returned`.
+- Đã đối chiếu mã smoke test: đây là khối `DO` chỉ kiểm tra metadata và quyền SQL; nếu điều kiện sai sẽ phát sinh exception. Tuy nhiên, smoke test chưa mô phỏng hành vi của từng Auth user.
+- Đã thêm `supabase/tests/20261117000700_role_test_preflight.sql` trên `main`. Đây là script chỉ đọc, trả về ba nhóm kết quả: tổ chức và số membership/role; Auth user cùng role được gán; số lượng và danh sách permission của Admin/Kỹ thuật viên/Người xem.
+- Mục đích: xác định dữ liệu tài khoản thật hiện có trước khi viết bài test RLS theo JWT/Auth user. Không tự tạo Auth user, không sửa membership, không thay đổi dữ liệu nghiệp vụ.
+- Chưa kiểm thử quyền thực tế Admin/Kỹ thuật viên/Người xem, trạng thái suspended hoặc cross-organization. Chưa có kết luận các hành vi này đã đạt.
+- Bước tiếp theo: người dùng chạy preflight trên `BAOTRI-Mini-Test`, gửi ba bảng kết quả; từ đó thiết kế test có fixture an toàn, không dùng UUID/email giả định và không chạm Production.
