@@ -2187,12 +2187,43 @@ function MaintenancePlanModal({value,assets,close,save}:{value:MaintenancePlan;a
 }
 function ScanModal({close,assets,openAsset,expectedAssetId}:any){
   const [result,setResult]=useState('')
+  const [manualCode,setManualCode]=useState('')
+  const resolveAsset=(raw:string)=>{
+    const value=raw.trim()
+    const payload=value.startsWith('ASSET:')?value.slice(6).trim():value
+    if(!payload)return {error:'Vui lòng nhập mã thiết bị.'}
+    const found=assets.find((asset:Asset)=>asset.id===payload)||assets.find((asset:Asset)=>asset.code.toLocaleLowerCase('vi')===payload.toLocaleLowerCase('vi'))
+    if(!found)return {error:'Không tìm thấy thiết bị với mã vừa nhập. Hãy kiểm tra lại mã.'}
+    if(expectedAssetId&&found.id!==expectedAssetId)return {error:'Mã thiết bị không đúng với công việc Checklist này. Hãy nhập mã của đúng thiết bị.'}
+    return {asset:found}
+  }
+  const submitManual=(event:FormEvent<HTMLFormElement>)=>{
+    event.preventDefault()
+    const match=resolveAsset(manualCode)
+    if('error' in match){setResult(match.error);return}
+    openAsset(match.asset)
+  }
   useEffect(()=>{
     const scanner = new Html5QrcodeScanner('qr-reader',{fps:10,qrbox:{width:220,height:220}},false)
-    scanner.render((text)=>{setResult(text);const payload=text.trim().startsWith('ASSET:')?text.trim().slice(6):text.trim();const found=assets.find((a:Asset)=>a.id===payload)||assets.find((a:Asset)=>a.code===payload);if(found){if(expectedAssetId && found.id!==expectedAssetId){setResult('Mã QR không đúng thiết bị của công việc Checklist này. Hãy quét đúng thiết bị.');return}scanner.clear().catch(()=>{});openAsset(found)}},()=>{})
+    scanner.render((text)=>{
+      const match=resolveAsset(text)
+      if('error' in match){setResult(match.error);return}
+      scanner.clear().catch(()=>{})
+      openAsset(match.asset)
+    },()=>{})
     return ()=>{scanner.clear().catch(()=>{})}
   },[])
-  return <Modal title="Quét mã QR thiết bị" close={close}><div id="qr-reader" className="qr-reader"/><p className="muted">Cho phép trình duyệt truy cập camera. Checklist chỉ được mở sau khi quét đúng QR của thiết bị.</p>{result&&<p>Kết quả: {result}</p>}</Modal>
+  return <Modal title="Quét mã QR thiết bị" close={close}>
+    <div id="qr-reader" className="qr-reader"/>
+    <p className="muted">Cho phép trình duyệt truy cập camera để quét QR. Nếu mã QR bị hỏng, thiếu sáng hoặc không thể dán trên thiết bị, bạn có thể nhập mã thiết bị thủ công bên dưới.</p>
+    <form className="form-grid" onSubmit={submitManual}>
+      <Field label="Nhập mã thiết bị hoặc ID thiết bị">
+        <input value={manualCode} onChange={event=>setManualCode(event.target.value)} placeholder="Ví dụ: MNA-HP01-001-01-06-26" autoComplete="off"/>
+      </Field>
+      <div className="modal-actions"><button type="submit" className="primary-btn">Tìm thiết bị</button></div>
+    </form>
+    {result&&<p role="status" className="form-hint">Kết quả: {result}</p>}
+  </Modal>
 }
 
 
