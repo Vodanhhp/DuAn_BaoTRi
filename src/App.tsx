@@ -943,7 +943,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
     <aside className="sidebar">
       <div className="brand"><div className="brand-icon"><Wrench size={21}/></div><div><b>BAOTRI</b><small>QUẢN LÝ BẢO TRÌ</small></div></div>
       <div className="nav-label">MENU CHÍNH</div>
-      {nav.map(([key,label,Icon]) => <button key={key} className={`nav-item ${page===key || (key==='planning'&&page==='tasks')?'active':''}`} onClick={()=>{setPage(key);setSearch('');if(key==='assets'||key==='checklist')setShowArchived(false)}}><Icon size={18}/><span>{label}</span>{key==='planning' && overdue>0 && <em>{overdue}</em>}</button>)}
+      {nav.map(([key,label,Icon]) => <button key={key} className={`nav-item ${page===key || (key==='logs'&&page==='tasks')?'active':''}`} onClick={()=>{setPage(key);setSearch('');if(key==='assets'||key==='checklist')setShowArchived(false)}}><Icon size={18}/><span>{label}</span>{key==='planning' && overdue>0 && <em>{overdue}</em>}</button>)}
       <div className="sidebar-bottom"><div className="offline-pill"><span className="online-dot"/> Bản thử nghiệm · Dữ liệu lưu cục bộ</div><small>Phiên bản 0.1.0</small></div>
     </aside>
     <nav className="mobile-nav" aria-label="Điều hướng chính">
@@ -1009,7 +1009,6 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
           <div className="panel-head">
             <div><h2>Kế hoạch bảo trì</h2><p>Lập lịch bảo trì thiết bị, phân công nội bộ hoặc thuê ngoài</p></div>
             <div className="maintenance-plan-actions">
-              <button type="button" className="soft-btn" onClick={()=>setPage('tasks')}><CalendarDays size={16}/> Lịch bảo dưỡng định kỳ</button>
               <button type="button" className="soft-btn" disabled={isViewer} title={isViewer?'Viewer không được xuất Excel':undefined} onClick={openMaintenancePlanExport}><Download size={16}/> Xuất kế hoạch Excel</button>
               <button type="button" className="primary-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>{setEditingPlan(emptyMaintenancePlan(planPeriod,planAnchorDate));setModal('plan')}}><Plus size={16}/> Thêm kế hoạch</button>
             </div>
@@ -1048,11 +1047,11 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
             {filteredMaintenancePlans.length===0&&<Empty text="Chưa có kế hoạch trong kỳ này. Hãy thêm hạng mục bảo trì đầu tiên."/>}
           </div>
         </section>}
-        {page==='tasks' && <section className="panel"><div className="panel-head"><div><h2>Lịch bảo dưỡng định kỳ</h2><p>Công việc lặp lại, hạn thực hiện và tiến độ; không phải kế hoạch bảo trì theo kỳ.</p></div><button className="soft-btn" disabled={isViewer} title={isViewer?'Viewer không được xuất Excel':undefined} onClick={exportTasks}><Download size={16}/> Xuất lịch bảo dưỡng Excel</button></div>
+        {page==='tasks' && <section className="panel work-module-panel"><div className="panel-head"><div><h2>Lịch bảo dưỡng định kỳ</h2><p>Công việc lặp lại, hạn thực hiện và tiến độ; không phải kế hoạch bảo trì theo kỳ.</p></div><div className="module-actions"><button type="button" className="soft-btn" onClick={()=>setPage('logs')}><Wrench size={16}/> Phiếu bảo dưỡng – sửa chữa</button><button className="soft-btn" disabled={isViewer} title={isViewer?'Viewer không được xuất Excel':undefined} onClick={exportTasks}><Download size={16}/> Xuất lịch bảo dưỡng Excel</button></div></div>
           <div className="table-wrap"><table><thead><tr><th>Ngày đến hạn</th><th>Thiết bị</th><th>Công việc</th><th>Chu kỳ</th><th>Trạng thái</th><th></th></tr></thead><tbody>
           {filteredTasks.map(t=><tr key={t.id}><td>{dateText(t.dueDate)}</td><td>{assets.find(a=>a.id===t.assetId)?.name??'Chưa gắn thiết bị'}</td><td><b>{t.title}</b><small>{t.checklist.split('\n').filter(Boolean).length} bước công việc</small></td><td>{t.frequency}</td><td><span className={`status ${t.status==='Hoàn thành'?'green':t.dueDate<today()?'red':'orange'}`}>{t.status==='Hoàn thành'?'Hoàn thành':t.dueDate<today()?'Quá hạn':t.status}</span></td><td className="actions"><button className="text-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>{setEditingTask(t);setModal('task')}}>Chi tiết</button>{t.status!=='Hoàn thành'&&<button className="text-btn success-text" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>completeTask(t)}>Hoàn thành</button>}</td></tr>)}
           </tbody></table>{filteredTasks.length===0&&<Empty text="Chưa có công việc."/ >}</div></section>}
-        {page==='logs' && <section className="panel"><div className="panel-head"><div><h2>Bảo dưỡng – Sửa chữa</h2><p>Phiếu công việc và lịch sử xử lý kỹ thuật thực tế</p></div><button className="soft-btn" disabled={isViewer} title={isViewer?'Viewer không được xuất Excel':undefined} onClick={exportLogs}><Download size={16}/> Xuất Excel</button></div>
+        {page==='logs' && <section className="panel work-module-panel"><div className="panel-head"><div><h2>Bảo dưỡng – Sửa chữa</h2><p>Phiếu công việc và lịch sử xử lý kỹ thuật thực tế</p></div><div className="module-actions"><button type="button" className="soft-btn" onClick={()=>setPage('tasks')}><CalendarDays size={16}/> Lịch bảo dưỡng định kỳ</button><button className="soft-btn" disabled={isViewer} title={isViewer?'Viewer không được xuất Excel':undefined} onClick={exportLogs}><Download size={16}/> Xuất Excel</button></div></div>
           <div className="table-wrap"><table><thead><tr><th>Ngày lập phiếu</th><th>Thiết bị</th><th>Loại công việc</th><th>Nội dung</th><th>Trạng thái</th><th>Kết quả</th><th>Người thực hiện</th><th>Hoàn thành lúc</th><th>Thao tác</th></tr></thead><tbody>{logs.map(l=><tr key={l.id}><td>{dateText(l.date)}</td><td>{assets.find(a=>a.id===l.assetId)?.name??'—'}</td><td>{l.kind}</td><td>{l.description}</td><td><span className={`status ${l.result?'green':'orange'}`}>{l.result?'Hoàn thành':'Chưa hoàn thành'}</span></td><td>{l.result||'Chưa có kết quả'}</td><td>{l.performedBy||'—'}</td><td>{dateTimeText(l.completedAt)}</td><td className="actions"><button type="button" className="text-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>{setEditingLog(l);setModal('log')}}>{l.result?'Sửa phiếu':'Cập nhật phiếu'}</button></td></tr>)}</tbody></table>{logs.length===0&&<Empty text="Chưa có nhật ký."/ >}</div></section>}
         {page==='reports' && <div className="reports-dashboard">
           <section className="panel report-period-panel">
@@ -1138,7 +1137,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
     </main>
     {mobileMore&&<div className="mobile-more-backdrop" onClick={()=>setMobileMore(false)}><div className="mobile-more-menu" onClick={e=>e.stopPropagation()}>
       <div className="mobile-more-title">Chức năng khác</div>
-      {([['inventory','Kho vật tư',Package],['tasks','Kế hoạch bảo dưỡng định kỳ',CalendarDays],['logs','Bảo dưỡng – Sửa chữa',Wrench],['reports','Báo cáo',BarChart3],['settings','Cài đặt',Settings]] as const).map(([key,label,Icon])=><button key={key} onClick={()=>{setPage(key);setSearch('');setMobileMore(false)}}><Icon size={18}/>{label}<ChevronRight size={16}/></button>)}
+      {([['inventory','Kho vật tư',Package],['logs','Bảo dưỡng – Sửa chữa',Wrench],['reports','Báo cáo',BarChart3],['settings','Cài đặt',Settings]] as const).map(([key,label,Icon])=><button key={key} onClick={()=>{setPage(key);setSearch('');setMobileMore(false)}}><Icon size={18}/>{label}<ChevronRight size={16}/></button>)}
     </div></div>}
     {notice&&<div className="toast"><Check size={17}/>{notice}</div>}
     {profileEditOpen&&<EmployeeProfileEditModal email={userEmail} profile={profile} close={()=>setProfileEditOpen(false)} onSave={async value=>{await onSaveProfile(value);setNotice('Đã lưu hồ sơ nhân viên')}}/>}
