@@ -1434,3 +1434,22 @@ Trạng thái:
   - Điều hướng quay lại: `8f336f01b44f516400df56ec23993b60658e0c3c`
   - Tích hợp màn hình Cloud riêng: `6a9496719dc0ab4ba87d8c53b5ed1d06ca072d55`
 - **Trạng thái:** hoàn thành bước đọc Cloud Assets ở mức code; chưa nghiệm thu build/runtime. Bước tiếp theo là kiểm thử build và đọc dữ liệu trên Test, sau đó triển khai RPC cấp mã thiết bị cloud an toàn trước khi bật tạo mới.
+
+## Cập nhật 17/11/2026 – thiết kế và tạo RPC cấp mã thiết bị Cloud (Migration 012)
+
+- Đối chiếu tài liệu quy ước mã thiết bị và mã nguồn thực tế: cấu trúc mã là `ABC-ABXY-xxx-BB-MM-YY`, số thứ tự tăng theo từng mã ABC trong phạm vi toàn tổ chức, không khởi động lại theo cơ sở; có dấu `*` khi thiết bị chuyển đến.
+- Phát hiện các cấu hình hiện tại (`HP01`, mã loại và mã vị trí) đang lấy từ hằng số/localStorage ở trình duyệt. Không được dùng nguyên trạng làm cấu hình Cloud đa doanh nghiệp.
+- Tạo Migration `supabase/migrations/20261117001200_asset_code_allocator_rpc.sql`:
+  - Bổ sung `organization_settings.asset_code_config` để lưu cấu hình riêng từng tổ chức: `facility_code`, `category_codes`, `location_codes`; dùng khóa `__UNASSIGNED__` cho vị trí chưa phân loại.
+  - Tạo bảng bộ đếm `asset_code_counters`, khóa theo `organization_id + category_code`; client không được đọc/ghi trực tiếp.
+  - Tạo RPC `create_asset_with_code`: kiểm tra đăng nhập và permission `assets.create`, lấy cấu hình từ DB, cấp số bằng UPSERT có khóa hàng để tuần tự hóa các yêu cầu đồng thời, tạo mã và INSERT thiết bị trong cùng transaction. Có thể truyền UUID để bảo toàn ID khi cần; nếu không truyền, DB sinh UUID.
+  - Thu hồi quyền INSERT trực tiếp trên bảng `assets` khỏi role `authenticated`; mọi tạo thiết bị từ client phải đi qua RPC để không thể bỏ qua bộ cấp mã. RLS vẫn bảo vệ SELECT/UPDATE/DELETE.
+  - Migration không tự cấu hình mã cơ sở, không import Local, không sửa thiết bị hiện có và không thay đổi Production.
+- Tạo test `supabase/tests/20261117001200_asset_code_allocator_rpc_test.sql`: kiểm tra bảo toàn UUID, định dạng mã, tăng số thứ tự liên tiếp giữa Admin/Technician và từ chối Viewer; cấu hình HP01/MNA/01 chỉ là fixture trong transaction của BAOTRI-Mini-Test; cuối script ROLLBACK.
+- Cập nhật test 008 `supabase/tests/20261117000800_authenticated_asset_crud_rls_test.sql` để phản ánh thiết kế mới: direct INSERT bị chặn; Technician/Admin tạo qua RPC; tiếp tục kiểm tra UPDATE/DELETE theo quyền. Test 009 tạo fixture assets trước khi chuyển role authenticated nên không bị ảnh hưởng bởi việc thu hồi INSERT trực tiếp.
+- Các commit mới:
+  - Migration 012: `2b895424ee747f8923161812c24c2bcc7b72ce65`, hiệu chỉnh bắt buộc tạo qua RPC: `97249de22165ebeb6a3459c282683412bd47af5c`.
+  - Test 012: `5b2c8960d3756b4b4f718a747decf76cdd783a1d`.
+  - Cập nhật test 008: `1b61b24d91d9406eb2a978c1c66f848ff472e2a1`.
+- Đã fetch lại các file từ `main` để xác minh nội dung sau commit.
+- **Trạng thái: mới tạo và rà soát mã SQL; CHƯA áp dụng Migration 012, CHƯA chạy test 008 phiên bản mới hoặc test 012 trên Supabase Test.** Chưa tạo UI cấu hình mã theo tổ chức và chưa bật nút tạo thiết bị Cloud. Chỉ tiếp tục sau khi Migration 012 và hai test được người dùng xác nhận đạt trên BAOTRI-Mini-Test.
