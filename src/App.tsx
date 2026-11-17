@@ -1305,53 +1305,6 @@ function OrganizationMembersPanel({client,organizationId}:{client:SupabaseClient
   const [error,setError]=useState('')
   const [message,setMessage]=useState('')
 
-  const loadMembers=async()=>{
-    setLoading(true)
-    setError('')
-    try {
-      const {data:membershipRows,error:membershipError}=await client
-        .from('organization_members')
-        .select('id,user_id,status,created_at,role')
-        .eq('organization_id',organizationId)
-        .order('created_at',{ascending:true})
-      if(membershipError)throw membershipError
-      const rows=membershipRows??[]
-      const userIds=rows.map((row:any)=>row.user_id)
-      const memberIds=rows.map((row:any)=>row.id)
-      const [profileResult,assignmentResult,roleResult]=await Promise.all([
-        userIds.length?client.from('profiles').select('id,email,display_name').in('id',userIds):Promise.resolve({data:[],error:null} as any),
-        memberIds.length?client.from('member_roles').select('member_id,role_id').eq('organization_id',organizationId).in('member_id',memberIds):Promise.resolve({data:[],error:null} as any),
-        client.from('roles').select('id,code,name').eq('organization_id',organizationId)
-      ])
-      if(profileResult.error)throw profileResult.error
-      if(assignmentResult.error)throw assignmentResult.error
-      if(roleResult.error)throw roleResult.error
-      const profiles=new Map<string,any>((profileResult.data??[]).map((item:any)=>[item.id,item] as [string,any]))
-      const roles=new Map<string,any>((roleResult.data??[]).map((item:any)=>[item.id,item] as [string,any]))
-      const assignments=new Map<string,string>((assignmentResult.data??[]).map((item:any)=>[item.member_id,item.role_id] as [string,string]))
-      setMembers(rows.map((row:any)=>{
-        const profile:any=profiles.get(row.user_id)
-        const role:any=roles.get(assignments.get(row.id)??'')
-        return {
-          id:row.id,
-          userId:row.user_id,
-          email:profile?.email??'Không có email',
-          displayName:profile?.display_name??'',
-          status:row.status,
-          roleCode:role?.code??(row.role==='admin'?'admin':'unknown'),
-          roleName:role?.name??(row.role==='admin'?'Admin':'Chưa gán vai trò'),
-          createdAt:row.created_at
-        } as OrganizationMemberView
-      }))
-    } catch(reason) {
-      setError(reason instanceof Error?reason.message:'Không thể tải danh sách tài khoản.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(()=>{void loadMembers()},[client,organizationId])
-
   const callManagement=async(body:Record<string,string>)=>{
     const {data,error:invokeError}=await client.functions.invoke('manage-organization-members',{
       body:{organizationId,...body}
@@ -1367,6 +1320,21 @@ function OrganizationMembersPanel({client,organizationId}:{client:SupabaseClient
     if(data?.error)throw new Error(String(data.error))
     return data
   }
+
+  const loadMembers=async()=>{
+    setLoading(true)
+    setError('')
+    try {
+      const result=await callManagement({action:'list'})
+      setMembers((result?.members??[]) as OrganizationMemberView[])
+    } catch(reason) {
+      setError(reason instanceof Error?reason.message:'Không thể tải danh sách tài khoản.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(()=>{void loadMembers()},[client,organizationId])
 
   const invite=async(event:FormEvent<HTMLFormElement>)=>{
     event.preventDefault()
