@@ -1567,3 +1567,14 @@ Trạng thái:
 - Các commit chính: Migration 013 `b4cee903` (hiệu chỉnh race: `9e3e62e`, giới hạn email và cấp quyền đọc cho Edge Function: `0d628c3`, `8102b7a`, `636655e`), Edge Function `430d1c3` (hiệu chỉnh typing: `07f4412`, bổ sung danh sách Admin: `b3db27a`, bắt buộc thiết lập mật khẩu: `bb94825`, kiểu Map: `c926119`), UI `e8f9e30` (hiệu chỉnh: `8523706`, tải danh sách qua Edge Function: `5b113be`, màn hình đặt mật khẩu: `470df4a`, import icon: `f506ce9`, thông báo mời: `393d801`, hiệu lực đổi quyền: `7ed42b2`), test SQL `e49bde6` (hiệu chỉnh: `90e23ba`, `453e4db`, `e749539`, `878c00e`, kiểm tra email ACL: `a43b64c`, kiểm tra users.manage: `a48db33`).
 - **Chưa áp dụng Migration 013 trên Supabase Test; chưa deploy Edge Function; chưa cấu hình SMTP/URL chuyển hướng; chưa chạy SQL test 013; chưa chạy build hoặc kiểm thử runtime.** Không thay đổi Production.
 - Trước khi mời người thật, cần cấu hình SMTP gửi thư trong Supabase Auth và URL chuyển hướng được phép. Khi deploy Edge Function, dùng project ref Test `oyzhxgzltpdebpymuicb`; `SUPABASE_SERVICE_ROLE_KEY` chỉ dùng ở môi trường Edge Function, tuyệt đối không đưa vào Vite/frontend.
+
+
+## Bổ sung Reset mật khẩu thành viên – 17/11/2026
+
+- Người dùng yêu cầu Admin có thể hỗ trợ thành viên quên mật khẩu ngay trong **Cài đặt → Quản lý tài khoản**, áp dụng cho Technician/Viewer, không áp dụng cho bất kỳ tài khoản Admin nào.
+- Quy tắc bảo mật: Admin chỉ gửi yêu cầu đặt lại mật khẩu qua email; không xem, tạo hoặc đặt mật khẩu thay người dùng. Thành viên tự mở liên kết email và tự nhập mật khẩu mới.
+- Đã bổ sung nút **Reset mật khẩu** cho thành viên Technician/Viewer đã xác nhận email. Thành viên đang chờ xác nhận không hiển thị nút reset; tài khoản Admin không có nút này.
+- Edge Function `manage-organization-members` bổ sung action `reset_password`: vẫn xác thực JWT và quyền `users.manage`; xác minh membership thuộc đúng tổ chức; đọc vai trò thực tế từ `member_roles/roles`; từ chối Admin và role không hợp lệ; chỉ gửi email cho Auth user đã xác nhận email; chuyển hướng về `APP_BASE_URL`.
+- App bắt sự kiện Supabase Auth `PASSWORD_RECOVERY` và hiển thị màn hình **Đặt lại mật khẩu**, dùng lại form cập nhật mật khẩu hiện có; không yêu cầu người dùng biết mật khẩu cũ.
+- Không cần migration SQL mới. Không thay đổi Production. Cần deploy lại Edge Function trên BAOTRI-Mini-Test và build/kiểm thử giao diện.
+- Trạng thái lúc cập nhật: code đã cập nhật trên `main`; CHƯA chạy build và CHƯA deploy phiên bản Edge Function có action reset_password. Người dùng cần pull main, chạy `npm.cmd run build`, sau đó deploy lại Function lên Test và kiểm thử email reset.
