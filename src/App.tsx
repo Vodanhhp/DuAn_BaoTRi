@@ -1760,6 +1760,7 @@ function AssetChecklist({asset,allowActions,scheduledFor,isMakeup,createRepairFr
   const currentVersion = versions?.find(v=>v.version===template?.currentVersion)
   const orderedResults = results.slice().sort((a,b)=>b.performedAt.localeCompare(a.performedAt))
   const openBuilder = async () => {
+    if (!allowActions) return
     setDraftTitle(template?.title ?? ('Checklist - '+asset.name))
     setDraftDescription(template?.description ?? '')
     const current = template ? await db.checklistVersions.where('templateId').equals(template.id).toArray() : []
@@ -1771,6 +1772,7 @@ function AssetChecklist({asset,allowActions,scheduledFor,isMakeup,createRepairFr
   const updateItem = (id:string,patch:Partial<ChecklistTemplateItem>) => setDraftItems(items=>items.map(item=>item.id===id?{...item,...patch}:item))
   const saveTemplate = async (event:FormEvent) => {
     event.preventDefault()
+    if (!allowActions) return
     const cleanItems = draftItems.filter(item=>item.label.trim()).map((item,index)=>({...item,label:item.label.trim(),order:index}))
     if(!draftTitle.trim()) return alert('Nhập tên biểu mẫu Checklist')
     if(!cleanItems.length) return alert('Thêm ít nhất một hạng mục kiểm tra')
@@ -1788,6 +1790,7 @@ function AssetChecklist({asset,allowActions,scheduledFor,isMakeup,createRepairFr
     alert('Đã lưu biểu mẫu phiên bản '+nextVersion+'. Các phiên bản và phiếu cũ được giữ nguyên.')
   }
   const startRun = () => {
+    if (!allowActions) return
     if(!template || !currentVersion) return alert('Thiết bị này chưa có biểu mẫu Checklist')
     setAnswers({})
     setItemNotes({})
@@ -1796,6 +1799,7 @@ function AssetChecklist({asset,allowActions,scheduledFor,isMakeup,createRepairFr
   }
   const saveResult = async (event:FormEvent) => {
     event.preventDefault()
+    if (!allowActions) return
     if(!template || !currentVersion) return
     const items:ChecklistResultItem[]=currentVersion.items.map(item=>({...item,templateItemId:item.id,answer:answers[item.id]??'',note:itemNotes[item.id]??''}))
     if(items.some(item=>item.required&&!item.answer.trim())) return alert('Vui lòng hoàn thành các hạng mục bắt buộc')
