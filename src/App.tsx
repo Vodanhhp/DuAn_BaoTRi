@@ -1108,6 +1108,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
             </div>
             <div className="setting-row"><div><b>Thao tác hồ sơ</b><small>Thông tin chỉ được thay đổi khi chọn Sửa hồ sơ.</small></div><div className="setting-inline-actions"><button className="soft-btn" onClick={()=>setProfileEditOpen(true)}>Sửa hồ sơ</button><button className="soft-btn" onClick={onSignOut}>Đăng xuất</button></div></div>
           </section>
+          {organizationRole.trim().toLowerCase()==='admin'&&<OrganizationMembersPanel client={cloudClient} organizationId={organizationId}/>}
           <section className="panel"><div className="panel-head"><div><h2>Dữ liệu và sao lưu</h2><p>Phiên bản thử nghiệm lưu dữ liệu cục bộ trong trình duyệt này</p></div><HardDrive/></div>
             <div className="setting-row"><div><b>Xuất bản sao lưu</b><small>Tải đầy đủ thiết bị, vật tư, kế hoạch, nhật ký, Checklist, ảnh, danh mục tự tạo và dữ liệu hàng đợi thành JSON.</small></div><button className="primary-btn" disabled={isViewer} title={isViewer?'Viewer không được sao lưu dữ liệu':undefined} onClick={backup}><Download size={16}/> Sao lưu</button></div>
             <div className="setting-row"><div><b>Khôi phục bản sao lưu</b><small>Nhập file JSON đã xuất từ ứng dụng.</small></div><label className={`soft-btn file-btn ${isViewer?'disabled':''}`} title={isViewer?'Viewer không được khôi phục dữ liệu':undefined}>Chọn file<input type="file" accept=".json,application/json" disabled={isViewer} onChange={e=>e.target.files?.[0]&&restore(e.target.files[0])}/></label></div>
@@ -1282,6 +1283,151 @@ function EmployeeProfileEditModal({email,profile,close,onSave}:{email:string;pro
     <div className="modal-actions"><button type="button" className="soft-btn" onClick={close}>Hủy</button><button type="submit" className="primary-btn" disabled={busy}>{busy?'Đang lưu…':'Lưu hồ sơ'}</button></div>
   </form></Modal>
 }
+
+type OrganizationMemberView = {
+  id: string
+  userId: string
+  email: string
+  displayName: string
+  status: 'invited' | 'active' | 'suspended'
+  roleCode: string
+  roleName: string
+  createdAt: string
+}
+
+function OrganizationMembersPanel({client,organizationId}:{client:SupabaseClient;organizationId:string}) {
+  const [members,setMembers]=useState<OrganizationMemberView[]>([])
+  const [email,setEmail]=useState('')
+  const [roleCode,setRoleCode]=useState<'technician'|'viewer'>('technician')
+  const [loading,setLoading]=useState(true)
+  const [busy,setBusy]=useState(false)
+  const [busyMember,setBusyMember]=useState('')
+  const [error,setError]=useState('')
+  const [message,setMessage]=useState('')
+
+  const loadMembers=async()=>{
+    setLoading(true)
+    setError('')
+    try {
+      const {data:membershipRows,error:membershipError}=await client
+        .from('organization_members')
+        .select('id,user_id,status,created_at,role')
+        .eq('organization_id',organizationId)
+        .order('created_at',{ascending:true})
+      if(membershipError)throw membershipError
+      const rows=membershipRows??[]
+      const userIds=rows.map((row:any)=>row.user_id)
+      const memberIds=rows.map((row:any)=>row.id)
+      const [profileResult,assignmentResult,roleResult]=await Promise.all([
+        userIds.length?client.from('profiles').select('id,email,display_name').in('id',userIds):Promise.resolve({data:[],error:null} as any),
+        memberIds.length?client.from('member_roles').select('member_id,role_id').eq('organization_id',organizationId).in('member_id',memberIds):Promise.resolve({data:[],error:null} as any),
+        client.from('roles').select('id,code,name').eq('organization_id',organizationId)
+      ])
+      if(profileResult.error)throw profileResult.error
+      if(assignmentResult.error)throw assignmentResult.error
+      if(roleResult.error)throw roleResult.error
+      const profiles=new Map((profileResult.data??[]).map((item:any)=>[item.id,item]))
+      const roles=new Map((roleResult.data??[]).map((item:any)=>[item.id,item]))
+      const assignments=new Map((assignmentResult.data??[]).map((item:any)=>[item.member_id,item.role_id]))
+      setMembers(rows.map((row:any)=>{
+        const profile:any=profiles.get(row.user_id)
+        const role:any=roles.get(assignments.get(row.id)??'')
+        return {
+          id:row.id,
+          userId:row.user_id,
+          email:profile?.email??'Không có email',
+          displayName:profile?.display_name??'',
+          status:row.status,
+          roleCode:role?.code??(row.role==='admin'?'admin':'unknown'),
+          roleName:role?.name??(row.role==='admin'?'Admin':'Chưa gán vai trò'),
+          createdAt:row.created_at
+        } as OrganizationMemberView
+      }))
+    } catch(reason) {
+      setError(reason instanceof Error?reason.message:'Không thể tải danh sách tài khoản.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(()=>{void loadMembers()},[client,organizationId])
+
+  const callManagement=async(body:Record<string,string>)=>{
+    const {data,error:invokeError}=await client.functions.invoke('manage-organization-members',{
+      body:{organizationId,...body}
+    })
+    if(invokeError)throw invokeError
+    if(data?.error)throw new Error(String(data.error))
+    return data
+  }
+
+  const invite=async(event:FormEvent<HTMLFormElement>)=>{
+    event.preventDefault()
+    const cleanEmail=email.trim().toLowerCase()
+    if(!cleanEmail)return
+    setBusy(true);setError('');setMessage('')
+    try {
+      const result=await callManagement({action:'invite',email:cleanEmail,roleCode})
+      setEmail('')
+      setMessage(result?.invitationSent
+        ? 'Đã gửi email mời. Tài khoản sẽ hoạt động sau khi người nhận xác nhận email.'
+        : 'Đã thêm tài khoản đã xác thực vào tổ chức.')
+      await loadMembers()
+    } catch(reason) {
+      const raw=reason instanceof Error?reason.message:String(reason)
+      setError(raw.includes('already_a_member')?'Email này đã là thành viên của tổ chức.'
+        :raw.includes('email_confirmation_pending')?'Email đã có tài khoản nhưng chưa xác nhận. Người dùng cần hoàn tất lời mời hiện tại trước.'
+        :raw)
+    } finally {setBusy(false)}
+  }
+
+  const changeRole=async(member:OrganizationMemberView,nextRole:string)=>{
+    if(nextRole!=='technician'&&nextRole!=='viewer')return
+    setBusyMember(member.id);setError('');setMessage('')
+    try {
+      await callManagement({action:'update_role',memberId:member.id,roleCode:nextRole})
+      setMessage('Đã cập nhật vai trò.')
+      await loadMembers()
+    } catch(reason) {setError(reason instanceof Error?reason.message:String(reason))}
+    finally {setBusyMember('')}
+  }
+
+  const changeStatus=async(member:OrganizationMemberView)=>{
+    const nextStatus=member.status==='active'?'suspended':'active'
+    const actionText=nextStatus==='suspended'?'tạm khóa':'mở lại'
+    if(!confirm('Bạn muốn '+actionText+' tài khoản '+member.email+'? Dữ liệu và lịch sử của tài khoản vẫn được giữ nguyên.'))return
+    setBusyMember(member.id);setError('');setMessage('')
+    try {
+      await callManagement({action:'update_status',memberId:member.id,status:nextStatus})
+      setMessage(nextStatus==='suspended'?'Đã tạm khóa tài khoản.':'Đã mở lại tài khoản.')
+      await loadMembers()
+    } catch(reason) {setError(reason instanceof Error?reason.message:String(reason))}
+    finally {setBusyMember('')}
+  }
+
+  return <section className="panel organization-members-panel">
+    <div className="panel-head"><div><h2>Quản lý tài khoản</h2><p>Thêm Kỹ thuật viên / Người xem và quản lý quyền truy cập của thành viên tổ chức</p></div><UserRound/></div>
+    <form className="form-grid member-invite-form" onSubmit={invite}>
+      <Field label="Email tài khoản mới"><input required type="email" autoComplete="off" value={email} onChange={event=>setEmail(event.target.value)} placeholder="nhanvien@congty.vn"/></Field>
+      <Field label="Vai trò"><select value={roleCode} onChange={event=>setRoleCode(event.target.value as 'technician'|'viewer')}><option value="technician">Kỹ thuật viên</option><option value="viewer">Người xem (chỉ xem)</option></select></Field>
+      <div className="member-invite-action"><button type="submit" className="primary-btn" disabled={busy||!email.trim()}><Plus size={16}/>{busy?'Đang xử lý…':'Thêm tài khoản'}</button></div>
+    </form>
+    <p className="muted member-invite-note">Email chưa có tài khoản sẽ nhận liên kết mời để tự xác thực và đặt mật khẩu. Email đã có tài khoản xác thực trong Supabase Project này có thể được thêm trực tiếp. Không thể tạo thêm Admin tại đây.</p>
+    {error&&<div className="form-hint warning-hint" role="alert">{error}</div>}
+    {message&&<div className="form-hint" role="status">{message}</div>}
+    <div className="panel-head member-list-heading"><div><b>Thành viên tổ chức</b><p>{members.length} tài khoản</p></div><button type="button" className="soft-btn" onClick={()=>void loadMembers()} disabled={loading}>Làm mới</button></div>
+    {loading?<p className="muted">Đang tải danh sách tài khoản…</p>:<div className="table-wrap"><table className="member-table"><thead><tr><th>Tài khoản</th><th>Vai trò</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
+      {members.map(member=><tr key={member.id}>
+        <td><b>{member.displayName||member.email}</b>{member.displayName&&<small>{member.email}</small>}</td>
+        <td>{member.roleCode==='admin'?<span className="status green">Admin</span>:member.roleCode==='unknown'?member.roleName:<select aria-label={'Vai trò '+member.email} value={member.roleCode} disabled={busyMember===member.id||member.roleCode==='unknown'} onChange={event=>void changeRole(member,event.target.value)}><option value="technician">Kỹ thuật viên</option><option value="viewer">Người xem</option></select>}</td>
+        <td><span className={'status '+(member.status==='active'?'green':member.status==='invited'?'orange':'gray')}>{member.status==='active'?'Đang hoạt động':member.status==='invited'?'Chờ xác nhận email':'Đã tạm khóa'}</span></td>
+        <td>{member.roleCode!=='admin'&&member.status!=='invited'&&<button type="button" className={member.status==='active'?'text-btn danger':'text-btn success-text'} disabled={busyMember===member.id} onClick={()=>void changeStatus(member)}>{member.status==='active'?'Tạm khóa':'Mở lại'}</button>}{member.roleCode==='admin'&&<small className="muted">Không quản lý Admin tại đây</small>}</td>
+      </tr>)}
+      {members.length===0&&<tr><td colSpan={4}>Chưa có thành viên.</td></tr>}
+    </tbody></table></div>}
+  </section>
+}
+
 function AssetDetailModal({value,logs,allowChecklist,checklistOccurrence,createRepairFromChecklist,editLog,close,edit,addLog,readOnly=false}:any){
   const [showPhotos,setShowPhotos]=useState(false)
   const [activePhoto,setActivePhoto]=useState<string|null>(null)
