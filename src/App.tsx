@@ -462,8 +462,8 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
         .map(item => ({ ...emptyItem(), ...item, updatedAt: now() }))
       if (missingInventory.length) await db.inventory.bulkAdd(missingInventory)
       if (!(await db.tasks.count())) {
-        const t1 = { ...emptyTask(), assetId: compressor?.id ?? '', title: 'Kiểm tra máy nén khí định kỳ', dueDate: today(), frequency: 'Hàng tháng', checklist: 'Kiểm tra rò rỉ\\nKiểm tra áp suất\\nKiểm tra nhiệt độ dầu' }
-        const t2 = { ...emptyTask(), assetId: coldStore?.id ?? '', title: 'Ghi nhận nhiệt độ kho lạnh', dueDate: today(), frequency: 'Hàng ngày', checklist: 'Ghi nhiệt độ hiển thị\\nKiểm tra cửa kho\\nKiểm tra tình trạng dàn lạnh' }
+        const t1 = { ...emptyTask(), assetId: compressor?.id ?? '', title: 'Kiểm tra máy nén khí định kỳ', dueDate: today(), frequency: 'Hàng tháng', checklist: 'Kiểm tra rò rỉ\nKiểm tra áp suất\nKiểm tra nhiệt độ dầu' }
+        const t2 = { ...emptyTask(), assetId: coldStore?.id ?? '', title: 'Ghi nhận nhiệt độ kho lạnh', dueDate: today(), frequency: 'Hàng ngày', checklist: 'Ghi nhiệt độ hiển thị\nKiểm tra cửa kho\nKiểm tra tình trạng dàn lạnh' }
         await db.tasks.bulkPut([t1, t2])
       }
       // Khởi tạo biểu mẫu riêng cho mọi thiết bị đang quản lý; không đụng vào biểu mẫu đã có.
@@ -1383,7 +1383,7 @@ function OrganizationMembersPanel({client,organizationId}:{client:SupabaseClient
   const removeMember=async(member:OrganizationMemberView)=>{
     if(member.roleCode!=='technician'&&member.roleCode!=='viewer')return
     const confirmed=confirm(
-      'XÓA '+member.email+' KHỎI TỔ CHỨC?\\n\\nNgười này sẽ mất quyền truy cập BAOTRI Mini của công ty. Tài khoản đăng nhập Supabase và hồ sơ Auth vẫn được giữ; dữ liệu nghiệp vụ/lịch sử hiện có không bị xóa. Thao tác gỡ thành viên không thể tự hoàn tác; muốn thêm lại phải mời/thêm lại tài khoản.'
+      'XÓA '+member.email+' KHỎI TỔ CHỨC?\n\nNgười này sẽ mất quyền truy cập BAOTRI Mini của công ty. Tài khoản đăng nhập Supabase và hồ sơ Auth vẫn được giữ; dữ liệu nghiệp vụ/lịch sử hiện có không bị xóa. Thao tác gỡ thành viên không thể tự hoàn tác; muốn thêm lại phải mời/thêm lại tài khoản.'
     )
     if(!confirmed)return
     setBusyMember(member.id);setError('');setMessage('')
