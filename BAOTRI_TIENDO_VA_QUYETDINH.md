@@ -1371,3 +1371,15 @@ Trạng thái:
 - Đã fetch lại file test 011 từ `main` và kiểm tra có đủ ba nhóm, cảnh báo chỉ chạy Test và lệnh ROLLBACK. Commit tạo file: `cd53608b683be3655fd4f6905a4ce8cf5bd5c093`.
 - **Trạng thái test 011: đã tạo và rà soát mã, CHƯA chạy trên Supabase; chưa được ghi nhận PASS.**
 - Chỉ chạy file test 011 trên project `BAOTRI-Mini-Test`, tuyệt đối không chạy trên Production. Sau khi người dùng xác nhận kết quả, mới kết luận và chuyển sang bước tiếp theo.
+
+## Cập nhật 17/11/2026 – kết quả test bảo mật 011
+
+- Người dùng xác nhận đã chạy toàn bộ `supabase/tests/20261117001100_unauthenticated_no_membership_permission_revoked_test.sql` trên `BAOTRI-Mini-Test` và **PASS toàn bộ**.
+- Ba nhóm kiểm tra đều đạt theo xác nhận của người dùng:
+  1. **Unauthenticated/anon:** bị từ chối SELECT dữ liệu nghiệp vụ, gọi helper phân quyền và INSERT.
+  2. **Authenticated không có membership tại tenant:** không đọc được asset tenant B, UPDATE không tác động dòng và INSERT bị RLS chặn.
+  3. **Permission bị thu hồi:** helper không còn cấp `assets.update`, UPDATE không tác động dòng.
+- Script chạy trong transaction và kết thúc bằng `ROLLBACK`; fixture và grant bị thu hồi tạm thời được hoàn nguyên.
+- **Kết luận vòng kiểm thử bảo mật cơ bản:** người dùng xác nhận test 008, 009, 010 và 011 đều PASS trên `BAOTRI-Mini-Test`. Đây là các trường hợp assertion được bao phủ trong bốn script, không phải chứng nhận exhaustive mọi API, mọi cột hoặc mọi đường truy cập.
+- Không có migration/policy mới được áp dụng trong test 011. Không thay đổi Production.
+- **Bước tiếp theo:** rà soát luồng dữ liệu và thao tác CRUD của phân hệ thiết bị trong `src/App.tsx`, thiết kế một vertical slice cloud cho Assets (đọc danh sách, thêm, sửa, xóa theo permission; giữ nguyên UUID và organization_id), có kiểm tra lỗi và không làm mất dữ liệu IndexedDB. Chỉ triển khai sau khi đối chiếu đầy đủ schema và luồng hiện tại; không bật đồng bộ toàn bộ cùng lúc.
