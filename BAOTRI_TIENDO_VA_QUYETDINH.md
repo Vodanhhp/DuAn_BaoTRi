@@ -1473,3 +1473,19 @@ Trạng thái:
   - UI cấu hình và tạo Cloud: `3fe671ae6844acc4cbf28a2beaff57dd1f291978`.
 - Đã fetch file từ `main` trước mỗi lần sửa; cần fetch xác minh cuối cùng và người dùng cần chạy `npm.cmd run build` cùng kiểm thử giao diện trên localhost/Test.
 - **Trạng thái:** SQL Migration 012 + test 008/012 đã PASS theo xác nhận người dùng. Code UI cấu hình/tạo Cloud vừa cập nhật nhưng CHƯA build và CHƯA kiểm thử runtime; chưa bật sửa/lưu kho/khôi phục; không thay đổi Production.
+
+## Cập nhật 17/11/2026 – Cloud Assets: sửa hồ sơ, lưu kho và khôi phục
+
+- Mở giao diện thao tác cho phân hệ Cloud Assets, tách danh sách **Đang quản lý** và **Đã lưu kho**.
+- Bổ sung sửa các trường hồ sơ được phép: tên, vị trí, ngày đưa vào sử dụng, hãng, model, serial, công suất, chu kỳ bảo trì, trạng thái và ghi chú.
+- Mã thiết bị và loại thiết bị hiển thị chỉ đọc, không cho sửa trong form để giữ nguyên mã đã cấp và tránh làm lệch quy tắc định danh. Ảnh Cloud chưa triển khai; không chỉnh sửa hoặc đồng bộ ảnh trong bước này.
+- Bổ sung lưu kho/khôi phục bằng cập nhật mềm trường `archived_at`; có hộp xác nhận trước khi thực hiện. Không có thao tác xóa cứng.
+- Giao diện chỉ hiển thị thao tác sửa/lưu kho/khôi phục cho role Admin và Technician; Viewer chỉ xem. Đây chỉ là lớp UX, RLS `assets.update` của Supabase vẫn là lớp kiểm soát quyền cuối cùng cho mọi yêu cầu ghi.
+- Đã truyền `organizationRole` từ context đăng nhập vào CloudAssetsPanel. Repository dùng lại `updateCloudAsset` và `setCloudAssetArchived` đã có; không thay đổi schema hoặc migration.
+- Đã fetch lại file trên `main` sau commit và kiểm tra: JSX form không còn chuỗi newline lỗi, nút sửa/lưu kho/khôi phục có mặt, không có hàm xóa cứng, không có tham chiếu Dexie/IndexedDB/syncQueue trong Cloud panel.
+- Các commit:
+  - Cloud UI sửa/lưu kho/khôi phục: `78b9703cfb47dab7d0e59ce9902c6683b8701290`
+  - Truyền role từ App: `ef986cdf84384e469d9066c6d7481329d055477f`
+  - Sửa định dạng JSX form: `30c923deabe40eb9e047f84fd5c10307ffd1963b`
+- **Trạng thái:** code đã cập nhật và fetch xác minh trên `main`; CHƯA chạy `npm.cmd run build` và CHƯA kiểm thử runtime. Chưa thao tác sửa/lưu kho/khôi phục trên dữ liệu Supabase thực tế. Chỉ kiểm thử trên `BAOTRI-Mini-Test`; không thay đổi Production.
+- Bước tiếp theo: người dùng pull `main`, chạy build; sau đó kiểm tra với tài khoản Admin/Technician/Viewer trên Test. Xác nhận cập nhật nội dung, lưu kho biến mất khỏi danh sách đang quản lý, khôi phục xuất hiện lại đúng hồ sơ và mã thiết bị không thay đổi.
