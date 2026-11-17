@@ -1242,3 +1242,10 @@ Người dùng xác nhận đồng ý đưa cả dữ liệu thử nghiệm đan
 5. Sau khi RLS granular đạt kiểm thử, xây Edge Functions quản lý User/Role và giao diện Admin.
 
 - Đã sửa smoke test để kiểm tra placeholder UUID trước khi ép kiểu UUID; commit sửa test: `a7dcfb7d53d3f928751327e8c63b558cb44dcbdc`. Đã fetch lại xác nhận migration 003 và file tiến độ tồn tại trên `main`; chưa chạy SQL trên Supabase.
+
+
+### Kết quả chạy Migration 003 trên BAOTRI-Mini-Test – 17/11/2026
+- Người dùng xác nhận Supabase SQL Editor trả về: **Success. No rows returned** khi chạy toàn bộ `20261117000500_roles_and_permissions.sql`.
+- Ghi nhận Migration 003 đã được thực thi thành công trên project Test theo thông báo của Supabase.
+- Chưa chạy smoke test `20261117000500_roles_and_permissions_smoke_test.sql`; chưa xác nhận độc lập số lượng role, permission, membership-role mapping hoặc kết quả hai helper function.
+- Bước tiếp theo: chạy smoke test trên Test với UUID của tài khoản Auth Admin đang có membership active. Sau khi smoke test đạt, tiếp tục thiết kế và kiểm thử Migration 004 thay policy RLS nghiệp vụ bằng permission granular.
