@@ -1620,3 +1620,11 @@ Trạng thái:
 - Sửa đồng thời trạng thái menu mobile: khi đang ở Lịch bảo dưỡng định kỳ, mục Bảo dưỡng – Sửa chữa được đánh dấu đang chọn.
 - Commit: `9c65d1e`.
 - Chưa kiểm thử trực tiếp trên trình duyệt; chờ GitHub Actions deploy xong rồi xác nhận nút mở thẳng biểu mẫu.
+
+
+## Sửa lỗi build sau khi sửa điều hướng mobile – 17/11/2026
+
+- GitHub Actions run `44081336709` thất bại tại `tsc -b`, báo `src/App.tsx(951,72): TS2367`: điều kiện so sánh `key==='logs'` không hợp lệ vì danh sách tab mobile chỉ gồm dashboard, checklist, assets và planning.
+- Đã sửa điều kiện active của các tab mobile về `page===key`. Mục “Thêm” vốn đã xử lý trạng thái active cho các trang logs/tasks, nên không cần so sánh `logs` trong danh sách tab mobile.
+- Commit sửa: `1594c87`. Chỉ sửa điều hướng giao diện; không thay đổi nghiệp vụ, dữ liệu hay Supabase.
+- Trạng thái: chờ GitHub Actions build/deploy lại. Chỉ hướng dẫn người dùng kiểm tra sau khi workflow mới hoàn tất thành công.
