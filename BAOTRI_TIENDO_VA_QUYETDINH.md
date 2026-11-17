@@ -1331,3 +1331,8 @@ Trạng thái:
 - Các trường hợp được kiểm tra trong script 009 gồm: Viewer chỉ đọc; Technician quản lý vật tư/công việc/kế hoạch và tạo kết quả Checklist/nhật ký nhưng không sửa mẫu Checklist/cấu hình hoặc xóa; không cho INSERT trực tiếp inventory_movements khi chưa có RPC nguyên tử; Admin sửa mẫu Checklist, cấu hình và xóa vật tư.
 - Commit file test 009: `407cba99be196207bea4a1a862afa6adb9ec969d`; commit hiệu chỉnh để các phép thử từ chối dùng bản ghi fixture đã tồn tại, tránh báo PASS giả do lỗi khóa ngoại: `0d84ee8ac197a2d2e69f87a06e70a6637f949b55`.
 - **File test 009 mới chỉ được tạo và rà soát mã; người dùng chưa chạy trên Supabase Test. Không ghi nhận PASS cho các phân hệ này cho đến khi nhận được bảng kết quả thực tế.**
+
+
+- Hiệu chỉnh script test 009 sau lần chạy đầu: phép thử Admin DELETE vật tư trước đó cố xóa vật tư fixture đang được `inventory_movements` tham chiếu, nên bị FK `inventory_movements_item_fk` chặn. Đây là bảo vệ toàn vẹn dữ liệu đúng của schema, không phải lỗi RLS.
+- Đã sửa phép thử: tạo một vật tư riêng không có lịch sử giao dịch, sau đó dùng vật tư đó kiểm tra quyền DELETE của Admin. Vật tư fixture có movement được giữ nguyên.
+- Commit sửa: `a8ab0ab7bb4c26f6edbc0f300917977bfbdbe971`. Script 009 cần được chạy lại từ bản mới nhất trên BAOTRI-Mini-Test. Chưa ghi nhận kết quả PASS cuối cùng.
