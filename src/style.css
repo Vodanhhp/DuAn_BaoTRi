@@ -599,3 +599,9 @@ button:focus-visible,summary:focus-visible,input:focus-visible,select:focus-visi
   }
   .auth-card{border-color:#cfe2d8;box-shadow:0 20px 55px rgba(20,65,52,.16)}
 }
+
+
+/* Vô hiệu hóa rõ ràng các thao tác không được phép với tài khoản Viewer. */
+button:disabled{opacity:.42!important;filter:grayscale(.35);cursor:not-allowed!important;box-shadow:none!important}
+.file-btn.disabled{opacity:.42;filter:grayscale(.35);cursor:not-allowed;pointer-events:none}
+.file-btn input:disabled{cursor:not-allowed}
