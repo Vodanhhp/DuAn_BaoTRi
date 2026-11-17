@@ -69,7 +69,9 @@ III. NGUYÊN TẮC QUẢN LÝ MÃ
 - Mã đã cấp cần ổn định và không tự thay đổi khi sửa tên, hãng, model hoặc thông số thiết bị.
 - Không dùng lại mã đã cấp kể cả khi thiết bị đã thanh lý hoặc lưu kho.
 - Mọi thay đổi mã phải có kiểm tra trùng và lưu dấu vết.
-- QR phải mã hóa chính xác mã định danh hiện hành; bản in tối thiểu thể hiện mã định danh bằng chữ để có thể đọc khi không quét được QR.
+- Mã quản lý hiển thị phải được in rõ bằng chữ trên tem để có thể đọc khi không quét được QR.
+- QR mã hóa tham chiếu ổn định `ASSET:<UUID nội bộ>` để mở đúng hồ sơ; không mã hóa mã quản lý hiển thị làm định danh chính. Khi mã quản lý thay đổi, QR cũ vẫn trỏ đúng hồ sơ.
+- Trình quét vẫn hỗ trợ QR đời cũ đang chứa trực tiếp mã quản lý hoặc dạng `ASSET:<mã quản lý>` để không làm mất khả năng tra cứu tem đã in.
 
 ================================================================
 IV. QUY ƯỚC DÙNG TRONG BỘ 30 THIẾT BỊ THỬ NGHIỆM
