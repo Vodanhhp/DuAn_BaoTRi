@@ -2215,14 +2215,6 @@ function ScanModal({close,assets,openAsset,expectedAssetId}:any){
   },[])
   return <Modal title="Truy cập thiết bị" close={close}>
     <div className="scan-modal">
-      <div className="scan-intro">
-        <div className="scan-intro-icon"><QrCode size={27}/></div>
-        <div className="scan-intro-copy">
-          <span className="scan-eyebrow">BAOTRI MINI · NHẬN DIỆN THIẾT BỊ</span>
-          <h3>Quét mã QR để mở hồ sơ</h3>
-          <p>Đưa camera về phía tem QR trên thiết bị. Bạn cũng có thể tìm bằng mã thiết bị nếu không quét được.</p>
-        </div>
-      </div>
       <section className="scan-camera-card">
         <div className="scan-section-heading">
           <span><QrCode size={16}/> Quét bằng camera</span>
