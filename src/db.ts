@@ -88,9 +88,19 @@ export interface MaintenancePlan {
   startDate: string; endDate: string; execution: MaintenancePlanExecution
   contractor: string; notes: string; createdAt: string; updatedAt: string
 }
+export interface LogEditHistory {
+  id: string
+  editedAt: string
+  editedBy: string
+  action: string
+  previousResult: 'Đạt' | 'Không đạt' | ''
+  previousCompletedAt?: string
+  previousPerformedBy: string
+}
 export interface Log {
   id: string; assetId: string; taskId?: string; checklistResultId?: string; date: string; dueDate?: string; kind: string
   description: string; parts: string; readings: string; requestedBy?: string; result?: 'Đạt' | 'Không đạt' | ''; completedAt?: string; performedBy: string
+  editHistory?: LogEditHistory[]
 }
 export interface Movement {
   id: string; itemId: string; date: string; type: 'Nhập' | 'Xuất' | 'Điều chỉnh'
