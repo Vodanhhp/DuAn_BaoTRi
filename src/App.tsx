@@ -2188,26 +2188,26 @@ function MaintenancePlanModal({value,assets,close,save}:{value:MaintenancePlan;a
 function ScanModal({close,assets,openAsset,expectedAssetId}:any){
   const [result,setResult]=useState('')
   const [manualCode,setManualCode]=useState('')
-  const resolveAsset=(raw:string)=>{
+  const resolveAsset=(raw:string):{ok:true;asset:Asset}|{ok:false;error:string}=>{
     const value=raw.trim()
     const payload=value.startsWith('ASSET:')?value.slice(6).trim():value
-    if(!payload)return {error:'Vui lòng nhập mã thiết bị.'}
+    if(!payload)return {ok:false,error:'Vui lòng nhập mã thiết bị.'}
     const found=assets.find((asset:Asset)=>asset.id===payload)||assets.find((asset:Asset)=>asset.code.toLocaleLowerCase('vi')===payload.toLocaleLowerCase('vi'))
-    if(!found)return {error:'Không tìm thấy thiết bị với mã vừa nhập. Hãy kiểm tra lại mã.'}
-    if(expectedAssetId&&found.id!==expectedAssetId)return {error:'Mã thiết bị không đúng với công việc Checklist này. Hãy nhập mã của đúng thiết bị.'}
-    return {asset:found}
+    if(!found)return {ok:false,error:'Không tìm thấy thiết bị với mã vừa nhập. Hãy kiểm tra lại mã.'}
+    if(expectedAssetId&&found.id!==expectedAssetId)return {ok:false,error:'Mã thiết bị không đúng với công việc Checklist này. Hãy nhập mã của đúng thiết bị.'}
+    return {ok:true,asset:found}
   }
   const submitManual=(event:FormEvent<HTMLFormElement>)=>{
     event.preventDefault()
     const match=resolveAsset(manualCode)
-    if('error' in match){setResult(match.error);return}
+    if(!match.ok){setResult(match.error);return}
     openAsset(match.asset)
   }
   useEffect(()=>{
     const scanner = new Html5QrcodeScanner('qr-reader',{fps:10,qrbox:{width:220,height:220}},false)
     scanner.render((text)=>{
       const match=resolveAsset(text)
-      if('error' in match){setResult(match.error);return}
+      if(!match.ok){setResult(match.error);return}
       scanner.clear().catch(()=>{})
       openAsset(match.asset)
     },()=>{})
