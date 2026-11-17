@@ -146,3 +146,96 @@ export async function setCloudAssetArchived(
   if (error) throw new Error('Không thể cập nhật lưu kho thiết bị cloud: ' + error.message)
   return toAsset(data as unknown as AssetRow)
 }
+
+export type AssetCodeConfig = {
+  facility_code: string
+  category_codes: Record<string, string>
+  location_codes: Record<string, string>
+}
+
+export async function getCloudAssetCodeConfig(
+  client: SupabaseClient,
+  organizationId: string
+): Promise<AssetCodeConfig | null> {
+  const { data, error } = await client
+    .from('organization_settings')
+    .select('asset_code_config')
+    .eq('organization_id', organizationId)
+    .maybeSingle()
+  if (error) throw new Error('Không thể đọc cấu hình mã thiết bị: ' + error.message)
+  return (data?.asset_code_config as AssetCodeConfig | null) ?? null
+}
+
+export async function saveCloudAssetCodeConfig(
+  client: SupabaseClient,
+  organizationId: string,
+  config: AssetCodeConfig
+): Promise<void> {
+  if (!organizationId) throw new Error('Thiếu tổ chức đang hoạt động.')
+  const facilityCode = config.facility_code.trim().toUpperCase()
+  if (!/^[A-Z0-9]{2,8}$/.test(facilityCode)) throw new Error('Mã cơ sở phải gồm 2–8 ký tự chữ in hoa hoặc số.')
+  if (!Object.keys(config.category_codes).length) throw new Error('Cần khai báo ít nhất một mã loại thiết bị.')
+  if (!Object.keys(config.location_codes).length) throw new Error('Cần khai báo ít nhất một mã vị trí.')
+
+  const { data: existing, error: readError } = await client
+    .from('organization_settings')
+    .select('organization_id')
+    .eq('organization_id', organizationId)
+    .maybeSingle()
+  if (readError) throw new Error('Không thể kiểm tra cấu hình tổ chức: ' + readError.message)
+
+  const query = existing
+    ? client.from('organization_settings').update({ asset_code_config: { ...config, facility_code: facilityCode } }).eq('organization_id', organizationId)
+    : client.from('organization_settings').insert({ organization_id: organizationId, asset_code_config: { ...config, facility_code: facilityCode } })
+  const { error } = await query
+  if (error) throw new Error('Không thể lưu cấu hình mã thiết bị: ' + error.message)
+}
+
+export type CreateCloudAssetInput = {
+  id?: string
+  name: string
+  category: string
+  location: string
+  commissionedAt: string
+  brand?: string
+  model?: string
+  serial?: string
+  power?: string
+  cycle?: string
+  cycleStartedAt?: string
+  transferredFromOtherFacility?: boolean
+  status?: Asset['status']
+  notes?: string
+}
+
+export async function createCloudAsset(
+  client: SupabaseClient,
+  organizationId: string,
+  input: CreateCloudAssetInput
+): Promise<Asset> {
+  if (!organizationId) throw new Error('Thiếu tổ chức đang hoạt động.')
+  if (!input.name.trim()) throw new Error('Tên thiết bị không được để trống.')
+  if (!input.category.trim()) throw new Error('Chưa chọn loại thiết bị.')
+
+  const { data, error } = await client.rpc('create_asset_with_code', {
+    p_organization_id: organizationId,
+    p_name: input.name.trim(),
+    p_category: input.category,
+    p_location: input.location,
+    p_id: input.id ?? crypto.randomUUID(),
+    p_brand: input.brand ?? '',
+    p_model: input.model ?? '',
+    p_serial: input.serial ?? '',
+    p_commissioned_at: input.commissionedAt || null,
+    p_power: input.power ?? '',
+    p_cycle: input.cycle ?? '',
+    p_cycle_started_at: input.cycleStartedAt || null,
+    p_transferred_from_other_facility: Boolean(input.transferredFromOtherFacility),
+    p_status: input.status ?? 'Đang hoạt động',
+    p_notes: input.notes ?? ''
+  })
+  if (error) throw new Error('Không thể tạo thiết bị Cloud: ' + error.message)
+  const row = (Array.isArray(data) ? data[0] : data) as unknown as AssetRow
+  if (!row?.id || !row?.code) throw new Error('RPC không trả về hồ sơ thiết bị hợp lệ.')
+  return toAsset(row)
+}
