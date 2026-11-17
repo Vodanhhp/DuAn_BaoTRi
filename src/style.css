@@ -685,3 +685,23 @@ button:disabled{opacity:.42!important;filter:grayscale(.35);cursor:not-allowed!i
   .scan-manual-control{flex-direction:column}
   .scan-manual-control .primary-btn{width:100%}
 }
+
+
+/* Tăng khả năng thao tác màn hình quét QR trên điện thoại */
+@media(max-width:680px){
+  .modal:has(.scan-modal){width:calc(100vw - 16px);max-height:94dvh;padding:12px}
+  .modal:has(.scan-modal) .modal-head{margin-bottom:10px}
+  .scan-modal{gap:10px}
+  .scan-camera-card{padding:9px}
+  .scan-section-heading{flex-direction:row;align-items:center;gap:8px;margin-bottom:8px}
+  .scan-section-heading>span{font-size:13px}
+  .scan-section-heading small{font-size:10px}
+  .scan-modal #qr-reader__scan_region{min-height:170px}
+  .scan-manual-form{padding:15px;gap:11px}
+  .scan-manual-label{font-size:15px}
+  .scan-manual-control{gap:10px}
+  .scan-manual-control input{height:58px;padding:0 14px;font-size:17px;border-radius:11px}
+  .scan-manual-control .primary-btn{min-height:54px;font-size:15px;border-radius:11px}
+  .scan-manual-help{font-size:12px;line-height:1.5}
+  .scan-divider{font-size:10px}
+}
