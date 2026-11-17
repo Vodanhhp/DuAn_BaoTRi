@@ -1309,3 +1309,14 @@ Trạng thái:
 - Mục đích: xác định dữ liệu tài khoản thật hiện có trước khi viết bài test RLS theo JWT/Auth user. Không tự tạo Auth user, không sửa membership, không thay đổi dữ liệu nghiệp vụ.
 - Chưa kiểm thử quyền thực tế Admin/Kỹ thuật viên/Người xem, trạng thái suspended hoặc cross-organization. Chưa có kết luận các hành vi này đã đạt.
 - Bước tiếp theo: người dùng chạy preflight trên `BAOTRI-Mini-Test`, gửi ba bảng kết quả; từ đó thiết kế test có fixture an toàn, không dùng UUID/email giả định và không chạm Production.
+
+
+## Cập nhật 17/11/2026 – chuẩn bị bộ kiểm thử CRUD RLS theo Auth user
+
+- Người dùng đã xác nhận Migration 006 và smoke test Migration 006 chạy thành công trên BAOTRI-Mini-Test.
+- Kiểm tra thực tế do người dùng thao tác: Viewer đọc được bảng `assets`; thao tác INSERT nhận lỗi PostgreSQL `42501: new row violates row-level security policy`, đúng với kỳ vọng.
+- Các lần thử UPDATE tiếp theo chưa thu được kết quả xác định do SQL Editor chỉ hiển thị kết quả trung gian của `set_config`; không ghi nhận UPDATE/DELETE là đạt.
+- Đã rà soát lại Migration 002, 005, 006: policy `assets` yêu cầu lần lượt `assets.view/create/update/delete`; role Technician được cấp view/create/update nhưng không delete; Viewer chỉ có quyền view; Admin được cấp toàn bộ permission catalog.
+- Đã tạo file `supabase/tests/20261117000800_authenticated_asset_crud_rls_test.sql` trên `main`. File dựng fixture thiết bị trong transaction, chuyển sang `authenticated`, mô phỏng lần lượt JWT của Viewer/Technician/Admin, kiểm tra SELECT/INSERT/UPDATE/DELETE và trả về một bảng kết quả PASS/FAIL duy nhất. Cuối script có `ROLLBACK` để không lưu fixture hay thay đổi dữ liệu.
+- File test đã được fetch lại từ GitHub để xác nhận nội dung sau khi tạo; commit tạo và hiệu chỉnh: `35a4bd653867108e312f7d8865f4b07090fe8cfa`, `39b51af67ff9330113d1d58923fac5cd2588ea10`.
+- **Chưa chạy file test 008 trên Supabase Test.** Chỉ chạy trên BAOTRI-Mini-Test, tuyệt đối không chạy trên Production. Chưa kết luận UPDATE/DELETE của Viewer hoặc CRUD Technician/Admin đã được xác minh bằng database.
