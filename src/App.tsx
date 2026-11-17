@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import type { Session, SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
 import AuthScreen from './AuthScreen'
+import CloudAssetsPanel from './CloudAssetsPanel'
 import { useLiveQuery } from 'dexie-react-hooks'
 import {
   Activity, Archive, BarChart3, Building2, CalendarDays, Check, ChevronRight, ClipboardList,
@@ -241,6 +242,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
   cloudClient: SupabaseClient
 }) {
   const [page, setPage] = useState<Page>('dashboard')
+  const [showCloudAssets, setShowCloudAssets] = useState(false)
   const [cloudTestBusy, setCloudTestBusy] = useState(false)
   const [cloudTestRecord, setCloudTestRecord] = useState<{id:string;code:string;name:string;created_at:string}|null>(null)
   const [cloudTestMessage, setCloudTestMessage] = useState('Đang kiểm tra dữ liệu cloud…')
@@ -1026,7 +1028,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
           <p className="checklist-schedule-footnote">Ngày bắt đầu lịch được tính từ ngày tạo biểu mẫu Checklist riêng của thiết bị. Checklist bù vẫn lưu thành phiếu riêng và được ghi rõ trong lịch sử thiết bị.</p>
         </section>}
         </>
-        {page==='assets' && <section className="panel"><div className="panel-head"><div><h2>{showArchived?'Thiết bị đã lưu kho':'Danh mục thiết bị'}</h2><p>{showArchived?'Hồ sơ được giữ lại để tra cứu hoặc khôi phục':'Quản lý lý lịch, mã QR, ảnh và tình trạng thiết bị'}</p></div><div className="asset-toolbar">
+        {page==='assets' && !showCloudAssets && <section className="panel"><div className="panel-head"><div><h2>{showArchived?'Thiết bị đã lưu kho':'Danh mục thiết bị'}</h2><p>{showArchived?'Hồ sơ được giữ lại để tra cứu hoặc khôi phục':'Quản lý lý lịch, mã QR, ảnh và tình trạng thiết bị'}</p></div><div className="asset-toolbar"><button type="button" className="soft-btn" onClick={()=>setShowCloudAssets(true)}>Xem dữ liệu Cloud</button>
             <button className={!showArchived?'soft-btn':'text-btn'} onClick={()=>setShowArchived(false)}>Đang quản lý ({activeAssets.length})</button>
             <button className={showArchived?'soft-btn':'text-btn'} onClick={()=>setShowArchived(true)}><Archive size={15}/> Lưu kho ({archivedAssets.length})</button>
             {!showArchived&&<details className="asset-filter-menu"><summary><ChevronDown size={15}/> Lọc & sắp xếp</summary><div className="asset-filter-popover">
@@ -1044,7 +1046,8 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
           </tbody></table>{(showArchived?filteredArchivedAssets:filteredAssets).length===0&&<Empty text={showArchived?'Chưa có thiết bị nào trong Lưu kho.':'Chưa có thiết bị phù hợp.'}/>}</div>
           {showArchived&&<p className="archive-security-note">Xóa vĩnh viễn sẽ chỉ mở khi BAOTRI có đăng nhập và xác thực Admin ở máy chủ. Bản thử nghiệm lưu cục bộ chưa có bảo mật tài khoản thật.</p>}
         </section>}
-        {page==='inventory' && <section className="panel"><div className="panel-head"><div><h2>Kho vật tư</h2><p>Nhập xuất tồn và cảnh báo mức tồn tối thiểu</p></div><div className="asset-photo-actions"><button className="soft-btn" onClick={exportInventory}><Download size={16}/> Xuất Excel</button><button className="soft-btn" onClick={printInventory}><Printer size={16}/> In danh sách</button></div></div>
+        {page==='assets' && showCloudAssets && <CloudAssetsPanel client={cloudClient} organizationId={organizationId} organizationName={organizationName} onBack={()=>setShowCloudAssets(false)}/>}
+         {page==='inventory' && <section className="panel"><div className="panel-head"><div><h2>Kho vật tư</h2><p>Nhập xuất tồn và cảnh báo mức tồn tối thiểu</p></div><div className="asset-photo-actions"><button className="soft-btn" onClick={exportInventory}><Download size={16}/> Xuất Excel</button><button className="soft-btn" onClick={printInventory}><Printer size={16}/> In danh sách</button></div></div>
           <div className="table-wrap"><table><thead><tr><th>Mã / Tên vật tư</th><th>Nhóm</th><th>Tồn kho</th><th>Tồn tối thiểu</th><th>Vị trí</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
           {filteredItems.map(i=><tr key={i.id}><td><button type="button" className="inventory-name-link" onClick={()=>setDetailItem(i)}><b>{i.code}</b><small>{i.name}</small></button></td><td>{i.group}</td><td><b>{i.quantity} {i.unit}</b></td><td>{i.minQuantity} {i.unit}</td><td>{i.location||'—'}</td><td><span className={`status ${i.quantity<=i.minQuantity?'red':'green'}`}>{i.quantity<=i.minQuantity?'Sắp hết':'Đủ tồn'}</span></td><td className="actions"><button className="text-btn" onClick={()=>addMovement(i,'Nhập',Number(prompt('Số lượng nhập?','1')))}>Nhập</button><button className="text-btn" onClick={()=>addMovement(i,'Xuất',Number(prompt('Số lượng xuất?','1')))}>Xuất</button><button className="text-btn" onClick={()=>{setEditingItem(i);setModal('item')}}>Sửa</button></td></tr>)}
           </tbody></table>{filteredItems.length===0&&<Empty text="Chưa có vật tư."/ >}</div></section>}
