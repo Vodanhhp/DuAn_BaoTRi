@@ -680,7 +680,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
           editedAt: now(),
           editedBy: userName,
           action: 'Chuyển trạng thái Hoàn thành → Chưa hoàn thành',
-          previousResult: existing!.result || '',
+          previousResult: (existing!.result || '') as NonNullable<Log['result']>,
           previousCompletedAt: existing!.completedAt,
           previousPerformedBy: existing!.performedBy || ''
         }]
@@ -2061,7 +2061,7 @@ function LogEntryModal({value,close,save,assets,userName,isExisting}:{value:Log;
       <Field label="Xác nhận hoàn thành / kết quả"><select value={v.result||''} onChange={e=>set('result',e.target.value as Log['result'])}><option value="">Chưa hoàn thành</option><option value="Đạt">Hoàn thành – Đạt</option><option value="Không đạt">Hoàn thành – Còn tồn tại</option></select></Field>
       {completing&&<p className="form-hint">Khi lưu, phiếu chuyển sang Hoàn thành và không còn cảnh báo đỏ. Lịch sử yêu cầu ban đầu vẫn được giữ nguyên.</p>}
     </div>
-    {v.editHistory?.length>0&&<div className="panel"><b>Lịch sử chỉnh sửa trạng thái</b>{v.editHistory.slice().reverse().map(event=><div key={event.id} className="form-hint"><b>{event.action}</b><br/>Người sửa: {event.editedBy} · Thời điểm: {dateTimeText(event.editedAt)}{event.previousCompletedAt&&<><br/>Hoàn thành trước đó: {dateTimeText(event.previousCompletedAt)} · Người hoàn thành: {event.previousPerformedBy||'—'}</>}</div>)}</div>}
+    {v.editHistory&&v.editHistory.length>0&&<div className="panel"><b>Lịch sử chỉnh sửa trạng thái</b>{v.editHistory.slice().reverse().map(event=><div key={event.id} className="form-hint"><b>{event.action}</b><br/>Người sửa: {event.editedBy} · Thời điểm: {dateTimeText(event.editedAt)}{event.previousCompletedAt&&<><br/>Hoàn thành trước đó: {dateTimeText(event.previousCompletedAt)} · Người hoàn thành: {event.previousPerformedBy||'—'}</>}</div>)}</div>}
     <div className="form-actions"><button type="button" className="soft-btn" onClick={close}>Hủy</button><button type="submit" className="primary-btn">{completing?'Xác nhận hoàn thành và lưu phiếu':isExisting?'Lưu cập nhật Phiếu YC':'Tạo Phiếu YC'}</button></div>
   </form></Modal>
 }
