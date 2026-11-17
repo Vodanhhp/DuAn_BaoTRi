@@ -61,6 +61,7 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
   const [busyAssetId, setBusyAssetId] = useState('')
   const [canUpdateAssets, setCanUpdateAssets] = useState(false)
   const [canCreateAssets, setCanCreateAssets] = useState(false)
+  const [canManageSettings, setCanManageSettings] = useState(false)
   const [permissionsLoading, setPermissionsLoading] = useState(true)
   const [name, setName] = useState('')
   const [category, setCategory] = useState('')
@@ -108,20 +109,24 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
     const loadPermissions = async () => {
       setPermissionsLoading(true)
       try {
-        const [updateResult, createResult] = await Promise.all([
+        const [updateResult, createResult, settingsResult] = await Promise.all([
           client.rpc('has_org_permission', { p_organization_id: organizationId, p_permission_code: 'assets.update' }),
-          client.rpc('has_org_permission', { p_organization_id: organizationId, p_permission_code: 'assets.create' })
+          client.rpc('has_org_permission', { p_organization_id: organizationId, p_permission_code: 'assets.create' }),
+          client.rpc('has_org_permission', { p_organization_id: organizationId, p_permission_code: 'settings.manage' })
         ])
         if (updateResult.error) throw updateResult.error
         if (createResult.error) throw createResult.error
+        if (settingsResult.error) throw settingsResult.error
         if (active) {
           setCanUpdateAssets(updateResult.data === true)
           setCanCreateAssets(createResult.data === true)
+          setCanManageSettings(settingsResult.data === true)
         }
       } catch (cause) {
         if (active) {
           setCanUpdateAssets(false)
           setCanCreateAssets(false)
+          setCanManageSettings(false)
           setError('Không xác định được quyền thao tác thiết bị từ Supabase: ' + (cause instanceof Error ? cause.message : String(cause)))
         }
       } finally {
@@ -139,6 +144,10 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
 
   const saveConfig = async (event: FormEvent) => {
     event.preventDefault()
+    if (!canManageSettings) {
+      setError('Chỉ Admin có quyền thay đổi cấu hình mã thiết bị của doanh nghiệp.')
+      return
+    }
     setSavingConfig(true)
     setError('')
     setMessage('')
@@ -238,15 +247,15 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
     {error && <div className="form-hint warning-hint" role="alert">{error}</div>}
 
     <div className="asset-photo-actions" style={{ margin: '12px 0', flexWrap: 'wrap' }}>
-      <button type="button" className="soft-btn" onClick={() => { setShowConfig(v => !v); setShowCreate(false); setEditDraft(null) }}>
+      {canManageSettings && !permissionsLoading && <button type="button" className="soft-btn" onClick={() => { setShowConfig(v => !v); setShowCreate(false); setEditDraft(null) }}>
         {showConfig ? 'Đóng cấu hình mã' : config ? 'Cấu hình mã thiết bị' : 'Thiết lập mã thiết bị Cloud'}
-      </button>
+      </button>}
       <button type="button" className="primary-btn" disabled={!config || permissionsLoading || !canCreateAssets} title={!canCreateAssets ? 'Tài khoản không có quyền tạo thiết bị.' : undefined} onClick={() => { setShowCreate(v => !v); setShowConfig(false); setEditDraft(null) }}>
         {showCreate ? 'Đóng biểu mẫu' : 'Thêm thiết bị Cloud'}
       </button>
     </div>
 
-    {showConfig && <form className="panel" onSubmit={saveConfig} style={{ marginBottom: 16 }}>
+    {showConfig && canManageSettings && <form className="panel" onSubmit={saveConfig} style={{ marginBottom: 16 }}>
       <h3>Cấu hình mã thiết bị của {organizationName}</h3>
       <p className="muted">Chỉ cần nhập tên. BAOTRI tự gợi ý mã viết tắt, bạn có thể sửa mã nếu muốn.</p>
       <label>Tên/mã cơ sở
@@ -274,7 +283,7 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
         </div>
       </div>
       <p className="muted">Vị trí để trống sẽ tự dùng mã mặc định. Mã đã cấp không tự đổi khi bạn sửa tên danh mục. Chỉ quản trị viên có quyền cấu hình mới lưu được.</p>
-      <button type="submit" className="primary-btn" disabled={savingConfig}>{savingConfig ? 'Đang lưu…' : 'Lưu cấu hình Cloud'}</button>
+      <button type="submit" className="primary-btn" disabled={savingConfig || !canManageSettings}>{savingConfig ? 'Đang lưu…' : 'Lưu cấu hình Cloud'}</button>
     </form>}
 
     {editDraft && <form className="panel" onSubmit={submitEdit} style={{ marginBottom: 16 }}>
