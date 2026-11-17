@@ -705,3 +705,23 @@ button:disabled{opacity:.42!important;filter:grayscale(.35);cursor:not-allowed!i
   .scan-manual-help{font-size:12px;line-height:1.5}
   .scan-divider{font-size:10px}
 }
+
+
+/* Khóa kích thước ô nhập mã QR trên điện thoại */
+@media(max-width:680px){
+  .scan-manual-control{display:grid;grid-template-columns:minmax(0,1fr);width:100%;align-items:stretch}
+  .scan-manual-control input{
+    display:block;
+    width:100%!important;
+    max-width:100%;
+    min-width:0;
+    height:68px!important;
+    min-height:68px;
+    flex:none;
+    box-sizing:border-box;
+    padding:0 16px!important;
+    font-size:18px!important;
+    line-height:1.4;
+  }
+  .scan-manual-control .primary-btn{width:100%;min-height:54px}
+}
