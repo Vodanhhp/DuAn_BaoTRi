@@ -1497,3 +1497,11 @@ Trạng thái:
 - Nếu RPC lỗi/không xác định được quyền, giao diện fail-closed: ẩn thao tác ghi và chỉ xem. Quyền lưu kho/khôi phục/sửa phụ thuộc `assets.update`; nút tạo phụ thuộc `assets.create`.
 - Commit: `f0d703d745ad3128d226054f2a0a6ff099c59750`.
 - Đã fetch lại file trên main, kiểm tra RPC và các điều kiện hiển thị. Chưa chạy build hoặc kiểm thử runtime sau sửa; cần người dùng pull main và build.
+
+
+### Phân quyền cấu hình mã thiết bị Cloud – cập nhật 17/11/2026
+- Phát hiện: tài khoản Viewer vẫn nhìn thấy và mở được biểu mẫu cấu hình mã thiết bị, dù không có quyền thay đổi cấu hình doanh nghiệp.
+- Quy tắc đúng: chỉ Admin có quyền `settings.manage` mới được thấy nút cấu hình và mở/lưu biểu mẫu. Technician và Viewer không được thay đổi cấu hình mã dùng chung.
+- Đã sửa `src/CloudAssetsPanel.tsx`: kiểm tra quyền `settings.manage` trực tiếp qua RPC `has_org_permission`; ẩn nút và biểu mẫu khi không có quyền; chặn thêm ở hàm lưu cấu hình. Quyền ghi cuối cùng vẫn do RLS Supabase bảo vệ.
+- Commit: `48402b2ae9c75387eb2877b8703b3c57963d1e58` trên nhánh `main`.
+- Chưa chạy build hoặc kiểm thử bằng tài khoản Viewer/Admin sau thay đổi. Cần pull, build, đăng nhập Viewer xác nhận không còn nút cấu hình; đăng nhập Admin xác nhận nút và thao tác lưu vẫn hoạt động.
