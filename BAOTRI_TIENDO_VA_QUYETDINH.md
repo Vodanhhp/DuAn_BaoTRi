@@ -1418,3 +1418,19 @@ Trạng thái:
 - Xử lý ảnh như một hạng mục riêng qua Storage; cho đến khi hoàn tất, phải thông báo rõ trạng thái ảnh và không tuyên bố đã đồng bộ ảnh.
 - Chỉ sau khi hoàn tất code mới yêu cầu người dùng build/chạy thử trên môi trường Test. Không áp dụng migration hoặc thay đổi Production trong bước này.
 - Tại thời điểm cập nhật: đây là kết quả rà soát và thiết kế phạm vi; chưa sửa mã nguồn ứng dụng, chưa chạy build và chưa có CRUD cloud Assets được nghiệm thu.
+
+## Cập nhật 17/11/2026 – vertical slice Cloud Assets bước 1 (đọc dữ liệu)
+
+- Tạo `src/lib/assetsCloud.ts`: repository đọc danh sách thiết bị theo `organization_id` động; ánh xạ snake_case PostgreSQL sang kiểu `Asset`; hỗ trợ cập nhật trường hồ sơ và lưu kho/khôi phục mềm qua Supabase; không có hàm xóa cứng.
+- Tạo `src/CloudAssetsPanel.tsx`: màn hình đọc riêng danh sách thiết bị Cloud, có tải lại, trạng thái lỗi/tải và thống kê đang quản lý/lưu kho.
+- Tích hợp vào `src/App.tsx` bằng nút **Xem dữ liệu Cloud** trong màn hình Thiết bị. Màn hình local IndexedDB vẫn là mặc định và được giữ nguyên; người dùng có thể quay lại dữ liệu cục bộ.
+- Mọi truy vấn repository đều lọc theo `organization_id` được truyền từ organization context sau đăng nhập; RLS trên Supabase tiếp tục là lớp kiểm soát quyền cuối cùng.
+- Không đọc/ghi Dexie trong repository Cloud; không đụng `syncQueue`; không seed/import 30 thiết bị mẫu; không thay đổi dữ liệu local; không thay đổi Production.
+- Dữ liệu ảnh chưa được lấy từ Storage; danh sách Cloud hiện để `images: []` trong model trình bày. Chưa có thao tác tạo mới vì cấp mã thiết bị cloud cần RPC/transaction an toàn và cấu hình cơ sở/danh mục theo organization. Chưa bật nút sửa, đổi trạng thái, lưu kho hoặc khôi phục trong UI Cloud dù repository đã có hàm cập nhật nền; cần kiểm thử quyền và dữ liệu trước khi mở thao tác.
+- Chưa chạy được build TypeScript/Vite trong môi trường hiện tại; các thay đổi đã được fetch lại từ `main` để xác minh nội dung. Cần build và kiểm thử thực tế trên BAOTRI-Mini-Test trước khi nghiệm thu.
+- Các commit:
+  - Repository: `bd7ce78d78e9d783111ca7bde9487aeed3bf8a47`
+  - Cloud panel: `d0d36b67c451e525b10854490cc328e91cc60b47`
+  - Điều hướng quay lại: `8f336f01b44f516400df56ec23993b60658e0c3c`
+  - Tích hợp màn hình Cloud riêng: `6a9496719dc0ab4ba87d8c53b5ed1d06ca072d55`
+- **Trạng thái:** hoàn thành bước đọc Cloud Assets ở mức code; chưa nghiệm thu build/runtime. Bước tiếp theo là kiểm thử build và đọc dữ liệu trên Test, sau đó triển khai RPC cấp mã thiết bị cloud an toàn trước khi bật tạo mới.
