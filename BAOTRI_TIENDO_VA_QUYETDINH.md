@@ -1122,3 +1122,72 @@ Người dùng xác nhận đồng ý đưa cả dữ liệu thử nghiệm đan
 5. Xây audit log, backup/restore và quy trình khôi phục.
 6. Thực hiện kiểm thử bảo mật tổng thể trên Test trước khi xem xét triển khai Production.
 
+
+
+## 17/11/2026 – Đặc tả phân hệ Admin quản lý User và phân quyền (đã chốt thiết kế, chưa triển khai)
+
+### 1. Mục tiêu và nguyên tắc
+- Admin quản lý người dùng ngay trong BAOTRI Mini; không yêu cầu Admin truy cập Supabase Dashboard để thực hiện nghiệp vụ thường ngày.
+- Supabase Auth là nguồn xác thực duy nhất cho email, mật khẩu và session. Không tạo bảng mật khẩu riêng, không lưu mật khẩu rõ.
+- Tách biệt hồ sơ cá nhân, tư cách thành viên doanh nghiệp và quyền nghiệp vụ. Không gộp tất cả vào một bảng User.
+- Mỗi doanh nghiệp thương mại có Supabase Project riêng theo kiến trúc đã chốt. User được quản lý trong phạm vi project/doanh nghiệp tương ứng.
+- Một tài khoản Auth có thể được liên kết với hồ sơ và membership theo mô hình dữ liệu đã thiết kế; mọi truy cập nghiệp vụ phải xác định được doanh nghiệp và membership đang hoạt động.
+- Không cho người dùng tự đăng ký rồi tự nhận quyền Admin. Admin đầu tiên được khởi tạo theo quy trình onboarding do nhà cung cấp kiểm soát.
+
+### 2. Mô hình dữ liệu định hướng
+- `auth.users`: do Supabase Auth quản lý; chứa định danh xác thực (UUID), email và trạng thái xác thực/session. Ứng dụng không tự quản lý mật khẩu.
+- `user_profiles`: thông tin hồ sơ dùng chung như họ tên, số điện thoại, mã nhân viên, bộ phận, chức vụ và thông tin hiển thị cần thiết. Không chứa password hoặc secret.
+- `organization_members`: liên kết Auth user với doanh nghiệp/tổ chức; lưu trạng thái membership, thời điểm tham gia, người mời và các thông tin vòng đời cần thiết. Thu hồi membership phải có hiệu lực ở backend/database.
+- `roles`: danh mục vai trò trong phạm vi doanh nghiệp; gồm ba vai trò mặc định và các vai trò tùy chỉnh do Admin có thẩm quyền tạo.
+- `permissions`: danh mục quyền chuẩn do ứng dụng định nghĩa theo phân hệ và hành động; không cho Admin tự tạo mã quyền tùy ý làm thay đổi logic bảo mật.
+- `role_permissions`: liên kết vai trò với các quyền được cấp.
+- `member_roles` (hoặc cấu trúc tương đương): gán một hay nhiều vai trò cho membership. Cần chốt tên bảng và quan hệ sau khi rà soát Migration hiện hữu; không tạo trùng bảng nếu schema đã có thành phần tương đương.
+- Có thể bổ sung bảng invitation/audit log theo thiết kế tổng thể; không lưu token mời dạng có thể sử dụng lại trong dữ liệu đọc công khai.
+
+### 3. Vai trò và cách phân quyền đã chốt
+- Ba vai trò mặc định: **Admin**, **Kỹ thuật viên**, **Người xem**.
+- Admin được phép tạo vai trò tùy chỉnh bằng cách chọn các quyền trong danh mục quyền chuẩn của hệ thống, ví dụ theo phân hệ Thiết bị, Checklist, Bảo trì, Kho, Báo cáo và Quản trị.
+- Quyền được gán thông qua vai trò; mặc định không thiết kế màn hình cấp quyền rời rạc trực tiếp cho từng User. Cách này giúp quản trị nhất quán, dễ kiểm tra và tránh phát sinh cấu hình khó truy vết.
+- Một membership có thể được gán nhiều vai trò nếu cần; quyền hiệu lực là hợp các quyền được cấp từ các vai trò đang hoạt động, trừ khi sau này có yêu cầu rõ ràng về cơ chế từ chối quyền. Không triển khai deny/override phức tạp ở giai đoạn đầu.
+- Vai trò Admin có quyền quản trị người dùng và phân quyền. Không cho phép Admin tự làm mất quyền Admin cuối cùng đang hoạt động; phải có cơ chế bảo vệ Admin dự phòng.
+- Các quyền nhạy cảm (quản lý User/role, xóa dữ liệu, cấu hình hệ thống, điều chỉnh kho) cần được phân biệt rõ với quyền xem hoặc thao tác thông thường.
+
+### 4. Giao diện Admin – Quản lý người dùng
+- Danh sách User hiển thị tối thiểu: họ tên, email đăng nhập, mã nhân viên (nếu có), bộ phận/chức vụ (nếu có), vai trò, trạng thái và ngày được mời/tạo.
+- Có tìm kiếm/lọc theo tên, email, vai trò và trạng thái.
+- Các thao tác: mời User, xem/sửa hồ sơ, gán hoặc thay đổi vai trò, gửi lại lời mời khi phù hợp, khóa/mở khóa hoặc thu hồi membership.
+- Trạng thái vòng đời cần phân biệt tối thiểu: đang chờ lời mời/kích hoạt, đang hoạt động, bị khóa/đã thu hồi. Trạng thái hiển thị phải lấy từ trạng thái có thẩm quyền ở backend, không chỉ từ localStorage.
+- Không hiển thị password; Admin không được xem hoặc biết mật khẩu của User.
+- Có màn hình/quy trình quản lý vai trò: danh sách vai trò, tạo vai trò tùy chỉnh, mô tả vai trò, chọn quyền theo phân hệ/hành động và xem các User đang được gán vai trò đó.
+- Khi xóa/ngừng dùng một vai trò, phải kiểm tra các membership đang được gán; không xóa làm mất dấu lịch sử hoặc khiến quyền ngoài dự kiến được cấp.
+
+### 5. Quy trình mời và kích hoạt User
+1. Admin nhập email và thông tin hồ sơ cần thiết, chọn vai trò.
+2. Frontend gọi backend/Edge Function đã xác thực quyền Admin.
+3. Backend dùng secret/service-role key chỉ ở môi trường server để gửi invitation qua Supabase Auth; secret tuyệt đối không xuất hiện ở frontend, repository hoặc log.
+4. Người được mời xác minh email và hoàn tất thiết lập mật khẩu theo luồng Auth an toàn.
+5. Backend liên kết Auth UUID với hồ sơ và membership doanh nghiệp, gán vai trò đã chọn; tránh tạo membership mồ côi hoặc cấp quyền trước khi xác minh theo chính sách.
+6. Khi đăng nhập, ứng dụng đọc identity, membership và quyền hiệu lực từ nguồn dữ liệu có thẩm quyền; chỉ mở các chức năng phù hợp.
+- Các thao tác tạo lời mời, gửi lại lời mời, đổi vai trò, khóa/mở khóa và thu hồi membership phải được kiểm tra quyền phía server và ghi audit log.
+- Phải xử lý an toàn trường hợp email đã tồn tại, lời mời hết hạn, lời mời bị gửi lặp, người dùng chưa xác minh, hoặc thao tác tạo profile/membership thất bại giữa chừng.
+
+### 6. Khóa tài khoản, nghỉ việc và bảo toàn lịch sử
+- Khóa User hoặc thu hồi membership phải ngăn truy cập dữ liệu/API ngay ở backend/database; không chỉ ẩn menu hoặc nút trên frontend.
+- Thu hồi quyền không đồng nghĩa xóa Auth user, profile, phiếu Checklist, lịch sử bảo trì, nhật ký kho hoặc dữ liệu do người đó tạo.
+- Dữ liệu lịch sử tiếp tục lưu Auth UUID/actor ID và snapshot tên người thực hiện tại thời điểm phát sinh theo nguyên tắc bảo toàn lịch sử đã thống nhất.
+- Có quy trình mở khóa/gia hạn membership do Admin đủ quyền thực hiện và ghi audit log.
+- Khi chuyển giao quyền Admin hoặc thay email quản trị, phải xác minh đại diện doanh nghiệp; luôn duy trì Admin dự phòng và không để doanh nghiệp mất quyền quản trị.
+
+### 7. Ranh giới bảo mật bắt buộc
+- Không gọi thao tác quản trị Auth bằng service-role key trực tiếp từ trình duyệt. Mọi thao tác cần đặc quyền phải qua Edge Function/backend có xác thực session và kiểm tra quyền Admin.
+- Không tin role, organization ID, user ID hoặc permission do client tự gửi. Backend/database phải tự xác định actor từ session đã xác thực và kiểm tra membership/role tương ứng.
+- RLS phải kiểm tra membership còn hoạt động và quyền cần thiết cho từng thao tác dữ liệu. RLS không được chỉ dựa vào việc frontend đã ẩn chức năng.
+- Bảng role/permission và quan hệ gán quyền phải được bảo vệ: chỉ Admin hợp lệ mới được quản trị; người dùng thường không thể tự nâng quyền hoặc sửa role của chính mình.
+- Có kiểm thử âm tính: User bị khóa vẫn không đọc/ghi được qua API; Kỹ thuật viên không thể tự cấp Admin; Người xem không thể ghi dữ liệu; không thể truy cập dữ liệu ngoài phạm vi; Admin không thể xóa quyền Admin cuối cùng; lời mời hết hạn/đã dùng không thể tái sử dụng.
+
+### 8. Trạng thái và việc cần làm trước khi code
+- Đây là đặc tả thiết kế đã chốt theo hướng: ba vai trò mặc định + vai trò tùy chỉnh theo danh mục quyền chuẩn + gán quyền thông qua vai trò.
+- **Chưa xác nhận đã tạo các bảng `user_profiles`, `roles`, `permissions`, `role_permissions`, `member_roles` hoặc bảng invitation/audit log. Chưa có xác nhận đã triển khai giao diện Admin, Edge Function mời User hay kiểm thử vòng đời tài khoản.**
+- Trước khi tạo migration, phải đọc toàn bộ Migration hiện có (đặc biệt Migration 001/002), kiểm tra schema thực tế và các bảng/enum/function/policy đã tồn tại; tái sử dụng hoặc điều chỉnh đúng cấu trúc hiện hữu, không tạo bảng trùng và không phá luồng Auth/membership đang chạy.
+- Tiếp theo: rà soát schema hiện tại → lập ma trận quyền cụ thể theo từng phân hệ/hành động → thiết kế migration tương thích → xây backend/Edge Function invitation và quản trị membership/role → xây giao diện Admin → kiểm thử RLS/API với từng vai trò và các trường hợp âm tính trên Test.
+- Chỉ chuyển trạng thái sang “đã triển khai/đã kiểm thử” khi có code thực tế và kết quả chạy xác nhận; nội dung trên không phải bằng chứng chức năng đã hoàn thành.
