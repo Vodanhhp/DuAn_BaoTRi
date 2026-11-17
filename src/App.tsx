@@ -1166,7 +1166,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
           <span>Xuất toàn bộ {planExportPeriod.toLocaleLowerCase('vi')} trong năm {planExportAnchorDate.slice(0,4)}</span>
         </label>}
         <p className="plan-export-scope">Phạm vi: {planExportAllPeriods&&planExportPeriod!=='Năm'?`Toàn bộ ${planExportPeriod.toLocaleLowerCase('vi')} trong năm ${planExportAnchorDate.slice(0,4)}`:periodRangeLabel(planExportPeriod,planExportRange)} · {maintenancePlanScopeLabel(planExportPeriod)}.</p>
-        <div className="modal-actions"><button type="button" className="soft-btn" onClick={()=>setModal(null)}>Hủy</button><button type="submit" className="primary-btn"><Download size={16}/> Xuất Excel</button></div>
+        <div className="modal-actions"><button type="button" className="soft-btn" onClick={()=>setModal(null)}>Hủy</button><button type="submit" className="primary-btn" disabled={isViewer} title={isViewer?'Viewer không được xuất Excel':undefined}><Download size={16}/> Xuất Excel</button></div>
       </form>
     </Modal>}
     {modal==='log'&&editingLog&&<LogEntryModal value={editingLog} assets={assets} userName={userName} isExisting={logs.some(entry=>entry.id===editingLog.id)} close={()=>{setModal(null);setEditingLog(null)}} save={saveLog}/>}
@@ -1813,7 +1813,7 @@ function AssetChecklist({asset,allowActions,scheduledFor,isMakeup,createRepairFr
   }
   return <section className="asset-maintenance-history">
     <div className="panel-head"><div><h3>1. Bảo trì – Checklist</h3><p>{template?('Biểu mẫu riêng · Phiên bản '+template.currentVersion+' · '+orderedResults.length+' lần thực hiện'):(allowActions?'Thiết bị chưa có biểu mẫu Checklist riêng':'Lịch sử các phiếu Checklist đã lưu')}</p></div>
-      {allowActions&&<div className="asset-photo-actions"><button type="button" className="soft-btn" onClick={openBuilder}>{template?'Sửa biểu mẫu':'Tạo biểu mẫu'}</button><button type="button" className="primary-btn" disabled={!template || !currentVersion} onClick={startRun}>{isMakeup?'Thực hiện Checklist bù':'Thực hiện Checklist'}</button></div>}
+      <div className="asset-photo-actions"><button type="button" className="soft-btn" disabled={!allowActions} title={!allowActions?'Viewer chỉ có quyền xem':undefined} onClick={openBuilder}>{template?'Sửa biểu mẫu':'Tạo biểu mẫu'}</button><button type="button" className="primary-btn" disabled={!allowActions || !template || !currentVersion} title={!allowActions?'Viewer chỉ có quyền xem':undefined} onClick={startRun}>{isMakeup?'Thực hiện Checklist bù':'Thực hiện Checklist'}</button></div>}
     </div>
     {template&&currentVersion&&<div className="maintenance-history-list"><b>{currentVersion.title}</b>{currentVersion.description&&<p>{currentVersion.description}</p>}{currentVersion.items.map((item,index)=><article key={item.id}><time>{index+1}</time><div><b>{item.label}</b>{item.description&&<small>{item.description}</small>}</div></article>)}</div>}
     <section className="checklist-results">
