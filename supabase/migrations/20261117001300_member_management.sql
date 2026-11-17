@@ -93,6 +93,8 @@ as $$
 declare
   v_member_id uuid;
   v_role_id uuid;
+  v_email_confirmed boolean;
+  v_member_status text;
 begin
   if coalesce(auth.role(), '') <> 'service_role' then
     raise exception 'service_role_required' using errcode = '42501';
@@ -117,14 +119,26 @@ begin
   if v_role_id is null then
     raise exception 'member_role_not_found' using errcode = '23503';
   end if;
+  select (email_confirmed_at is not null) into v_email_confirmed
+  from auth.users
+  where id = p_user_id
+  for update;
+  if not found then
+    raise exception 'auth_user_not_found' using errcode = '23503';
+  end if;
   if not exists (select 1 from public.profiles where id = p_user_id) then
     raise exception 'auth_profile_not_found' using errcode = '23503';
   end if;
 
+  -- Locking auth.users serializes invite acceptance against membership creation.
+  -- If the recipient confirms while the Edge Function is finishing, the row
+  -- is created active instead of being left indefinitely in invited status.
+  v_member_status := case when p_status = 'invited' and v_email_confirmed then 'active' else p_status end;
+
   insert into public.organization_members (
     organization_id, user_id, role, status, invited_by_user_id
   ) values (
-    p_organization_id, p_user_id, 'user', p_status, p_invited_by_user_id
+    p_organization_id, p_user_id, 'user', v_member_status, p_invited_by_user_id
   )
   returning id into v_member_id;
 
