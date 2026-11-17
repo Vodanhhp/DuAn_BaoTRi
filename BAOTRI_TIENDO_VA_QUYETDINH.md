@@ -1201,3 +1201,42 @@ Người dùng xác nhận đồng ý đưa cả dữ liệu thử nghiệm đan
 - Vì đã có bảng `profiles`, **không tạo thêm bảng `user_profiles` trùng chức năng**. Có thể mở rộng `profiles` khi có yêu cầu hồ sơ phù hợp.
 - Không thể chỉ thêm ba chuỗi role vào giao diện: phải thiết kế migration nâng cấp `organization_members.role` và thay thế/mở rộng helper `has_org_role` cùng các policy RLS hiện tại. Nếu không, role tùy chỉnh sẽ không được RLS hiểu và quyền có thể không đúng.
 - Trước khi code phân hệ này, cần kiểm tra thêm toàn bộ frontend auth/session, cấu hình Supabase Functions và trạng thái migration thực tế trên project Test. Các file migration trong repository tự ghi là draft/review; không được suy ra rằng chúng đã được áp dụng thành công chỉ vì có trong GitHub.
+
+
+## 17/11/2026 – Bắt đầu triển khai nền vai trò và quyền (Migration 003)
+
+### Đã rà soát code hiện tại
+- `src/lib/supabase.ts` đã khởi tạo Supabase client bằng `VITE_SUPABASE_URL` và `VITE_SUPABASE_PUBLISHABLE_KEY`; session được lưu và tự refresh.
+- `src/AuthScreen.tsx` đã có đăng nhập email/mật khẩu qua Supabase Auth.
+- `src/App.tsx` đã khôi phục session, lắng nghe `onAuthStateChange`, đọc membership active và tổ chức đang hoạt động. Luồng hiện giả định một membership active trong một Supabase Project.
+- Frontend hiện vẫn truyền `organizationRole` vào workspace theo role cũ; chưa có bộ nạp permission hiệu lực và chưa có UI Admin quản lý User/Role.
+- Repository chưa có thư mục `supabase/functions`; chưa có Edge Function quản trị Auth/invitation.
+- Migration 002 có 11 bảng nghiệp vụ. Nhiều policy vẫn cho mọi member active đọc/ghi; chỉ một số thao tác xóa hoặc quản lý mẫu Checklist/cấu hình mới yêu cầu Admin. Vì vậy hiện chưa được xem là đã phân quyền granular.
+- Không có bằng chứng từ GitHub để xác nhận Migration 001/002 đã được áp dụng ở project Test hay Production; phải kiểm tra migration state thực tế trước khi chạy Migration 003.
+
+### Code mới đã đưa lên main
+- Tạo `supabase/migrations/20261117000500_roles_and_permissions.sql`:
+  - Tạo bảng `roles`, `permissions`, `role_permissions` và `member_roles`; các bảng đều giới hạn theo organization.
+  - Tạo danh mục quyền chuẩn theo các phân hệ Dashboard, Thiết bị, Kho, Bảo trì, Checklist, Nhật ký, Báo cáo, Cài đặt, User và Role.
+  - Tạo ba role hệ thống Admin, Kỹ thuật viên và Người xem cho các organization hiện có.
+  - Gán quyền mặc định: Admin toàn quyền trong danh mục; Kỹ thuật viên có quyền nghiệp vụ; Người xem chỉ có quyền xem.
+  - Ánh xạ membership cũ `admin` sang Admin và `user` sang Kỹ thuật viên mà không sửa giá trị cột `organization_members.role` hiện tại.
+  - Mở rộng `has_org_role` để nhận role assignment mới nhưng vẫn tương thích role cũ; bổ sung `has_org_permission` để kiểm tra quyền hiệu lực.
+  - Các bảng role/permission chỉ cấp SELECT cho authenticated; client không được INSERT/UPDATE/DELETE trực tiếp. Việc quản trị phải đi qua backend tin cậy ở bước sau.
+- Tạo `supabase/tests/20261117000500_roles_and_permissions_smoke_test.sql` để kiểm tra ba role mặc định, ánh xạ Admin và quyền quản trị. Đây là script đọc/kiểm tra trong transaction rollback, cần thay UUID placeholder trước khi chạy.
+- Commit migration: `e66f9225570050ff2bc4207db275ad8a711de51d`.
+- Commit smoke test: `09e4ac9350bdceceacb8b9aa5155677a7ab5c269`.
+
+### Giới hạn và việc chưa làm
+- Migration 003 mới là code trong repository; **chưa áp dụng lên Supabase Test**, chưa có kết quả chạy SQL hoặc smoke test. Tuyệt đối chưa chạy trên Production.
+- Migration 003 chưa thay thế các policy nghiệp vụ hiện hữu của Migration 002 bằng `has_org_permission`. Do đó ba role đã có cấu trúc và quyền mặc định trong database nhưng quyền granular chưa được thực thi trên 11 bảng nghiệp vụ.
+- Chưa tạo Edge Function, chưa triển khai lời mời/tạo/khóa User, chưa có giao diện Admin quản lý User/Role.
+- Chưa triển khai audit log và bảo vệ Admin cuối cùng ở thao tác thay đổi role; các điều kiện này phải được thực hiện trong backend/RPC trước khi cho phép quản trị thực tế.
+- Migration 003 có tính additive và giữ nguyên cột role cũ để tương thích, nhưng vẫn cần kiểm tra trạng thái schema Test và rà soát kỹ trước khi chạy.
+
+### Bước tiếp theo
+1. Trên project BAOTRI-Mini-Test, kiểm tra migration history và schema hiện tại; xác nhận Migration 001/002 đã chạy thành công trước Migration 003.
+2. Chạy Migration 003 trên Test; nếu lỗi thì dừng và xử lý theo lỗi thực tế, không sửa trực tiếp Production.
+3. Chạy smoke test với UUID tài khoản Admin Test và lưu kết quả.
+4. Thiết kế Migration 004 để chuyển các policy nghiệp vụ từ kiểm tra membership rộng sang `has_org_permission` theo ma trận quyền; bổ sung test âm tính cho Admin/Kỹ thuật viên/Người xem.
+5. Sau khi RLS granular đạt kiểm thử, xây Edge Functions quản lý User/Role và giao diện Admin.
