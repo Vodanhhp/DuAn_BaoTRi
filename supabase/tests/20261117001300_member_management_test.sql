@@ -84,6 +84,9 @@ begin
   end if;
 
   perform set_config('request.jwt.claim.role', 'service_role', true);
+  if auth.role() <> 'service_role' then
+    raise exception 'TEST FAIL: service_role JWT claim was not applied';
+  end if;
 
   perform public.admin_update_org_member_role(
     v_org_id, v_viewer_member_id, 'technician', v_admin_user_id
