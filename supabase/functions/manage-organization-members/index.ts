@@ -225,7 +225,7 @@ Deno.serve(async (req) => {
       const appBaseUrl = Deno.env.get("APP_BASE_URL");
       const { error: resetError } = await admin.auth.resetPasswordForEmail(
         targetResult.user.email,
-        appBaseUrl ? { redirectTo: appBaseUrl } : undefined,
+        appBaseUrl ? { redirectTo: `${appBaseUrl.replace(/\/+$/, '')}/?flow=recovery` } : undefined,
       );
       if (resetError) return json({ error: resetError.message }, 400);
 
