@@ -10,6 +10,7 @@ declare
   v_admin_user_id uuid;
   v_admin_member_id uuid;
   v_viewer_member_id uuid;
+  v_viewer_user_id uuid;
   v_technician_member_id uuid;
   v_role_code text;
   v_status text;
@@ -36,7 +37,7 @@ begin
     and (m.role = 'admin' or r.code = 'admin')
   limit 1;
 
-  select m.id into v_viewer_member_id
+  select m.id, m.user_id into v_viewer_member_id, v_viewer_user_id
   from public.organization_members m
   join public.member_roles mr
     on mr.organization_id = m.organization_id and mr.member_id = m.id
@@ -88,6 +89,16 @@ begin
   where p.email is distinct from u.email;
   if v_email_mismatches > 0 then
     raise exception 'TEST FAIL: profiles email mirror mismatch count=%', v_email_mismatches;
+  end if;
+
+  perform set_config('request.jwt.claim.sub', v_viewer_user_id::text, true);
+  perform set_config('request.jwt.claim.role', 'authenticated', true);
+  if public.has_org_permission(v_org_id, 'users.manage') then
+    raise exception 'TEST FAIL: Viewer must not have users.manage';
+  end if;
+  perform set_config('request.jwt.claim.sub', v_admin_user_id::text, true);
+  if not public.has_org_permission(v_org_id, 'users.manage') then
+    raise exception 'TEST FAIL: Admin must have users.manage';
   end if;
 
   perform set_config('request.jwt.claim.role', 'service_role', true);
