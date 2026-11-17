@@ -59,6 +59,9 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
   const [editDraft, setEditDraft] = useState<Asset | null>(null)
   const [savingEdit, setSavingEdit] = useState(false)
   const [busyAssetId, setBusyAssetId] = useState('')
+  const [canUpdateAssets, setCanUpdateAssets] = useState(false)
+  const [canCreateAssets, setCanCreateAssets] = useState(false)
+  const [permissionsLoading, setPermissionsLoading] = useState(true)
   const [name, setName] = useState('')
   const [category, setCategory] = useState('')
   const [location, setLocation] = useState('')
@@ -100,9 +103,37 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
 
   useEffect(() => { void load() }, [load])
 
+  useEffect(() => {
+    let active = true
+    const loadPermissions = async () => {
+      setPermissionsLoading(true)
+      try {
+        const [updateResult, createResult] = await Promise.all([
+          client.rpc('has_org_permission', { p_organization_id: organizationId, p_permission_code: 'assets.update' }),
+          client.rpc('has_org_permission', { p_organization_id: organizationId, p_permission_code: 'assets.create' })
+        ])
+        if (updateResult.error) throw updateResult.error
+        if (createResult.error) throw createResult.error
+        if (active) {
+          setCanUpdateAssets(updateResult.data === true)
+          setCanCreateAssets(createResult.data === true)
+        }
+      } catch (cause) {
+        if (active) {
+          setCanUpdateAssets(false)
+          setCanCreateAssets(false)
+          setError('Không xác định được quyền thao tác thiết bị từ Supabase: ' + (cause instanceof Error ? cause.message : String(cause)))
+        }
+      } finally {
+        if (active) setPermissionsLoading(false)
+      }
+    }
+    void loadPermissions()
+    return () => { active = false }
+  }, [client, organizationId])
+
   const active = assets.filter(asset => !asset.archivedAt)
   const archived = assets.filter(asset => Boolean(asset.archivedAt))
-  const canManageAssets = organizationRole === 'Admin' || organizationRole === 'Technician'
   const categoryOptions = useMemo(() => Object.keys(config?.category_codes ?? {}).sort((a, b) => a.localeCompare(b, 'vi')), [config])
   const locationOptions = useMemo(() => Object.keys(config?.location_codes ?? {}).filter(x => x !== '__UNASSIGNED__').sort((a, b) => a.localeCompare(b, 'vi')), [config])
 
@@ -210,7 +241,7 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
       <button type="button" className="soft-btn" onClick={() => { setShowConfig(v => !v); setShowCreate(false); setEditDraft(null) }}>
         {showConfig ? 'Đóng cấu hình mã' : config ? 'Cấu hình mã thiết bị' : 'Thiết lập mã thiết bị Cloud'}
       </button>
-      <button type="button" className="primary-btn" disabled={!config || !canManageAssets} title={!canManageAssets ? 'Tài khoản chỉ có quyền xem thiết bị.' : undefined} onClick={() => { setShowCreate(v => !v); setShowConfig(false); setEditDraft(null) }}>
+      <button type="button" className="primary-btn" disabled={!config || permissionsLoading || !canCreateAssets} title={!canCreateAssets ? 'Tài khoản không có quyền tạo thiết bị.' : undefined} onClick={() => { setShowCreate(v => !v); setShowConfig(false); setEditDraft(null) }}>
         {showCreate ? 'Đóng biểu mẫu' : 'Thêm thiết bị Cloud'}
       </button>
     </div>
@@ -297,7 +328,7 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
               <td>{dateText(asset.commissionedAt)}</td>
               <td>{asset.status}</td>
               <td className="actions">
-                {canManageAssets ? <>
+                {canUpdateAssets ? <>
                   <button type="button" className="text-btn" onClick={() => { setEditDraft({ ...asset }); setShowConfig(false); setShowCreate(false) }}>Sửa</button>
                   <button type="button" className="text-btn" disabled={busyAssetId === asset.id} onClick={() => void toggleArchive(asset, true)}>{busyAssetId === asset.id ? 'Đang xử lý…' : 'Lưu kho'}</button>
                 </> : <span className="muted">Chỉ xem</span>}
@@ -320,7 +351,7 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
               <td>{dateText(asset.commissionedAt)}</td>
               <td>{dateText(asset.archivedAt)}</td>
               <td className="actions">
-                {canManageAssets ? <button type="button" className="text-btn success-text" disabled={busyAssetId === asset.id} onClick={() => void toggleArchive(asset, false)}>{busyAssetId === asset.id ? 'Đang xử lý…' : 'Khôi phục'}</button> : <span className="muted">Chỉ xem</span>}
+                {canUpdateAssets ? <button type="button" className="text-btn success-text" disabled={busyAssetId === asset.id} onClick={() => void toggleArchive(asset, false)}>{busyAssetId === asset.id ? 'Đang xử lý…' : 'Khôi phục'}</button> : <span className="muted">Chỉ xem</span>}
               </td>
             </tr>)}
           </tbody>
@@ -328,6 +359,6 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
         {archived.length === 0 && <p className="muted">Chưa có thiết bị nào trong lưu kho.</p>}
       </div>
     </>}
-    <p className="muted">Sửa hồ sơ và lưu kho/khôi phục dùng quyền assets.update của Supabase. Không có thao tác xóa cứng; dữ liệu IndexedDB và ảnh local không bị thay đổi.</p>
+    <p className="muted">Quyền tạo và cập nhật được đọc trực tiếp từ RPC has_org_permission của Supabase (assets.create / assets.update); nếu không xác định được quyền, giao diện mặc định chỉ xem. Không có thao tác xóa cứng; dữ liệu IndexedDB và ảnh local không bị thay đổi.</p>
   </section>
 }
