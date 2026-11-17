@@ -1336,3 +1336,12 @@ Trạng thái:
 - Hiệu chỉnh script test 009 sau lần chạy đầu: phép thử Admin DELETE vật tư trước đó cố xóa vật tư fixture đang được `inventory_movements` tham chiếu, nên bị FK `inventory_movements_item_fk` chặn. Đây là bảo vệ toàn vẹn dữ liệu đúng của schema, không phải lỗi RLS.
 - Đã sửa phép thử: tạo một vật tư riêng không có lịch sử giao dịch, sau đó dùng vật tư đó kiểm tra quyền DELETE của Admin. Vật tư fixture có movement được giữ nguyên.
 - Commit sửa: `a8ab0ab7bb4c26f6edbc0f300917977bfbdbe971`. Script 009 cần được chạy lại từ bản mới nhất trên BAOTRI-Mini-Test. Chưa ghi nhận kết quả PASS cuối cùng.
+
+
+## Cập nhật 17/11/2026 – Kết quả kiểm thử tích hợp RLS 11 bảng nghiệp vụ (test 009)
+
+- Người dùng đã chạy lại toàn bộ `supabase/tests/20261117000900_business_modules_rls_integration_test.sql` trên project `BAOTRI-Mini-Test` sau khi sửa lỗi fixture vật tư có lịch sử giao dịch; người dùng xác nhận **PASS toàn bộ**.
+- Ghi nhận bài test tích hợp 009 đã chạy trọn vẹn và tất cả các assertion có trong script đều đạt: Viewer đọc được 11 bảng và bị chặn các thao tác ghi được kiểm tra; Technician thực hiện được các thao tác nghiệp vụ được cấp, bị chặn các thao tác ngoài quyền; Admin thực hiện được các thao tác quản trị được kiểm tra.
+- Lỗi FK `inventory_movements_item_fk` ở lần chạy trước đã được xử lý đúng bằng cách dùng vật tư fixture riêng không có lịch sử giao dịch để kiểm tra DELETE; vật tư đang được movement tham chiếu không bị xóa.
+- Phạm vi xác nhận: các trường hợp được viết trong test 009, không đồng nghĩa đã kiểm thử exhaustive mọi thao tác CRUD/cột trên cả 11 bảng. Chưa kiểm thử đầy đủ suspended membership, cross-organization/tenant isolation, quản trị role/user qua backend, RPC nhập/xuất kho hoặc CRUD cloud từ frontend.
+- File test 009: [supabase/tests/20261117000900_business_modules_rls_integration_test.sql](https://github.com/Vodanhhp/DuAn_BaoTRi/blob/main/supabase/tests/20261117000900_business_modules_rls_integration_test.sql). Chỉ chạy trên `BAOTRI-Mini-Test`; chưa áp dụng các kiểm thử/thay đổi này lên Production.
