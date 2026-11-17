@@ -615,3 +615,22 @@ button:disabled{opacity:.42!important;filter:grayscale(.35);cursor:not-allowed!i
 .member-list-heading{margin-top:18px}
 .member-table td select{max-width:170px;min-width:130px}
 @media(max-width:680px){.member-invite-form{grid-template-columns:1fr}.member-invite-action{justify-content:flex-start}.member-table td{padding:10px 9px}}
+
+
+/* Tinh gọn khu vực Bảo dưỡng – Sửa chữa và lịch định kỳ */
+.work-module-panel{gap:14px}
+.work-module-panel>.panel-head{align-items:center;margin-bottom:4px}
+.module-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.module-actions .soft-btn{white-space:nowrap}
+.work-module-panel .table-wrap{border:1px solid var(--border);border-radius:10px}
+.work-module-panel table{font-size:11px}
+.work-module-panel th{padding:11px 12px}
+.work-module-panel td{padding:11px 12px}
+@media(max-width:680px){
+  .work-module-panel{gap:12px}
+  .work-module-panel>.panel-head{align-items:stretch;flex-direction:column}
+  .module-actions{width:100%;display:grid;grid-template-columns:1fr}
+  .module-actions .soft-btn{width:100%;justify-content:center;min-height:42px}
+  .work-module-panel .table-wrap{border-radius:8px}
+  .work-module-panel th,.work-module-panel td{padding:10px}
+}
