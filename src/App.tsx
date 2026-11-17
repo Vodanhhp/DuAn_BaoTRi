@@ -1326,9 +1326,9 @@ function OrganizationMembersPanel({client,organizationId}:{client:SupabaseClient
       if(profileResult.error)throw profileResult.error
       if(assignmentResult.error)throw assignmentResult.error
       if(roleResult.error)throw roleResult.error
-      const profiles=new Map((profileResult.data??[]).map((item:any)=>[item.id,item]))
-      const roles=new Map((roleResult.data??[]).map((item:any)=>[item.id,item]))
-      const assignments=new Map((assignmentResult.data??[]).map((item:any)=>[item.member_id,item.role_id]))
+      const profiles=new Map<string,any>((profileResult.data??[]).map((item:any)=>[item.id,item] as [string,any]))
+      const roles=new Map<string,any>((roleResult.data??[]).map((item:any)=>[item.id,item] as [string,any]))
+      const assignments=new Map<string,string>((assignmentResult.data??[]).map((item:any)=>[item.member_id,item.role_id] as [string,string]))
       setMembers(rows.map((row:any)=>{
         const profile:any=profiles.get(row.user_id)
         const role:any=roles.get(assignments.get(row.id)??'')
@@ -1356,7 +1356,14 @@ function OrganizationMembersPanel({client,organizationId}:{client:SupabaseClient
     const {data,error:invokeError}=await client.functions.invoke('manage-organization-members',{
       body:{organizationId,...body}
     })
-    if(invokeError)throw invokeError
+    if(invokeError) {
+      let detail=invokeError.message
+      const context=(invokeError as any).context
+      if(context&&typeof context.json==='function') {
+        try { const payload=await context.json(); if(payload?.error)detail=String(payload.error) } catch {}
+      }
+      throw new Error(detail)
+    }
     if(data?.error)throw new Error(String(data.error))
     return data
   }
