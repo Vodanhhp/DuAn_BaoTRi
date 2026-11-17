@@ -545,8 +545,14 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
     }).filter(row => row.matches).sort((a, b) => (a.item?.name ?? '').localeCompare(b.item?.name ?? '', 'vi'))
   }, [reportMaterialMovements, inventory, search])
   const reportBrokenAssets = useMemo(() => activeAssets.filter(asset => asset.status === 'Đang sửa chữa'), [activeAssets])
-  const overdue = tasks.filter(t => t.status !== 'Hoàn thành' && t.dueDate < today()).length
   const dueToday = tasks.filter(t => t.dueDate === today() && t.status !== 'Hoàn thành')
+  const checklistRowsForCounters = CHECKLIST_FREQUENCIES.flatMap(frequency => buildChecklistScheduleRows(activeAssets, checklistTemplates, allChecklistResults, frequency, today()))
+  const dueChecklistToday = checklistRowsForCounters.filter(row => !row.completed && row.dueDate === today())
+  const overdueChecklist = checklistRowsForCounters.filter(row => !row.completed && row.dueDate && row.dueDate < today())
+  const dueRequestsToday = pendingRequests.filter(entry => entry.dueDate === today())
+  const overdueRequests = pendingRequests.filter(entry => Boolean(entry.dueDate) && (entry.dueDate as string) < today())
+  const overdue = tasks.filter(t => t.status !== 'Hoàn thành' && t.dueDate < today()).length + overdueChecklist.length + overdueRequests.length
+  const dueTodayCount = dueToday.length + dueChecklistToday.length + dueRequestsToday.length
   const lowStock = inventory.filter(i => i.quantity <= i.minQuantity)
 
   const flash = (s: string) => { setNotice(s); setTimeout(() => setNotice(''), 2800) }
@@ -668,7 +674,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
     if (blockViewer('tạo hoặc cập nhật phiếu bảo dưỡng – sửa chữa')) return
     const existing = await db.logs.get(entry.id)
     const completedAt = entry.result ? entry.completedAt || existing?.completedAt || now() : undefined
-    const value: Log = { ...entry, requestedBy: entry.requestedBy?.trim() || userName, performedBy: entry.result ? (entry.performedBy.trim() || userName) : entry.performedBy.trim(), result: entry.result || '', completedAt }
+    const value: Log = { ...entry, dueDate: entry.dueDate || undefined, requestedBy: entry.requestedBy?.trim() || userName, performedBy: entry.result ? (entry.performedBy.trim() || userName) : entry.performedBy.trim(), result: entry.result || '', completedAt }
     await db.logs.put(value); await queueChange('logs', value.id)
     setModal(null); setEditingLog(null)
     flash(value.result ? 'Đã lưu Phiếu YC hoàn thành' : 'Đã lưu Phiếu YC, đang chờ xử lý')
@@ -678,7 +684,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
     const failedItems = entry.items.filter(item => item.answer === 'Không đạt' || item.answer === 'Không')
     const description = `Phát hiện từ Checklist ${entry.templateTitle} · phiên bản ${entry.templateVersion} · ${new Date(entry.performedAt).toLocaleString('vi-VN')}\n` +
       failedItems.map((item, index) => `${index + 1}. ${item.label}${item.note ? ` — ${item.note}` : ''}`).join('\n')
-    setEditingLog({ id: uid(), assetId: entry.assetId, checklistResultId: entry.id, date: today(), kind: 'Sửa chữa', description, parts: '', readings: '', requestedBy: userName, result: '', performedBy: '' })
+    setEditingLog({ id: uid(), assetId: entry.assetId, checklistResultId: entry.id, date: today(), dueDate: today(), kind: 'Sửa chữa', description, parts: '', readings: '', requestedBy: userName, result: '', performedBy: '' })
     setDetailAsset(null); setChecklistAccess(false); setModal('log')
   }
   const completeTask = async (t: Task) => {
@@ -837,6 +843,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
     if (!records.length) { flash('Chưa có phiếu được chọn để xuất Excel.'); return }
     const rows = records.map(l => ({
       'Ngày yêu cầu':dateText(l.date),
+      'Hạn hoàn thành':l.dueDate?dateText(l.dueDate):'Chưa đặt hạn',
       'Mã thiết bị':assets.find(a=>a.id===l.assetId)?.code ?? '',
       'Tên thiết bị':assets.find(a=>a.id===l.assetId)?.name ?? '',
       'Loại yêu cầu':l.kind,
@@ -848,7 +855,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
       'Hoàn thành lúc':l.completedAt?dateTimeText(l.completedAt):''
     }))
     const suffix = records.length === 1 ? `phieu-${records[0].id.slice(0,8)}` : records.length === logs.length ? 'tat-ca' : 'da-chon'
-    exportRows(rows, `phieu-yc-bao-duong-sua-chua-${suffix}.xlsx`, 'PHIẾU YC BẢO DƯỠNG – SỬA CHỮA', 'Phiếu bảo dưỡng', ['Ngày yêu cầu','Mã thiết bị','Tên thiết bị','Loại yêu cầu','Nội dung yêu cầu','Thông số / vật tư','Kết quả / trạng thái','Người yêu cầu','Người hoàn thành','Hoàn thành lúc'], 'landscape')
+    exportRows(rows, `phieu-yc-bao-duong-sua-chua-${suffix}.xlsx`, 'PHIẾU YC BẢO DƯỠNG – SỬA CHỮA', 'Phiếu bảo dưỡng', ['Ngày yêu cầu','Hạn hoàn thành','Mã thiết bị','Tên thiết bị','Loại yêu cầu','Nội dung yêu cầu','Thông số / vật tư','Kết quả / trạng thái','Người yêu cầu','Người hoàn thành','Hoàn thành lúc'], 'landscape')
   }
   const reportTitleSuffix = periodRangeLabel(reportPeriod, reportPeriodRange).toLocaleUpperCase('vi')
   const exportReportWork = () => exportRows(reportWorkLogs.map(log => {
@@ -976,7 +983,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
       </header>
       <div className="content">
         {page!=='dashboard' && page!=='settings' && <div className="searchbar"><Search size={18}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Tìm theo mã, tên hoặc nội dung..."/></div>}
-        {page==='dashboard' && <Dashboard assets={activeAssets} tasks={tasks} inventory={inventory} dueToday={dueToday} pendingRequests={pendingRequests} lowStock={lowStock} overdue={overdue} go={setPage} complete={completeTask} readOnly={isViewer}/>}
+        {page==='dashboard' && <Dashboard assets={activeAssets} tasks={tasks} inventory={inventory} dueToday={dueToday} dueTodayCount={dueTodayCount} dueChecklistToday={dueChecklistToday} pendingRequests={pendingRequests} lowStock={lowStock} overdue={overdue} go={setPage} complete={completeTask} readOnly={isViewer}/>}
         <>
         {page==='checklist' && <section className="panel checklist-schedule-panel">
           <div className="panel-head"><div><h2>Lịch Bảo trì – Checklist</h2><p>Theo dõi từng kỳ Checklist định kỳ của thiết bị. Kỳ chưa thực hiện hiển thị đỏ; hoàn thành hiển thị xanh.</p></div><span className="status green">BẮT BUỘC QUÉT QR</span></div>
@@ -1063,8 +1070,8 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
           <div className="table-wrap"><table><thead><tr><th>Ngày đến hạn</th><th>Thiết bị</th><th>Công việc</th><th>Chu kỳ</th><th>Trạng thái</th><th></th></tr></thead><tbody>
           {filteredTasks.map(t=><tr key={t.id}><td>{dateText(t.dueDate)}</td><td>{assets.find(a=>a.id===t.assetId)?.name??'Chưa gắn thiết bị'}</td><td><b>{t.title}</b><small>{t.checklist.split('\n').filter(Boolean).length} bước công việc</small></td><td>{t.frequency}</td><td><span className={`status ${t.status==='Hoàn thành'?'green':t.dueDate<today()?'red':'orange'}`}>{t.status==='Hoàn thành'?'Hoàn thành':t.dueDate<today()?'Quá hạn':t.status}</span></td><td className="actions"><button className="text-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>{setEditingTask(t);setModal('task')}}>Chi tiết</button>{t.status!=='Hoàn thành'&&<button className="text-btn success-text" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>completeTask(t)}>Hoàn thành</button>}</td></tr>)}
           </tbody></table>{filteredTasks.length===0&&<Empty text="Chưa có công việc."/ >}</div></section>}
-        {page==='logs' && <section className="panel work-module-panel"><div className="panel-head"><div><h2>Phiếu YC Bảo dưỡng – Sửa chữa</h2><p>Theo dõi yêu cầu đến khi người hoàn thành xác nhận; mọi phiếu đều gắn với lý lịch thiết bị</p></div><div className="module-actions"><button type="button" className="primary-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>{setEditingLog({id:uid(),assetId:'',date:today(),kind:'Sửa chữa',description:'',parts:'',readings:'',requestedBy:userName,result:'',performedBy:''});setModal('log')}}><Plus size={16}/> Tạo Phiếu YC</button><button type="button" className="soft-btn" onClick={()=>setPage('tasks')}><CalendarDays size={16}/> Lịch bảo dưỡng định kỳ</button><button className="soft-btn" disabled={isViewer} title={isViewer?'Viewer không được xuất Excel':undefined} onClick={()=>exportLogs(logs)}><Download size={16}/> Xuất tất cả ({logs.length})</button><button className="soft-btn" disabled={isViewer||selectedLogs.length===0} title={isViewer?'Viewer không được xuất Excel':undefined} onClick={()=>exportLogs(selectedLogs)}><FileSpreadsheet size={16}/> Xuất đã chọn ({selectedLogs.length})</button></div></div>
-          <div className="table-wrap"><table><thead><tr><th><input type="checkbox" aria-label="Chọn tất cả Phiếu YC" checked={allLogsSelected} onChange={event=>setSelectedLogIds(event.target.checked?logs.map(entry=>entry.id):[])}/></th><th>Ngày yêu cầu</th><th>Thiết bị</th><th>Loại yêu cầu</th><th>Nội dung yêu cầu</th><th>Trạng thái</th><th>Kết quả</th><th>Người yêu cầu</th><th>Người hoàn thành</th><th>Thao tác</th></tr></thead><tbody>{logs.map(l=><tr key={l.id}><td><input type="checkbox" aria-label={`Chọn phiếu ${l.id}`} checked={selectedLogIds.includes(l.id)} onChange={event=>setSelectedLogIds(current=>event.target.checked?[...current.filter(id=>id!==l.id),l.id]:current.filter(id=>id!==l.id))}/></td><td>{dateText(l.date)}</td><td>{assets.find(a=>a.id===l.assetId)?.name??'—'}</td><td>{l.kind}</td><td>{l.description}</td><td><span className={`status ${l.result?'green':'red'}`}>{l.result?'Hoàn thành':'Chưa hoàn thành'}</span></td><td>{l.result||'Đang chờ xử lý'}</td><td>{l.requestedBy||'—'}</td><td>{l.performedBy||'—'}{l.completedAt&&<small>{dateTimeText(l.completedAt)}</small>}</td><td className="actions"><button type="button" className="text-btn" disabled={isViewer} title={isViewer?'Viewer không được xuất Excel':undefined} onClick={()=>exportLogs([l])}>Xuất phiếu</button><button type="button" className="text-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>{setEditingLog(l);setModal('log')}}>{l.result?'Sửa Phiếu YC':'Cập nhật Phiếu YC'}</button></td></tr>)}</tbody></table>{logs.length===0&&<Empty text="Chưa có Phiếu YC nào."/ >}</div></section>}
+        {page==='logs' && <section className="panel work-module-panel"><div className="panel-head"><div><h2>Phiếu YC Bảo dưỡng – Sửa chữa</h2><p>Theo dõi yêu cầu đến khi người hoàn thành xác nhận; mọi phiếu đều gắn với lý lịch thiết bị</p></div><div className="module-actions"><button type="button" className="primary-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>{setEditingLog({id:uid(),assetId:'',date:today(),dueDate:today(),kind:'Sửa chữa',description:'',parts:'',readings:'',requestedBy:userName,result:'',performedBy:''});setModal('log')}}><Plus size={16}/> Tạo Phiếu YC</button><button type="button" className="soft-btn" onClick={()=>setPage('tasks')}><CalendarDays size={16}/> Lịch bảo dưỡng định kỳ</button><button className="soft-btn" disabled={isViewer} title={isViewer?'Viewer không được xuất Excel':undefined} onClick={()=>exportLogs(logs)}><Download size={16}/> Xuất tất cả ({logs.length})</button><button className="soft-btn" disabled={isViewer||selectedLogs.length===0} title={isViewer?'Viewer không được xuất Excel':undefined} onClick={()=>exportLogs(selectedLogs)}><FileSpreadsheet size={16}/> Xuất đã chọn ({selectedLogs.length})</button></div></div>
+          <div className="table-wrap"><table><thead><tr><th><input type="checkbox" aria-label="Chọn tất cả Phiếu YC" checked={allLogsSelected} onChange={event=>setSelectedLogIds(event.target.checked?logs.map(entry=>entry.id):[])}/></th><th>Ngày yêu cầu</th><th>Hạn hoàn thành</th><th>Thiết bị</th><th>Loại yêu cầu</th><th>Nội dung yêu cầu</th><th>Trạng thái</th><th>Kết quả</th><th>Người yêu cầu</th><th>Người hoàn thành</th><th>Thao tác</th></tr></thead><tbody>{logs.map(l=><tr key={l.id}><td><input type="checkbox" aria-label={`Chọn phiếu ${l.id}`} checked={selectedLogIds.includes(l.id)} onChange={event=>setSelectedLogIds(current=>event.target.checked?[...current.filter(id=>id!==l.id),l.id]:current.filter(id=>id!==l.id))}/></td><td>{dateText(l.date)}</td><td>{l.dueDate?dateText(l.dueDate):<span className="status orange">Chưa đặt hạn</span>}</td><td>{assets.find(a=>a.id===l.assetId)?.name??'—'}</td><td>{l.kind}</td><td>{l.description}</td><td><span className={`status ${l.result?'green':'red'}`}>{l.result?'Hoàn thành':'Chưa hoàn thành'}</span></td><td>{l.result||'Đang chờ xử lý'}</td><td>{l.requestedBy||'—'}</td><td>{l.performedBy||'—'}{l.completedAt&&<small>{dateTimeText(l.completedAt)}</small>}</td><td className="actions"><button type="button" className="text-btn" disabled={isViewer} title={isViewer?'Viewer không được xuất Excel':undefined} onClick={()=>exportLogs([l])}>Xuất phiếu</button><button type="button" className="text-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>{setEditingLog(l);setModal('log')}}>{l.result?'Sửa Phiếu YC':'Cập nhật Phiếu YC'}</button></td></tr>)}</tbody></table>{logs.length===0&&<Empty text="Chưa có Phiếu YC nào."/ >}</div></section>}
         {page==='reports' && <div className="reports-dashboard">
           <section className="panel report-period-panel">
             <div className="panel-head"><div><h2>Báo cáo hoạt động thực tế</h2><p>Thống kê phiếu đã ghi nhận và vật tư đã xuất kho; không bao gồm kế hoạch dự kiến.</p></div><FileSpreadsheet/></div>
@@ -1186,7 +1193,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
   </div>
 }
 
-function Dashboard({assets,tasks,dueToday,pendingRequests=[],lowStock,overdue,go,complete,inventory,readOnly=false}:any) {
+function Dashboard({assets,tasks,dueToday,dueTodayCount,dueChecklistToday=[],pendingRequests=[],lowStock,overdue,go,complete,inventory,readOnly=false}:any) {
   const completed = tasks.filter((t:Task)=>t.status==='Hoàn thành').length
   const repairCount = assets.filter((a:Asset)=>a.status==='Đang sửa chữa').length
   const inventoryValue = (inventory as InventoryItem[]).reduce((sum:number, item:InventoryItem) => sum + item.quantity * item.unitPrice, 0)
@@ -1209,7 +1216,7 @@ function Dashboard({assets,tasks,dueToday,pendingRequests=[],lowStock,overdue,go
     <div className="welcome"><div><div className="eyebrow light">BẢNG ĐIỀU KHIỂN</div><h2>Chào bạn, hôm nay cần bảo trì gì?</h2><p>{new Date().toLocaleDateString('vi-VN',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})} · Theo dõi thiết bị và công việc tại một nơi.</p></div><div className="welcome-icon"><Activity size={42}/></div></div>
     <div className="stat-grid">
       <Stat icon={<HardDrive/>} label="Tổng thiết bị" value={assets.length} hint="Hồ sơ thiết bị" color="blue"/>
-      <Stat icon={<CalendarDays/>} label="Việc cần làm hôm nay" value={dueToday.length} hint="Đến hạn hôm nay" color="orange"/>
+      <Stat icon={<CalendarDays/>} label="Việc cần làm hôm nay" value={dueTodayCount} hint="Bảo trì định kỳ · Checklist · Phiếu YC" color="orange"/>
       <Stat icon={<ShieldAlert/>} label="Công việc quá hạn" value={overdue} hint="Cần theo dõi" color="red"/>
       <Stat icon={<Package/>} label="Vật tư sắp hết" value={lowStock.length} hint="Dưới mức tối thiểu" color="purple"/>
     </div>
@@ -1250,8 +1257,9 @@ function Dashboard({assets,tasks,dueToday,pendingRequests=[],lowStock,overdue,go
     <div className="dash-columns">
       <section className="panel"><div className="panel-head"><div><h2>Công việc hôm nay</h2><p>Phiếu YC chưa hoàn thành luôn hiển thị đỏ đến khi người hoàn thành xác nhận</p></div><button className="link-btn" onClick={()=>go('logs')}>Xem Phiếu YC <ChevronRight size={15}/></button></div>
         {pendingRequests.map((request:Log)=><div className="task-row request-alert-row" key={request.id}><div className="task-icon"><Wrench size={17}/></div><div className="task-info"><b>{request.description||'Yêu cầu bảo dưỡng – sửa chữa'}</b><small>{assets.find((a:Asset)=>a.id===request.assetId)?.name??'Thiết bị không còn trong danh mục'} · Người yêu cầu: {request.requestedBy||'—'} · {dateText(request.date)}</small></div><span className="status red">CHƯA HOÀN THÀNH</span></div>)}
+        {dueChecklistToday.map((row:ChecklistScheduleRow)=><div className="task-row" key={`checklist-${row.asset.id}-${row.dueDate}`}><div className="task-icon"><ClipboardList size={17}/></div><div className="task-info"><b>Checklist · {row.asset.name}</b><small>{row.asset.code} · Đến hạn hôm nay</small></div><button className="complete-btn" onClick={()=>go('checklist')}>Mở Checklist</button></div>)}
         {dueToday.map((t:Task)=><div className="task-row" key={t.id}><div className="task-icon"><Wrench size={17}/></div><div className="task-info"><b>{t.title}</b><small>{assets.find((a:Asset)=>a.id===t.assetId)?.name??'Chưa gắn thiết bị'} · {t.frequency}</small></div><button className="complete-btn" disabled={readOnly} title={readOnly?'Viewer chỉ có quyền xem':undefined} onClick={()=>complete(t)}><Check size={16}/> Xong</button></div>)}
-        {pendingRequests.length===0&&dueToday.length===0&&<Empty text="Không có công việc đến hạn hoặc Phiếu YC đang chờ xử lý."/>}
+        {pendingRequests.length===0&&dueToday.length===0&&dueChecklistToday.length===0&&<Empty text="Không có công việc đến hạn hoặc Phiếu YC đang chờ xử lý."/>}
       </section>
       <div className="side-stack">
         <section className="panel"><div className="panel-head"><div><h2>Vật tư cần chú ý</h2><p>Đạt hoặc dưới ngưỡng tồn tối thiểu</p></div><Package size={19}/></div>
@@ -2017,7 +2025,7 @@ function AssetChecklist({asset,allowActions,scheduledFor,isMakeup,createRequestF
 }
 
 function LogEntryModal({value,close,save,assets,userName,isExisting}:{value:Log;close:()=>void;save:(entry:Log)=>void;assets:Asset[];userName:string;isExisting:boolean}){
-  const [v,setV]=useState<Log>(()=>({...value,requestedBy:value.requestedBy||userName,performedBy:value.performedBy||'',result:value.result||''}))
+  const [v,setV]=useState<Log>(()=>({...value,dueDate:value.dueDate||'',requestedBy:value.requestedBy||userName,performedBy:value.performedBy||'',result:value.result||''}))
   const set = <K extends keyof Log,>(key: K, val: Log[K]) => setV(p => ({ ...p, [key]: val }))
   const completing=Boolean(v.result)
   return <Modal title={isExisting?'Cập nhật Phiếu YC Bảo dưỡng – Sửa chữa':'Tạo Phiếu YC Bảo dưỡng – Sửa chữa'} close={close}><form className="form-grid" onSubmit={async e=>{
@@ -2029,6 +2037,7 @@ function LogEntryModal({value,close,save,assets,userName,isExisting}:{value:Log;
   }}>
     <Field label="Thiết bị *"><select required value={v.assetId} onChange={e=>set('assetId',e.target.value)}><option value="">-- Chọn thiết bị --</option>{assets.filter(asset=>!asset.archivedAt).map(asset=><option key={asset.id} value={asset.id}>{asset.code} · {asset.name}</option>)}</select></Field>
     <Field label="Ngày yêu cầu"><input type="date" value={v.date} onChange={e=>set('date',e.target.value)}/></Field>
+    <Field label="Hạn hoàn thành *"><input type="date" required value={v.dueDate||''} onChange={e=>set('dueDate',e.target.value)}/></Field>
     <Field label="Loại yêu cầu"><select value={v.kind} onChange={e=>set('kind',e.target.value)}>{['Bảo dưỡng định kỳ','Sửa chữa','Thay thế phụ tùng','Hiệu chuẩn','Khác'].map(x=><option key={x}>{x}</option>)}</select></Field>
     <Field label="Nội dung yêu cầu *"><textarea required value={v.description} onChange={e=>set('description',e.target.value)} placeholder="Mô tả hiện tượng, lỗi hoặc công việc cần thực hiện"/></Field>
     <Field label="Người yêu cầu *"><input required value={v.requestedBy||''} onChange={e=>set('requestedBy',e.target.value)}/></Field>
