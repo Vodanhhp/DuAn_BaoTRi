@@ -1383,3 +1383,38 @@ Trạng thái:
 - **Kết luận vòng kiểm thử bảo mật cơ bản:** người dùng xác nhận test 008, 009, 010 và 011 đều PASS trên `BAOTRI-Mini-Test`. Đây là các trường hợp assertion được bao phủ trong bốn script, không phải chứng nhận exhaustive mọi API, mọi cột hoặc mọi đường truy cập.
 - Không có migration/policy mới được áp dụng trong test 011. Không thay đổi Production.
 - **Bước tiếp theo:** rà soát luồng dữ liệu và thao tác CRUD của phân hệ thiết bị trong `src/App.tsx`, thiết kế một vertical slice cloud cho Assets (đọc danh sách, thêm, sửa, xóa theo permission; giữ nguyên UUID và organization_id), có kiểm tra lỗi và không làm mất dữ liệu IndexedDB. Chỉ triển khai sau khi đối chiếu đầy đủ schema và luồng hiện tại; không bật đồng bộ toàn bộ cùng lúc.
+
+## Cập nhật 17/11/2026 – rà soát trước khi triển khai Cloud CRUD phân hệ Thiết bị
+
+### Kết quả đối chiếu mã nguồn hiện tại
+
+- Đã fetch và rà soát phiên bản mới nhất của `src/App.tsx`, `src/db.ts`, `src/lib/supabase.ts`, `package.json`, Migration 002 và Migration 006 trên `main`.
+- `src/App.tsx` hiện lấy danh sách Thiết bị từ `db.assets` (Dexie/IndexedDB); các thao tác thêm/sửa, đổi trạng thái, lưu kho và khôi phục đều ghi vào IndexedDB và `syncQueue`. Chưa có CRUD cloud cho dữ liệu Thiết bị.
+- Ứng dụng hiện tự seed 30 thiết bị mẫu vào IndexedDB khi mở workspace; các phân hệ local khác cũng đang dùng danh sách thiết bị này. Vì vậy, không được thay nguồn dữ liệu toàn ứng dụng sang Supabase hoặc tự động đẩy dữ liệu local/demo lên cloud trong đợt Assets.
+- Hiện có nút thử nghiệm riêng ghi một bản ghi `TEST-CLOUD-*` lên Supabase; đây chỉ là kiểm tra kết nối, không phải CRUD nghiệp vụ.
+- UI Thiết bị hiện có thao tác thêm, sửa, đổi trạng thái, lưu kho và khôi phục. Xóa vĩnh viễn đang bị vô hiệu hóa; không được tự mở chức năng xóa cứng chỉ vì database có policy delete.
+- Custom category và mã loại thiết bị hiện lưu trong localStorage; chưa có luồng đọc/ghi cấu hình danh mục từ `organization_settings.asset_categories`.
+
+### Đối chiếu schema cloud
+
+- Bảng `assets` có các trường lõi: `id`, `organization_id`, `code`, `name`, `category`, `brand`, `model`, `serial`, `location`, `commissioned_at`, `power`, `cycle`, `cycle_started_at`, `transferred_from_other_facility`, `status`, `notes`, `archived_at`, `created_at`, `updated_at`.
+- Cần ánh xạ rõ tên trường camelCase ở frontend sang snake_case ở PostgreSQL; giữ nguyên UUID hiện có khi một hồ sơ được tạo trên cloud.
+- `images: string[]` trong kiểu Asset hiện tại không phải cột của bảng `assets`. Migration 002 chỉ tạo metadata `asset_images` trỏ tới `storage_path`; byte ảnh phải được xử lý qua Supabase Storage. Chưa thấy migration tạo Storage bucket/policy hoàn chỉnh. Vì vậy không được bỏ ảnh data URL khỏi hồ sơ khi ghi cloud hoặc giả vờ ảnh đã được đồng bộ.
+- RLS Migration 006 đã bảo vệ `assets` bằng các permission `assets.view/create/update/delete`; frontend chỉ dùng publishable key và session người dùng, không có service-role key.
+
+### Các điều kiện kỹ thuật cần giải quyết trước khi bật đủ thao tác tạo mới
+
+1. Mã thiết bị hiện được cấp bằng cách lấy số lớn nhất từ danh sách local rồi cộng 1. Tài liệu quyết định trước đó đã yêu cầu chuyển cấp số sang PostgreSQL RPC/transaction khi triển khai cloud; unique constraint `(organization_id, code)` chỉ ngăn trùng chứ không thay thế cơ chế cấp số an toàn. Không được tái sử dụng thuật toán cấp số local làm cơ chế cloud.
+2. Cơ sở nhận thiết bị hiện đang hard-code `HP01`; danh mục loại/mã loại tùy chỉnh lại nằm trong localStorage. Cần xác định nguồn cấu hình cloud theo từng organization trước khi RPC cấp mã được thiết kế, tránh hard-code cấu hình cá nhân vào ứng dụng SaaS.
+3. Ảnh cần một luồng Storage riêng và phải giữ metadata theo `asset_images`; chưa triển khai upload ảnh trong vertical slice đầu tiên nếu bucket/policy chưa được rà soát.
+4. Tạm thời giữ nguyên IndexedDB và các phân hệ phụ thuộc dữ liệu local. Phần Assets cloud phải được cô lập rõ, không tự import 30 hồ sơ demo, không ghi đè/xóa dữ liệu local và không tự động đồng bộ các bảng nghiệp vụ khác.
+
+### Phạm vi triển khai kế tiếp
+
+- Tách nguồn dữ liệu cloud của riêng màn hình Thiết bị khỏi các phân hệ vẫn dùng IndexedDB.
+- Xây dựng repository/service cloud cho đọc danh sách, ánh xạ dữ liệu và cập nhật các trường lõi; mọi truy vấn phải gắn `organization_id` động lấy từ membership/session, đồng thời để RLS là lớp bảo vệ cuối cùng.
+- Bổ sung cơ chế cấp mã cloud an toàn bằng RPC/transaction và cấu hình danh mục/cơ sở theo organization trước khi bật tạo mới.
+- Giữ hành vi lưu kho/khôi phục là cập nhật `archived_at`; không mở xóa cứng trong UI ở giai đoạn này.
+- Xử lý ảnh như một hạng mục riêng qua Storage; cho đến khi hoàn tất, phải thông báo rõ trạng thái ảnh và không tuyên bố đã đồng bộ ảnh.
+- Chỉ sau khi hoàn tất code mới yêu cầu người dùng build/chạy thử trên môi trường Test. Không áp dụng migration hoặc thay đổi Production trong bước này.
+- Tại thời điểm cập nhật: đây là kết quả rà soát và thiết kế phạm vi; chưa sửa mã nguồn ứng dụng, chưa chạy build và chưa có CRUD cloud Assets được nghiệm thu.
