@@ -97,9 +97,9 @@ Deno.serve(async (req) => {
       if (assignmentResult.error) return json({ error: assignmentResult.error.message }, 400);
       if (roleResult.error) return json({ error: roleResult.error.message }, 400);
 
-      const profiles = new Map((profileResult.data ?? []).map((item: any) => [item.id, item]));
-      const roles = new Map((roleResult.data ?? []).map((item: any) => [item.id, item]));
-      const assignments = new Map((assignmentResult.data ?? []).map((item: any) => [item.member_id, item.role_id]));
+      const profiles = new Map<string, any>((profileResult.data ?? []).map((item: any) => [item.id, item] as [string, any]));
+      const roles = new Map<string, any>((roleResult.data ?? []).map((item: any) => [item.id, item] as [string, any]));
+      const assignments = new Map<string, string>((assignmentResult.data ?? []).map((item: any) => [item.member_id, item.role_id] as [string, string]));
       const members = rows.map((row: any) => {
         const profile: any = profiles.get(row.user_id);
         const role: any = roles.get(assignments.get(row.id));
