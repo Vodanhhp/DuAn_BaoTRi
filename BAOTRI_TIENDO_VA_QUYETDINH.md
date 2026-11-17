@@ -1489,3 +1489,11 @@ Trạng thái:
   - Sửa định dạng JSX form: `30c923deabe40eb9e047f84fd5c10307ffd1963b`
 - **Trạng thái:** code đã cập nhật và fetch xác minh trên `main`; CHƯA chạy `npm.cmd run build` và CHƯA kiểm thử runtime. Chưa thao tác sửa/lưu kho/khôi phục trên dữ liệu Supabase thực tế. Chỉ kiểm thử trên `BAOTRI-Mini-Test`; không thay đổi Production.
 - Bước tiếp theo: người dùng pull `main`, chạy build; sau đó kiểm tra với tài khoản Admin/Technician/Viewer trên Test. Xác nhận cập nhật nội dung, lưu kho biến mất khỏi danh sách đang quản lý, khôi phục xuất hiện lại đúng hồ sơ và mã thiết bị không thay đổi.
+
+### Sửa lỗi nút thao tác Cloud bị ẩn do kiểm tra role sai – 17/11/2026
+
+- Nguyên nhân: CloudAssetsPanel so sánh chuỗi role hiển thị `Admin`/`Technician`, trong khi App truyền `organization_members.role` dạng legacy chữ thường (`admin`/`user`). Không thể dùng trường role legacy để phân biệt chính xác Technician và Viewer.
+- Đã bỏ điều kiện UI suy luận theo tên role. CloudAssetsPanel gọi RPC `has_org_permission` trực tiếp với `assets.update` và `assets.create`, theo đúng cơ chế phân quyền RLS hiện có.
+- Nếu RPC lỗi/không xác định được quyền, giao diện fail-closed: ẩn thao tác ghi và chỉ xem. Quyền lưu kho/khôi phục/sửa phụ thuộc `assets.update`; nút tạo phụ thuộc `assets.create`.
+- Commit: `f0d703d745ad3128d226054f2a0a6ff099c59750`.
+- Đã fetch lại file trên main, kiểm tra RPC và các điều kiện hiển thị. Chưa chạy build hoặc kiểm thử runtime sau sửa; cần người dùng pull main và build.
