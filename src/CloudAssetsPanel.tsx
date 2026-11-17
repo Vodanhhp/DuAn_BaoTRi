@@ -7,13 +7,14 @@ type Props = {
   client: SupabaseClient
   organizationId: string
   organizationName: string
+  onBack: () => void
 }
 
 const dateText = (value?: string) => value
   ? new Date(value + (value.length === 10 ? 'T00:00:00' : '')).toLocaleDateString('vi-VN')
   : '—'
 
-export default function CloudAssetsPanel({ client, organizationId, organizationName }: Props) {
+export default function CloudAssetsPanel({ client, organizationId, organizationName, onBack }: Props) {
   const [assets, setAssets] = useState<Asset[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -45,6 +46,7 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
         <p>Tổ chức: {organizationName} · Dữ liệu đọc trực tiếp từ Supabase, không lấy từ IndexedDB.</p>
       </div>
       <div className="asset-photo-actions">
+        <button type="button" className="soft-btn" onClick={onBack}>Quay lại dữ liệu cục bộ</button>
         <button type="button" className="soft-btn" onClick={() => void load()} disabled={loading}>
           {loading ? 'Đang tải…' : 'Tải lại dữ liệu'}
         </button>
