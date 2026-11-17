@@ -1345,3 +1345,16 @@ Trạng thái:
 - Lỗi FK `inventory_movements_item_fk` ở lần chạy trước đã được xử lý đúng bằng cách dùng vật tư fixture riêng không có lịch sử giao dịch để kiểm tra DELETE; vật tư đang được movement tham chiếu không bị xóa.
 - Phạm vi xác nhận: các trường hợp được viết trong test 009, không đồng nghĩa đã kiểm thử exhaustive mọi thao tác CRUD/cột trên cả 11 bảng. Chưa kiểm thử đầy đủ suspended membership, cross-organization/tenant isolation, quản trị role/user qua backend, RPC nhập/xuất kho hoặc CRUD cloud từ frontend.
 - File test 009: [supabase/tests/20261117000900_business_modules_rls_integration_test.sql](https://github.com/Vodanhhp/DuAn_BaoTRi/blob/main/supabase/tests/20261117000900_business_modules_rls_integration_test.sql). Chỉ chạy trên `BAOTRI-Mini-Test`; chưa áp dụng các kiểm thử/thay đổi này lên Production.
+
+
+## Cập nhật 17/11/2026 – chuẩn bị kiểm thử suspended membership và tenant isolation (test 010)
+
+- Đã rà soát lại Migration 001, 002, 005, 006 và test 009 trên nhánh `main`.
+- Xác nhận `has_org_permission` yêu cầu membership có trạng thái `active`, organization có trạng thái `active`, role assignment còn hiệu lực, role đang active và permission được gán. Vì vậy membership suspended phải mất quyền nghiệp vụ dù member_roles vẫn còn.
+- Đã tạo `supabase/tests/20261117001000_suspended_membership_tenant_isolation_test.sql` trên `main`.
+- Test 010 tạo tenant B và asset fixture riêng trong transaction; không tạo membership cho ba tài khoản test trong tenant B. Tài khoản Admin chỉ có quyền trong tenant A được dùng để thử SELECT/UPDATE/DELETE/INSERT vào tenant B.
+- Test 010 tạm chuyển membership Viewer hiện có ở tenant A sang `suspended`, giữ nguyên role assignment, rồi mô phỏng JWT authenticated để kiểm tra permission helper, SELECT, UPDATE và INSERT. Script có preflight để dừng nếu organization/profile/membership/Viewer role assignment không đúng trạng thái dự kiến.
+- Các fixture, tenant B, asset kiểm thử và thay đổi trạng thái membership đều nằm trong transaction; script kết thúc bằng `ROLLBACK`. Không thay đổi migration/RLS policy, không dùng service role, không chạm Production.
+- Đã fetch lại file test 010 từ GitHub và xác minh nội dung có các phép thử cần thiết cùng lệnh ROLLBACK. Commit tạo file: `86ae428b506a3a545574ebd92d14efb5cc45723a`.
+- **Trạng thái: mới tạo và rà soát mã; chưa chạy trên Supabase. Chưa được ghi nhận PASS.**
+- Bước tiếp theo: người dùng chạy toàn bộ file test 010 một lần trên `BAOTRI-Mini-Test`, gửi bảng kết quả. Chỉ khi nhận được kết quả mới kết luận suspended membership và tenant isolation đạt hay cần sửa.
