@@ -8,6 +8,7 @@ do $$
 declare
   v_org_id uuid;
   v_admin_user_id uuid;
+  v_admin_member_id uuid;
   v_viewer_member_id uuid;
   v_technician_member_id uuid;
   v_role_code text;
@@ -24,7 +25,7 @@ begin
     raise exception 'TEST FAIL: organization Cá nhân not found';
   end if;
 
-  select m.user_id into v_admin_user_id
+  select m.user_id, m.id into v_admin_user_id, v_admin_member_id
   from public.organization_members m
   left join public.member_roles mr
     on mr.organization_id = m.organization_id and mr.member_id = m.id
@@ -83,12 +84,10 @@ begin
   end if;
 
   perform set_config('request.jwt.claim.role', 'service_role', true);
-  set local role service_role;
 
   perform public.admin_update_org_member_role(
     v_org_id, v_viewer_member_id, 'technician', v_admin_user_id
   );
-  reset role;
 
   select r.code into v_role_code
   from public.member_roles mr
@@ -98,12 +97,10 @@ begin
     raise exception 'TEST FAIL: role change did not assign Technician';
   end if;
 
-  set local role service_role;
   perform public.admin_update_org_member_status(
     v_org_id, v_viewer_member_id, 'suspended', v_admin_user_id
   );
-  reset role;
-
+  
   select status into v_status
   from public.organization_members
   where organization_id = v_org_id and id = v_viewer_member_id;
@@ -127,7 +124,7 @@ begin
   begin
     set local role service_role;
     perform public.admin_update_org_member_role(
-      v_org_id, v_admin_user_id, 'viewer', v_admin_user_id
+      v_org_id, v_admin_member_id, 'viewer', v_admin_user_id
     );
     reset role;
     raise exception 'TEST FAIL: Admin self-role change should have been rejected';
