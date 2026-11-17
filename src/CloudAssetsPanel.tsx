@@ -3,13 +3,14 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Asset } from './db'
 import {
   createCloudAsset, getCloudAssetCodeConfig, listCloudAssets, saveCloudAssetCodeConfig,
-  type AssetCodeConfig
+  setCloudAssetArchived, updateCloudAsset, type AssetCodeConfig
 } from './lib/assetsCloud'
 
 type Props = {
   client: SupabaseClient
   organizationId: string
   organizationName: string
+  organizationRole: string
   onBack: () => void
 }
 
@@ -41,7 +42,7 @@ const entriesToMap = (entries: CodeEntry[], label: string, maxLength: number, re
   return result
 }
 
-export default function CloudAssetsPanel({ client, organizationId, organizationName, onBack }: Props) {
+export default function CloudAssetsPanel({ client, organizationId, organizationName, organizationRole, onBack }: Props) {
   const [assets, setAssets] = useState<Asset[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -55,6 +56,9 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
   const [showConfig, setShowConfig] = useState(false)
   const [creating, setCreating] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
+  const [editDraft, setEditDraft] = useState<Asset | null>(null)
+  const [savingEdit, setSavingEdit] = useState(false)
+  const [busyAssetId, setBusyAssetId] = useState('')
   const [name, setName] = useState('')
   const [category, setCategory] = useState('')
   const [location, setLocation] = useState('')
@@ -98,6 +102,7 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
 
   const active = assets.filter(asset => !asset.archivedAt)
   const archived = assets.filter(asset => Boolean(asset.archivedAt))
+  const canManageAssets = organizationRole === 'Admin' || organizationRole === 'Technician'
   const categoryOptions = useMemo(() => Object.keys(config?.category_codes ?? {}).sort((a, b) => a.localeCompare(b, 'vi')), [config])
   const locationOptions = useMemo(() => Object.keys(config?.location_codes ?? {}).filter(x => x !== '__UNASSIGNED__').sort((a, b) => a.localeCompare(b, 'vi')), [config])
 
@@ -120,6 +125,42 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
       setSavingConfig(false)
+    }
+  }
+
+  const submitEdit = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!editDraft) return
+    setSavingEdit(true)
+    setError('')
+    setMessage('')
+    try {
+      const saved = await updateCloudAsset(client, organizationId, editDraft)
+      setAssets(current => current.map(asset => asset.id === saved.id ? saved : asset).sort((a, b) => a.name.localeCompare(b.name, 'vi')))
+      setEditDraft(null)
+      setMessage('Đã cập nhật hồ sơ thiết bị ' + saved.code + '.')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
+  const toggleArchive = async (asset: Asset, archived: boolean) => {
+    const action = archived ? 'đưa thiết bị vào lưu kho' : 'khôi phục thiết bị'
+    if (!window.confirm('Bạn có chắc muốn ' + action + ' ' + asset.code + ' – ' + asset.name + '?')) return
+    setBusyAssetId(asset.id)
+    setError('')
+    setMessage('')
+    try {
+      const saved = await setCloudAssetArchived(client, organizationId, asset.id, archived)
+      setAssets(current => current.map(item => item.id === saved.id ? saved : item).sort((a, b) => a.name.localeCompare(b.name, 'vi')))
+      setMessage(archived ? 'Đã đưa ' + saved.code + ' vào lưu kho.' : 'Đã khôi phục ' + saved.code + ' về danh sách đang quản lý.')
+      if (editDraft?.id === saved.id) setEditDraft(null)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setBusyAssetId('')
     }
   }
 
@@ -166,10 +207,10 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
     {error && <div className="form-hint warning-hint" role="alert">{error}</div>}
 
     <div className="asset-photo-actions" style={{ margin: '12px 0', flexWrap: 'wrap' }}>
-      <button type="button" className="soft-btn" onClick={() => { setShowConfig(v => !v); setShowCreate(false) }}>
+      <button type="button" className="soft-btn" onClick={() => { setShowConfig(v => !v); setShowCreate(false); setEditDraft(null) }}>
         {showConfig ? 'Đóng cấu hình mã' : config ? 'Cấu hình mã thiết bị' : 'Thiết lập mã thiết bị Cloud'}
       </button>
-      <button type="button" className="primary-btn" disabled={!config} onClick={() => { setShowCreate(v => !v); setShowConfig(false) }}>
+      <button type="button" className="primary-btn" disabled={!config || !canManageAssets} title={!canManageAssets ? 'Tài khoản chỉ có quyền xem thiết bị.' : undefined} onClick={() => { setShowCreate(v => !v); setShowConfig(false); setEditDraft(null) }}>
         {showCreate ? 'Đóng biểu mẫu' : 'Thêm thiết bị Cloud'}
       </button>
     </div>
@@ -205,7 +246,7 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
       <button type="submit" className="primary-btn" disabled={savingConfig}>{savingConfig ? 'Đang lưu…' : 'Lưu cấu hình Cloud'}</button>
     </form>}
 
-    {showCreate && config && <form className="panel" onSubmit={submitCreate} style={{ marginBottom: 16 }}>
+    {editDraft && <form className="panel" onSubmit={submitEdit} style={{ marginBottom: 16 }}>\n      <h3>Sửa hồ sơ thiết bị: {editDraft.code}</h3>\n      <p className="muted">Mã định danh và loại thiết bị được giữ nguyên. Ảnh chưa được chỉnh sửa trên Cloud.</p>\n      <div className="form-grid">\n        <label>Mã thiết bị<input value={editDraft.code} disabled /></label>\n        <label>Loại thiết bị<input value={editDraft.category} disabled /></label>\n        <label>Tên thiết bị<input required value={editDraft.name} onChange={e => setEditDraft(current => current ? { ...current, name: e.target.value } : current)} /></label>\n        <label>Vị trí<input value={editDraft.location} onChange={e => setEditDraft(current => current ? { ...current, location: e.target.value } : current)} /></label>\n        <label>Ngày đưa vào sử dụng<input type="date" value={editDraft.commissionedAt || ''} onChange={e => setEditDraft(current => current ? { ...current, commissionedAt: e.target.value } : current)} /></label>\n        <label>Hãng<input value={editDraft.brand} onChange={e => setEditDraft(current => current ? { ...current, brand: e.target.value } : current)} /></label>\n        <label>Model<input value={editDraft.model} onChange={e => setEditDraft(current => current ? { ...current, model: e.target.value } : current)} /></label>\n        <label>Serial<input value={editDraft.serial} onChange={e => setEditDraft(current => current ? { ...current, serial: e.target.value } : current)} /></label>\n        <label>Công suất<input value={editDraft.power} onChange={e => setEditDraft(current => current ? { ...current, power: e.target.value } : current)} /></label>\n        <label>Chu kỳ bảo trì<input value={editDraft.cycle} onChange={e => setEditDraft(current => current ? { ...current, cycle: e.target.value } : current)} /></label>\n        <label>Trạng thái<select value={editDraft.status} onChange={e => setEditDraft(current => current ? { ...current, status: e.target.value as Asset['status'] } : current)}>{['Đang hoạt động', 'Đang sửa chữa', 'Ngừng sử dụng', 'Thanh lý'].map(value => <option key={value}>{value}</option>)}</select></label>\n      </div>\n      <label>Ghi chú<textarea rows={3} value={editDraft.notes} onChange={e => setEditDraft(current => current ? { ...current, notes: e.target.value } : current)} /></label>\n      <div className="asset-photo-actions"><button type="button" className="soft-btn" onClick={() => setEditDraft(null)}>Hủy</button><button type="submit" className="primary-btn" disabled={savingEdit}>{savingEdit ? 'Đang lưu…' : 'Lưu thay đổi'}</button></div>\n    </form>}\n\n    {showCreate && config && <form className="panel" onSubmit={submitCreate} style={{ marginBottom: 16 }}>
       <h3>Tạo thiết bị mới trên Cloud</h3>
       <div className="form-grid">
         <label>Tên thiết bị<input value={name} onChange={e => setName(e.target.value)} required /></label>
@@ -223,24 +264,50 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
       <button type="submit" className="primary-btn" disabled={creating || !category}>{creating ? 'Đang tạo…' : 'Tạo thiết bị trên Cloud'}</button>
     </form>}
 
-    {loading ? <p className="muted">Đang tải danh sách thiết bị từ Supabase…</p> :
+    {loading ? <p className="muted">Đang tải danh sách thiết bị từ Supabase…</p> : <>
+      <h3>Đang quản lý ({active.length})</h3>
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Mã / Tên thiết bị</th><th>Nhóm</th><th>Vị trí</th><th>Ngày sử dụng</th><th>Trạng thái</th><th>Lưu kho</th></tr></thead>
+          <thead><tr><th>Mã / Tên thiết bị</th><th>Nhóm</th><th>Vị trí</th><th>Ngày sử dụng</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
           <tbody>
-            {assets.map(asset => <tr key={asset.id}>
+            {active.map(asset => <tr key={asset.id}>
               <td><b>{asset.code}</b><small>{asset.name}</small></td>
               <td>{asset.category}</td>
               <td>{asset.location || '—'}</td>
               <td>{dateText(asset.commissionedAt)}</td>
               <td>{asset.status}</td>
-              <td>{asset.archivedAt ? 'Đã lưu kho' : 'Đang quản lý'}</td>
+              <td className="actions">
+                {canManageAssets ? <>
+                  <button type="button" className="text-btn" onClick={() => { setEditDraft({ ...asset }); setShowConfig(false); setShowCreate(false) }}>Sửa</button>
+                  <button type="button" className="text-btn" disabled={busyAssetId === asset.id} onClick={() => void toggleArchive(asset, true)}>{busyAssetId === asset.id ? 'Đang xử lý…' : 'Lưu kho'}</button>
+                </> : <span className="muted">Chỉ xem</span>}
+              </td>
             </tr>)}
           </tbody>
         </table>
-        {assets.length === 0 && <p className="muted">Tổ chức này chưa có thiết bị trên Cloud. Dữ liệu mẫu trong trình duyệt không được tự động đưa lên đây.</p>}
+        {active.length === 0 && <p className="muted">Không có thiết bị đang quản lý.</p>}
       </div>
-    }
-    <p className="muted">Tạo mới trên Cloud đã dùng RPC cấp mã. Chỉnh sửa, lưu kho/khôi phục và ảnh vẫn chưa bật trong giao diện. Không có dữ liệu IndexedDB nào bị thay đổi.</p>
+
+      <h3 style={{ marginTop: 24 }}>Đã lưu kho ({archived.length})</h3>
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>Mã / Tên thiết bị</th><th>Nhóm</th><th>Vị trí</th><th>Ngày sử dụng</th><th>Ngày lưu kho</th><th>Thao tác</th></tr></thead>
+          <tbody>
+            {archived.map(asset => <tr key={asset.id}>
+              <td><b>{asset.code}</b><small>{asset.name}</small></td>
+              <td>{asset.category}</td>
+              <td>{asset.location || '—'}</td>
+              <td>{dateText(asset.commissionedAt)}</td>
+              <td>{dateText(asset.archivedAt)}</td>
+              <td className="actions">
+                {canManageAssets ? <button type="button" className="text-btn success-text" disabled={busyAssetId === asset.id} onClick={() => void toggleArchive(asset, false)}>{busyAssetId === asset.id ? 'Đang xử lý…' : 'Khôi phục'}</button> : <span className="muted">Chỉ xem</span>}
+              </td>
+            </tr>)}
+          </tbody>
+        </table>
+        {archived.length === 0 && <p className="muted">Chưa có thiết bị nào trong lưu kho.</p>}
+      </div>
+    </>}
+    <p className="muted">Sửa hồ sơ và lưu kho/khôi phục dùng quyền assets.update của Supabase. Không có thao tác xóa cứng; dữ liệu IndexedDB và ảnh local không bị thay đổi.</p>
   </section>
 }
