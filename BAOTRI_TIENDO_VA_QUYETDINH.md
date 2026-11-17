@@ -1640,3 +1640,11 @@ Trạng thái:
 - Tab **Bảo dưỡng – Sửa chữa** hiển thị danh sách Phiếu YC, có nút tạo phiếu; tab **Lịch bảo dưỡng định kỳ** chỉ có hai thao tác: thêm tác vụ bảo dưỡng – sửa chữa và xuất lịch Excel.
 - Trạng thái code: cập nhật trực tiếp trên `main` trong các file `src/App.tsx`, `src/db.ts` và tài liệu tiến độ. Chưa xác nhận build hoặc GitHub Actions; cần chờ workflow xanh và kiểm thử giao diện thực tế.
 - Không thay đổi Supabase, không bật đồng bộ dữ liệu nghiệp vụ, không sửa Production.
+
+
+## Bổ sung chọn và xuất Excel Phiếu YC – 17/11/2026
+
+- Bảng Phiếu YC có checkbox chọn từng phiếu và checkbox chọn tất cả.
+- Hỗ trợ xuất Excel riêng một phiếu ngay trên dòng, xuất nhiều phiếu đã chọn, hoặc xuất toàn bộ danh sách.
+- Tệp xuất có mã thiết bị, tên thiết bị, nội dung yêu cầu, trạng thái/kết quả, người yêu cầu, người hoàn thành và thời điểm hoàn thành.
+- Phần đếm tổng công việc trên Dashboard đang được rà soát theo đúng hạn của từng loại công việc. Kế hoạch bảo trì hiện chỉ có ngày bắt đầu/kết thúc, chưa có trạng thái hoàn thành; cần chốt quy tắc tính hạn trước khi đưa vào bộ đếm để không báo sai.
