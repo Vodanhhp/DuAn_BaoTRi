@@ -16,23 +16,28 @@ type Props = {
 const dateText = (value?: string) => value
   ? new Date(value + (value.length === 10 ? 'T00:00:00' : '')).toLocaleDateString('vi-VN')
   : '—'
-const toLines = (items: Record<string, string>) =>
-  Object.entries(items).map(([name, code]) => name + '|' + code).join('\n')
-const fromLines = (value: string, label: string, maxCodeLength = 5): Record<string, string> => {
+type CodeEntry = { name: string; code: string }
+const suggestCode = (value: string, maxLength: number): string => {
+  const normalized = value.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[đĐ]/g, 'D').toUpperCase()
+  const words = normalized.split(/[^A-Z0-9]+/).filter(Boolean)
+  if (!words.length) return ''
+  const initials = words.map(word => word[0]).join('')
+  return (initials.length >= 2 ? initials : words[0]).slice(0, maxLength)
+}
+const entriesToMap = (entries: CodeEntry[], label: string, maxLength: number): Record<string, string> => {
   const result: Record<string, string> = {}
-  for (const [index, line] of value.split('\n').entries()) {
-    const clean = line.trim()
-    if (!clean) continue
-    const parts = clean.split('|')
-    if (parts.length !== 2 || !parts[0].trim() || !new RegExp('^[A-Z0-9]{2,' + maxCodeLength + '}$').test(parts[1]?.trim().toUpperCase() ?? '')) {
-      throw new Error(label + ': dòng ' + (index + 1) + ' phải có dạng Tên|' + 'MÃ (2–5 ký tự A-Z/0-9).')
-    }
-    const name = parts[0].trim()
-    const code = parts[1].trim().toUpperCase()
+  const used = new Set<string>()
+  for (const [index, entry] of entries.entries()) {
+    const name = entry.name.trim()
+    const code = entry.code.trim().toUpperCase()
+    if (!name && !code) continue
+    if (!name || !new RegExp('^[A-Z0-9]{2,' + maxLength + '}$').test(code)) throw new Error(label + ': mục ' + (index + 1) + ' cần tên và mã hợp lệ.')
     if (result[name]) throw new Error(label + ': tên bị lặp "' + name + '".')
-    if (Object.values(result).includes(code)) throw new Error(label + ': mã bị lặp "' + code + '".')
+    if (used.has(code)) throw new Error(label + ': mã bị trùng "' + code + '".')
     result[name] = code
+    used.add(code)
   }
+  if (!Object.keys(result).length) throw new Error(label + ': hãy thêm ít nhất một mục.')
   return result
 }
 
@@ -43,9 +48,9 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
   const [message, setMessage] = useState('')
   const [lastLoadedAt, setLastLoadedAt] = useState('')
   const [config, setConfig] = useState<AssetCodeConfig | null>(null)
-  const [facilityCode, setFacilityCode] = useState('')
-  const [categoryLines, setCategoryLines] = useState('')
-  const [locationLines, setLocationLines] = useState('')
+  const [facilityCode, setFacilityCode] = useState(() => suggestCode(organizationName, 8) || 'CS01')
+  const [categoryEntries, setCategoryEntries] = useState<CodeEntry[]>([{ name: '', code: '' }])
+  const [locationEntries, setLocationEntries] = useState<CodeEntry[]>([{ name: '', code: '' }])
   const [savingConfig, setSavingConfig] = useState(false)
   const [showConfig, setShowConfig] = useState(false)
   const [creating, setCreating] = useState(false)
@@ -73,8 +78,13 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
       setConfig(savedConfig)
       if (savedConfig) {
         setFacilityCode(savedConfig.facility_code)
-        setCategoryLines(toLines(savedConfig.category_codes))
-        setLocationLines(toLines(savedConfig.location_codes))
+        setCategoryEntries(Object.entries(savedConfig.category_codes).map(([name, code]) => ({ name, code })))
+        setLocationEntries(Object.entries(savedConfig.location_codes).filter(([name]) => name !== '__UNASSIGNED__').map(([name, code]) => ({ name, code })))
+      } else {
+        const categories = [...new Set(rows.map(row => row.category).filter(Boolean))]
+        const locations = [...new Set(rows.map(row => row.location).filter(Boolean))]
+        setCategoryEntries(categories.map(name => ({ name, code: suggestCode(name, 5) })))
+        setLocationEntries(locations.map(name => ({ name, code: suggestCode(name, 4) })))
       }
       setLastLoadedAt(new Date().toLocaleString('vi-VN'))
     } catch (cause) {
@@ -99,10 +109,9 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
     try {
       const next: AssetCodeConfig = {
         facility_code: facilityCode.trim().toUpperCase(),
-        category_codes: fromLines(categoryLines, 'Mã loại thiết bị'),
-        location_codes: fromLines(locationLines, 'Mã vị trí', 4)
+        category_codes: entriesToMap(categoryEntries, 'Loại thiết bị', 5),
+        location_codes: { ...entriesToMap(locationEntries, 'Vị trí', 4), __UNASSIGNED__: '99' }
       }
-      if (!next.location_codes.__UNASSIGNED__) throw new Error('Cần khai báo dòng __UNASSIGNED__|99 (hoặc mã vị trí chưa phân loại khác).')
       await saveCloudAssetCodeConfig(client, organizationId, next)
       setConfig(next)
       setMessage('Đã lưu cấu hình mã cho tổ chức. Quyền Settings của Supabase đã được kiểm tra ở máy chủ.')
@@ -167,11 +176,32 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
 
     {showConfig && <form className="panel" onSubmit={saveConfig} style={{ marginBottom: 16 }}>
       <h3>Cấu hình mã thiết bị của {organizationName}</h3>
-      <p className="muted">Mã cơ sở, mã loại và mã vị trí được lưu trên Supabase theo tổ chức, không lấy từ localStorage. Mỗi dòng danh mục có dạng Tên|MÃ.</p>
-      <label>Mã cơ sở ABXY<input value={facilityCode} onChange={e => setFacilityCode(e.target.value)} placeholder="Ví dụ: HP01" required /></label>
-      <label>Mã loại thiết bị ABC<textarea rows={6} value={categoryLines} onChange={e => setCategoryLines(e.target.value)} placeholder={'Máy nén khí|MNA\nMáy bơm|MB'} required /></label>
-      <label>Mã vị trí BB<textarea rows={6} value={locationLines} onChange={e => setLocationLines(e.target.value)} placeholder={'Phòng máy nén khí|01\nKhu sản xuất|02\n__UNASSIGNED__|99'} required /></label>
-      <p className="muted">Không đổi mã đã cấp chỉ vì đổi tên hoặc vị trí. Cần cấu hình đầy đủ trước khi tạo thiết bị. Nếu không có quyền settings.manage, Supabase sẽ từ chối lưu.</p>
+      <p className="muted">Chỉ cần nhập tên. BAOTRI tự gợi ý mã viết tắt, bạn có thể sửa mã nếu muốn.</p>
+      <label>Tên/mã cơ sở
+        <input value={facilityCode} onChange={e => setFacilityCode(e.target.value.toUpperCase())} placeholder="Ví dụ: CN" required />
+        <small>Mã gợi ý từ tên tổ chức: {suggestCode(organizationName, 8) || 'CS01'}</small>
+      </label>
+      <div className="form-grid">
+        <div>
+          <h4>Loại thiết bị</h4><p className="muted">Ví dụ: Máy nén khí → MNK</p>
+          {categoryEntries.map((entry, index) => <div className="form-grid" key={'cat-' + index}>
+            <label>Tên loại<input value={entry.name} placeholder="Máy nén khí" onChange={e => setCategoryEntries(items => items.map((item, i) => i === index ? { name: e.target.value, code: suggestCode(e.target.value, 5) } : item))} /></label>
+            <label>Mã gợi ý<input value={entry.code} maxLength={5} onChange={e => setCategoryEntries(items => items.map((item, i) => i === index ? { ...item, code: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '') } : item))} /></label>
+            <button type="button" className="soft-btn" onClick={() => setCategoryEntries(items => items.filter((_, i) => i !== index))}>Bỏ</button>
+          </div>)}
+          <button type="button" className="soft-btn" onClick={() => setCategoryEntries(items => [...items, { name: '', code: '' }])}>+ Thêm loại thiết bị</button>
+        </div>
+        <div>
+          <h4>Vị trí lắp đặt</h4><p className="muted">Ví dụ: Phòng máy → PM</p>
+          {locationEntries.map((entry, index) => <div className="form-grid" key={'loc-' + index}>
+            <label>Tên vị trí<input value={entry.name} placeholder="Phòng máy" onChange={e => setLocationEntries(items => items.map((item, i) => i === index ? { name: e.target.value, code: suggestCode(e.target.value, 4) } : item))} /></label>
+            <label>Mã gợi ý<input value={entry.code} maxLength={4} onChange={e => setLocationEntries(items => items.map((item, i) => i === index ? { ...item, code: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '') } : item))} /></label>
+            <button type="button" className="soft-btn" onClick={() => setLocationEntries(items => items.filter((_, i) => i !== index))}>Bỏ</button>
+          </div>)}
+          <button type="button" className="soft-btn" onClick={() => setLocationEntries(items => [...items, { name: '', code: '' }])}>+ Thêm vị trí</button>
+        </div>
+      </div>
+      <p className="muted">Vị trí để trống sẽ tự dùng mã mặc định. Mã đã cấp không tự đổi khi bạn sửa tên danh mục. Chỉ quản trị viên có quyền cấu hình mới lưu được.</p>
       <button type="submit" className="primary-btn" disabled={savingConfig}>{savingConfig ? 'Đang lưu…' : 'Lưu cấu hình Cloud'}</button>
     </form>}
 
