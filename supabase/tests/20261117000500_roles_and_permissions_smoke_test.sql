@@ -7,12 +7,14 @@ begin;
 
 do $setup$
 declare
-  v_user_id uuid := 'REPLACE_WITH_AUTH_USER_UUID';
+  v_user_id_text text := 'REPLACE_WITH_AUTH_USER_UUID';
+  v_user_id uuid;
   v_org_id uuid;
 begin
-  if v_user_id::text = 'REPLACE_WITH_AUTH_USER_UUID' then
+  if v_user_id_text = 'REPLACE_WITH_AUTH_USER_UUID' or btrim(v_user_id_text) = '' then
     raise exception 'Replace REPLACE_WITH_AUTH_USER_UUID before running this test.';
   end if;
+  v_user_id := v_user_id_text::uuid;
 
   select organization_id into strict v_org_id
   from public.organization_members
