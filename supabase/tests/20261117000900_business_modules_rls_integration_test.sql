@@ -106,6 +106,7 @@ declare
   v_rows integer;
   v_blocked boolean;
   v_sql text;
+  v_admin_inventory_id uuid := gen_random_uuid();
 begin
   select * into strict f from pg_temp.rls_fixture;
 
@@ -222,7 +223,15 @@ begin
   get diagnostics v_rows = row_count;
   insert into pg_temp.rls_results values ('admin','settings','UPDATE','1 row',v_rows::text||' rows',v_rows=1);
 
-  delete from public.inventory_items where id=f.inventory_id and organization_id=f.org_id;
+  -- Use a separate item with no movement history: the fixture item is intentionally
+  -- referenced by inventory_movements and must not be deleted (FK protection is correct).
+  insert into public.inventory_items (id,organization_id,code,name)
+  values (v_admin_inventory_id,f.org_id,
+          'RLS-ADMIN-DEL-'||replace(v_admin_inventory_id::text,'-',''),
+          'Admin delete fixture');
+
+  delete from public.inventory_items
+    where id=v_admin_inventory_id and organization_id=f.org_id;
   get diagnostics v_rows = row_count;
   insert into pg_temp.rls_results values ('admin','inventory','DELETE','1 row',v_rows::text||' rows',v_rows=1);
 end
