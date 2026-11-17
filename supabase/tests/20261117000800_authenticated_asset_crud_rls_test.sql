@@ -45,6 +45,7 @@ begin
   select id into strict v_fixture from pg_temp.rls_fixture;
 
   -- Viewer: read allowed; insert/update/delete denied.
+  perform set_config('request.jwt.claim.sub', 'f7425dee-0073-4bb4-9353-5385e9d64895', true);
   perform set_config('request.jwt.claims',
     '{"sub":"f7425dee-0073-4bb4-9353-5385e9d64895","role":"authenticated","aud":"authenticated"}', true);
   select count(*) into v_count from public.assets where id = v_fixture and organization_id = v_org;
@@ -72,6 +73,7 @@ begin
     ('viewer','DELETE','0 rows (blocked)',v_rows::text || ' rows',v_rows = 0);
 
   -- Technician: insert/update allowed; delete denied.
+  perform set_config('request.jwt.claim.sub', 'e8700ff7-a642-45b8-b103-fafdb6286748', true);
   perform set_config('request.jwt.claims',
     '{"sub":"e8700ff7-a642-45b8-b103-fafdb6286748","role":"authenticated","aud":"authenticated"}', true);
   insert into public.assets (id,organization_id,code,name,category)
@@ -88,6 +90,7 @@ begin
   insert into pg_temp.rls_results values ('technician','DELETE','0 rows (blocked)',v_rows::text || ' rows',v_rows = 0);
 
   -- Admin: insert/update/delete allowed.
+  perform set_config('request.jwt.claim.sub', '08f0f750-3361-4ae0-b6ed-9dc4a5b41244', true);
   perform set_config('request.jwt.claims',
     '{"sub":"08f0f750-3361-4ae0-b6ed-9dc4a5b41244","role":"authenticated","aud":"authenticated"}', true);
   insert into public.assets (id,organization_id,code,name,category)
