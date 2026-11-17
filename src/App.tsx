@@ -8,7 +8,7 @@ import {
   Activity, Archive, BarChart3, Building2, CalendarDays, Check, ChevronRight, ClipboardList,
   Download, FileSpreadsheet, Printer, HardDrive, LayoutDashboard, Menu, MoreHorizontal, Package,
   Plus, QrCode, Search, Settings, ShieldAlert, Trash2, UserRound, Wrench, X, ChevronDown, Image as ImageIcon,
-  Phone, Mail
+  Phone, Mail, LockKeyhole
 } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { Html5QrcodeScanner } from 'html5-qrcode'
