@@ -673,8 +673,20 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
   const saveLog = async (entry: Log) => {
     if (blockViewer('tạo hoặc cập nhật phiếu bảo dưỡng – sửa chữa')) return
     const existing = await db.logs.get(entry.id)
+    const revertedCompletion = Boolean(existing?.result && !entry.result)
+    const editHistory = revertedCompletion
+      ? [...(existing?.editHistory ?? []), {
+          id: uid(),
+          editedAt: now(),
+          editedBy: userName,
+          action: 'Chuyển trạng thái Hoàn thành → Chưa hoàn thành',
+          previousResult: existing!.result || '',
+          previousCompletedAt: existing!.completedAt,
+          previousPerformedBy: existing!.performedBy || ''
+        }]
+      : entry.editHistory ?? existing?.editHistory
     const completedAt = entry.result ? entry.completedAt || existing?.completedAt || now() : undefined
-    const value: Log = { ...entry, dueDate: entry.dueDate || undefined, requestedBy: entry.requestedBy?.trim() || userName, performedBy: entry.result ? (entry.performedBy.trim() || userName) : entry.performedBy.trim(), result: entry.result || '', completedAt }
+    const value: Log = { ...entry, dueDate: entry.dueDate || undefined, requestedBy: entry.requestedBy?.trim() || userName, performedBy: entry.result ? (entry.performedBy.trim() || userName) : entry.performedBy.trim(), result: entry.result || '', completedAt, editHistory }
     await db.logs.put(value); await queueChange('logs', value.id)
     setModal(null); setEditingLog(null)
     flash(value.result ? 'Đã lưu Phiếu YC hoàn thành' : 'Đã lưu Phiếu YC, đang chờ xử lý')
@@ -1473,7 +1485,7 @@ function AssetDetailModal({value,logs,allowChecklist,checklistOccurrence,createR
     </div>
     <AssetChecklist asset={value} allowActions={allowChecklist} scheduledFor={checklistOccurrence?.scheduledFor} isMakeup={checklistOccurrence?.isMakeup} createRequestFromChecklist={createRequestFromChecklist}/>
     <section className="asset-maintenance-history"><div className="panel-head"><div><h3>Lý lịch Bảo dưỡng – Sửa chữa</h3><p>{logs.length} Phiếu YC gắn với thiết bị này</p></div><button type="button" className="soft-btn" disabled={!logs.length} onClick={()=>print('history')}><Printer size={15}/> In lịch sử sửa chữa</button></div>
-      {logs.length?<div className="maintenance-history-list">{logs.slice().sort((a:any,b:any)=>b.date.localeCompare(a.date)).map((entry:any)=><article key={entry.id}><time>{dateText(entry.date)}</time><div><b>{entry.kind}</b><p>{entry.description||'Không có mô tả'}</p>{entry.parts&&<small>Vật tư/phụ tùng: {entry.parts}</small>}{entry.readings&&<small>Thông số: {entry.readings}</small>}<small>Trạng thái: {entry.result?'Hoàn thành':'CHƯA HOÀN THÀNH'}</small><small>Người yêu cầu: {entry.requestedBy||'—'}</small><small>Người hoàn thành: {entry.performedBy||'—'}</small>{entry.result&&<small>Hoàn thành lúc: {dateTimeText(entry.completedAt)}</small>}{entry.checklistResultId&&<small>Phát sinh từ Checklist không đạt · liên kết phiếu nguồn</small>}<button type="button" className="text-btn" disabled={readOnly} title={readOnly?'Viewer chỉ có quyền xem':undefined} onClick={()=>editLog(entry)}>{entry.result?'Sửa phiếu':'Cập nhật Phiếu YC'}</button></div></article>)}</div>:<p className="muted">Chưa có lịch sử. Hãy chọn “Tạo Phiếu YC Bảo dưỡng – Sửa chữa” sau khi thực hiện công việc.</p>}
+      {logs.length?<div className="maintenance-history-list">{logs.slice().sort((a:any,b:any)=>b.date.localeCompare(a.date)).map((entry:any)=><article key={entry.id}><time>{dateText(entry.date)}</time><div><b>{entry.kind}</b><p>{entry.description||'Không có mô tả'}</p>{entry.parts&&<small>Vật tư/phụ tùng: {entry.parts}</small>}{entry.readings&&<small>Thông số: {entry.readings}</small>}<small>Trạng thái: {entry.result?'Hoàn thành':'CHƯA HOÀN THÀNH'}</small><small>Người yêu cầu: {entry.requestedBy||'—'}</small><small>Người hoàn thành: {entry.performedBy||'—'}</small>{entry.result&&<small>Hoàn thành lúc: {dateTimeText(entry.completedAt)}</small>}{entry.editHistory?.map((event:any)=><small key={event.id}>Lịch sử: {event.action} · Người sửa: {event.editedBy} · {dateTimeText(event.editedAt)}{event.previousCompletedAt?' · Hoàn thành trước đó: '+dateTimeText(event.previousCompletedAt):''}</small>)}{entry.checklistResultId&&<small>Phát sinh từ Checklist không đạt · liên kết phiếu nguồn</small>}<button type="button" className="text-btn" disabled={readOnly} title={readOnly?'Viewer chỉ có quyền xem':undefined} onClick={()=>editLog(entry)}>{entry.result?'Sửa phiếu':'Cập nhật Phiếu YC'}</button></div></article>)}</div>:<p className="muted">Chưa có lịch sử. Hãy chọn “Tạo Phiếu YC Bảo dưỡng – Sửa chữa” sau khi thực hiện công việc.</p>}
     </section>
     {showPhotos&&<div className="asset-photo-grid">{photos.length?photos.map((src:string,i:number)=><button type="button" className="asset-photo-thumb" key={i} onClick={()=>setActivePhoto(src)}><img src={src} alt={'Ảnh '+(i+1)+' của '+value.name}/><span>Ảnh {i+1}</span></button>):<p className="muted">Thiết bị này chưa có ảnh. Chọn “Sửa hồ sơ” để bổ sung ảnh.</p>}</div>}
     {activePhoto&&<div className="photo-lightbox" onClick={()=>setActivePhoto(null)}><button type="button" className="icon-btn" onClick={()=>setActivePhoto(null)}><X/></button><img src={activePhoto} alt={'Ảnh thiết bị '+value.name}/></div>}
@@ -2049,6 +2061,7 @@ function LogEntryModal({value,close,save,assets,userName,isExisting}:{value:Log;
       <Field label="Xác nhận hoàn thành / kết quả"><select value={v.result||''} onChange={e=>set('result',e.target.value as Log['result'])}><option value="">Chưa hoàn thành</option><option value="Đạt">Hoàn thành – Đạt</option><option value="Không đạt">Hoàn thành – Còn tồn tại</option></select></Field>
       {completing&&<p className="form-hint">Khi lưu, phiếu chuyển sang Hoàn thành và không còn cảnh báo đỏ. Lịch sử yêu cầu ban đầu vẫn được giữ nguyên.</p>}
     </div>
+    {v.editHistory?.length>0&&<div className="panel"><b>Lịch sử chỉnh sửa trạng thái</b>{v.editHistory.slice().reverse().map(event=><div key={event.id} className="form-hint"><b>{event.action}</b><br/>Người sửa: {event.editedBy} · Thời điểm: {dateTimeText(event.editedAt)}{event.previousCompletedAt&&<><br/>Hoàn thành trước đó: {dateTimeText(event.previousCompletedAt)} · Người hoàn thành: {event.previousPerformedBy||'—'}</>}</div>)}</div>}
     <div className="form-actions"><button type="button" className="soft-btn" onClick={close}>Hủy</button><button type="submit" className="primary-btn">{completing?'Xác nhận hoàn thành và lưu phiếu':isExisting?'Lưu cập nhật Phiếu YC':'Tạo Phiếu YC'}</button></div>
   </form></Modal>
 }
