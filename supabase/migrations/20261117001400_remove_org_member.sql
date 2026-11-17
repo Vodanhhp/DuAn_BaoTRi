@@ -44,7 +44,7 @@ begin
   if v_legacy_role = 'admin' or v_current_role = 'admin' then
     raise exception 'cannot_remove_admin_member' using errcode = '42501';
   end if;
-  if v_current_role not in ('technician', 'viewer') then
+  if coalesce(v_current_role, '') not in ('technician', 'viewer') then
     raise exception 'member_role_not_supported' using errcode = '55000';
   end if;
 
