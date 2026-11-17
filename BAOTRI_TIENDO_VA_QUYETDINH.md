@@ -1251,3 +1251,23 @@ Người dùng xác nhận đồng ý đưa cả dữ liệu thử nghiệm đan
 - Smoke test đã xác nhận tài khoản được nhận diện đúng Admin, có quyền `users.manage` và `roles.manage`; các assertion trong script cũng đã chạy qua, gồm kiểm tra đủ 3 role hệ thống và ít nhất 20 quyền gán cho Admin. Script kết thúc bằng `ROLLBACK`, không lưu thay đổi dữ liệu kiểm thử.
 - Phạm vi xác nhận chỉ là smoke test vai trò/quyền cơ bản trên BAOTRI-Mini-Test; chưa phải kiểm thử RLS granular trên 11 bảng nghiệp vụ, chưa kiểm thử Technician/Viewer, membership suspended hoặc cách ly giữa hai tổ chức.
 - **Bước tiếp theo:** rà soát đầy đủ tên bảng, cột, policy RLS hiện tại trong Migration 002 và các thao tác CRUD frontend; từ đó lập ma trận quyền và thiết kế Migration 004. Chưa chạy Migration 004 và tuyệt đối chưa áp dụng thay đổi lên Production.
+
+## Cập nhật 17/11/2026 – Chuẩn hóa định danh thiết bị và QR
+
+Đã triển khai trực tiếp trên nhánh `main`:
+
+- Giữ nguyên UUID nội bộ hiện có của thiết bị và các bản ghi liên quan (vật tư, công việc, kế hoạch, nhật ký, Checklist); không đổi khóa chính, không tạo lại hồ sơ và không đụng vào dữ liệu Supabase.
+- QR thiết bị chuyển sang payload ổn định `ASSET:<UUID>`. QR trên màn hình chi tiết, tem QR và bản in chi tiết đều dùng cùng payload; mã quản lý hiển thị vẫn được in/hiển thị riêng.
+- Trình quét ưu tiên tìm theo UUID. Vẫn hỗ trợ QR cũ chứa trực tiếp mã quản lý hoặc dạng `ASSET:<mã quản lý>`, để các tem đã in trước đây tiếp tục dùng được.
+- Cấp mã quản lý khi thêm thiết bị được đưa vào một Dexie transaction bao gồm đọc danh sách hiện tại, tạo mã, ghi thiết bị và ghi hàng đợi thay đổi. Điều này tránh hai tab trên cùng trình duyệt đồng thời lấy cùng số thứ tự.
+- Mã quản lý của hồ sơ hiện hữu không tự đổi khi sửa thông tin. Quy tắc cơ sở `HP01`, danh mục vị trí và nhóm thiết bị hiện tại vẫn được giữ nguyên để không làm thay đổi mã đã cấp.
+
+Giới hạn cần ghi nhớ:
+- Cơ chế cấp số trong transaction hiện bảo đảm trong cùng IndexedDB trên cùng trình duyệt/origin; chưa phải bộ cấp số toàn doanh nghiệp giữa nhiều máy. Khi triển khai CRUD cloud, phải chuyển khâu cấp số sang PostgreSQL RPC/transaction, dùng unique constraint `(organization_id, code)` đã có trong schema.
+- Chưa bổ sung lịch sử alias cho trường hợp Admin chủ động đổi mã quản lý; hiện giao diện không cho sửa mã đã cấp.
+- Chưa thay đổi schema hoặc chạy SQL trên Supabase.
+
+Kiểm tra:
+- Đã rà soát và cập nhật ba vị trí tạo QR trong `src/App.tsx`, cùng logic quét QR.
+- Đã cập nhật quy ước trong `QUY_UOC_MA_DINH_DANH_VA_VIET_TAT_THIET_BI.txt`.
+- Chưa chạy được `npm run build`: môi trường thực thi không truy cập được GitHub để clone/cài dependencies. Vì vậy chưa đánh dấu build hoặc kiểm thử runtime là thành công.
