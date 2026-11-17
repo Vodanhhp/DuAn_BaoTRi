@@ -668,7 +668,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
     const value: Log = { ...entry, requestedBy: entry.requestedBy?.trim() || userName, performedBy: entry.result ? (entry.performedBy.trim() || userName) : entry.performedBy.trim(), result: entry.result || '', completedAt }
     await db.logs.put(value); await queueChange('logs', value.id)
     setModal(null); setEditingLog(null)
-    flash(value.result ? 'Đã lưu phiếu hoàn thành' : 'Đã lưu phiếu, đang chờ kết quả')
+    flash(value.result ? 'Đã lưu Phiếu YC hoàn thành' : 'Đã lưu Phiếu YC, đang chờ xử lý')
   }
   const createRequestFromChecklist = (entry: ChecklistResult) => {
     if (blockViewer('tạo Phiếu YC từ Checklist')) return
@@ -833,13 +833,13 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
   const exportLogs = () => exportRows(logs.map(l => ({
     'Ngày lập phiếu':dateText(l.date),
     'Thiết bị':assets.find(a=>a.id===l.assetId)?.name ?? '',
-    'Nội dung công việc':[l.kind,l.description].filter(Boolean).join('\n'),
+    'Nội dung yêu cầu':[l.kind,l.description].filter(Boolean).join('\n'),
     'Thông số / vật tư':[l.readings?`Thông số: ${l.readings}`:'',l.parts?`Vật tư: ${l.parts}`:''].filter(Boolean).join('\n'),
     'Kết quả / trạng thái':[`Trạng thái: ${l.result?'Hoàn thành':'Chưa hoàn thành'}`,`Kết quả: ${l.result||'Chưa cập nhật'}`].join('\n'),
     'Người yêu cầu':l.requestedBy||'',
     'Người hoàn thành':l.performedBy||'',
     'Hoàn thành lúc':l.completedAt?dateTimeText(l.completedAt):''
-  })), 'phieu-yc-bao-duong-sua-chua.xlsx', 'PHIẾU YC BẢO DƯỠNG – SỬA CHỮA', 'Phiếu bảo dưỡng', ['Ngày lập phiếu','Thiết bị','Nội dung công việc','Thông số / vật tư','Kết quả / trạng thái','Người thực hiện','Hoàn thành lúc'], 'portrait')
+  })), 'phieu-yc-bao-duong-sua-chua.xlsx', 'PHIẾU YC BẢO DƯỠNG – SỬA CHỮA', 'Phiếu bảo dưỡng', ['Ngày yêu cầu','Thiết bị','Nội dung yêu cầu','Thông số / vật tư','Kết quả / trạng thái','Người yêu cầu','Người hoàn thành','Hoàn thành lúc'], 'portrait')
   const reportTitleSuffix = periodRangeLabel(reportPeriod, reportPeriodRange).toLocaleUpperCase('vi')
   const exportReportWork = () => exportRows(reportWorkLogs.map(log => {
     const asset = assets.find(item => item.id === log.assetId)
@@ -1054,7 +1054,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
           {filteredTasks.map(t=><tr key={t.id}><td>{dateText(t.dueDate)}</td><td>{assets.find(a=>a.id===t.assetId)?.name??'Chưa gắn thiết bị'}</td><td><b>{t.title}</b><small>{t.checklist.split('\n').filter(Boolean).length} bước công việc</small></td><td>{t.frequency}</td><td><span className={`status ${t.status==='Hoàn thành'?'green':t.dueDate<today()?'red':'orange'}`}>{t.status==='Hoàn thành'?'Hoàn thành':t.dueDate<today()?'Quá hạn':t.status}</span></td><td className="actions"><button className="text-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>{setEditingTask(t);setModal('task')}}>Chi tiết</button>{t.status!=='Hoàn thành'&&<button className="text-btn success-text" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>completeTask(t)}>Hoàn thành</button>}</td></tr>)}
           </tbody></table>{filteredTasks.length===0&&<Empty text="Chưa có công việc."/ >}</div></section>}
         {page==='logs' && <section className="panel work-module-panel"><div className="panel-head"><div><h2>Phiếu YC Bảo dưỡng – Sửa chữa</h2><p>Theo dõi yêu cầu đến khi người hoàn thành xác nhận; mọi phiếu đều gắn với lý lịch thiết bị</p></div><div className="module-actions"><button type="button" className="primary-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>{setEditingLog({id:uid(),assetId:'',date:today(),kind:'Sửa chữa',description:'',parts:'',readings:'',requestedBy:userName,result:'',performedBy:''});setModal('log')}}><Plus size={16}/> Tạo Phiếu YC</button><button type="button" className="soft-btn" onClick={()=>setPage('tasks')}><CalendarDays size={16}/> Lịch bảo dưỡng định kỳ</button><button className="soft-btn" disabled={isViewer} title={isViewer?'Viewer không được xuất Excel':undefined} onClick={exportLogs}><Download size={16}/> Xuất Excel</button></div></div>
-          <div className="table-wrap"><table><thead><tr><th>Ngày yêu cầu</th><th>Thiết bị</th><th>Loại yêu cầu</th><th>Nội dung yêu cầu</th><th>Trạng thái</th><th>Kết quả</th><th>Người yêu cầu</th><th>Người hoàn thành</th><th>Thao tác</th></tr></thead><tbody>{logs.map(l=><tr key={l.id}><td>{dateText(l.date)}</td><td>{assets.find(a=>a.id===l.assetId)?.name??'—'}</td><td>{l.kind}</td><td>{l.description}</td><td><span className={`status ${l.result?'green':'red'}`}>{l.result?'Hoàn thành':'Chưa hoàn thành'}</span></td><td>{l.result||'Đang chờ xử lý'}</td><td>{l.requestedBy||'—'}</td><td>{l.performedBy||'—'}{l.completedAt&&<small>{dateTimeText(l.completedAt)}</small>}</td><td className="actions"><button type="button" className="text-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>{setEditingLog(l);setModal('log')}}>{l.result?'Sửa phiếu':'Cập nhật phiếu'}</button></td></tr>)}</tbody></table>{logs.length===0&&<Empty text="Chưa có Phiếu YC nào."/ >}</div></section>}
+          <div className="table-wrap"><table><thead><tr><th>Ngày yêu cầu</th><th>Thiết bị</th><th>Loại yêu cầu</th><th>Nội dung yêu cầu</th><th>Trạng thái</th><th>Kết quả</th><th>Người yêu cầu</th><th>Người hoàn thành</th><th>Thao tác</th></tr></thead><tbody>{logs.map(l=><tr key={l.id}><td>{dateText(l.date)}</td><td>{assets.find(a=>a.id===l.assetId)?.name??'—'}</td><td>{l.kind}</td><td>{l.description}</td><td><span className={`status ${l.result?'green':'red'}`}>{l.result?'Hoàn thành':'Chưa hoàn thành'}</span></td><td>{l.result||'Đang chờ xử lý'}</td><td>{l.requestedBy||'—'}</td><td>{l.performedBy||'—'}{l.completedAt&&<small>{dateTimeText(l.completedAt)}</small>}</td><td className="actions"><button type="button" className="text-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>{setEditingLog(l);setModal('log')}}>{l.result?'Sửa Phiếu YC':'Cập nhật Phiếu YC'}</button></td></tr>)}</tbody></table>{logs.length===0&&<Empty text="Chưa có Phiếu YC nào."/ >}</div></section>}
         {page==='reports' && <div className="reports-dashboard">
           <section className="panel report-period-panel">
             <div className="panel-head"><div><h2>Báo cáo hoạt động thực tế</h2><p>Thống kê phiếu đã ghi nhận và vật tư đã xuất kho; không bao gồm kế hoạch dự kiến.</p></div><FileSpreadsheet/></div>
