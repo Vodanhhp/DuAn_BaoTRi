@@ -1657,3 +1657,13 @@ Trạng thái:
 - “Việc cần làm hôm nay” đếm các tác vụ/kỳ Checklist/Phiếu YC chưa hoàn thành có hạn đúng ngày hiện tại. “Công việc quá hạn” đếm các mục chưa hoàn thành có hạn trước ngày hiện tại.
 - Phiếu YC có trường “Hạn hoàn thành” bắt buộc khi tạo/cập nhật; phiếu tạo từ Checklist được gán hạn mặc định là ngày tạo phiếu. Phiếu cũ chưa có hạn được đánh dấu “Chưa đặt hạn” và không tự suy diễn ngày lập phiếu thành hạn.
 - Không tạo bảng IndexedDB mới, không migration dữ liệu, không thay đổi Supabase hoặc bật đồng bộ nghiệp vụ.
+
+## Tạm dừng BAOTRI Mini – 17/11/2026
+
+- Người dùng yêu cầu tạm dừng công việc BAOTRI Mini tại thời điểm này và tiếp tục vào ngày hôm sau; không triển khai thêm chức năng mới trong phiên làm việc hiện tại.
+- Commit mới nhất trên `main`: `eeb13cde0ab8db1659b482b593540111f0ab7ed4` – **Fix QR asset lookup result type narrowing**.
+- Trong `src/App.tsx`, đã khai báo kiểu kết quả phân biệt rõ thành công/thất bại cho hàm `resolveAsset`; cập nhật luồng nhập mã thủ công và quét camera để kiểm tra `match.ok` trước khi đọc `asset` hoặc `error`. Mục đích là xử lý lỗi TypeScript khi truyền giá trị có thể `undefined` vào `setResult`; không thay đổi logic tra cứu thiết bị.
+- GitHub Actions run `44090952905` (**Deploy BAOTRI Mini to GitHub Pages**, run #151) đã hoàn tất với kết quả **success** trên commit `eeb13cd`; workflow đã build và triển khai GitHub Pages thành công.
+- Trạng thái kiểm thử: build/deploy đã thành công, nhưng người dùng chưa xác nhận kiểm tra trực tiếp giao diện QR sau lần triển khai này.
+- **Việc tiếp theo khi quay lại:** mở ứng dụng đã triển khai, tải lại cứng bằng Ctrl+F5; kiểm tra hộp thoại QR, nhập mã thiết bị thủ công và quét bằng camera. Nếu phát sinh lỗi, ghi nhận hiện tượng và xử lý đúng phạm vi; không sửa các chức năng khác đang hoạt động ổn định.
+- Trong thời gian tạm dừng, giữ nguyên mã nguồn, dữ liệu, cấu hình Supabase và các quyết định kiến trúc hiện tại; không thực hiện thay đổi Production hoặc đồng bộ dữ liệu nghiệp vụ.
