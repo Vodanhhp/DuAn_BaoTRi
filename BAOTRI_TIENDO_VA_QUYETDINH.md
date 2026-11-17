@@ -1686,3 +1686,11 @@ Trạng thái:
 - Chỉ thay đổi trình bày responsive của ô nhập mã QR; không thay đổi logic quét camera, tra cứu mã thiết bị, Checklist hoặc dữ liệu.
 - Commit trên `main`: `296f9e9a411baa38c65c976dd1177faa72e02bb6`.
 - Chưa xác nhận GitHub Actions build/deploy và chưa nghiệm thu trực tiếp trên điện thoại.
+
+## Xác nhận build/deploy và cập nhật ô nhập mã QR mobile – 18/11/2026
+
+- Sau commit CSS `296f9e9a411baa38c65c976dd1177faa72e02bb6`, GitHub Actions run #156 (`44161528869`) bị hủy khi có commit tài liệu mới hơn kích hoạt workflow tiếp theo; đây không phải lỗi build của bản cuối.
+- GitHub Actions run #157 (`44161551615`) trên commit `885d2024abea8aa54858fb4c49db19aa20b2d266` đã hoàn tất **success**. Cả hai job **build** và **deploy** đều thành công; frontend chứa CSS sửa ô nhập QR đã được triển khai lên GitHub Pages.
+- Bản CSS đã triển khai: trên màn hình tối đa 680px, ô nhập mã QR chiếm toàn bộ chiều ngang, cao 68px, chữ 18px; nút Tìm thiết bị rộng 100%, cao tối thiểu 54px.
+- Không có lỗi TypeScript/build/deploy được ghi nhận trong workflow #157. Tuy nhiên, **chưa nghiệm thu trực quan trên điện thoại thật**; cần người dùng mở `https://baotri.vieclamhp247.com`, tải lại trang rồi kiểm tra ô nhập mã QR.
+- Phạm vi thay đổi chỉ là giao diện mobile của ô nhập mã QR; không thay đổi logic camera, tra cứu thiết bị, Checklist, dữ liệu nghiệp vụ hoặc Supabase.
