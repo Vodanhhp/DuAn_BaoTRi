@@ -1361,7 +1361,7 @@ function OrganizationMembersPanel({client,organizationId}:{client:SupabaseClient
     setBusyMember(member.id);setError('');setMessage('')
     try {
       await callManagement({action:'update_role',memberId:member.id,roleCode:nextRole})
-      setMessage('Đã cập nhật vai trò.')
+      setMessage('Đã cập nhật vai trò. Người dùng cần tải lại ứng dụng hoặc đăng nhập lại để giao diện nhận quyền mới.')
       await loadMembers()
     } catch(reason) {setError(reason instanceof Error?reason.message:String(reason))}
     finally {setBusyMember('')}
@@ -1374,7 +1374,7 @@ function OrganizationMembersPanel({client,organizationId}:{client:SupabaseClient
     setBusyMember(member.id);setError('');setMessage('')
     try {
       await callManagement({action:'update_status',memberId:member.id,status:nextStatus})
-      setMessage(nextStatus==='suspended'?'Đã tạm khóa tài khoản.':'Đã mở lại tài khoản.')
+      setMessage(nextStatus==='suspended'?'Đã tạm khóa tài khoản. Quyền truy cập tổ chức sẽ bị từ chối khi tài khoản tải lại ứng dụng.':'Đã mở lại tài khoản. Người dùng có thể đăng nhập lại để tiếp tục sử dụng.')
       await loadMembers()
     } catch(reason) {setError(reason instanceof Error?reason.message:String(reason))}
     finally {setBusyMember('')}
