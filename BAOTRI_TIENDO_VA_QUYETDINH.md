@@ -1320,3 +1320,14 @@ Trạng thái:
 - Đã tạo file `supabase/tests/20261117000800_authenticated_asset_crud_rls_test.sql` trên `main`. File dựng fixture thiết bị trong transaction, chuyển sang `authenticated`, mô phỏng lần lượt JWT của Viewer/Technician/Admin, kiểm tra SELECT/INSERT/UPDATE/DELETE và trả về một bảng kết quả PASS/FAIL duy nhất. Cuối script có `ROLLBACK` để không lưu fixture hay thay đổi dữ liệu.
 - File test đã được fetch lại từ GitHub để xác nhận nội dung sau khi tạo; commit tạo và hiệu chỉnh: `35a4bd653867108e312f7d8865f4b07090fe8cfa`, `39b51af67ff9330113d1d58923fac5cd2588ea10`.
 - **Chưa chạy file test 008 trên Supabase Test.** Chỉ chạy trên BAOTRI-Mini-Test, tuyệt đối không chạy trên Production. Chưa kết luận UPDATE/DELETE của Viewer hoặc CRUD Technician/Admin đã được xác minh bằng database.
+
+
+## Cập nhật 17/11/2026 – Kết quả kiểm thử CRUD thiết bị và chuẩn bị kiểm thử các phân hệ
+
+- Người dùng đã chạy file `supabase/tests/20261117000800_authenticated_asset_crud_rls_test.sql` trên BAOTRI-Mini-Test và xác nhận bảng kết quả trả về **PASS toàn bộ**.
+- Ghi nhận kiểm thử thực tế bảng `assets`: Viewer SELECT được và bị chặn INSERT/UPDATE/DELETE; Technician INSERT/UPDATE được, DELETE bị chặn; Admin INSERT/UPDATE/DELETE được.
+- Đã tạo file `supabase/tests/20261117000900_business_modules_rls_integration_test.sql` trên `main` để mở rộng kiểm thử sang 11 bảng nghiệp vụ: assets, inventory_items, maintenance_tasks, maintenance_plans, checklist_templates, checklist_template_versions, checklist_results, maintenance_logs, inventory_movements, asset_images và organization_settings.
+- Script 009 tạo fixture trong transaction, mô phỏng JWT của Viewer/Technician/Admin, kiểm tra quyền đọc và một số thao tác ghi/khóa theo ma trận đã thiết kế; cuối script có ROLLBACK. Không bật/tắt RLS và chỉ chạy trên BAOTRI-Mini-Test.
+- Các trường hợp được kiểm tra trong script 009 gồm: Viewer chỉ đọc; Technician quản lý vật tư/công việc/kế hoạch và tạo kết quả Checklist/nhật ký nhưng không sửa mẫu Checklist/cấu hình hoặc xóa; không cho INSERT trực tiếp inventory_movements khi chưa có RPC nguyên tử; Admin sửa mẫu Checklist, cấu hình và xóa vật tư.
+- Commit file test 009: `407cba99be196207bea4a1a862afa6adb9ec969d`; commit hiệu chỉnh để các phép thử từ chối dùng bản ghi fixture đã tồn tại, tránh báo PASS giả do lỗi khóa ngoại: `0d84ee8ac197a2d2e69f87a06e70a6637f949b55`.
+- **File test 009 mới chỉ được tạo và rà soát mã; người dùng chưa chạy trên Supabase Test. Không ghi nhận PASS cho các phân hệ này cho đến khi nhận được bảng kết quả thực tế.**
