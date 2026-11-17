@@ -2049,6 +2049,22 @@ export default function App() {
         .maybeSingle()
       if (membershipError) throw membershipError
       if (!membership) throw new Error('Tài khoản chưa có membership active trong tổ chức.')
+
+      // organization_members.role là cột legacy chỉ có admin/user.
+      // Vai trò thực tế (admin/technician/viewer) phải đọc từ role assignment.
+      const { data: isAdmin, error: adminRoleError } = await authenticatedClient
+        .rpc('has_org_role', { p_organization_id: membership.organization_id, p_role: 'admin' })
+      if (adminRoleError) throw adminRoleError
+      const { data: isViewerRole, error: viewerRoleError } = await authenticatedClient
+        .rpc('has_org_role', { p_organization_id: membership.organization_id, p_role: 'viewer' })
+      if (viewerRoleError) throw viewerRoleError
+      const { data: isTechnician, error: technicianRoleError } = await authenticatedClient
+        .rpc('has_org_role', { p_organization_id: membership.organization_id, p_role: 'technician' })
+      if (technicianRoleError) throw technicianRoleError
+      // Ưu tiên quyền thấp hơn khi không phải Admin để tránh vô tình cấp quyền ghi.
+      const effectiveRole = isAdmin ? 'admin' : isViewerRole ? 'viewer' : isTechnician ? 'technician' : null
+      if (!effectiveRole) throw new Error('Tài khoản chưa được gán vai trò hợp lệ trong tổ chức.')
+
       const { data: organization, error: organizationLoadError } = await authenticatedClient
         .from('organizations')
         .select('id,name,status')
@@ -2056,7 +2072,7 @@ export default function App() {
         .eq('status', 'active')
         .single()
       if (organizationLoadError) throw organizationLoadError
-      if (active) setOrganizationContext({id:organization.id,name:organization.name,role:membership.role})
+      if (active) setOrganizationContext({id:organization.id,name:organization.name,role:effectiveRole})
     }
     loadOrganization().catch(error => {
       if (active) setOrganizationError(error instanceof Error ? error.message : String(error))
