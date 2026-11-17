@@ -1247,5 +1247,7 @@ Người dùng xác nhận đồng ý đưa cả dữ liệu thử nghiệm đan
 ### Kết quả chạy Migration 003 trên BAOTRI-Mini-Test – 17/11/2026
 - Người dùng xác nhận Supabase SQL Editor trả về: **Success. No rows returned** khi chạy toàn bộ `20261117000500_roles_and_permissions.sql`.
 - Ghi nhận Migration 003 đã được thực thi thành công trên project Test theo thông báo của Supabase.
-- Chưa chạy smoke test `20261117000500_roles_and_permissions_smoke_test.sql`; chưa xác nhận độc lập số lượng role, permission, membership-role mapping hoặc kết quả hai helper function.
-- Bước tiếp theo: chạy smoke test trên Test với UUID của tài khoản Auth Admin đang có membership active. Sau khi smoke test đạt, tiếp tục thiết kế và kiểm thử Migration 004 thay policy RLS nghiệp vụ bằng permission granular.
+- Người dùng đã chạy `20261117000500_roles_and_permissions_smoke_test.sql` trên Test với Auth UUID `08f0f750-3361-4ae0-b6ed-9dc4a5b41244`; kết quả xác nhận cả ba giá trị `admin_role_ok`, `users_manage_ok`, `roles_manage_ok` đều là **true**.
+- Smoke test đã xác nhận tài khoản được nhận diện đúng Admin, có quyền `users.manage` và `roles.manage`; các assertion trong script cũng đã chạy qua, gồm kiểm tra đủ 3 role hệ thống và ít nhất 20 quyền gán cho Admin. Script kết thúc bằng `ROLLBACK`, không lưu thay đổi dữ liệu kiểm thử.
+- Phạm vi xác nhận chỉ là smoke test vai trò/quyền cơ bản trên BAOTRI-Mini-Test; chưa phải kiểm thử RLS granular trên 11 bảng nghiệp vụ, chưa kiểm thử Technician/Viewer, membership suspended hoặc cách ly giữa hai tổ chức.
+- **Bước tiếp theo:** rà soát đầy đủ tên bảng, cột, policy RLS hiện tại trong Migration 002 và các thao tác CRUD frontend; từ đó lập ma trận quyền và thiết kế Migration 004. Chưa chạy Migration 004 và tuyệt đối chưa áp dụng thay đổi lên Production.
