@@ -2956,3 +2956,53 @@ Các thành phần đã được xác minh tồn tại trên nhánh `main`:
 - Migration 017 và SQL Test 017 vẫn chưa có xác nhận người dùng đã chạy trên Supabase Test.
 - GitHub Actions run #317 cho commit `aa493d01c13cbfe7b8db4273786dab17c42f3fb5` đã được kiểm tra lại: completed / success.
 - Bước tiếp theo: review chéo thiết kế `CLOUD_SYNC_QUEUE_V7_DESIGN.md` với luồng lease/receipt của Asset; chốt mô hình asset-specific pending/conflict và mapping trước khi thay đổi code.
+
+## 19. Rà soát tiếp theo – tích hợp khóa Asset với Local-first (19/11/2026)
+
+### 19.1 Kết quả đối chiếu mã nguồn hiện tại
+
+- Form `AssetModal` trong `src/App.tsx` khóa trường `category` khi sửa hồ sơ; trường `code` không xuất hiện trong form sửa. Vì vậy, hai trường định danh này phù hợp với hợp đồng `apply_asset_mutation_with_lock` của Migration 017: RPC không nhận và không cập nhật `code` hoặc `category`.
+- Hàm `saveAsset()` hiện vẫn ghi trực tiếp Asset vào IndexedDB và gọi `queueChange('assets', saved.id)`. Form Local chưa xin lease Cloud, chưa lưu snapshot mutation bất biến và chưa gọi RPC Migration 017.
+- `src/lib/assetEditLocks.ts` đã có helper `applyAssetMutationWithEditLock()`, nhưng chưa được gọi từ `src/App.tsx` hoặc luồng lưu Asset Local.
+- `src/CloudAssetsPanel.tsx` hiện vẫn là luồng Cloud độc lập: tạo Asset bằng `createCloudAsset()`, sửa bằng `updateAssetWithEditLock()` (RPC Migration 016), lưu kho/khôi phục bằng RPC khóa. Panel này chưa sử dụng RPC receipt Migration 017. Luồng đó không đồng nhất với nguyên tắc Local-first đã chốt rằng Cloud chỉ phản ánh dữ liệu nghiệp vụ từ Local; cần xử lý rõ trước khi tuyên bố kiến trúc đã thống nhất. Chưa tự ý thay đổi hoặc vô hiệu hóa panel.
+- Luồng import Local → Cloud hiện là thao tác rõ ràng, giữ nguyên UUID và mã quản lý. Sau import, Cloud có `updated_at` để làm mốc phiên bản, nhưng code hiện tại chưa ghi một bản ghi mapping/sync-state riêng vào IndexedDB. Không được coi việc UUID trùng hoặc tên/mã trùng đơn thuần là bằng chứng mapping; chỉ luồng import/xác nhận có kiểm tra đúng organization + UUID + code + payload mới được tạo liên kết.
+- `CLOUD_SYNC_QUEUE_V7_DESIGN.md` là thiết kế hàng đợi chung cho nhiều bảng. Không cần triển khai Dexie queue v7 hoặc worker tổng quát trong giai đoạn khóa Asset. Tuyệt đối không bật đồng bộ Checklist, bảo trì, vật tư hoặc các bảng khác.
+
+### 19.2 Kết luận thiết kế hẹp cho Asset – chưa triển khai
+
+Không dùng `syncQueue` hiện tại làm nguồn mutation Cloud cho Asset. Queue này có unique key `[tableName+recordId]` và `queueChange()` tạo mutationId mới/ghi đè hàng cũ; không bảo toàn snapshot hoặc base Cloud version. Thiết kế v7 tổng quát vẫn để riêng, chưa triển khai.
+
+Đề xuất một lát cắt Asset-only gồm hai bảng Dexie riêng, chưa thêm vào DB cho đến khi duyệt và chuẩn bị test migration:
+
+1. `assetCloudLinks` – liên kết một Asset Local với đúng tổ chức và Asset Cloud:
+   - Khóa ghép logic `organizationId + assetId`.
+   - Lưu `cloudUpdatedAt` (phiên bản Cloud mới nhất đã xác nhận), `lastSyncedLocalUpdatedAt`, trạng thái `linked | conflict`, và thời điểm kiểm tra gần nhất.
+   - Chỉ tạo/cập nhật liên kết sau khi RPC import hoặc RPC mutation trả về đúng organization/asset UUID và kết quả hợp lệ. Không tự ghép theo tên hoặc mã.
+2. `assetMutations` – nhật ký mutation bất biến, chỉ phục vụ Asset:
+   - Primary key `mutationId`; index theo `organizationId + assetId` và trạng thái/thời điểm.
+   - Lưu payload snapshot đầy đủ, `expectedCloudUpdatedAt`, `localUpdatedAt`, trạng thái `pending | processing | applied | conflict`, lỗi và kết quả Cloud nếu có.
+   - Mỗi Asset chỉ có tối đa một mutation chưa được xác nhận. Khi còn mutation `pending/processing/conflict`, chặn lần sửa master tiếp theo để không phải ghi đè mutation hoặc tự tạo chuỗi baseVersion phức tạp.
+   - Retry luôn dùng đúng mutationId, payload snapshot và expectedCloudUpdatedAt cũ. Chỉ đánh dấu applied và cập nhật link version sau khi nhận được receipt hợp lệ; không xóa mutation trước xác nhận.
+   - Không cho generic worker xử lý bảng Asset từ `syncQueue`; luồng Asset-only này là đường đồng bộ duy nhất.
+
+### 19.3 Trình tự tích hợp dự kiến
+
+1. Hoàn tất và người dùng xác nhận Migration 017 + Test SQL 017 PASS trên BAOTRI-Mini-Test. Trước đó không gọi RPC receipt từ ứng dụng.
+2. Chốt xử lý CloudAssetsPanel: chuyển sang chỉ xem/đọc trạng thái, hoặc xác định rõ đây là công cụ quản trị riêng và không phải nguồn tạo/sửa dữ liệu nghiệp vụ. Không duy trì hai đường ghi Cloud cạnh tranh với Local-first.
+3. Xác định cách thiết bị Local trên từng PC/Mobile được liên kết với Cloud: import rõ ràng hoặc tải/nhận bản ghi Cloud theo đúng organization + UUID; không tự động ghép theo tên/mã.
+4. Khi người dùng bắt đầu sửa Asset Local đã liên kết: kiểm tra online, xin lease Cloud trước khi mở quyền sửa; lấy `updated_at` Cloud làm expected version. Không xác minh được lease thì chỉ xem và vẫn cho phép Checklist/bảo trì Local theo quy tắc đã chốt.
+5. Khi mất heartbeat/kết nối: khóa form Local ngay, không cho lưu; không tự khôi phục quyền sửa sau khi reconnect. Phải tải lại trạng thái Cloud và xin lease mới.
+6. Khi lưu: trong transaction Dexie, lưu Asset Local + mutation snapshot bất biến; sau đó gọi `apply_asset_mutation_with_lock` bằng lease token và snapshot. Khi Cloud xác nhận, cập nhật link/version và kết thúc mutation; nếu timeout thì giữ nguyên mutation để retry idempotent.
+7. Nếu Cloud version mismatch: giữ Local và Cloud snapshot, chuyển conflict; không tự ghi đè hoặc tự chọn bên thắng.
+8. Chỉ tích hợp Asset master. Checklist, bảo trì, nhật ký, vật tư và movement tiếp tục Local, chưa có worker/đồng bộ.
+
+### 19.4 Trạng thái và việc chưa làm
+
+- [x] Đã xác nhận `code` và `category` không thể sửa từ AssetModal hiện tại.
+- [x] Đã xác nhận Local save vẫn ghi IndexedDB + generic `syncQueue`, chưa gọi RPC receipt.
+- [x] Đã xác nhận CloudAssetsPanel vẫn có đường tạo/sửa/lưu kho trực tiếp trên Cloud và chưa dùng Migration 017.
+- [x] Đã rà soát thiết kế queue v7: không cần triển khai queue tổng quát cho lát cắt Asset-only.
+- [x] Đã đề xuất mapping + mutation ledger riêng cho Asset, có chặn sửa lần tiếp theo khi mutation trước chưa được xác nhận.
+- [ ] Chưa sửa mã nguồn, chưa thêm bảng Dexie, chưa gọi RPC Migration 017.
+- [ ] Migration 017 và Test SQL 017 vẫn chờ người dùng chạy trên BAOTRI-Mini-Test và xác nhận kết quả.
+- [ ] Chưa có kiểm thử hai thiết bị PC/Mobile thực tế cho toàn bộ vòng đời lease.
