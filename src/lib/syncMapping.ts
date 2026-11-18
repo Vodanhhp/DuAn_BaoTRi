@@ -9,7 +9,6 @@ import type {
   Movement,
   Task
 } from '../db'
-import { isDraftId } from './localIdentity'
 
 /**
  * Pure local ↔ normalized Cloud row mapping.
@@ -103,7 +102,7 @@ export class UnsupportedCloudFieldError extends Error {
 }
 
 function rejectDraftIdentity(id: string | undefined, field: string, status?: string) {
-  if (isDraftId(id) || status === 'draft') {
+  if ((typeof id === 'string' && id.startsWith('draft:')) || status === 'draft') {
     throw new UnsupportedCloudFieldError(`${field} đang là bản nháp Local; không được gửi lên Cloud trước khi chính thức hóa UUID.`)
   }
 }
