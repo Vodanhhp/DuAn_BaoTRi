@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { db, type Asset } from './db'
+import { db, getDeviceId, type Asset } from './db'
 import {
   createCloudAsset, getCloudAssetCodeConfig, importCloudAssetPreservingIdentity, listCloudAssets, saveCloudAssetCodeConfig,
-  setCloudAssetArchived, updateCloudAsset, type AssetCodeConfig
+  type AssetCodeConfig
 } from './lib/assetsCloud'
+import {
+  acquireAssetEditLock, heartbeatAssetEditLock, listAssetEditLocks, releaseAssetEditLock,
+  setAssetArchivedWithEditLock, updateAssetWithEditLock, type AssetEditLease, type AssetEditLock
+} from './lib/assetEditLocks'
 
 type Props = {
   client: SupabaseClient
@@ -113,6 +117,12 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
   const [showCreate, setShowCreate] = useState(false)
   const [editDraft, setEditDraft] = useState<Asset | null>(null)
   const [savingEdit, setSavingEdit] = useState(false)
+  const [editLease, setEditLease] = useState<AssetEditLease | null>(null)
+  const [editLeaseLost, setEditLeaseLost] = useState(false)
+  const [locks, setLocks] = useState<Record<string, AssetEditLock>>({})
+  const [lockStateKnown, setLockStateKnown] = useState(false)
+  const [lockError, setLockError] = useState('')
+  const [isOnline, setIsOnline] = useState(() => typeof navigator !== 'undefined' && navigator.onLine)
   const [busyAssetId, setBusyAssetId] = useState('')
   const [canUpdateAssets, setCanUpdateAssets] = useState(false)
   const [canCreateAssets, setCanCreateAssets] = useState(false)
@@ -162,6 +172,117 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
   }, [client, organizationId])
 
   useEffect(() => { void load() }, [load])
+
+  const refreshLocks = useCallback(async () => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setLockStateKnown(false)
+      setLockError('Mất kết nối Internet. Không thể xác nhận quyền chỉnh sửa thiết bị.')
+      return
+    }
+    try {
+      const rows = await listAssetEditLocks(client, organizationId)
+      const next: Record<string, AssetEditLock> = {}
+      for (const row of rows) next[row.asset_id] = row
+      setLocks(next)
+      setLockStateKnown(true)
+      setLockError('')
+    } catch (cause) {
+      setLockStateKnown(false)
+      setLockError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }, [client, organizationId])
+
+  useEffect(() => {
+    const onOnline = () => {
+      setIsOnline(true)
+      void refreshLocks()
+    }
+    const onOffline = () => {
+      setIsOnline(false)
+      setLockStateKnown(false)
+      setLockError('Mất kết nối Internet. Thiết bị đang bị khóa cục bộ; không thể chỉnh sửa.')
+      if (editLease) setEditLeaseLost(true)
+    }
+    window.addEventListener('online', onOnline)
+    window.addEventListener('offline', onOffline)
+    void refreshLocks()
+    const timer = window.setInterval(() => { if (navigator.onLine) void refreshLocks() }, 5000)
+    return () => {
+      window.removeEventListener('online', onOnline)
+      window.removeEventListener('offline', onOffline)
+      window.clearInterval(timer)
+    }
+  }, [refreshLocks, editLease])
+
+  useEffect(() => {
+    if (!editLease) return
+    const timer = window.setInterval(async () => {
+      if (!navigator.onLine) {
+        setEditLeaseLost(true)
+        setLockError('Mất kết nối Internet. PC/Mobile này vẫn khóa cục bộ và không thể lưu.')
+        return
+      }
+      try {
+        const renewed = await heartbeatAssetEditLock(client, organizationId, editLease.asset_id, editLease.lock_token)
+        if (!renewed) {
+          setEditLeaseLost(true)
+          setLockError('Quyền khóa thiết bị đã hết hạn hoặc được thay thế. Không thể tiếp tục chỉnh sửa.')
+        } else {
+          void refreshLocks()
+        }
+      } catch (cause) {
+        setEditLeaseLost(true)
+        setLockError(cause instanceof Error ? cause.message : 'Không thể xác nhận khóa thiết bị.')
+      }
+    }, 30000)
+    return () => window.clearInterval(timer)
+  }, [client, organizationId, editLease, refreshLocks])
+
+  const cancelEdit = async () => {
+    const lease = editLease
+    setEditDraft(null)
+    setEditLease(null)
+    setEditLeaseLost(false)
+    if (lease && navigator.onLine) {
+      try { await releaseAssetEditLock(client, organizationId, lease.asset_id, lease.lock_token) }
+      catch { /* Cloud lease tự hết hạn sau 2 phút nếu không release được. */ }
+    }
+    void refreshLocks()
+  }
+
+  const openEdit = async (asset: Asset) => {
+    if (!canUpdateAssets || !lockStateKnown || !navigator.onLine) {
+      setError(lockError || 'Chưa xác nhận được trạng thái khóa từ Cloud. Không thể chỉnh sửa thiết bị.')
+      return
+    }
+    setError('')
+    setMessage('')
+    try {
+      const { data: userResult } = await client.auth.getUser()
+      const metadata = userResult.user?.user_metadata ?? {}
+      const displayName = typeof metadata.full_name === 'string' && metadata.full_name.trim()
+        ? metadata.full_name.trim()
+        : userResult.user?.email || 'Tài khoản'
+      const platform = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) ? 'Mobile' : 'PC'
+      const result = await acquireAssetEditLock(
+        client, organizationId, asset.id, getDeviceId(), displayName + ' · ' + platform
+      )
+      if (!result.acquired) {
+        if (result.lock) setLocks(current => ({ ...current, [asset.id]: result.lock! }))
+        setError(result.lock
+          ? 'Thiết bị đang được chỉnh sửa bởi ' + result.lock.holder_label + '. Chỉ được xem cho đến khi họ nhả khóa.'
+          : 'Cloud đang xử lý yêu cầu khóa. Vui lòng tải lại trạng thái rồi thử lại.')
+        return
+      }
+      setEditLease(result.lease)
+      setEditLeaseLost(false)
+      setEditDraft({ ...asset })
+      setShowConfig(false)
+      setShowCreate(false)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
 
   useEffect(() => {
     let active = true
@@ -238,11 +359,25 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
     setError('')
     setMessage('')
     try {
-      const saved = await updateCloudAsset(client, organizationId, editDraft)
+      if (!editLease || editLeaseLost || !navigator.onLine) throw new Error('Không còn quyền khóa hợp lệ hoặc mất kết nối. Không thể lưu thiết bị.')
+      const saved = await updateAssetWithEditLock(client, organizationId, editDraft, editLease.lock_token)
       setAssets(current => current.map(asset => asset.id === saved.id ? saved : asset).sort((a, b) => a.name.localeCompare(b.name, 'vi')))
+      const lease = editLease
       setEditDraft(null)
+      setEditLease(null)
+      setEditLeaseLost(false)
+      try { await releaseAssetEditLock(client, organizationId, lease.asset_id, lease.lock_token) } catch { /* Lease sẽ tự hết hạn. */ }
+      void refreshLocks()
       setMessage('Đã cập nhật hồ sơ thiết bị ' + saved.code + '.')
     } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } catch (cause) {
+      if (editLease && navigator.onLine) {
+        try {
+          const renewed = await heartbeatAssetEditLock(client, organizationId, editLease.asset_id, editLease.lock_token)
+          if (!renewed) setEditLeaseLost(true)
+        } catch { setEditLeaseLost(true) }
+      }
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
       setSavingEdit(false)
@@ -256,10 +391,30 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
     setError('')
     setMessage('')
     try {
-      const saved = await setCloudAssetArchived(client, organizationId, asset.id, archived)
+      if (!navigator.onLine || !lockStateKnown) throw new Error('Không thể xác nhận quyền khóa từ Cloud. Không được thay đổi thiết bị khi mất kết nối hoặc chưa rõ trạng thái khóa.')
+      const { data: userResult } = await client.auth.getUser()
+      const metadata = userResult.user?.user_metadata ?? {}
+      const displayName = typeof metadata.full_name === 'string' && metadata.full_name.trim()
+        ? metadata.full_name.trim()
+        : userResult.user?.email || 'Tài khoản'
+      const platform = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) ? 'Mobile' : 'PC'
+      const acquired = await acquireAssetEditLock(client, organizationId, asset.id, getDeviceId(), displayName + ' · ' + platform)
+      if (!acquired.acquired) {
+        if (acquired.lock) setLocks(current => ({ ...current, [asset.id]: acquired.lock! }))
+        throw new Error(acquired.lock
+          ? 'Thiết bị đang được chỉnh sửa bởi ' + acquired.lock.holder_label + '.'
+          : 'Cloud chưa xác nhận được quyền khóa. Vui lòng thử lại.')
+      }
+      let saved: Asset
+      try {
+        saved = await setAssetArchivedWithEditLock(client, organizationId, asset.id, acquired.lease.lock_token, archived)
+      } finally {
+        try { await releaseAssetEditLock(client, organizationId, asset.id, acquired.lease.lock_token) } catch { /* Lease sẽ tự hết hạn. */ }
+      }
       setAssets(current => current.map(item => item.id === saved.id ? saved : item).sort((a, b) => a.name.localeCompare(b.name, 'vi')))
+      void refreshLocks()
       setMessage(archived ? 'Đã đưa ' + saved.code + ' vào lưu kho.' : 'Đã khôi phục ' + saved.code + ' về danh sách đang quản lý.')
-      if (editDraft?.id === saved.id) setEditDraft(null)
+      if (editDraft?.id === saved.id) await cancelEdit()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
