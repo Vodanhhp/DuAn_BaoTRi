@@ -2377,3 +2377,18 @@ Các khái niệm cần thiết kế ở giai đoạn kiến trúc: Business Pro
 - Chưa xây dựng đồng loạt tất cả bộ ngành. Thứ tự dự kiến: Nhà nghỉ – khách sạn nhỏ (mẫu đầu tiên), sau đó khách sạn trung bình/lớn, tòa nhà – văn phòng, nhà máy – xưởng sản xuất và các ngành khác.
 - Bước tiếp theo khi tiếp tục: thiết kế chi tiết hồ sơ mẫu Nhà nghỉ – khách sạn nhỏ (danh mục thiết bị, vật tư, công việc, checklist, menu, quy tắc mã và cấu hình một kho chung); rà soát với schema/code hiện tại rồi mới lập kế hoạch triển khai.
 - Theo quy trình dự án, trước mỗi đợt code phải cập nhật mục tiêu, phạm vi, file/bảng dự kiến tác động, rủi ro và cách kiểm thử vào chính file TIENDO. Chỉ sửa code khi người dùng yêu cầu bắt đầu triển khai.
+
+
+---
+
+# THIẾT KẾ THƯ VIỆN MÔ HÌNH MẪU VÀ CẤU HÌNH DOANH NGHIỆP – 18/11/2026
+
+- Đã tạo tài liệu kiến trúc logic `docs/BAOTRI_TEMPLATE_MODEL_DATA_ARCHITECTURE.md`, commit `c4b858a119d500027fc6c38da140710356a74dd6`.
+- Chốt định hướng: một nền tảng lõi, nhiều mô hình doanh nghiệp, nhiều bộ từ điển chuyên dụng.
+- Tách ba lớp: thư viện mẫu chuẩn do BAOTRI quản lý; bản cấu hình sao chép/tùy chỉnh của doanh nghiệp; dữ liệu nghiệp vụ thực tế. Mẫu không tự tạo Asset, InventoryItem, Task, Log, Movement hoặc kết quả Checklist.
+- Thiết kế các trục ngành, quy mô, mức quản lý; các gói module/menu, từ điển thiết bị/vật tư/công việc, Checklist, bảo trì, cơ cấu cơ sở/kho, code profile và gợi ý permission.
+- Thiết kế version release, provenance nguồn mẫu, tenant config version, preview cập nhật, conflict và nguyên tắc không ghi đè tùy chỉnh/dữ liệu thực tế.
+- Mô hình `HOTEL_SMALL_BASIC` được đưa vào làm ví dụ kiểm chứng; chưa được cài vào dữ liệu doanh nghiệp.
+- Giữ nguyên nguyên tắc Local-first và quyết định Local/Cloud mới nhất: Cloud không tự sinh dữ liệu nghiệp vụ hoặc mã quản lý; cấu hình doanh nghiệp phải nhất quán PC/Mobile.
+- **Chỉ là tài liệu thiết kế. Chưa sửa code, chưa tạo/chạy migration, chưa ghi dữ liệu Supabase Test/Production.**
+- **Thứ tự công việc:** tạm dừng triển khai thư viện mẫu; quay lại hoàn thiện và kiểm thử BAOTRI Mini hiện tại. Chỉ triển khai template engine sau khi app lõi ổn định và có kế hoạch riêng.
