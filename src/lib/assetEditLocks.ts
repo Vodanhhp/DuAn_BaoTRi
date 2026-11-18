@@ -186,6 +186,69 @@ export async function updateAssetWithEditLock(
   return fromAssetRow(requireRpcData<AssetRow>(data, error, 'Không thể cập nhật thiết bị'))
 }
 
+
+export type ApplyAssetMutationResult = {
+  asset: Asset
+  alreadyApplied: boolean
+  appliedAt: string
+}
+
+/**
+ * Apply one Local-first asset snapshot with a stable mutation ID and the
+ * Cloud version observed after acquiring the lease. Reusing the same
+ * mutation ID and payload safely recovers a response lost after commit.
+ */
+export async function applyAssetMutationWithEditLock(
+  client: SupabaseClient,
+  organizationId: string,
+  asset: Asset,
+  lockToken: string,
+  mutationId: string,
+  expectedCloudUpdatedAt: string
+): Promise<ApplyAssetMutationResult> {
+  if (!mutationId) throw new Error('Thiếu mã giao dịch đồng bộ thiết bị.')
+  if (!expectedCloudUpdatedAt) throw new Error('Thiếu phiên bản Cloud làm mốc đối chiếu.')
+
+  const payload = {
+    name: asset.name.trim(),
+    brand: asset.brand ?? '',
+    model: asset.model ?? '',
+    serial: asset.serial ?? '',
+    location: asset.location ?? '',
+    commissioned_at: asset.commissionedAt || null,
+    power: asset.power ?? '',
+    cycle: asset.cycle ?? '',
+    cycle_started_at: asset.cycleStartedAt || null,
+    transferred_from_other_facility: Boolean(asset.transferredFromOtherFacility),
+    status: asset.status,
+    notes: asset.notes ?? '',
+    archived_at: asset.archivedAt || null
+  }
+
+  const { data, error } = await client.rpc('apply_asset_mutation_with_lock', {
+    p_organization_id: organizationId,
+    p_asset_id: asset.id,
+    p_lock_token: lockToken,
+    p_mutation_id: mutationId,
+    p_expected_cloud_updated_at: expectedCloudUpdatedAt,
+    p_payload: payload
+  })
+  const result = requireRpcData<{
+    already_applied?: boolean
+    applied_at?: string
+    asset?: AssetRow
+  }>(data, error, 'Không thể đồng bộ hồ sơ thiết bị lên Cloud')
+
+  if (!result.asset?.id || result.asset.id !== asset.id || !result.applied_at) {
+    throw new Error('Cloud không trả về biên nhận đồng bộ thiết bị hợp lệ.')
+  }
+  return {
+    asset: fromAssetRow(result.asset),
+    alreadyApplied: result.already_applied === true,
+    appliedAt: result.applied_at
+  }
+}
+
 export async function setAssetArchivedWithEditLock(
   client: SupabaseClient,
   organizationId: string,
