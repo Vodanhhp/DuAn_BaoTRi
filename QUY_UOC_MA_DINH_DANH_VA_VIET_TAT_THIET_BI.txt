@@ -70,8 +70,10 @@ III. NGUYÊN TẮC QUẢN LÝ MÃ
 - Không dùng lại mã đã cấp kể cả khi thiết bị đã thanh lý hoặc lưu kho.
 - Mọi thay đổi mã phải có kiểm tra trùng và lưu dấu vết.
 - Mã quản lý hiển thị phải được in rõ bằng chữ trên tem để có thể đọc khi không quét được QR.
-- QR mã hóa tham chiếu ổn định `ASSET:<UUID nội bộ>` để mở đúng hồ sơ; không mã hóa mã quản lý hiển thị làm định danh chính. Khi mã quản lý thay đổi, QR cũ vẫn trỏ đúng hồ sơ.
-- Trình quét vẫn hỗ trợ QR đời cũ đang chứa trực tiếp mã quản lý hoặc dạng `ASSET:<mã quản lý>` để không làm mất khả năng tra cứu tem đã in.
+- QR mã hóa trực tiếp **mã quản lý thiết bị** (ví dụ `QL-HP01-001-02-05-26`). Khi quét trong BAOTRI, ứng dụng dùng mã quản lý để tìm hồ sơ tương ứng.
+- UUID nội bộ là khóa dữ liệu kỹ thuật, không phải nội dung QR. UUID chỉ hiển thị nhỏ trong cửa sổ Chi tiết thiết bị đối với quyền Admin để phục vụ kiểm tra/kỹ thuật; không in UUID lên tem.
+- Khi thay đổi mã quản lý, phải cập nhật/in lại QR theo mã mới. Không tự ý đổi mã đã cấp; mọi thay đổi mã cần theo quy trình quản trị và lưu dấu vết.
+- Trình quét tiếp tục hỗ trợ QR cũ dạng `ASSET:<UUID>`, UUID thô và `ASSET:<mã quản lý>` trong giai đoạn chuyển tiếp; QR mới dùng mã quản lý thô, không có tiền tố.
 
 ================================================================
 IV. QUY ƯỚC DÙNG TRONG BỘ 30 THIẾT BỊ THỬ NGHIỆM
