@@ -3361,3 +3361,48 @@ Trước khi sửa ứng dụng, đã đọc lại phiên bản mới nhất tr�
 - Chưa sửa `src/db.ts`, không thêm migration, không thay đổi SQL/RLS, không bật worker hoặc đồng bộ Checklist/bảo trì.
 - GitHub Actions run #353 (`44414385705`) cho commit tài liệu sau tích hợp `f60f9a1c627cde08631c8a815eabd7d1b2eef396` đã completed / success; các bước build Vite và deploy GitHub Pages đều PASS. Hai run code #351/#352 bị cancel khi commit mới thay thế; không dùng chúng làm bằng chứng PASS.
 - Chưa kiểm thử runtime trên hai phiên PC/Mobile; chưa tuyên bố luồng tích hợp hoàn tất. Cần đợi CI rồi mới test trên BAOTRI-Mini-Test.
+
+## 26. Kiểm thử runtime Asset Edit Lease + Mutation Receipt trên PC – 19/11/2026
+
+### 26.1 Kết quả người dùng trực tiếp kiểm tra
+
+Phạm vi: một Asset thử nghiệm đã được liên kết Local PC ↔ Cloud; không sửa dữ liệu khác và không kiểm thử trên Mobile trong phiên này.
+
+- [x] Mở form sửa Asset mapped trên PC sau khi acquire lease.
+- [x] Đổi tên và lưu thành công; người dùng xác nhận tên mới đã xuất hiện trên Cloud.
+- [x] Sau khi lưu thành công, form tự đóng.
+- [x] Mở lại form sửa được sau lần lưu thành công; sau đó Hủy để đóng form.
+- [x] Khi form đang mở và PC mất Internet: ứng dụng hiển thị thông báo mất kết nối; nút Lưu bị che/không thể thao tác.
+- [x] Khi kết nối Internet trở lại, nút Lưu vẫn bị che; ứng dụng không tự khôi phục quyền sửa. Người dùng chỉ có thể Hủy form.
+- [x] Ngay sau khi Hủy, chưa mở lại được form do lease Cloud cũ vẫn còn hiệu lực.
+- [x] Sau khi chờ quá khoảng 2 phút kể từ lần heartbeat hợp lệ cuối, người dùng mở lại được form sửa.
+- [x] Hủy form sau khi mở lại; tiếp tục mở form, đổi tên lần 2 và lưu thành công. Người dùng xác nhận Cloud cũng hiển thị tên lần 2.
+
+Kết luận runtime trong phạm vi đã thử:
+- Hành vi mất mạng fail-closed: PASS theo quan sát giao diện.
+- Không tự khôi phục quyền sửa sau khi có mạng lại: PASS.
+- Lease cũ hết hạn và cho phép acquire phiên mới sau khoảng 2 phút: PASS theo kết quả mở lại form.
+- Lưu Asset mapped sau khi acquire lease mới và Cloud nhận tên mới: PASS.
+- Chưa quan sát trực tiếp trạng thái lock trên Cloud Assets; giao diện Cloud người dùng thấy bình thường, vì vậy không ghi nhận đây là một phép kiểm tra trạng thái khóa.
+- Chưa kiểm thử PC/Mobile đồng thời, heartbeat failure riêng biệt, hoặc mất mạng đúng thời điểm RPC đang xử lý.
+
+### 26.2 Đối chiếu lại code hiện tại trên main
+
+Đã đọc src/App.tsx và src/lib/assetEditLocks.ts trên main; xác nhận luồng Save Asset mapped hiện tại:
+
+1. Khi nhấn Lưu, saveAsset() ghi Local Asset và snapshot mutation vào cùng Dexie transaction.
+2. Sau transaction Local, mutation được chuyển sang processing, rồi client gọi applyAssetMutationWithEditLock() ngay bằng lease token, mutationId và expected Cloud version.
+3. Chỉ khi RPC trả receipt hợp lệ, mutation mới thành applied, mapping mới cập nhật Cloud version, form mới tự đóng và client mới release lease.
+4. Nếu RPC lỗi/timeout/mất mạng sau khi Local transaction đã commit, mutation được trả về pending; Local snapshot vẫn giữ nguyên, form tiếp tục mở và lease vẫn được giữ trong React memory để retry đúng mutation.
+5. Khi retry, code kiểm tra mutation unresolved; nếu payload giống hệt snapshot đang chờ thì dùng lại mutationId cũ và Local snapshot hiện có. Nếu payload khác hoặc mutation ở trạng thái conflict thì từ chối, không tạo mutationId mới.
+6. Nếu tải lại trang khi mutation còn pending, lease token trong memory bị mất; hiện chưa có cơ chế phục hồi/reconcile tự động sau reload. openAssetEditor() chặn mở phiên sửa mới khi còn mutation pending/processing/conflict. Đây là giới hạn đã biết, fail-closed có chủ ý.
+
+Làm rõ Local-first: đối với Asset đã mapping Cloud, Local được ghi trước; sau đó cùng thao tác Save gọi Cloud RPC để xác nhận và cập nhật Cloud. Đây chưa phải worker đồng bộ nền độc lập. Nếu Cloud chưa xác nhận, Local giữ snapshot và mutation pending; không được coi là đã đồng bộ xong.
+
+### 26.3 Trạng thái và việc tiếp theo
+
+- [x] Ghi nhận kết quả kiểm thử runtime PC trong phiên 19/11/2026.
+- [x] Đối chiếu lại code Save/retry trên main; không sửa mã nguồn trong phiên kiểm thử này.
+- [ ] Thiết kế và thực hiện phép thử an toàn cho trường hợp Local commit thành công nhưng Cloud RPC chưa xác nhận; phải bảo đảm có thể retry cùng snapshot, cùng mutationId và cùng lease khi token còn hợp lệ.
+- [ ] Xác định cách kiểm thử có kiểm soát mà không gây pending không thể phục hồi sau reload; tuyệt đối không tải lại trang/đóng trình duyệt khi mutation còn pending.
+- [ ] Chưa kiểm thử PC/Mobile đồng thời và chưa xác nhận toàn bộ luồng Asset Edit Lease + Mutation Receipt đã nghiệm thu.
