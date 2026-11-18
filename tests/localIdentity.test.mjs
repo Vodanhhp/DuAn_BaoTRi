@@ -104,10 +104,9 @@ test('rekey rejects invalid IDs, queue collision, and in-flight mutation', () =>
   const options = { mutationId: 'm1', deviceId: 'd1', queuedAt: '2026-11-18T08:00:00.000Z' }
   assert.throws(() => identity.buildAssetRekeyPlan(input, 'not-a-draft', officialAssetId, options), /namespace draft/)
   assert.throws(() => identity.buildAssetRekeyPlan(input, draftAssetId, 'not-a-uuid', options), /UUID chính thức/)
-  assert.throws(() => identity.buildAssetRekeyPlan(input, draftAssetId, officialAssetId, {
-    ...options,
-    mutationId: 'm2'
-  }), /Không tìm thấy Asset/)
+  assert.throws(() => identity.buildAssetRekeyPlan({
+    ...input, asset: { ...input.asset, id: 'draft:90000000-0000-4000-8000-000000000009' }
+  }, draftAssetId, officialAssetId, options), /Không tìm thấy Asset/)
 
   assert.throws(() => identity.buildAssetRekeyPlan({
     ...input,
