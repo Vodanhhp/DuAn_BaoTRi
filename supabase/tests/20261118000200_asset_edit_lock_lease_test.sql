@@ -239,7 +239,9 @@ $release_and_transfer$;
 -- Simulate a dead/offline owner: server expiry is authoritative after two minutes.
 reset role;
 update public.asset_edit_locks
-set expires_at = clock_timestamp() - interval '1 second'
+set acquired_at = clock_timestamp() - interval '2 seconds',
+    expires_at = clock_timestamp() - interval '1 second',
+    updated_at = clock_timestamp()
 where organization_id = (select organization_id from pg_temp.asset_lock_fixture)
   and asset_id = (select asset_id from pg_temp.asset_lock_fixture);
 
