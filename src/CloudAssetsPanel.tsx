@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { Asset } from './db'
+import { db, type Asset } from './db'
 import {
   createCloudAsset, getCloudAssetCodeConfig, listCloudAssets, saveCloudAssetCodeConfig,
   setCloudAssetArchived, updateCloudAsset, type AssetCodeConfig
@@ -63,6 +63,9 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
   const [canCreateAssets, setCanCreateAssets] = useState(false)
   const [canManageSettings, setCanManageSettings] = useState(false)
   const [permissionsLoading, setPermissionsLoading] = useState(true)
+  const [localImportPreview, setLocalImportPreview] = useState<{ total: number; toInsert: number; alreadyPresent: number } | null>(null)
+  const [checkingLocalImport, setCheckingLocalImport] = useState(false)
+  const [importingLocalAssets, setImportingLocalAssets] = useState(false)
   const [name, setName] = useState('')
   const [category, setCategory] = useState('')
   const [location, setLocation] = useState('')
@@ -204,6 +207,96 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
     }
   }
 
+  const checkLocalAssetImport = async () => {
+    setCheckingLocalImport(true)
+    setError('')
+    setMessage('')
+    setLocalImportPreview(null)
+    try {
+      const localRows = await db.assets.toArray()
+      if (!localRows.length) throw new Error('PC không có thiết bị Local để đồng bộ.')
+      const localIds = new Set<string>()
+      const localCodes = new Set<string>()
+      for (const asset of localRows) {
+        if (!asset.id || !asset.code.trim() || !asset.name.trim() || !asset.category.trim()) {
+          throw new Error('Có thiết bị Local thiếu UUID, mã quản lý, tên hoặc nhóm thiết bị. Không thể đồng bộ an toàn.')
+        }
+        if (localIds.has(asset.id)) throw new Error('Local có UUID thiết bị bị trùng: ' + asset.id)
+        if (localCodes.has(asset.code.trim())) throw new Error('Local có mã quản lý bị trùng: ' + asset.code)
+        localIds.add(asset.id)
+        localCodes.add(asset.code.trim())
+      }
+      const { data, error } = await client.from('assets').select('id,code').eq('organization_id', organizationId)
+      if (error) throw new Error('Không thể kiểm tra thiết bị hiện có trên Cloud: ' + error.message)
+      const cloudById = new Map((data ?? []).map((row: { id: string; code: string }) => [row.id, row.code]))
+      const cloudByCode = new Map((data ?? []).map((row: { id: string; code: string }) => [row.code, row.id]))
+      let alreadyPresent = 0
+      let toInsert = 0
+      for (const asset of localRows) {
+        const existingCode = cloudById.get(asset.id)
+        const existingId = cloudByCode.get(asset.code.trim())
+        if (existingCode !== undefined) {
+          if (existingCode !== asset.code.trim()) throw new Error('UUID đã tồn tại trên Cloud nhưng mã quản lý khác: ' + asset.code)
+          alreadyPresent++
+          continue
+        }
+        if (existingId !== undefined && existingId !== asset.id) throw new Error('Mã quản lý đã thuộc UUID khác trên Cloud: ' + asset.code)
+        toInsert++
+      }
+      setLocalImportPreview({ total: localRows.length, toInsert, alreadyPresent })
+      setMessage('Đã kiểm tra Local PC và Cloud. Chưa ghi dữ liệu nào lên Cloud.')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setCheckingLocalImport(false)
+    }
+  }
+
+  const confirmLocalAssetImport = async () => {
+    if (!localImportPreview || !localImportPreview.toInsert) return
+    if (!window.confirm('Xác nhận đưa ' + localImportPreview.toInsert + ' thiết bị từ Local PC lên Cloud? Giữ nguyên UUID và mã quản lý. Không đồng bộ vật tư hoặc dữ liệu khác.')) return
+    setImportingLocalAssets(true)
+    setError('')
+    setMessage('')
+    try {
+      const localRows = await db.assets.toArray()
+      const { data: existing, error: readError } = await client.from('assets').select('id,code').eq('organization_id', organizationId)
+      if (readError) throw new Error('Không thể kiểm tra lại Cloud trước khi ghi: ' + readError.message)
+      const cloudById = new Map((existing ?? []).map((row: { id: string; code: string }) => [row.id, row.code]))
+      const cloudByCode = new Map((existing ?? []).map((row: { id: string; code: string }) => [row.code, row.id]))
+      const rowsToInsert = localRows.filter(asset => {
+        const sameCode = cloudById.get(asset.id)
+        if (sameCode !== undefined) {
+          if (sameCode !== asset.code.trim()) throw new Error('UUID đã có trên Cloud nhưng mã quản lý không khớp: ' + asset.code)
+          return false
+        }
+        const otherId = cloudByCode.get(asset.code.trim())
+        if (otherId !== undefined && otherId !== asset.id) throw new Error('Mã quản lý bị trùng với thiết bị Cloud khác: ' + asset.code)
+        return true
+      }).map(asset => ({
+        id: asset.id, organization_id: organizationId, code: asset.code.trim(),
+        name: asset.name.trim(), category: asset.category.trim(), brand: asset.brand ?? '',
+        model: asset.model ?? '', serial: asset.serial ?? '', location: asset.location ?? '',
+        commissioned_at: asset.commissionedAt || null, power: asset.power ?? '', cycle: asset.cycle ?? '',
+        cycle_started_at: asset.cycleStartedAt || null,
+        transferred_from_other_facility: Boolean(asset.transferredFromOtherFacility),
+        status: asset.status, notes: asset.notes ?? '', archived_at: asset.archivedAt || null,
+        created_at: asset.createdAt, updated_at: asset.updatedAt
+      }))
+      if (rowsToInsert.length) {
+        const { error: insertError } = await client.from('assets').insert(rowsToInsert)
+        if (insertError) throw new Error('Cloud từ chối ghi thiết bị: ' + insertError.message)
+      }
+      await load()
+      setLocalImportPreview(null)
+      setMessage('Đã đồng bộ ' + rowsToInsert.length + ' thiết bị từ Local PC lên Cloud. UUID và mã quản lý được giữ nguyên. Ảnh thiết bị chưa đồng bộ.')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setImportingLocalAssets(false)
+    }
+  }
+
   const submitCreate = async (event: FormEvent) => {
     event.preventDefault()
     if (!config) return
@@ -245,6 +338,22 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
     </div>
     {message && <div className="form-hint" role="status">{message}</div>}
     {error && <div className="form-hint warning-hint" role="alert">{error}</div>}
+
+    {canCreateAssets && !permissionsLoading && <div className="panel" style={{ margin: '12px 0', padding: 14 }}>
+      <h3>Đồng bộ thiết bị từ Local PC lên Cloud</h3>
+      <p className="muted">Chỉ lấy thiết bị trên máy đang mở ứng dụng. Giữ nguyên UUID và mã quản lý Local; không tạo mã mới, không đồng bộ vật tư hoặc phân hệ khác. Ảnh thiết bị chưa được đưa lên Storage.</p>
+      <div className="asset-photo-actions" style={{ flexWrap: 'wrap' }}>
+        <button type="button" className="soft-btn" disabled={checkingLocalImport || importingLocalAssets} onClick={() => void checkLocalAssetImport()}>
+          {checkingLocalImport ? 'Đang kiểm tra Local và Cloud…' : 'Kiểm tra dữ liệu Local PC'}
+        </button>
+        {localImportPreview && <button type="button" className="primary-btn" disabled={importingLocalAssets || localImportPreview.toInsert === 0} onClick={() => void confirmLocalAssetImport()}>
+          {importingLocalAssets ? 'Đang đồng bộ…' : 'Xác nhận đồng bộ ' + localImportPreview.toInsert + ' thiết bị'}
+        </button>}
+      </div>
+      {localImportPreview && <p className="form-hint" role="status">
+        Local PC: {localImportPreview.total} thiết bị · Cần đưa lên Cloud: {localImportPreview.toInsert} · Đã có đúng UUID/mã trên Cloud: {localImportPreview.alreadyPresent}. Chưa ghi dữ liệu cho đến khi bạn xác nhận.
+      </p>}
+    </div>}
 
     <div className="asset-photo-actions" style={{ margin: '12px 0', flexWrap: 'wrap' }}>
       {canManageSettings && !permissionsLoading && <button type="button" className="soft-btn" onClick={() => { setShowConfig(v => !v); setShowCreate(false); setEditDraft(null) }}>
