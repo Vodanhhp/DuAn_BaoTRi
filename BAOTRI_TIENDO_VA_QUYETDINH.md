@@ -2158,3 +2158,24 @@ assets.images hiện là dữ liệu ảnh local; adapter Cloud trả images r�
 - Workflow #44235935310 cho commit `43a06bbb` đã success. Commit QR review mới cần CI kiểm tra riêng.
 
 **Bước tiếp theo:** xác định hợp đồng QR token (token riêng hay UUID reference; QR có URL hay chỉ token) rồi mới sửa đồng bộ Asset model, generator, scanner, backup/restore, Cloud schema và migration. Giữ QR legacy trong giai đoạn chuyển đổi.
+
+
+---
+
+# CHỐT VÀ SỬA QUY TẮC QR THEO MÃ QUẢN LÝ – 18/11/2026
+
+Người dùng xác nhận: UUID nội bộ chỉ hiển thị nhỏ trong Chi tiết thiết bị khi xem bằng quyền Admin; QR chính là mã quản lý thiết bị được mã hóa thành hình QR.
+
+Đã sửa trực tiếp trên `main`:
+- `src/App.tsx`: cả 3 vị trí QR (Chi tiết thiết bị, tem 50×30 mm, bản in chi tiết) dùng payload `value.code`, không còn mã hóa `ASSET:<UUID>`.
+- Cửa sổ Chi tiết thiết bị chỉ hiển thị UUID nội bộ bằng chữ nhỏ khi `organizationRole` là `admin`; UUID không in trên tem.
+- Không thay đổi UUID, mã quản lý hiện có, dữ liệu thiết bị, Dexie schema hoặc Supabase schema.
+- Scanner giữ tương thích QR cũ: `ASSET:<UUID>`, UUID thô, mã quản lý thô và `ASSET:<mã quản lý>`. QR mới dùng mã quản lý thô.
+- Cập nhật `QUY_UOC_MA_DINH_DANH_VA_VIET_TAT_THIET_BI.txt` và `QR_GENERATION_AND_SCAN_REVIEW.md` cho thống nhất nghiệp vụ.
+
+Commits:
+- App: `41aab9ce8e80e415a9dc7a6a3fdc6c30db5f5f2e`
+- Quy ước mã: `9bd36f9e82f923342de4efca0f6275ff5847ddfd`
+- QR review: `2556000a0f9e213f492b1e8c1355a328476618ce`
+
+Chưa xác minh build/CI cho chuỗi commit trên; cần chờ workflow tương ứng. Chưa giải mã QR bằng test tự động, chưa in tem và thử camera thực tế. Không chạy SQL/migration, không ghi dữ liệu Supabase Test/Production.
