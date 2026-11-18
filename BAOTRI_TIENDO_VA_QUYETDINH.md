@@ -2304,3 +2304,17 @@ Giới hạn an toàn vẫn giữ:
 - Không thể dùng riêng `navigator.onLine` để xác nhận dữ liệu Cloud mới nhất. Cần Auth + Cloud reachability + pull đầy đủ pagination/cursor trước khi Local cấp UUID/mã chính thức.
 - Inventory code là mã nhập tay, không phải mã thiết bị tự sinh; chỉ kiểm tra trùng khi chính thức hóa, không tự đổi quy tắc mã vật tư.
 - Chưa sửa mã nguồn hoặc Dexie schema, chưa chạy SQL/migration, chưa gọi RPC và chưa ghi dữ liệu Supabase. Bước tiếp theo là Phase A: thiết kế và kiểm thử helper chuyển ID + migration Dexie tương thích, sau đó mới triển khai draft UI.
+
+
+---
+
+# CHUẨN BỊ LÀM SẠCH BỘ DỮ LIỆU THỬ NGHIỆM – 18/11/2026
+
+- Người dùng xác nhận chọn Supabase `BAOTRI-Mini-Test`; không tác động Production.
+- Mục tiêu: làm sạch dữ liệu thử nghiệm Thiết bị + Vật tư và các bản ghi phụ thuộc; làm sạch Local trên trình duyệt/thiết bị hiện tại sau khi có bản sao lưu; sau đó tạo 30 thiết bị + 30 vật tư theo quy tắc Local-first mới.
+- Rà soát migration 002 xác nhận nhiều FK `ON DELETE RESTRICT`: assets được tasks, plans, checklist templates/versions/results, logs, inventory movements và asset_images tham chiếu; inventory_items được inventory_movements tham chiếu. Không thể xóa riêng hai bảng cha.
+- Rà soát migration 012: RPC `create_asset_with_code` vẫn là bộ cấp mã Cloud cũ, không được dùng cho luồng mới. Không sửa/xóa migration lịch sử; cần migration tiến về phía trước.
+- Rà soát schema: `inventory_items` hiện chưa có unique constraint cho `(organization_id, code)`; phải bổ sung kiểm tra và ràng buộc phù hợp trước khi cho phép chính thức hóa/sync mã vật tư.
+- Đã thêm `supabase/drafts/016_test_reset_preflight_READ_ONLY.sql`, commit `9a8a6079c4c3b5ac44d1728d0f22814ff7f731b4`. Script chỉ SELECT, liệt kê số lượng từng bảng theo tổ chức và membership của tài khoản hiện tại; không ghi/xóa dữ liệu.
+- Giới hạn thao tác: chưa có kết nối Supabase trực tiếp trong phiên làm việc; chưa chạy bất kỳ SQL nào, chưa xóa Cloud/Local, chưa tạo dữ liệu mẫu. Người dùng cần chạy script preflight trên đúng project Test và gửi kết quả để xác định organization_id + số liệu trước khi viết/chạy script reset có phạm vi chính xác.
+- Chưa bật đồng bộ; `cloudSync.ts` là luồng JSON cũ không tương thích schema chuẩn hóa và tuyệt đối không được kích hoạt lại. Cần hoàn thiện protocol Local-first, quyền ghi, unique validation, idempotency và RPC giao dịch kho trước khi sync bộ 30+30.
