@@ -1201,7 +1201,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
     {notice&&<div className="toast"><Check size={17}/>{notice}</div>}
     {profileEditOpen&&<EmployeeProfileEditModal email={userEmail} profile={profile} close={()=>setProfileEditOpen(false)} onSave={async value=>{await onSaveProfile(value);setNotice('Đã lưu hồ sơ nhân viên')}}/>}
     {detailItem&&<InventoryDetailModal value={detailItem} readOnly={isViewer} close={()=>setDetailItem(null)} edit={()=>{setEditingItem(detailItem);setDetailItem(null);setModal('item')}}/>}
-    {detailAsset&&<AssetDetailModal value={detailAsset} isAdmin={organizationRole.trim().toLowerCase()==='admin'} logs={logs.filter(l=>l.assetId===detailAsset.id)} allowChecklist={!isViewer && (checklistAccess || (CHECKLIST_TEST_MODE && page==='checklist'))} checklistOccurrence={activeChecklistOccurrence} createRequestFromChecklist={createRequestFromChecklist} readOnly={isViewer} editLog={(entry:Log)=>{if(isViewer)return;setEditingLog(entry);setModal('log')}} close={()=>{setDetailAsset(null);setChecklistAccess(false);setActiveChecklistOccurrence(null)}} edit={()=>{setEditingAsset({...detailAsset,images:detailAsset.images??[]});setDetailAsset(null);setChecklistAccess(false);setModal('asset')}} addLog={()=>{setEditingLog({id:uid(),assetId:detailAsset.id,date:today(),kind:'Sửa chữa',description:'',parts:'',readings:'',requestedBy:userName,result:'',performedBy:''});setModal('log')}}/>}
+    {detailAsset&&<AssetDetailModal value={detailAsset} userName={userName} isAdmin={organizationRole.trim().toLowerCase()==='admin'} logs={logs.filter(l=>l.assetId===detailAsset.id)} allowChecklist={!isViewer && (checklistAccess || (CHECKLIST_TEST_MODE && page==='checklist'))} checklistOccurrence={activeChecklistOccurrence} createRequestFromChecklist={createRequestFromChecklist} readOnly={isViewer} editLog={(entry:Log)=>{if(isViewer)return;setEditingLog(entry);setModal('log')}} close={()=>{setDetailAsset(null);setChecklistAccess(false);setActiveChecklistOccurrence(null)}} edit={()=>{setEditingAsset({...detailAsset,images:detailAsset.images??[]});setDetailAsset(null);setChecklistAccess(false);setModal('asset')}} addLog={()=>{setEditingLog({id:uid(),assetId:detailAsset.id,date:today(),kind:'Sửa chữa',description:'',parts:'',readings:'',requestedBy:userName,result:'',performedBy:''});setModal('log')}}/>}
     {modal==='asset'&&editingAsset&&<AssetModal value={editingAsset} close={()=>{setModal(null);setEditingAsset(null)}} save={saveAsset} assets={assets} customCategories={customAssetCategories} onAddCategory={addAssetCategory} onExportConvention={exportAssetCodeConvention}/>}
     {modal==='item'&&editingItem&&<ItemModal value={editingItem} close={()=>{setModal(null);setEditingItem(null)}} save={saveItem}/>}
     {modal==='task'&&editingTask&&<TaskModal value={editingTask} assets={assets} close={()=>{setModal(null);setEditingTask(null)}} save={saveTask}/>}
@@ -1494,7 +1494,7 @@ function OrganizationMembersPanel({client,organizationId}:{client:SupabaseClient
   </section>
 }
 
-function AssetDetailModal({value,logs,allowChecklist,checklistOccurrence,createRequestFromChecklist,editLog,close,edit,addLog,readOnly=false,isAdmin=false}:any){
+function AssetDetailModal({value,logs,userName,allowChecklist,checklistOccurrence,createRequestFromChecklist,editLog,close,edit,addLog,readOnly=false,isAdmin=false,userName='Tài khoản'}:any){
   const [showPhotos,setShowPhotos]=useState(false)
   const [activePhoto,setActivePhoto]=useState<string|null>(null)
   const [printMode,setPrintMode]=useState<null|'sticker'|'detail'|'history'>(null)
@@ -1503,7 +1503,8 @@ function AssetDetailModal({value,logs,allowChecklist,checklistOccurrence,createR
   const print = (mode:'sticker'|'detail'|'history') => { setPrintMode(mode); window.setTimeout(()=>window.print(),180) }
   return <Modal title="Chi tiết thiết bị" close={()=>{setPrintMode(null);close()}}>
     <div className="asset-qr-panel"><div><small>MÃ QR THIẾT BỊ</small><b>{value.code}</b><span>Quét mã để mở đúng hồ sơ thiết bị</span></div><QRCodeSVG value={value.code} size={116} level="M" includeMargin/></div>
-    {isAdmin&&<small style={{display:'block',marginTop:6,color:'var(--muted,#87929b)',fontSize:10,overflowWrap:'anywhere'}}>UUID nội bộ: {value.id}</small>}\n    <div className="asset-detail-grid">{rows.map(([label,val])=><div className="asset-detail-field" key={label}><small>{label}</small><b>{val||'—'}</b></div>)}</div>
+    {isAdmin&&<small style={{display:'block',marginTop:6,color:'var(--muted,#87929b)',fontSize:10,overflowWrap:'anywhere'}}>UUID nội bộ: {value.id}</small>}
+    <div className="asset-detail-grid">{rows.map(([label,val])=><div className="asset-detail-field" key={label}><small>{label}</small><b>{val||'—'}</b></div>)}</div>
     <div className="asset-photo-actions">
       <button type="button" className="soft-btn" onClick={()=>setShowPhotos(v=>!v)}><ImageIcon size={16}/> {showPhotos?'Ẩn ảnh':'Xem ảnh ('+photos.length+')'}</button>
       <button type="button" className="soft-btn" onClick={()=>print('sticker')}><QrCode size={16}/> In tem QR</button>
@@ -1511,7 +1512,7 @@ function AssetDetailModal({value,logs,allowChecklist,checklistOccurrence,createR
       <button type="button" className="primary-btn" disabled={readOnly} title={readOnly?'Viewer chỉ có quyền xem':undefined} onClick={addLog}><Wrench size={16}/> Tạo Phiếu YC Bảo dưỡng – Sửa chữa</button>
       <button type="button" className="primary-btn" disabled={readOnly} title={readOnly?'Viewer chỉ có quyền xem':undefined} onClick={edit}>Sửa hồ sơ</button>
     </div>
-    <AssetChecklist asset={value} allowActions={allowChecklist} scheduledFor={checklistOccurrence?.scheduledFor} isMakeup={checklistOccurrence?.isMakeup} createRequestFromChecklist={createRequestFromChecklist}/>
+    <AssetChecklist asset={value} userName={userName} allowActions={allowChecklist} scheduledFor={checklistOccurrence?.scheduledFor} isMakeup={checklistOccurrence?.isMakeup} createRequestFromChecklist={createRequestFromChecklist}/>
     <section className="asset-maintenance-history"><div className="panel-head"><div><h3>Lý lịch Bảo dưỡng – Sửa chữa</h3><p>{logs.length} Phiếu YC gắn với thiết bị này</p></div><button type="button" className="soft-btn" disabled={!logs.length} onClick={()=>print('history')}><Printer size={15}/> In lịch sử sửa chữa</button></div>
       {logs.length?<div className="maintenance-history-list">{logs.slice().sort((a:any,b:any)=>b.date.localeCompare(a.date)).map((entry:any)=><article key={entry.id}><time>{dateText(entry.date)}</time><div><b>{entry.kind}</b><p>{entry.description||'Không có mô tả'}</p>{entry.parts&&<small>Vật tư/phụ tùng: {entry.parts}</small>}{entry.readings&&<small>Thông số: {entry.readings}</small>}<small>Trạng thái: {entry.result?'Hoàn thành':'CHƯA HOÀN THÀNH'}</small><small>Người yêu cầu: {entry.requestedBy||'—'}</small><small>Người hoàn thành: {entry.performedBy||'—'}</small>{entry.result&&<small>Hoàn thành lúc: {dateTimeText(entry.completedAt)}</small>}{entry.editHistory?.map((event:any)=><small key={event.id}>Lịch sử: {event.action} · Người sửa: {event.editedBy} · {dateTimeText(event.editedAt)}{event.previousCompletedAt?' · Hoàn thành trước đó: '+dateTimeText(event.previousCompletedAt):''}</small>)}{entry.checklistResultId&&<small>Phát sinh từ Checklist không đạt · liên kết phiếu nguồn</small>}<button type="button" className="text-btn" disabled={readOnly} title={readOnly?'Viewer chỉ có quyền xem':undefined} onClick={()=>editLog(entry)}>{entry.result?'Sửa phiếu':'Cập nhật Phiếu YC'}</button></div></article>)}</div>:<p className="muted">Chưa có lịch sử. Hãy chọn “Tạo Phiếu YC Bảo dưỡng – Sửa chữa” sau khi thực hiện công việc.</p>}
     </section>
@@ -1950,7 +1951,7 @@ async function ensureDefaultChecklist(asset: Asset) {
   })
 }
 
-function AssetChecklist({asset,allowActions,scheduledFor,isMakeup,createRequestFromChecklist}:{asset:Asset;allowActions:boolean;scheduledFor?:string;isMakeup?:boolean;createRequestFromChecklist:(entry:ChecklistResult)=>void}) {
+function AssetChecklist({asset,userName,allowActions,scheduledFor,isMakeup,createRequestFromChecklist}:{asset:Asset;userName:string;allowActions:boolean;scheduledFor?:string;isMakeup?:boolean;createRequestFromChecklist:(entry:ChecklistResult)=>void}) {
   const template = useLiveQuery(() => db.checklistTemplates.where('assetId').equals(asset.id).first(), [asset.id])
   useEffect(() => {
     if (!allowActions) return
@@ -1965,7 +1966,6 @@ function AssetChecklist({asset,allowActions,scheduledFor,isMakeup,createRequestF
   const [draftItems,setDraftItems] = useState<ChecklistTemplateItem[]>([])
   const [answers,setAnswers] = useState<Record<string,string>>({})
   const [itemNotes,setItemNotes] = useState<Record<string,string>>({})
-  const [performedBy,setPerformedBy] = useState('Người sử dụng')
   const [resultNotes,setResultNotes] = useState('')
   const [printEntry,setPrintEntry] = useState<ChecklistResult|null>(null)
   const currentVersion = versions?.find(v=>v.version===template?.currentVersion)
@@ -2017,7 +2017,7 @@ function AssetChecklist({asset,allowActions,scheduledFor,isMakeup,createRequestF
     if(items.some(item=>item.required&&!item.answer.trim())) return alert('Vui lòng hoàn thành các hạng mục bắt buộc')
     const failed=items.some(item=>item.answer==='Không đạt'||item.answer==='Không')
     const performedAt=now()
-    const entry: ChecklistResult = {id:uid(),assetId:asset.id,templateId:template.id,templateVersionId:currentVersion.id,templateVersion:currentVersion.version,templateTitle:currentVersion.title,performedAt,performedBy:performedBy.trim()||'Người sử dụng',result:failed?'Không đạt':'Đạt',scheduledFor:scheduledFor||undefined,isMakeup:Boolean(scheduledFor && (isMakeup || performedAt.slice(0,10)>scheduledFor)),notes:resultNotes,items,createdAt:performedAt}
+    const entry: ChecklistResult = {id:uid(),assetId:asset.id,templateId:template.id,templateVersionId:currentVersion.id,templateVersion:currentVersion.version,templateTitle:currentVersion.title,performedAt,performedBy:userName.trim()||'Tài khoản',result:failed?'Không đạt':'Đạt',scheduledFor:scheduledFor||undefined,isMakeup:Boolean(scheduledFor && (isMakeup || performedAt.slice(0,10)>scheduledFor)),notes:resultNotes,items,createdAt:performedAt}
     await addAndQueue(db.checklistResults, 'checklistResults', entry)
     setRunOpen(false)
     alert(scheduledFor && (isMakeup || performedAt.slice(0,10)>scheduledFor)?'Đã lưu phiếu Checklist bù cho ngày '+dateText(scheduledFor)+'. Kỳ này đã được ghi nhận hoàn thành.':'Đã lưu phiếu Checklist. Kết quả được lưu thành một lần thực hiện riêng.')
@@ -2055,7 +2055,7 @@ function AssetChecklist({asset,allowActions,scheduledFor,isMakeup,createRequestF
     </form></Modal>}
     {allowActions&&runOpen&&currentVersion&&<Modal title="Thực hiện Checklist" close={()=>setRunOpen(false)}><form className="form-grid" onSubmit={saveResult}>
       <div className="form-hint"><b>{asset.code} – {asset.name}</b><br/>{currentVersion.title} · Phiên bản {currentVersion.version}</div>
-      <Field label="Người thực hiện"><input value={performedBy} onChange={e=>setPerformedBy(e.target.value)}/></Field>
+      <Field label="Người thực hiện"><input value={userName} readOnly/></Field>
       {currentVersion.items.map((item,index)=><div className="panel" key={item.id}><b>{index+1}. {item.label}{item.required?' *':''}</b>{item.description&&<small>{item.description}</small>}{item.answerType==='pass-fail-na'?<Field label="Kết quả"><select required={item.required} value={answers[item.id]??''} onChange={e=>setAnswers(a=>({...a,[item.id]:e.target.value}))}><option value="">-- Chọn kết quả --</option><option>Đạt</option><option>Không đạt</option><option>Không áp dụng</option></select></Field>:item.answerType==='yes-no'?<Field label="Kết quả"><select required={item.required} value={answers[item.id]??''} onChange={e=>setAnswers(a=>({...a,[item.id]:e.target.value}))}><option value="">-- Chọn --</option><option>Có</option><option>Không</option></select></Field>:<Field label="Giá trị ghi nhận"><input required={item.required} type={item.answerType==='number'?'number':'text'} value={answers[item.id]??''} onChange={e=>setAnswers(a=>({...a,[item.id]:e.target.value}))}/></Field>}<Field label="Ghi chú"><input value={itemNotes[item.id]??''} onChange={e=>setItemNotes(a=>({...a,[item.id]:e.target.value}))}/></Field></div>)}
       <Field label="Ghi chú chung"><textarea value={resultNotes} onChange={e=>setResultNotes(e.target.value)}/></Field>
       <div className="modal-actions"><button type="button" className="soft-btn" onClick={()=>setRunOpen(false)}>Hủy</button><button className="primary-btn"><Check size={16}/> Lưu phiếu kết quả</button></div>
