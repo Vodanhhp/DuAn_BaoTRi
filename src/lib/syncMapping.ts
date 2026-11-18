@@ -9,6 +9,7 @@ import type {
   Movement,
   Task
 } from '../db'
+import { isDraftId } from './localIdentity'
 
 /**
  * Pure local ↔ normalized Cloud row mapping.
@@ -101,6 +102,12 @@ export class UnsupportedCloudFieldError extends Error {
   }
 }
 
+function rejectDraftIdentity(id: string | undefined, field: string, status?: string) {
+  if (isDraftId(id) || status === 'draft') {
+    throw new UnsupportedCloudFieldError(`${field} đang là bản nháp Local; không được gửi lên Cloud trước khi chính thức hóa UUID.`)
+  }
+}
+
 function requireOrganizationId(organizationId: string): string {
   const value = organizationId?.trim()
   if (!value) throw new Error('Thiếu organization_id; từ chối tạo dữ liệu Cloud không có phạm vi tổ chức.')
@@ -112,6 +119,7 @@ function nullable(value?: string | null): string | null {
 }
 
 export function toCloudAssetRow(value: Asset, organizationId: string): CloudAssetRow {
+  rejectDraftIdentity(value.id, 'Asset.id', value.identityStatus)
   return {
     organization_id: requireOrganizationId(organizationId),
     id: value.id, code: value.code, name: value.name, category: value.category,
@@ -140,6 +148,7 @@ export function fromCloudAssetRow(row: CloudAssetRow): Asset {
 
 /** Full quantity is only valid for a deliberate baseline/initial import. */
 export function toCloudInventoryBaselineRow(value: InventoryItem, organizationId: string): CloudInventoryItemRow {
+  rejectDraftIdentity(value.id, 'InventoryItem.id', value.identityStatus)
   return {
     organization_id: requireOrganizationId(organizationId),
     id: value.id, code: value.code, name: value.name, item_group: value.group ?? '',
@@ -167,6 +176,7 @@ export function fromCloudInventoryItemRow(row: CloudInventoryItemRow): Inventory
 }
 
 export function toCloudTaskRow(value: Task, organizationId: string): CloudTaskRow {
+  rejectDraftIdentity(value.assetId, 'Task.assetId')
   return {
     organization_id: requireOrganizationId(organizationId),
     id: value.id, asset_id: value.assetId, title: value.title,
@@ -186,6 +196,7 @@ export function fromCloudTaskRow(row: CloudTaskRow): Task {
 }
 
 export function toCloudMaintenancePlanRow(value: MaintenancePlan, organizationId: string): CloudMaintenancePlanRow {
+  rejectDraftIdentity(value.assetId, 'MaintenancePlan.assetId')
   return {
     organization_id: requireOrganizationId(organizationId),
     id: value.id, asset_id: value.assetId, title: value.title, period: value.period,
@@ -205,6 +216,7 @@ export function fromCloudMaintenancePlanRow(row: CloudMaintenancePlanRow): Maint
 }
 
 export function toCloudChecklistTemplateRow(value: ChecklistTemplate, organizationId: string): CloudChecklistTemplateRow {
+  rejectDraftIdentity(value.assetId, 'ChecklistTemplate.assetId')
   return {
     organization_id: requireOrganizationId(organizationId),
     id: value.id, asset_id: value.assetId, title: value.title, description: value.description ?? '',
@@ -222,6 +234,7 @@ export function fromCloudChecklistTemplateRow(row: CloudChecklistTemplateRow): C
 }
 
 export function toCloudChecklistVersionRow(value: ChecklistTemplateVersion, organizationId: string): CloudChecklistVersionRow {
+  rejectDraftIdentity(value.assetId, 'ChecklistTemplateVersion.assetId')
   return {
     organization_id: requireOrganizationId(organizationId),
     id: value.id, template_id: value.templateId, asset_id: value.assetId, version: value.version,
@@ -237,6 +250,7 @@ export function fromCloudChecklistVersionRow(row: CloudChecklistVersionRow): Che
 }
 
 export function toCloudChecklistResultRow(value: ChecklistResult, organizationId: string): CloudChecklistResultRow {
+  rejectDraftIdentity(value.assetId, 'ChecklistResult.assetId')
   return {
     organization_id: requireOrganizationId(organizationId),
     id: value.id, asset_id: value.assetId, template_id: value.templateId,
@@ -265,6 +279,7 @@ export function fromCloudChecklistResultRow(row: CloudChecklistResultRow): Check
  * discard information. A later reviewed SQL migration must add them first.
  */
 export function toCloudMaintenanceLogRow(value: Log, organizationId: string): CloudMaintenanceLogRow {
+  rejectDraftIdentity(value.assetId, 'Log.assetId')
   if (value.dueDate) throw new UnsupportedCloudFieldError('maintenance_logs chưa có cột due_date; giữ phiếu local.')
   if (value.requestedBy) throw new UnsupportedCloudFieldError('maintenance_logs chưa có cột requested_by; giữ phiếu local.')
   if (value.editHistory?.length) throw new UnsupportedCloudFieldError('maintenance_logs chưa có cột edit_history; giữ lịch sử chỉnh sửa local.')
