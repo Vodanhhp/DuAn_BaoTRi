@@ -16,7 +16,7 @@
 - Chỉ áp dụng trạng thái bản nháp cho bản ghi mới được tạo khi offline sau khi tính năng được triển khai.
 - Không tự động chuyển đổi UUID hiện hữu thành ID tạm.
 - Bản nháp Local cần ID tạm không phải UUID database, ví dụ chuỗi có namespace riêng `draft:<random>`. ID này chỉ tồn tại trong IndexedDB và không được gửi lên cột UUID của Cloud.
-- Trạng thái đề xuất: `draft` (chưa chính thức), `ready` (đã có UUID/mã chính thức, chờ đồng bộ), `synced` (Cloud đã xác nhận), `conflict` (có xung đột cần người dùng xử lý).
+- Trạng thái đề xuất: `legacy` (bản ghi được tạo trước khi triển khai quy trình draft; giữ nguyên ID/mã hiện hữu), `draft` (chưa chính thức), `ready` (đã có UUID/mã chính thức, chờ đồng bộ), `synced` (Cloud đã xác nhận), `conflict` (có xung đột cần người dùng xử lý). Bản ghi hiện tại và bản ghi mới trong giai đoạn chuyển tiếp được giữ ở trạng thái `legacy`; chỉ chuyển sang `draft/ready/synced/conflict` khi luồng mới được triển khai đầy đủ.
 
 ## 3. Luồng tạo thiết bị
 
