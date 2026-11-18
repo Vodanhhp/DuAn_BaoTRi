@@ -2179,3 +2179,26 @@ Commits:
 - QR review: `2556000a0f9e213f492b1e8c1355a328476618ce`
 
 Chưa xác minh build/CI cho chuỗi commit trên; cần chờ workflow tương ứng. Chưa giải mã QR bằng test tự động, chưa in tem và thử camera thực tế. Không chạy SQL/migration, không ghi dữ liệu Supabase Test/Production.
+
+
+---
+
+# TIẾP TỤC RÀ SOÁT QR VÀ CLOUD INVENTORY – 18/11/2026
+
+## QR scanner
+- Đã sửa `ScanModal` để camera callback luôn đọc danh sách thiết bị, expectedAssetId và openAsset mới nhất qua refs; tránh stale closure khi dữ liệu/ngữ cảnh thay đổi trong lúc modal còn mở.
+- Khi scan thành công hoặc modal unmount, callback được vô hiệu hóa và scanner được clear.
+- Commit code: `26f16d19232974307eddc41dde39542c97e71c7c`.
+- Cập nhật `QR_GENERATION_AND_SCAN_REVIEW.md`, commit `70ca03ec743066804fcf7d76fce4ea7750b0379d`.
+- Chưa xác nhận CI của commit code; workflow của code bị cancel khi các commit kế tiếp được push. Cần chờ workflow mới nhất hoặc chạy build CI lại. Chưa thử camera/tem vật lý.
+
+## Cloud Inventory RPC design
+- Tạo `supabase/CLOUD_INVENTORY_RPC_DESIGN.md`, commit `4e5f8d4bddc0c0d29bfc76ff17bea1e30f44b64b`.
+- Phát hiện từ UI: ItemModal cho sửa trực tiếp quantity; saveItem ghi item nhưng không tạo movement. Đây là đường có thể làm lệch số tồn và lịch sử.
+- Thiết kế đề xuất ba RPC:
+  1. `create_inventory_item`: tạo vật tư và movement tồn đầu kỳ trong cùng transaction.
+  2. `update_inventory_item_metadata`: chỉ sửa metadata, tuyệt đối không nhận quantity, có expected_version.
+  3. `post_inventory_movement`: Nhập/Xuất, khóa inventory row, kiểm tra tồn, cập nhật balance + append movement + idempotency + change event cùng transaction.
+- UI hiện có Nhập/Xuất; chưa có Điều chỉnh riêng. Không tự quyết định semantics Điều chỉnh khi chưa thống nhất.
+- Trước Cloud worker cần khóa trường quantity khi sửa vật tư cũ; số tồn chỉ đổi qua movement. Tồn đầu kỳ phải có movement riêng.
+- Chưa tạo SQL/migration, chưa sửa UI, chưa gọi Supabase, không ghi Test/Production.
