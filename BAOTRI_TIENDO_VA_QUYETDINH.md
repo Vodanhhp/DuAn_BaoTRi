@@ -3211,7 +3211,8 @@ Phạm vi: chỉ hàm kiểm tra payload trong RPC; không đổi schema receipt
 
 Trạng thái:
 - [x] Đã xác định nguyên nhân từ lỗi thực tế.
-- [ ] Đã cập nhật Migration 017 gốc và thêm migration hotfix.
+- [x] Đã cập nhật Migration 017 gốc tại commit `74a27b4f995ae6c78f8a61acc7626e7b7bd7accb` để bỏ hàm không khả dụng và xử lý payload NULL an toàn.
+- [x] Đã thêm migration hotfix `supabase/migrations/20261119000100_fix_asset_mutation_payload_validation.sql` tại commit `6d38f25a263fc0ec07ad1e982586c0a4e4524bb9`; hotfix chỉ thay định nghĩa RPC hiện hữu, không tạo lại bảng hoặc thay đổi dữ liệu.
 - [ ] Người dùng chạy hotfix trên BAOTRI-Mini-Test.
 - [ ] Chạy lại Test SQL 017 và xác nhận PASS.
 - [ ] Chưa tích hợp Local lease/receipt trước khi Test 017 PASS.
