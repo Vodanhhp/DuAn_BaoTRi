@@ -63,6 +63,22 @@ function toAsset(row: AssetRow): Asset {
   }
 }
 
+/** Read only this tenant's Assets. RLS independently verifies membership. */
+export async function listCloudAssets(
+  client: SupabaseClient,
+  organizationId: string
+): Promise<Asset[]> {
+  if (!organizationId) throw new Error('Thiếu tổ chức đang hoạt động.')
+  const { data, error } = await client
+    .from('assets')
+    .select(ASSET_COLUMNS)
+    .eq('organization_id', organizationId)
+    .order('name', { ascending: true })
+
+  if (error) throw new Error('Không thể tải thiết bị cloud: ' + error.message)
+  return ((data ?? []) as unknown as AssetRow[]).map(toAsset)
+}
+
 /** All Cloud asset edits now go through src/lib/assetEditLocks.ts RPCs. */
 export type AssetCodeConfig = {
   facility_code: string
