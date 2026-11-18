@@ -2465,3 +2465,26 @@ Chuẩn bị nền tảng dữ liệu cho bản nháp Local và chuyển ID tạ
 - Dexie v7 sẽ chạy migration khi người dùng mở phiên bản mới; cần kiểm tra trên trình duyệt hiện có dữ liệu: số lượng bản ghi, ID, mã, FK, ảnh và lịch sử phải giữ nguyên. Cần thử thêm mới Asset/Inventory, xem Người thêm và backup/restore bản cũ.
 
 **Kết luận:** Phase A mới hoàn thành nền tảng metadata và helper rekey; chưa bật draft Local hoặc Cloud sync. Tiếp tục theo thứ tự an toàn: kiểm thử migration/runtime trên dữ liệu Local hiện có, sau đó mới thiết kế Phase B pull/push và online finalization. Không thao tác Supabase Test/Production.
+
+
+# KHÉP LẠI THIẾT KẾ THƯ VIỆN MÔ HÌNH MẪU – 18/11/2026
+
+## Kết quả hoàn tất tạm thời
+- JSON Schema Draft 2020-12: `docs/schemas/baotri-template-release.schema.json`; đã sửa pattern Semantic Version và pattern thời gian RFC3339 để validator hoạt động ổn định trong CI.
+- Gói mẫu đầu tiên: `templates/HOTEL_SMALL_BASIC/1.0.0.json` – Nhà nghỉ/Khách sạn nhỏ, một cơ sở, một kho chung, vị trí kho tắt, vật tư cơ bản, bảo trì đơn giản; PCCC và thang máy là tùy chọn, không bật mặc định.
+- Semantic validator chỉ đọc: `scripts/validate-template-release.mjs`; kiểm tra mã duy nhất, liên kết nhóm/loại thiết bị, nhóm/vật tư/đơn vị, Checklist, bảo trì, module/menu, safety rule và code profile. Không ghi dữ liệu.
+- Bộ test: `tests/templateRelease.test.mjs` – kiểm tra gói hợp lệ và các lỗi tham chiếu/định danh mẫu.
+- CI đã bổ sung ba bước: kiểm tra JSON Schema bằng Ajv, test liên kết, chạy validator trên gói mẫu.
+- Tài liệu kiến trúc cập nhật tại `docs/BAOTRI_TEMPLATE_MODEL_DATA_ARCHITECTURE.md`.
+
+## Xác minh
+- GitHub Actions run #273, ID `44318442365`, commit `32772a345b4dd4631c545ba4e58206bda29ee405`: test Cloud mapping PASS; test Local identity PASS; JSON Schema PASS; template reference tests PASS; validator PASS; build Vite PASS; deploy GitHub Pages PASS.
+- Link: https://github.com/Vodanhhp/DuAn_BaoTRi/actions/runs/44318442365
+
+## Phạm vi đã đóng
+- Thư viện mô hình mẫu được dừng ở tầng thiết kế + JSON Schema + gói JSON + validator/test.
+- Chưa tích hợp template vào app, chưa tạo onboarding nạp mô hình, chưa tạo cấu hình doanh nghiệp thật.
+- Không tạo/chạy migration; không chạy SQL/RPC; không ghi dữ liệu Supabase Test/Production.
+- Khi cần thiết kế ngành khác, tạo gói JSON theo schema và đối chiếu gói `HOTEL_SMALL_BASIC`; không tự động nạp vào app.
+
+**Quyết định tiếp theo:** Tạm đóng nhánh công việc thiết kế thư viện mô hình mẫu. Quay lại BAOTRI Mini hiện tại. Việc tiếp theo là trao đổi và rà soát kiến trúc đồng bộ Local–Cloud trước khi sửa code đồng bộ; chưa bật worker hoặc thay đổi Supabase cho đến khi chốt thiết kế.
