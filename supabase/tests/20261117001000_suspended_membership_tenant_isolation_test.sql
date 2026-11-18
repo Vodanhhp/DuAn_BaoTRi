@@ -156,13 +156,21 @@ begin
   insert into pg_temp.security_results values
     ('Tenant isolation', 'SELECT Org B asset', '0 visible', v_count::text || ' visible', v_count = 0);
 
-  update public.assets
-  set name = name || ' must not change'
-  where id = f.asset_b and organization_id = f.org_b;
-  get diagnostics v_rows = row_count;
+  v_rows := 0;
+  v_blocked := false;
+  begin
+    update public.assets
+    set name = name || ' must not change'
+    where id = f.asset_b and organization_id = f.org_b;
+    get diagnostics v_rows = row_count;
+  exception when insufficient_privilege then
+    v_blocked := true;
+  end;
 
   insert into pg_temp.security_results values
-    ('Tenant isolation', 'UPDATE Org B asset', '0 rows', v_rows::text || ' rows', v_rows = 0);
+    ('Tenant isolation', 'UPDATE Org B asset', '0 rows or SQL privilege denied',
+     case when v_blocked then 'privilege denied' else v_rows::text || ' rows' end,
+     v_blocked or v_rows = 0);
 
   delete from public.assets
   where id = f.asset_b and organization_id = f.org_b;
@@ -201,14 +209,21 @@ begin
     ('Suspended membership', 'SELECT Org A asset', '0 visible',
      v_count::text || ' visible', v_count = 0);
 
-  update public.assets
-  set name = name || ' suspended must not change'
-  where id = f.asset_a and organization_id = f.org_a;
-  get diagnostics v_rows = row_count;
+  v_rows := 0;
+  v_blocked := false;
+  begin
+    update public.assets
+    set name = name || ' suspended must not change'
+    where id = f.asset_a and organization_id = f.org_a;
+    get diagnostics v_rows = row_count;
+  exception when insufficient_privilege then
+    v_blocked := true;
+  end;
 
   insert into pg_temp.security_results values
-    ('Suspended membership', 'UPDATE Org A asset', '0 rows',
-     v_rows::text || ' rows', v_rows = 0);
+    ('Suspended membership', 'UPDATE Org A asset', '0 rows or SQL privilege denied',
+     case when v_blocked then 'privilege denied' else v_rows::text || ' rows' end,
+     v_blocked or v_rows = 0);
 
   v_code := 'RLS-SUSP-DENY-' || replace(gen_random_uuid()::text, '-', '');
   v_blocked := false;
