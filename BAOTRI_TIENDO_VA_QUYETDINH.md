@@ -1908,3 +1908,35 @@ assets.images hiện là dữ liệu ảnh local; adapter Cloud trả images r�
 - Việc chọn dữ liệu gốc giữa backup máy tính và điện thoại vẫn là điểm chặn riêng trước lần seed Cloud đầu tiên. Không tự chọn một thiết bị làm nguồn chuẩn.
 
 **Bước kế tiếp:** kiểm thử mở ứng dụng sau migration v6 và các thao tác lưu/sửa/xóa, Checklist, hoàn thành công việc, nhập/xuất kho, restore backup; sau đó hoàn thành đối chiếu backup và thiết kế trạng thái conflict/version trước khi viết adapter Cloud.
+
+---
+
+# BỔ SUNG KIỂM TRA HÀNG ĐỢI ĐỒNG BỘ LOCAL – 18/11/2026
+
+## Phạm vi triển khai
+
+- Bổ sung phần xem chi tiết hàng đợi trong **Cài đặt → Dữ liệu và sao lưu**.
+- Danh sách hiển thị tối đa 50 mục gần nhất, đọc trực tiếp từ IndexedDB; không chỉnh sửa/xóa queue.
+- Các cột hiển thị: phân hệ, ID bản ghi, thao tác upsert/delete, trạng thái pending/processing/failed, số lần thử, thời điểm ghi nhận và lỗi gần nhất.
+- Dùng live query để số lượng và danh sách tự cập nhật sau các thao tác nghiệp vụ.
+- Không thêm nút chạy đồng bộ, không gọi Supabase, không thay đổi dữ liệu nghiệp vụ hoặc cấu hình Supabase.
+
+## Build/deploy
+
+- Commit: `cb73055cf1b2fb7a3d4a8b2ad5d18005819f52cc`.
+- GitHub Actions run #171 (ID `44232589189`): build **success**, deploy **success**.
+- Chưa kiểm tra thủ công giao diện chi tiết hàng đợi trên desktop/mobile; chưa xác nhận các thao tác nghiệp vụ thực tế đã sinh đúng từng queue item.
+
+## Cách nghiệm thu thủ công
+
+1. Mở Cài đặt → Dữ liệu và sao lưu → mở “Kiểm tra hàng đợi đồng bộ local”.
+2. Thực hiện lần lượt một thao tác sửa thiết bị, nhập kho, hoàn thành công việc và lưu một phiếu Checklist.
+3. Kiểm tra số queue tăng và từng dòng có đúng tên phân hệ, ID bản ghi, thao tác, trạng thái pending, attempts = 0, deviceId/mutationId được lưu trong DB (hai trường cuối chưa hiển thị trên giao diện).
+4. Kiểm tra sửa cùng một bản ghi nhiều lần chỉ còn một queue item cho cặp tableName + recordId, với mutationId/queuedAt mới nhất.
+5. Không xóa queue hoặc thử nút đồng bộ vì worker Cloud chưa được triển khai.
+
+## Bước tiếp theo
+
+- Dùng bảng kiểm tra này để nghiệm thu queue local trên trình duyệt thật.
+- Hoàn tất thiết kế conflict/version và mapping theo schema chuẩn hóa.
+- Chỉ sau khi hoàn tất đối chiếu nguồn dữ liệu và cơ chế bảo vệ xung đột mới triển khai worker Cloud trên project Test. Không thay đổi Production và không chạy SQL/migration nếu chưa có phê duyệt riêng.
