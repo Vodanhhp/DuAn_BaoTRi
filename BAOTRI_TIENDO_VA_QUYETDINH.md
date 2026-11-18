@@ -3148,3 +3148,12 @@ Kế hoạch guard tạm thời:
 Phạm vi sửa dự kiến chỉ `src/App.tsx`; thêm kiểm tra link trước các thao tác master data. Cần test thủ công: Asset chưa link vẫn sửa được; Asset linked/conflict bị chặn; Checklist/bảo trì trên Asset linked vẫn hoạt động.
 
 Trạng thái: chưa áp dụng guard tại thời điểm ghi nhận.
+
+### 22.1 Guard tạm thời đã triển khai – 19/11/2026
+
+- Commit `d903c7dab1ec38d2d2cdd588a4e9044f365ece03`: thêm `blockCloudLinkedAssetMutation()` trong `src/App.tsx`.
+- Guard kiểm tra `assetCloudLinks` theo Asset UUID trước khi sửa hồ sơ, lưu kho, khôi phục hoặc đổi trạng thái.
+- Asset có mapping (kể cả status conflict) bị chặn thay đổi master data; Asset chưa mapping giữ nguyên hành vi hiện tại.
+- Checklist, công việc bảo trì và nhật ký không bị chặn bởi guard này.
+- Guard là biện pháp tạm thời phía Local, không thay thế lease/RPC server. Khi Local lease + receipt hoàn tất, phải thay guard bằng luồng khóa Cloud và biên nhận.
+- Chưa xác nhận build; GitHub Actions của commit mới nhất đang chờ.
