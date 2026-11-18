@@ -82,3 +82,14 @@ Do đó:
 ## 7. Quy tắc an toàn
 
 Không thay đổi FK hiện hữu sang CASCADE; không hard-delete dữ liệu có lịch sử; không xóa dữ liệu Test/Production; không chạy SQL/migration khi chưa được phê duyệt.
+
+
+## 8. Đối chiếu semantics với UI local
+
+Review `src/App.tsx` xác nhận:
+- `archiveAsset` chỉ đặt `archivedAt`; thông báo rõ hồ sơ, ảnh và lịch sử vẫn được giữ.
+- `restoreAsset` bỏ `archivedAt`; đây là thao tác khôi phục khỏi Lưu kho.
+- `changeAssetStatus(..., 'Thanh lý')` chỉ đổi trạng thái; thông báo rõ đây không phải xóa vĩnh viễn.
+- Nút Xóa vĩnh viễn hiện đang disabled và ghi rõ chỉ mở khi có đăng nhập Admin/xác thực máy chủ.
+- Vì vậy không được map `archivedAt` hoặc trạng thái Thanh lý thành tombstone delete. Hai thao tác đó là thay đổi vòng đời, phải sync như update có version.
+- Xóa vĩnh viễn hiện chưa phải luồng nghiệp vụ đang hoạt động. Khi triển khai sau này, cần RPC Admin riêng, kiểm tra FK/lịch sử; nếu còn liên kết thì từ chối hoặc yêu cầu quy trình lưu trữ/ẩn, không cascade.
