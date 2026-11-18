@@ -75,6 +75,43 @@ export interface Asset {
   transferredFromOtherFacility?: boolean
   status: AssetStatus; notes: string; images: string[]; archivedAt?: string; createdAt: string; updatedAt: string
 }
+export type AssetCloudLinkStatus = 'linked' | 'conflict'
+export type AssetMutationStatus = 'pending' | 'processing' | 'applied' | 'conflict'
+
+export type AssetMutationPayload = Pick<Asset,
+  'name' | 'brand' | 'model' | 'serial' | 'location' | 'commissionedAt' |
+  'power' | 'cycle' | 'cycleStartedAt' | 'transferredFromOtherFacility' |
+  'status' | 'notes' | 'archivedAt'
+>
+
+export interface AssetCloudLink {
+  id: string
+  organizationId: string
+  assetId: string
+  cloudCode: string
+  cloudUpdatedAt: string
+  lastSyncedLocalUpdatedAt: string
+  status: AssetCloudLinkStatus
+  linkedAt: string
+  lastVerifiedAt: string
+}
+
+export interface AssetMutation {
+  mutationId: string
+  organizationId: string
+  assetId: string
+  payload: AssetMutationPayload
+  expectedCloudUpdatedAt: string
+  localUpdatedAt: string
+  status: AssetMutationStatus
+  attempts: number
+  lastError?: string
+  createdAt: string
+  updatedAt: string
+  appliedAt?: string
+  cloudUpdatedAt?: string
+}
+
 export interface InventoryItem {
   id: string; code: string; name: string; group: string; unit: string
   identityStatus?: IdentityStatus; createdByLabel?: string; createdByUserId?: string
@@ -133,6 +170,8 @@ class MaintenanceDB extends Dexie {
   logs!: Table<Log, string>
   movements!: Table<Movement, string>
   syncQueue!: Table<SyncItem, string>
+  assetCloudLinks!: Table<AssetCloudLink, string>
+  assetMutations!: Table<AssetMutation, string>
   checklistTemplates!: Table<ChecklistTemplate, string>
   checklistVersions!: Table<ChecklistTemplateVersion, string>
   checklistResults!: Table<ChecklistResult, string>
@@ -255,6 +294,22 @@ class MaintenanceDB extends Dexie {
           identityStatus: item.identityStatus ?? 'legacy'
         })))
       ])
+    })
+     // v8: Asset-only Cloud links and immutable mutation ledger.
+    // Existing Local records are intentionally NOT auto-linked or queued.
+    this.version(8).stores({
+      assets: 'id, code, name, category, status, archivedAt, updatedAt, identityStatus',
+      inventory: 'id, code, name, group, quantity, updatedAt, identityStatus',
+      tasks: 'id, assetId, dueDate, status, updatedAt',
+      logs: 'id, assetId, taskId, checklistResultId, date, kind',
+      movements: 'id, itemId, date, type',
+      syncQueue: 'id, &[tableName+recordId], tableName, recordId, operation, queuedAt, status, attempts, lastAttemptAt, deviceId, mutationId',
+      checklistTemplates: 'id, assetId, active, updatedAt',
+      checklistVersions: 'id, templateId, assetId, version, createdAt',
+      checklistResults: 'id, assetId, templateId, templateVersionId, performedAt, result',
+      maintenancePlans: 'id, assetId, period, startDate, endDate, updatedAt',
+      assetCloudLinks: 'id, &[organizationId+assetId], organizationId, assetId, cloudCode, cloudUpdatedAt, status',
+      assetMutations: 'mutationId, [organizationId+assetId], [organizationId+assetId+status], organizationId, assetId, status, createdAt'
     })
   }
 }
