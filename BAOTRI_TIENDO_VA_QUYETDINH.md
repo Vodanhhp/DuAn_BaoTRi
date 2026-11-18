@@ -2141,3 +2141,20 @@ assets.images hiện là dữ liệu ảnh local; adapter Cloud trả images r�
 - Bổ sung đối chiếu trực tiếp UI archive/restore/disposal vào `supabase/CLOUD_DELETE_AND_HASH_PREREQUISITES.md`, commit `5d1526bc0246c6be0c039cf7dd7af7a927901955`.
 - UI xác nhận Lưu kho chỉ đặt `archivedAt`, Khôi phục bỏ `archivedAt`, Thanh lý chỉ đổi trạng thái và không phải xóa; nút Xóa vĩnh viễn hiện disabled, chờ Admin xác thực máy chủ.
 - Vì vậy archive/restore/thanh lý phải là update có row_version, không được biến thành tombstone delete. Xóa vĩnh viễn là nghiệp vụ tương lai, cần RPC Admin riêng và kiểm tra FK/lịch sử.
+
+
+---
+
+# RÀ SOÁT QUÁ TRÌNH SINH / IN / QUÉT QR – 18/11/2026
+
+- Tạo `QR_GENERATION_AND_SCAN_REVIEW.md`, commit `b27f55515c204542e94be6e9de7225b245976310`.
+- Đã rà soát 3 vị trí sinh QR trong `src/App.tsx`: QR chi tiết thiết bị, tem 50×30 mm và QR trên bản in chi tiết. Cả ba đều mã hóa `ASSET:<UUID nội bộ>`.
+- Scanner bỏ prefix ASSET rồi tra theo UUID hoặc mã quản lý không phân biệt hoa thường; tương thích QR cũ raw UUID, raw management code và `ASSET:<code>`. Checklist giữ kiểm tra expectedAssetId để không mở nhầm thiết bị.
+- Phát hiện điểm cần quyết định: yêu cầu QR là mã truy cập nhanh riêng, không phải ID thiết bị, nhưng payload hiện chứa UUID trực tiếp. Asset model và Cloud schema chưa có QR token độc lập. Đề xuất token riêng, ngẫu nhiên, lưu bền vững, có thể cấp lại mà không đổi asset UUID/mã quản lý; giữ resolver tương thích QR đời cũ.
+- Chưa xác nhận QR có cần URL deep-link hay chỉ hoạt động khi mở ứng dụng và dùng chức năng Quét QR. Hiện tại chỉ hỗ trợ quét trong ứng dụng; không tự mở trang.
+- Tem đang đặt QR 17×17 mm trên tem 50×30 mm; chưa có kiểm thử máy in/điện thoại thực tế.
+- Phát hiện lân cận: `buildAssetCode()` local hard-code cơ sở HP01 và bảng vị trí; sequence tính từ IndexedDB từng browser. Không đảm bảo sequence duy nhất giữa nhiều browser offline. Cloud allocator/config là luồng riêng.
+- Không sửa code/DB/QR hiện hữu, không chạy SQL, không thay đổi Supabase Test/Production.
+- Workflow #44235935310 cho commit `43a06bbb` đã success. Commit QR review mới cần CI kiểm tra riêng.
+
+**Bước tiếp theo:** xác định hợp đồng QR token (token riêng hay UUID reference; QR có URL hay chỉ token) rồi mới sửa đồng bộ Asset model, generator, scanner, backup/restore, Cloud schema và migration. Giữ QR legacy trong giai đoạn chuyển đổi.
