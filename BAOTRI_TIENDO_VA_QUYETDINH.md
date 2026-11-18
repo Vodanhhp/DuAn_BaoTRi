@@ -2670,3 +2670,39 @@ Các script kiểm thử sử dụng transaction/ROLLBACK theo nội dung file. 
 7. Kiểm tra lease tự hết hạn khi ngừng heartbeat đủ 2 phút. Không rút ngắn thời gian trong production.
 
 **Giới hạn còn lại:** kiểm thử runtime hai phiên chưa được người dùng xác nhận. Cơ chế lease hiện mới được tích hợp trong CloudAssetsPanel; form Local-first trong App.tsx và pipeline Local–Cloud chưa được nối. Không tuyên bố khóa liên nền tảng toàn ứng dụng đã hoàn tất. Chưa bật sync worker, chưa đồng bộ hàng đợi lịch sử, chưa thay đổi Migration hoặc dữ liệu Supabase.
+
+
+### RÀ SOÁT LUỒNG LOCAL-FIRST TRƯỚC KHI TÍCH HỢP KHÓA (18/11/2026)
+
+Đã đọc lại src/App.tsx, src/db.ts, src/lib/assetEditLocks.ts và src/lib/assetsCloud.ts trên main. Chưa sửa code ở bước rà soát này.
+
+#### 1. Các điểm ghi hồ sơ thiết bị Local hiện tại
+- saveAsset: tạo mới/sửa hồ sơ trong IndexedDB; trong cùng transaction ghi assets và syncQueue.
+- archiveAsset, restoreAsset, changeAssetStatus: ghi trực tiếp Local qua putAndQueue.
+- Checklist, task, log và maintenance plan tiếp tục lưu Local theo các luồng riêng.
+- syncQueue hiện đã có khóa duy nhất theo (tableName, recordId), mutationId và trạng thái retry; tuy nhiên chưa có cơ chế trì hoãn theo asset lock và chưa có sync worker tổng thể được bật.
+- Xóa thiết bị không tìm thấy trong các điểm ghi vừa rà soát; cần tìm toàn repo trước khi triển khai để không bỏ sót đường xóa/ẩn hoặc thao tác hàng loạt.
+
+#### 2. Ràng buộc nhận diện Local ↔ Cloud
+- RPC import_asset_preserving_identity hiện hỗ trợ nhập hồ sơ Local lên Cloud bằng chính UUID và mã quản lý Local, có kiểm tra idempotency/counter.
+- RPC lease khóa Cloud tham chiếu assets(organization_id, id). Do đó Local chỉ có thể xin lease khi hồ sơ thiết bị tương ứng đã tồn tại trên Cloud trong đúng organization.
+- Không được tự suy đoán mapping chỉ dựa trên tên/mã; không được tự động ghi đè hồ sơ Cloud đang có.
+- Phương án an toàn: bước chuẩn bị mapping/import phải có preview, xác nhận trùng UUID/mã và xử lý xung đột; chỉ thiết bị đã xác nhận có Cloud counterpart mới được mở chức năng sửa hồ sơ Local có khóa. Thiết bị chưa mapping hoặc Cloud chưa xác minh được thì chỉ xem hồ sơ, vẫn cho phép Checklist/bảo dưỡng Local như quy tắc đã chốt.
+- Việc import lần đầu là thao tác khởi tạo dữ liệu có chủ đích, không phải sync worker tự chạy nền.
+
+#### 3. Thiết kế kỹ thuật cho đợt Local tiếp theo
+1. Tạo một service dùng chung quản lý lease cho Local UI: acquire trước khi mở form; heartbeat; release khi lưu/hủy; trạng thái fail-closed khi offline/timeout/lỗi.
+2. Không chỉ khóa nút giao diện: saveAsset, archiveAsset, restoreAsset, changeAssetStatus phải đi qua cùng một lớp kiểm soát quyền lease. Token không được lưu lâu dài trong Local DB hoặc syncQueue.
+3. Sửa saveAsset theo hướng tách rõ tạo mới và cập nhật hồ sơ đã tồn tại. Tạo mới cần cơ chế cấp mã/ID và quyền tạo riêng; không được tự ý dùng lease của một asset chưa tồn tại.
+4. Mọi thao tác cập nhật hồ sơ đã mapping phải xác minh lease hiện hành từ Cloud trước khi cho phép ghi Local. Khi lưu Local thành công, giữ mutation trong queue; chưa đánh dấu synced.
+5. Lịch sử Checklist/task/log/maintenance plan liên quan asset đang khóa tiếp tục được ghi Local. Khi triển khai sync worker sau này, worker phải kiểm tra trạng thái lease và chỉ đẩy lịch sử sau khi khóa được giải phóng; mỗi mutation retry phải idempotent.
+6. Cần cơ chế thông báo khóa liên nền tảng cho workspace Local (poll/realtime) nhưng Cloud vẫn là nguồn quyết định. Mất mạng khi đang sửa phải khóa form ngay; reconnect phải refresh và xin lease mới, tuyệt đối không hồi sinh token cũ.
+7. Bổ sung test cho từng đường ghi hồ sơ, hai nền tảng tranh lease, offline/timeout, lease hết hạn, stale token, mapping thiếu và retry hàng đợi. Không bật worker đồng bộ trong đợt này.
+
+#### 4. Phạm vi an toàn
+- Chưa sửa App.tsx, db.ts, migration hoặc dữ liệu Local/Cloud.
+- Chưa tạo bảng mapping mới; cần đánh giá liệu giữ UUID thống nhất hiện có đã đủ hay cần mapping riêng cho các trường hợp legacy trước khi viết migration.
+- Chưa bật sync worker và chưa đẩy bất kỳ hàng đợi Checklist/bảo dưỡng nào lên Cloud.
+- Chỉ bắt đầu tích hợp Local sau khi kiểm thử runtime CloudAssetsPanel bằng hai phiên thật và xác nhận kết quả.
+
+CI: GitHub Actions run #308, commit 22bf7f2b697ed802dd961832ce403c1b2173b599, completed/success. Đây là build/deploy workflow; không thay thế kiểm thử runtime hai phiên hoặc PostgreSQL.
