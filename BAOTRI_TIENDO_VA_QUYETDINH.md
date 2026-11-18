@@ -3006,3 +3006,40 @@ Không dùng `syncQueue` hiện tại làm nguồn mutation Cloud cho Asset. Que
 - [ ] Chưa sửa mã nguồn, chưa thêm bảng Dexie, chưa gọi RPC Migration 017.
 - [ ] Migration 017 và Test SQL 017 vẫn chờ người dùng chạy trên BAOTRI-Mini-Test và xác nhận kết quả.
 - [ ] Chưa có kiểm thử hai thiết bị PC/Mobile thực tế cho toàn bộ vòng đời lease.
+
+## 20. Chốt vai trò CloudAssetsPanel trước khi tích hợp Local (19/11/2026)
+
+### 20.1 Phạm vi được phép giữ trong CloudAssetsPanel
+
+CloudAssetsPanel là màn hình quản trị/quan sát Cloud, không phải nơi nhập liệu nghiệp vụ Asset chính. Theo nguyên tắc Local-first đã chốt:
+
+- Giữ tải và xem danh sách Asset Cloud; trạng thái lưu kho; thông tin khóa đang hoạt động; tải lại dữ liệu.
+- Giữ luồng import rõ ràng từ Local PC lên Cloud, giữ nguyên UUID và mã quản lý. Đây là thao tác khởi tạo liên kết Cloud có kiểm tra dữ liệu, không phải đồng bộ nền.
+- Tạm giữ phần đọc/cấu hình mã tổ chức như công cụ thiết lập quản trị, nhưng không được dùng nó để tạo Asset Cloud hoặc tự cấp mã từ Cloud. Cần rà soát riêng nguồn cấu hình chuẩn khi hoàn thiện onboarding Local-first.
+- Không cho tạo Asset trực tiếp trên Cloud bằng `createCloudAsset()`.
+- Không cho sửa hồ sơ, lưu kho hoặc khôi phục Asset trực tiếp trong CloudAssetsPanel. Các thao tác nghiệp vụ này phải bắt đầu tại Local, xin lease Cloud và dùng RPC receipt sau khi Migration 017/Test 017 được người dùng xác nhận PASS.
+- Không xóa dữ liệu Cloud, không thay đổi bảng/SQL/RLS, không thu hồi permission backend trong bước UI này. Việc ẩn/ngừng gọi các đường ghi từ UI không đồng nghĩa xóa RPC hoặc dữ liệu đã có.
+
+### 20.2 Kế hoạch thay đổi mã UI an toàn
+
+Trước khi sửa:
+- Chỉ sửa `src/CloudAssetsPanel.tsx` và tài liệu tiến độ.
+- Loại bỏ nút/form tạo Asset Cloud, form sửa Asset Cloud, nút lưu kho/khôi phục Cloud và các handler chỉ phục vụ những thao tác này.
+- Giữ luồng import Local PC → Cloud, xem danh sách, hiển thị lease holder, cấu hình quản trị hiện có.
+- Không thay đổi Local Asset form, Dexie schema, migration, RPC, permission, import contract hoặc các phân hệ khác.
+- Không chạy SQL; không bật queue worker.
+- Chạy kiểm tra TypeScript/build qua CI sau commit; CI không thay thế test SQL hoặc kiểm thử nhiều thiết bị.
+
+### 20.3 Rủi ro và giới hạn đã nhận diện
+
+- Người dùng hiện không còn tạo/sửa/lưu kho/khôi phục Asset từ màn hình Cloud sau khi UI được chuyển read-only. Mọi thay đổi phải thực hiện tại Local; đến khi Local lease + receipt tích hợp hoàn tất, sửa hồ sơ Asset đã liên kết có thể tạm thời chưa có luồng hoàn chỉnh.
+- CloudAssetsPanel hiện có quyền `assets.create`/`assets.update` và RPC tương ứng ở backend; bước này chỉ loại bỏ đường gọi từ giao diện, chưa thay đổi backend. Không được tuyên bố backend đã cấm tuyệt đối mọi client khác.
+- Cấu hình mã tổ chức còn được giữ tạm thời để tránh thay đổi onboarding/cấu hình hiện hữu; chưa kết luận đây là nguồn cấu hình cuối cùng cho Local.
+- Migration 017 và Test SQL 017 chưa được người dùng xác nhận PASS. Không gọi `apply_asset_mutation_with_lock` từ Local trước mốc đó.
+- Sau khi UI read-only hoàn tất, bước tiếp theo là hoàn thiện mapping/mutation Dexie Asset-only và tích hợp Local lease/receipt; không bật đồng bộ tổng quát.
+
+### 20.4 Trạng thái
+- [x] Đã kiểm tra CloudAssetsPanel và xác định các đường tạo/sửa/lưu kho/khôi phục trực tiếp Cloud.
+- [x] Đã xác định giữ import Local PC → Cloud và phần xem Cloud.
+- [ ] Chưa sửa CloudAssetsPanel trong thời điểm ghi nhận.
+- [ ] Chưa thay đổi backend hoặc SQL.
