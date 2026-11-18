@@ -2556,3 +2556,20 @@ Chuẩn bị nền tảng dữ liệu cho bản nháp Local và chuyển ID tạ
 **Chưa tích hợp giao diện hoặc luồng Local–Cloud.** Mã `src/lib/assetsCloud.ts` hiện vẫn cập nhật trực tiếp bảng `assets` trong các hàm `updateCloudAsset` và `setCloudAssetArchived`; sau khi Migration 016 được áp dụng, các đường ghi này phải được thay bằng RPC có token. Chưa sửa chúng trong đợt này để tránh làm hỏng màn hình Cloud trước khi người dùng chạy migration và xác nhận SQL test.
 
 **Lưu ý kiến trúc:** CloudAssetsPanel hiện là màn hình thao tác dữ liệu Cloud riêng, còn workspace nghiệp vụ vẫn dùng IndexedDB Local. Cần nối cơ chế khóa vào đúng luồng Local-first và đồng bộ sau khi kiểm chứng nền tảng lease; không được coi việc khóa được tạo trên Cloud là đã hoàn thành đồng bộ PC/Mobile.
+
+
+### KẾ HOẠCH ĐỢT 2 – TÍCH HỢP LEASE VÀO MÀN HÌNH THIẾT BỊ CLOUD (18/11/2026)
+
+Trước khi nối Local-first, xử lý riêng màn hình Cloud hiện có để không còn đường ghi hồ sơ bỏ qua lease:
+
+- Tạo client service gọi RPC acquire/heartbeat/release/list lock và các RPC update/archive có token.
+- Mỗi browser installation dùng device ID ổn định hiện có trong IndexedDB helper.
+- Khi mở form sửa hoặc thao tác lưu kho/khôi phục, phải lấy lease thành công trước.
+- Hiển thị trạng thái thiết bị bị khóa cùng nhãn người/nền tảng đang giữ; không cho thao tác khi máy khác giữ lease hoặc trạng thái không xác định.
+- Heartbeat định kỳ; mất mạng/heartbeat lỗi thì form chuyển sang read-only/khóa cục bộ. Không tự lấy lại quyền khi mạng trở lại; người dùng phải kiểm tra và xin lease mới.
+- Tải lại danh sách lease định kỳ để các màn hình khác cập nhật trạng thái. Lease hết hạn do server time sau 2 phút nếu không có heartbeat.
+- Hủy/lưu thành công thì release đúng token. Nếu release thất bại do mất mạng, lease tự hết hạn ở Cloud.
+
+**Ranh giới:** Đây mới là bảo vệ thao tác trong CloudAssetsPanel. Chưa áp dụng khóa vào form Local `saveAsset`, vì Local assets hiện chưa có pipeline đồng bộ hồ sơ đầy đủ và màn hình Local có thể chứa thiết bị chưa được import/mapping lên Cloud. Không được giả định Local ID luôn tồn tại trên Cloud. Sau khi Cloud lease được SQL-test và giao diện xác nhận, thiết kế tiếp mapping Local ID ↔ Cloud ID và đồng bộ Local-first trước khi khóa toàn bộ workspace.
+
+**Trước khi áp dụng Migration 016:** phải kiểm tra lại các RPC create/import hiện có và mọi đường ghi bảng assets; các đường update/archive hiện có sẽ chuyển qua RPC lease. Không được chạy migration chỉ vì client code đã được tạo.
