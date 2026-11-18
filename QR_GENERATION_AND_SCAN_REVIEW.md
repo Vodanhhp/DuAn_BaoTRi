@@ -2,16 +2,15 @@
 
 Ngày rà soát: 18/11/2026
 Phạm vi: `src/App.tsx`, `src/db.ts`, `src/style.css`, tài liệu quy ước mã thiết bị và các quyết định đã thống nhất.
-Trạng thái: review tĩnh repository; chưa sửa logic QR, chưa in tem vật lý hoặc kiểm thử camera thực tế.
+Trạng thái: đã sửa payload QR theo quyết định nghiệp vụ; review code tĩnh, chưa in tem vật lý hoặc kiểm thử camera thực tế.
 
 ## 1. Quy tắc nghiệp vụ cần giữ
 
-BAOTRI có ba khái niệm độc lập:
-1. UUID nội bộ: khóa dữ liệu bất biến, dùng liên kết các bảng và đồng bộ.
-2. Mã quản lý thiết bị: ví dụ `QL-HP01-001-02-05-26`, dùng để đọc/in/tra cứu thủ công.
-3. QR: mã truy cập nhanh. QR không phải mã quản lý và không nên đồng nhất với UUID nội bộ; có thể cấp lại QR mà không đổi ID hoặc mã quản lý.
+BAOTRI phân biệt hai loại mã:
+1. UUID nội bộ: khóa dữ liệu kỹ thuật, dùng liên kết các bảng và đồng bộ; chỉ hiển thị nhỏ trong chi tiết thiết bị đối với Admin.
+2. Mã quản lý thiết bị: ví dụ `QL-HP01-001-02-05-26`, là nội dung được mã hóa trực tiếp vào QR, đồng thời được in bằng chữ trên tem.
 
-Tài liệu `QUY_UOC_MA_DINH_DANH_VA_VIET_TAT_THIET_BI.txt` hiện lại ghi QR chứa `ASSET:<UUID nội bộ>`. Đây là điểm không nhất quán giữa cách diễn đạt “QR là mã tắt riêng” và cách hiện thực payload. Cần chốt payload cuối cùng trước khi thay đổi tem đang dùng.
+Quyết định nghiệp vụ đã được người dùng xác nhận: QR chính là mã quản lý được mã hóa thành hình QR. Không dùng UUID làm payload QR mới.
 
 ## 2. Hiện trạng code
 
@@ -21,24 +20,26 @@ Trong `src/App.tsx`, có ba vị trí render `QRCodeSVG`:
 - Tem QR 50 × 30 mm.
 - QR trên bản in chi tiết thiết bị.
 
-Cả ba đều dùng cùng payload:
-`ASSET:${value.id}`
+Đã sửa cả ba vị trí dùng chung payload `value.code`:
+- Khung QR trong cửa sổ Chi tiết thiết bị.
+- Tem QR 50 × 30 mm.
+- QR trên bản in chi tiết thiết bị.
 
-Như vậy QR mới hiện mã hóa UUID nội bộ, không mã hóa mã quản lý `value.code`, cũng không có một QR token độc lập. Ba vị trí đang nhất quán với nhau về payload, không thấy ba cách sinh khác nhau.
+QR mới mã hóa trực tiếp mã quản lý, không chứa UUID và không thêm tiền tố `ASSET:`.
 
 ### Nơi giải mã QR
 `ScanModal.resolveAsset()`:
 - Trim chuỗi đầu vào.
-- Nếu bắt đầu bằng `ASSET:` thì bỏ prefix.
-- Tìm chính xác theo `asset.id`, sau đó tìm theo `asset.code` không phân biệt hoa thường.
+- Nếu bắt đầu bằng `ASSET:` thì bỏ prefix để tương thích tem cũ.
+- Tìm chính xác theo `asset.id` (tương thích QR UUID đời cũ), sau đó tìm theo `asset.code` không phân biệt hoa thường (QR mới và tem mã quản lý đời cũ).
 - Nếu đang thực hiện Checklist, kiểm tra `expectedAssetId` để không mở nhầm thiết bị.
 - Camera và nhập thủ công dùng chung hàm resolve.
 
 Do đó hiện hỗ trợ:
-- QR mới `ASSET:<UUID>`.
-- QR đời cũ chứa raw UUID.
-- Mã quản lý dạng raw code.
-- Dạng `ASSET:<mã quản lý>` (vì sau khi bỏ prefix sẽ so sánh với code).
+- QR mới chứa raw mã quản lý.
+- QR cũ `ASSET:<UUID>`.
+- QR cũ chứa raw UUID.
+- Dạng `ASSET:<mã quản lý>`.
 
 Không thấy xử lý URL deep-link; QR hiện tại không tự mở ứng dụng/trang web bên ngoài, mà chỉ hoạt động khi người dùng đang ở ứng dụng và dùng chức năng Quét QR.
 
@@ -51,25 +52,18 @@ Không thấy xử lý URL deep-link; QR hiện tại không tự mở ứng d�
 
 ## 3. Vấn đề và rủi ro phát hiện
 
-1. **Khả năng sai về mô hình định danh:** QR đang chứa trực tiếp UUID. Nếu quyết định nghiệp vụ là QR token riêng, đây là sai lệch cần sửa ở cả ba vị trí sinh QR và resolver.
-2. **QR không độc lập với ID:** đổi/cấp lại QR hiện không có cơ chế riêng; muốn đổi payload phải thay đổi logic hoặc ID, trái với yêu cầu QR có thể thay mà không đổi hồ sơ.
-3. **Không có trường QR riêng:** `Asset` trong `src/db.ts` chưa có `qrToken`/mã truy cập riêng. Schema Cloud cũng chưa có trường tương ứng.
-4. **Không có URL mở trực tiếp:** hiện quét QR chỉ tra trong danh sách `assets` đang có ở local app. Đây có thể là chủ ý offline-first; không được tự chuyển sang URL khi chưa chốt trải nghiệm.
-5. **Chưa có test tự động cho payload QR:** build thành công không chứng minh QR sinh ra đúng payload hoặc scanner nhận được tem in.
-6. **Camera scanner dùng effect dependency rỗng:** scanner đóng trên `assets` và `expectedAssetId` tại thời điểm mount. Luồng modal hiện thường mount mới mỗi lần mở, nhưng cần test chuyển Checklist/đổi ngữ cảnh và unmount/cleanup để tránh stale closure hoặc scanner tồn tại trùng.
-7. **Kích thước tem chưa được xác minh vật lý:** 17 mm QR trên tem 50 × 30 mm là thông số CSS, không phải bằng chứng tem thực tế quét ổn định.
+1. **QR phụ thuộc mã quản lý:** nếu mã quản lý thay đổi thì QR trên tem cũ không còn tra đúng; cần cập nhật tem sau khi thay mã. Mã quản lý vốn được quy định ổn định, nên đây là quy tắc quản trị chứ không phải lý do dùng UUID trong QR.
+2. **Không có URL mở trực tiếp:** hiện quét QR chỉ tra trong danh sách `assets` đang có ở local app; không tự mở trang web.
+3. **Chưa có test tự động giải mã QR:** cần test xác nhận cả ba nơi in đều có payload đúng bằng `asset.code`.
+4. **Camera scanner dùng effect dependency rỗng:** scanner đóng trên `assets` và `expectedAssetId` tại thời điểm mount; cần test mở/đóng liên tục và đổi ngữ cảnh.
+5. **Kích thước tem chưa được xác minh vật lý:** 17 mm QR trên tem 50 × 30 mm là thông số CSS, chưa chứng minh quét ổn định.
 
-## 4. Hướng thiết kế nên dùng nếu xác nhận QR là mã riêng
+## 4. Quy tắc hiện hành sau khi sửa
 
-- Bổ sung thuộc tính QR độc lập (ví dụ `qrToken`) vào Asset; không dùng UUID hay mã quản lý làm payload QR mới.
-- Token phải được tạo ngẫu nhiên, duy nhất trong phạm vi doanh nghiệp, lưu bền vững trong IndexedDB và đồng bộ Cloud; không được tính lại từ tên, mã thiết bị, ngày hoặc vị trí.
-- Tái tạo/cấp lại QR chỉ thay token; giữ nguyên `asset.id` và `asset.code`.
-- Resolver tra token trước; sau đó vẫn hỗ trợ legacy UUID/code để tem cũ không mất tác dụng.
-- Checklist vẫn kiểm tra assetId sau khi token được phân giải, giữ nguyên chống mở nhầm thiết bị.
-- Có thể in mã quản lý dạng chữ dưới QR để dự phòng nhập thủ công.
-- Trước khi bật Cloud Sync, cần quy tắc uniqueness và RPC/permission cấp lại token; không dùng client upsert tùy ý.
-
-Chưa chọn độ dài/định dạng token hoặc QR có URL hay không; đó là quyết định sản phẩm cần thống nhất.
+- Cả ba nơi tạo QR dùng trực tiếp `value.code`.
+- Chỉ Admin thấy UUID nội bộ ở dạng chữ nhỏ trong cửa sổ Chi tiết thiết bị; UUID không xuất hiện trên tem hoặc QR.
+- Scanner giữ nguyên hỗ trợ QR legacy UUID và mã quản lý có/không có tiền tố `ASSET:`.
+- Không bổ sung `qrToken`, không thêm URL deep-link, không thay đổi schema Dexie/Supabase.
 
 ## 5. Lỗi lân cận trong sinh mã quản lý (không phải payload QR)
 
@@ -81,23 +75,20 @@ Trong cùng `src/App.tsx`, `buildAssetCode()` hiện:
 
 Đây là lỗi đáng lưu ý vì mã quản lý được in cạnh QR, nhưng cần xử lý riêng với thay đổi payload QR.
 
-## 6. Kế hoạch kiểm thử trước khi sửa
+## 6. Kế hoạch kiểm thử còn lại
 
-1. Tạo asset mới local; xác nhận ID, mã quản lý và payload QR được lưu/hiển thị riêng.
-2. Render QR ở cả 3 vị trí; giải mã bằng thư viện test để so payload.
-3. Scan QR mới, QR cũ UUID, raw code và `ASSET:<code>`.
+1. Render QR ở cả 3 vị trí; giải mã bằng thư viện test và xác nhận payload đúng bằng `asset.code`.
+2. Scan QR mới mã quản lý, QR cũ UUID, raw UUID và `ASSET:<code>`.
 4. Scan token của thiết bị A trong Checklist thiết bị B: phải từ chối.
 5. Cấp lại QR token: asset ID, mã quản lý, logs, tasks, checklist không đổi; QR cũ xử lý theo chính sách đã chốt.
-6. Export/import backup và restore: QR token phải được bảo toàn.
-7. Hai browser offline tạo tài sản: không trùng QR token.
-8. Print tem 50 × 30 mm ở tỷ lệ 100%; thử nhiều điện thoại, ánh sáng và chất lượng in.
-9. Đóng/mở modal quét liên tục; không còn camera instance hoặc callback cũ.
+6. Print tem 50 × 30 mm ở tỷ lệ 100%; thử nhiều điện thoại, ánh sáng và chất lượng in.
+7. Đóng/mở modal quét liên tục; không còn camera instance hoặc callback cũ.
 
 ## 7. Trạng thái an toàn
 
-- Chỉ đọc và đối chiếu code/tài liệu.
-- Chưa sửa App.tsx, db.ts, CSS hoặc schema.
-- Chưa đổi QR của bất kỳ thiết bị nào; không làm mất khả năng đọc tem cũ.
+- Đã sửa `src/App.tsx`: cả ba QR dùng `value.code`; Admin thấy UUID nhỏ trong chi tiết.
+- Đã cập nhật quy ước mã thiết bị để thống nhất QR = mã quản lý.
+- Scanner legacy giữ nguyên; chưa đổi dữ liệu thiết bị hoặc mã đã lưu.
 - Chưa chạy SQL/migration, không ghi dữ liệu Supabase Test/Production.
 - Chưa xác nhận in tem vật lý hoặc kiểm thử camera thực tế.
 
