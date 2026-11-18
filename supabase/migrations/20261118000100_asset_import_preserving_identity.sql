@@ -199,9 +199,7 @@ begin
   -- Lock/reconcile the allocator counter before inserting the asset.
   -- This serializes a recognized import against create_asset_with_code for
   -- the same organization/category; a later failure rolls this update back.
-  -- Reconcile the allocator only when the existing category configuration
-  -- recognizes this code format. Historical/unrecognized codes are preserved
-  -- unchanged and do not cause guessed counter updates.
+  -- Historical/unrecognized codes are preserved unchanged and require review.
   select asset_code_config into v_config
   from public.organization_settings
   where organization_id = p_organization_id;
@@ -209,7 +207,32 @@ begin
   v_category_code := upper(btrim(coalesce(
     v_config -> 'category_codes' ->> v_category, ''
   )));
-  if v_category_code ~ '^[A-Z0-9]{2,5}
+  if v_category_code ~ '^[A-Z0-9]{2,5}$' then
+    v_code_match := pg_catalog.regexp_match(
+      p_code, '^' || v_category_code || '-[^-]+-([0-9]+)-'
+    );
+    if v_code_match is not null then
+      insert into public.asset_code_counters (
+        organization_id, category_code, last_value
+      ) values (
+        p_organization_id, v_category_code, v_code_match[1]::bigint
+      )
+      on conflict (organization_id, category_code)
+      do update set
+        last_value = greatest(
+          public.asset_code_counters.last_value,
+          excluded.last_value
+        ),
+        updated_at = now();
+      v_counter_reconciled := true;
+    end if;
+  end if;
+
+  select * into v_existing
+  from public.assets
+  where organization_id = p_organization_id and id = p_id
+  for update;
+
   if found then
     v_existing_payload := pg_catalog.jsonb_build_object(
       'id', v_existing.id, 'code', v_existing.code, 'name', v_existing.name,
