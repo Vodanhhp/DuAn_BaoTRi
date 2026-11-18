@@ -123,3 +123,21 @@ test('table dependency order is explicit and movement is last', () => {
   assert.equal(mapping.CLOUD_SYNC_ORDER.at(-1), 'inventory_movements')
   assert.equal(mapping.LOCAL_TO_CLOUD_TABLE.movements, 'inventory_movements')
 })
+
+test('Cloud mapping refuses draft identities and draft foreign keys', () => {
+  assert.throws(() => mapping.toCloudAssetRow({
+    ...asset, id: 'draft:10000000-0000-4000-8000-000000000001', code: '', identityStatus: 'draft'
+  }, org), /bản nháp Local/)
+  assert.throws(() => mapping.toCloudInventoryBaselineRow({
+    id: 'draft:20000000-0000-4000-8000-000000000001', code: 'VT-01', name: 'Tụ điện',
+    group: 'Điện', unit: 'cái', quantity: 0, minQuantity: 0, location: '',
+    supplier: '', unitPrice: 0, updatedAt: '2026-11-18T00:00:00.000Z', identityStatus: 'draft'
+  }, org), /bản nháp Local/)
+  assert.throws(() => mapping.toCloudTaskRow({
+    id: '30000000-0000-4000-8000-000000000001',
+    assetId: 'draft:10000000-0000-4000-8000-000000000001',
+    title: 'Kiểm tra', dueDate: '2026-11-18', frequency: 'Tháng',
+    status: 'Chờ thực hiện', checklist: '', readings: '', notes: '',
+    createdAt: '2026-11-18', updatedAt: '2026-11-18'
+  }, org), /bản nháp Local/)
+})
