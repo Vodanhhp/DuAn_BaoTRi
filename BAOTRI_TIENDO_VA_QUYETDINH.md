@@ -2401,3 +2401,35 @@ Các khái niệm cần thiết kế ở giai đoạn kiến trúc: Business Pro
 - JSON đã được parse kiểm tra cú pháp thành công khi tạo file. Chưa chạy JSON Schema validator chuyên dụng và chưa có package mô hình thực tế nào được phát hành.
 - Schema chỉ là hợp đồng dữ liệu cho thư viện mẫu, không phải schema Dexie/Supabase và không được dùng để tạo dữ liệu nghiệp vụ trực tiếp.
 - Chưa sửa code, chưa tạo/chạy migration, chưa ghi dữ liệu Test/Production.
+
+
+# KẾ HOẠCH PHASE A – NỀN TẢNG ĐỊNH DANH LOCAL – 18/11/2026
+
+## Mục tiêu
+Chuẩn bị nền tảng dữ liệu cho bản nháp Local và chuyển ID tạm sang UUID chính thức trong tương lai, nhưng không bật luồng tạo draft/online finalization khi Cloud pull/push worker chưa hoàn thiện.
+
+## Phạm vi dự kiến
+- `src/db.ts`: bổ sung metadata định danh tùy chọn cho Asset/InventoryItem; Dexie v7 chỉ thêm index/field metadata và đánh dấu dữ liệu đang có là legacy, tuyệt đối không đổi ID, mã, FK hoặc xóa dữ liệu.
+- `src/lib/localIdentity.ts`: helper thuần để nhận diện ID draft/UUID và lập kế hoạch rekey Asset/Inventory cùng toàn bộ FK liên quan.
+- `src/App.tsx`: với bản ghi mới theo luồng hiện tại, lưu snapshot người thêm (tên, fallback email, Auth user ID) và trạng thái legacy; không đổi cách cấp mã, không thay hành vi form, không tạo draft trong đợt này.
+- `tests/localIdentity.test.mjs` và `package.json`: kiểm thử helper rekey, bao gồm toàn bộ quan hệ Asset/Inventory, queue và tình huống trùng ID/ID không hợp lệ.
+
+## Không thuộc phạm vi
+- Không bật Cloud sync worker, không gọi RPC, không thay đổi Supabase schema/migration.
+- Không thay đổi quy tắc tạo Asset/Inventory hiện tại, không thay mã thiết bị hoặc mã vật tư.
+- Không thay đổi QR, ảnh, backup format hoặc dữ liệu đã tồn tại ngoài migration metadata an toàn.
+- Không triển khai session registry PC/Mobile trong đợt này.
+
+## Rủi ro và kiểm soát
+- Rekey sai có thể làm mất liên kết lịch sử; helper phải bao phủ tasks, plans, logs, checklist templates/versions/results, movements.linkedAssetId và syncQueue của bản ghi cha.
+- Giao dịch rekey thật phải chạy trong một Dexie transaction trên tất cả bảng liên quan; helper thuần được unit test trước. Không cho phép ID draft đi vào mapper Cloud.
+- Dữ liệu hiện có được đánh dấu legacy, không chuyển thành draft và không đổi ID/mã.
+- Nếu không thể chứng minh cập nhật đầy đủ quan hệ hoặc rollback, không tích hợp helper vào UI.
+
+## Cách kiểm thử
+- Chạy `npm run test:local-identity` và `npm run build`.
+- Kiểm tra test bao phủ FK và queue; kiểm tra migration v6→v7 giữ nguyên số lượng, ID, code và timestamps.
+- Kiểm tra backup/restore tương thích dữ liệu cũ và mới nếu có thay đổi payload.
+- Sau khi build PASS mới yêu cầu người dùng pull và kiểm tra thao tác thực tế; không đánh dấu hoàn tất chỉ từ kiểm tra tĩnh.
+
+**Trạng thái:** kế hoạch trước triển khai; chưa sửa code hoặc Dexie schema tại thời điểm ghi mục này.
