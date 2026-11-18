@@ -271,6 +271,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
   const [inventoryLocations, setInventoryLocations] = useState<string[]>(() => {
     try { const saved = JSON.parse(localStorage.getItem('baotri-inventory-locations') || '[]'); return Array.isArray(saved) ? [...new Set(saved.filter((x:any)=>typeof x==='string'&&x.trim()).map((x:string)=>x.trim()))].sort((a,b)=>a.localeCompare(b,'vi')) : [] } catch { return [] }
   })
+  const [inventoryLocationEnabled, setInventoryLocationEnabled] = useState<boolean>(() => localStorage.getItem('baotri-inventory-location-enabled') !== 'false')
   const [assetStatusFilter, setAssetStatusFilter] = useState('')
   const [assetSort, setAssetSort] = useState('code-asc')
   const [showArchived, setShowArchived] = useState(false)
@@ -645,6 +646,11 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
       alert(error instanceof Error ? error.message : 'Không thể lưu thiết bị. Vui lòng thử lại.')
     }
   }
+  const toggleInventoryLocation = (enabled: boolean) => {
+    if (!isAdmin) return
+    try { localStorage.setItem('baotri-inventory-location-enabled', String(enabled)); setInventoryLocationEnabled(enabled) }
+    catch { alert('Không lưu được thiết lập vị trí lưu kho trên trình duyệt này.') }
+  }
   const addInventoryLocation = (name: string) => {
     if (!isAdmin) return false
     const clean = name.trim().replace(/\s+/g,' ')
@@ -660,7 +666,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
     if (blockViewer('thêm hoặc sửa vật tư')) return
     const existing = await db.inventory.get(i.id)
     // Tồn kho chỉ thay đổi qua Nhập/Xuất; tồn tối thiểu chỉ Admin được cập nhật.
-    const value = { ...i, quantity: existing?.quantity ?? 0, minQuantity: isAdmin ? i.minQuantity : (existing?.minQuantity ?? 0), updatedAt: now() }
+    const value = { ...i, quantity: existing?.quantity ?? 0, minQuantity: isAdmin ? i.minQuantity : (existing?.minQuantity ?? 0), location: inventoryLocationEnabled ? i.location : '', updatedAt: now() }
     await putAndQueue(db.inventory, 'inventory', value); setModal(null); setEditingItem(null); flash(existing ? 'Đã cập nhật thông tin vật tư' : 'Đã thêm vật tư (tồn ban đầu = 0)')
   }
   const saveTask = async (t: Task) => {
@@ -1267,7 +1273,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
     {detailItem&&<InventoryDetailModal value={detailItem} readOnly={isViewer} close={()=>setDetailItem(null)} edit={()=>{setEditingItem(detailItem);setDetailItem(null);setModal('item')}}/>}
     {detailAsset&&<AssetDetailModal value={detailAsset} userName={userName} isAdmin={organizationRole.trim().toLowerCase()==='admin'} logs={logs.filter(l=>l.assetId===detailAsset.id)} allowChecklist={!isViewer && (checklistAccess || (CHECKLIST_TEST_MODE && page==='checklist'))} checklistOccurrence={activeChecklistOccurrence} createRequestFromChecklist={createRequestFromChecklist} readOnly={isViewer} editLog={(entry:Log)=>{if(isViewer)return;setEditingLog(entry);setModal('log')}} close={()=>{setDetailAsset(null);setChecklistAccess(false);setActiveChecklistOccurrence(null)}} edit={()=>{setEditingAsset({...detailAsset,images:detailAsset.images??[]});setDetailAsset(null);setChecklistAccess(false);setModal('asset')}} addLog={()=>{setEditingLog({id:uid(),assetId:detailAsset.id,date:today(),kind:'Sửa chữa',description:'',parts:'',readings:'',requestedBy:userName,result:'',performedBy:''});setModal('log')}}/>}
     {modal==='asset'&&editingAsset&&<AssetModal value={editingAsset} close={()=>{setModal(null);setEditingAsset(null)}} save={saveAsset} assets={assets} customCategories={customAssetCategories} onAddCategory={addAssetCategory} onExportConvention={exportAssetCodeConvention}/>}
-    {modal==='item'&&editingItem&&<ItemModal value={editingItem} close={()=>{setModal(null);setEditingItem(null)}} save={saveItem} isAdmin={isAdmin} locations={[...new Set([...inventoryLocations,...inventory.map(item=>item.location).filter(Boolean)])].sort((a,b)=>a.localeCompare(b,'vi'))} onAddLocation={addInventoryLocation}/>}
+    {modal==='item'&&editingItem&&<ItemModal value={editingItem} close={()=>{setModal(null);setEditingItem(null)}} save={saveItem} isAdmin={isAdmin} locations={[...new Set([...inventoryLocations,...inventory.map(item=>item.location).filter(Boolean)])].sort((a,b)=>a.localeCompare(b,'vi'))} onAddLocation={addInventoryLocation} locationEnabled={inventoryLocationEnabled} onToggleLocation={toggleInventoryLocation}/>}
     {modal==='task'&&editingTask&&<TaskModal value={editingTask} assets={assets} close={()=>{setModal(null);setEditingTask(null)}} save={saveTask}/>}
     {modal==='plan'&&editingPlan&&<MaintenancePlanModal value={editingPlan} assets={assets} close={()=>{setModal(null);setEditingPlan(null)}} save={saveMaintenancePlans}/>}
     {modal==='planExport'&&<Modal title="Xuất kế hoạch bảo trì Excel" close={()=>setModal(null)}>
@@ -2190,7 +2196,7 @@ function AssetModal({value,close,save,assets,customCategories=[],onAddCategory,o
     <div className="modal-actions"><button type="button" className="soft-btn" onClick={close}>Hủy</button><button className="primary-btn" disabled={isNew&&!previewCode}><Check size={16}/> {isNew?'Lưu và tạo mã thiết bị':'Lưu thiết bị'}</button></div>
   </form></Modal>
 }
-function ItemModal({value,close,save,isAdmin,locations,onAddLocation}:any){
+function ItemModal({value,close,save,isAdmin,locations,onAddLocation,locationEnabled,onToggleLocation}:any){
   const [v,setV]=useState<InventoryItem>(value); const set=(k:keyof InventoryItem,x:any)=>setV(p=>({...p,[k]:x}))
   const [newLocation,setNewLocation]=useState('')
   const isNew = !value.code
@@ -2203,7 +2209,7 @@ function ItemModal({value,close,save,isAdmin,locations,onAddLocation}:any){
     <Field label="Kích cỡ / quy cách"><input placeholder="Ví dụ: DN50, M10, 6204, 2.5 mm..." value={v.size??''} onChange={e=>set('size',e.target.value)}/></Field>
     <Field label="Đơn vị tính"><select value={v.unit} onChange={e=>set('unit',e.target.value)}>{!units.includes(v.unit)&&<option value={v.unit}>{v.unit}</option>}{units.map(x=><option key={x} value={x}>{x}</option>)}</select></Field>
     <Field label="Tồn tối thiểu">{isAdmin?<input type="number" min="0" value={v.minQuantity} onChange={e=>set('minQuantity',Number(e.target.value))}/>:<><input type="number" value={v.minQuantity} readOnly/><small className="muted">Chỉ Admin được thay đổi mức tồn tối thiểu.</small></>}</Field>
-    <Field label="Vị trí lưu kho"><select required value={v.location} onChange={e=>set('location',e.target.value)}><option value="">-- Chọn vị trí đã có --</option>{locations.map((x:string)=><option key={x} value={x}>{x}</option>)}{v.location&&!locations.includes(v.location)&&<option value={v.location}>{v.location} · vị trí cũ</option>}</select>{isAdmin&&<div className="inline-location-add"><input value={newLocation} onChange={e=>setNewLocation(e.target.value)} placeholder="Thêm vị trí mới, ví dụ: Tầng 1 - Kệ A"/><button type="button" className="soft-btn" onClick={()=>{if(onAddLocation(newLocation)){set('location',newLocation.trim().replace(/\s+/g,' '));setNewLocation('')}}}>Thêm vào danh mục</button></div>}</Field><Field label="Nhà cung cấp"><input value={v.supplier} onChange={e=>set('supplier',e.target.value)}/></Field>
+    <Field label="Vị trí lưu kho">{isAdmin&&<label className="inline-check"><input type="checkbox" checked={locationEnabled} onChange={e=>onToggleLocation(e.target.checked)}/> Quản lý vị trí lưu kho (bỏ chọn nếu chỉ có một kho chung)</label>}<select value={locationEnabled?v.location:''} disabled={!locationEnabled} required={locationEnabled} style={!locationEnabled?{opacity:0.45,cursor:'not-allowed',background:'#eee'}:undefined} onChange={e=>set('location',e.target.value)}><option value="">{locationEnabled?'-- Chọn vị trí đã có --':'Không áp dụng – một kho chung'}</option>{locationEnabled&&locations.map((x:string)=><option key={x} value={x}>{x}</option>)}{locationEnabled&&v.location&&!locations.includes(v.location)&&<option value={v.location}>{v.location} · vị trí cũ</option>}</select>{!locationEnabled&&<small className="muted">Đang dùng một kho chung. Không cần khai báo vị trí cho từng vật tư.</small>}{isAdmin&&locationEnabled&&<div className="inline-location-add"><input value={newLocation} onChange={e=>setNewLocation(e.target.value)} placeholder="Thêm vị trí mới, ví dụ: Tầng 1 - Kệ A"/><button type="button" className="soft-btn" onClick={()=>{if(onAddLocation(newLocation)){set('location',newLocation.trim().replace(/\s+/g,' '));setNewLocation('')}}}>Thêm vào danh mục</button></div>}</Field><Field label="Nhà cung cấp"><input value={v.supplier} onChange={e=>set('supplier',e.target.value)}/></Field>
     <div className="modal-actions"><button type="button" className="soft-btn" onClick={close}>Hủy</button><button className="primary-btn"><Check size={16}/> {isNew?'Thêm vật tư':'Lưu thông tin'}</button></div>
   </form></Modal>
 }
