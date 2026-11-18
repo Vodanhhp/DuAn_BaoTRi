@@ -99,6 +99,21 @@ Không chọn desktop hoặc mobile làm nguồn chuẩn cho đến khi người
 - Import Asset có archived_at, trạng thái Thanh lý và transferred_from_other_facility mà không làm mất dữ liệu.
 - Kiểm tra FK của tất cả bảng con sau import.
 
-## 10. Trạng thái
+## 10. Trạng thái triển khai – 18/11/2026
 
-Đây là thiết kế review, chưa phải SQL migration hoặc RPC đã triển khai. Chưa chạy SQL, chưa gọi Supabase RPC, chưa ghi dữ liệu Test/Production, chưa chọn backup nguồn và chưa import dữ liệu. Các tên quyền/RPC là hợp đồng đề xuất cần được đối chiếu với permission catalog trước khi viết migration.
+Đã tạo mã nguồn triển khai trên nhánh `main`, chưa áp dụng SQL vào bất kỳ Supabase Project nào:
+
+- Migration: `20261118000100_asset_import_preserving_identity.sql`.
+- Test SQL: `20261118000100_asset_import_preserving_identity_test.sql`.
+- RPC: `public.import_asset_preserving_identity(uuid, uuid, text, jsonb, uuid)`.
+- Quyền riêng `assets.import`: chỉ gán cho role hệ thống `admin`; không gộp với `assets.create`.
+- Ledger `asset_import_mutations`: lưu actor, UUID thiết bị, payload canonical và kết quả để chống chạy lặp/đổi payload.
+- RPC kiểm tra active membership và permission qua `has_org_permission`, không cho ghi đè hồ sơ Cloud, giữ nguyên UUID/mã, và chỉ cập nhật counter khi mã khớp cấu hình nhóm hiện hành.
+- Counter được khóa/đối chiếu trước insert để tuần tự hóa với `create_asset_with_code`.
+- UI PC gọi RPC từng thiết bị sau xác nhận; mutation ID ổn định bằng UUID thiết bị. Nếu lô bị gián đoạn, lần chạy lại sẽ nhận diện các bản ghi đã nhập chính xác.
+- UI preflight so sánh toàn bộ payload; nếu cùng UUID/mã nhưng nội dung khác thì dừng, không ghi đè.
+- Ảnh vẫn không được tải lên Storage; không import vật tư, queue hoặc phân hệ khác.
+
+**Trạng thái kiểm thử:** file test đã bao gồm bảo toàn UUID/mã, dữ liệu lưu kho/trạng thái/chuyển cơ sở, retry idempotent, payload conflict, trùng mã, quyền Admin/Technician/Viewer, user không có membership, anon và bộ cấp mã sau import. Chưa chạy test SQL trên BAOTRI-Mini-Test vì chưa có kết nối Supabase được cấp trong phiên này.
+
+**Bước tiếp theo:** kiểm tra GitHub Actions build; sau khi build đạt, người vận hành chạy migration và test SQL trên `BAOTRI-Mini-Test`, gửi kết quả để rà soát. Không áp dụng Production và không import 45 thiết bị cho đến khi Test PASS và người dùng xác nhận bước import.
