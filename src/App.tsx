@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import type { Session, SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
 import AuthScreen from './AuthScreen'
@@ -2215,30 +2215,42 @@ function MaintenancePlanModal({value,assets,close,save}:{value:MaintenancePlan;a
 function ScanModal({close,assets,openAsset,expectedAssetId}:any){
   const [result,setResult]=useState('')
   const [manualCode,setManualCode]=useState('')
+  const assetsRef=useRef(assets)
+  const expectedAssetIdRef=useRef(expectedAssetId)
+  const openAssetRef=useRef(openAsset)
+  assetsRef.current=assets
+  expectedAssetIdRef.current=expectedAssetId
+  openAssetRef.current=openAsset
   const resolveAsset=(raw:string):{ok:true;asset:Asset}|{ok:false;error:string}=>{
     const value=raw.trim()
     const payload=value.startsWith('ASSET:')?value.slice(6).trim():value
     if(!payload)return {ok:false,error:'Vui lòng nhập mã thiết bị.'}
-    const found=assets.find((asset:Asset)=>asset.id===payload)||assets.find((asset:Asset)=>asset.code.toLocaleLowerCase('vi')===payload.toLocaleLowerCase('vi'))
+    const found=assetsRef.current.find((asset:Asset)=>asset.id===payload)||assetsRef.current.find((asset:Asset)=>asset.code.toLocaleLowerCase('vi')===payload.toLocaleLowerCase('vi'))
     if(!found)return {ok:false,error:'Không tìm thấy thiết bị với mã vừa nhập. Hãy kiểm tra lại mã.'}
-    if(expectedAssetId&&found.id!==expectedAssetId)return {ok:false,error:'Mã thiết bị không đúng với công việc Checklist này. Hãy nhập mã của đúng thiết bị.'}
+    if(expectedAssetIdRef.current&&found.id!==expectedAssetIdRef.current)return {ok:false,error:'Mã thiết bị không đúng với công việc Checklist này. Hãy nhập mã của đúng thiết bị.'}
     return {ok:true,asset:found}
   }
   const submitManual=(event:FormEvent<HTMLFormElement>)=>{
     event.preventDefault()
     const match=resolveAsset(manualCode)
     if(!match.ok){setResult(match.error);return}
-    openAsset(match.asset)
+    openAssetRef.current(match.asset)
   }
   useEffect(()=>{
+    let active=true
     const scanner = new Html5QrcodeScanner('qr-reader',{fps:10,qrbox:{width:220,height:220}},false)
     scanner.render((text)=>{
+      if(!active)return
       const match=resolveAsset(text)
       if(!match.ok){setResult(match.error);return}
+      active=false
       scanner.clear().catch(()=>{})
-      openAsset(match.asset)
+      openAssetRef.current(match.asset)
     },()=>{})
-    return ()=>{scanner.clear().catch(()=>{})}
+    return ()=>{
+      active=false
+      scanner.clear().catch(()=>{})
+    }
   },[])
   return <Modal title="Truy cập thiết bị" close={close}>
     <div className="scan-modal">
