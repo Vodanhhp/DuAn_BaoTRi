@@ -47,7 +47,7 @@ Không thấy xử lý URL deep-link; QR hiện tại không tự mở ứng d�
 - Tem CSS được đặt 50 × 30 mm.
 - QR được ép kích thước 17 × 17 mm.
 - Mã quản lý được in bằng chữ bên cạnh QR.
-- Payload `ASSET:<UUID>` tương đối dài so với một token ngắn; 17 mm có thể đọc được với máy in/độ tương phản phù hợp nhưng chưa có kết quả test vật lý.
+- Payload QR hiện là mã quản lý thiết bị; độ dài phụ thuộc từng mã. QR 17 mm chưa có kết quả test vật lý.
 - Cần kiểm tra print preview, tỷ lệ 100%, lề máy in, độ nét và khả năng quét bằng điện thoại trước khi nghiệm thu.
 
 ## 3. Vấn đề và rủi ro phát hiện
@@ -55,7 +55,7 @@ Không thấy xử lý URL deep-link; QR hiện tại không tự mở ứng d�
 1. **QR phụ thuộc mã quản lý:** nếu mã quản lý thay đổi thì QR trên tem cũ không còn tra đúng; cần cập nhật tem sau khi thay mã. Mã quản lý vốn được quy định ổn định, nên đây là quy tắc quản trị chứ không phải lý do dùng UUID trong QR.
 2. **Không có URL mở trực tiếp:** hiện quét QR chỉ tra trong danh sách `assets` đang có ở local app; không tự mở trang web.
 3. **Chưa có test tự động giải mã QR:** cần test xác nhận cả ba nơi in đều có payload đúng bằng `asset.code`.
-4. **Camera scanner dùng effect dependency rỗng:** scanner đóng trên `assets` và `expectedAssetId` tại thời điểm mount; cần test mở/đóng liên tục và đổi ngữ cảnh.
+4. **Camera scanner:** đã sửa callback dùng dữ liệu mới nhất qua refs; cleanup vô hiệu callback khi modal đóng. Vẫn cần kiểm thử mở/đóng liên tục và đổi ngữ cảnh thực tế.
 5. **Kích thước tem chưa được xác minh vật lý:** 17 mm QR trên tem 50 × 30 mm là thông số CSS, chưa chứng minh quét ổn định.
 
 ## 4. Quy tắc hiện hành sau khi sửa
