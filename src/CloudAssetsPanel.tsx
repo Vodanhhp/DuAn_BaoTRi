@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { db, type Asset } from './db'
+import { db, now, type Asset, type AssetCloudLink } from './db'
 import {
   getCloudAssetCodeConfig, importCloudAssetPreservingIdentity, listCloudAssets, saveCloudAssetCodeConfig,
   type AssetCodeConfig
@@ -79,6 +79,13 @@ const localAssetImportSnapshot = (assets: Asset[]): string => JSON.stringify(
     }))
 )
 
+const localAssetHasCurrentCloudLink = (asset: Asset, link?: AssetCloudLink): boolean =>
+  Boolean(link &&
+    link.status === 'linked' &&
+    link.cloudCode === asset.code &&
+    sameTimestamp(link.cloudUpdatedAt, asset.updatedAt) &&
+    sameTimestamp(link.lastSyncedLocalUpdatedAt, asset.updatedAt))
+
 const localAssetMatchesCloud = (asset: Asset, row: Record<string, unknown>): boolean =>
   row.id === asset.id &&
   row.code === asset.code &&
@@ -119,7 +126,7 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
   const [canImportAssets, setCanImportAssets] = useState(false)
   const [canManageSettings, setCanManageSettings] = useState(false)
   const [permissionsLoading, setPermissionsLoading] = useState(true)
-  const [localImportPreview, setLocalImportPreview] = useState<{ total: number; toInsert: number; alreadyPresent: number; localSnapshot: string } | null>(null)
+  const [localImportPreview, setLocalImportPreview] = useState<{ total: number; toInsert: number; alreadyPresent: number; toLink: number; localSnapshot: string } | null>(null)
   const [checkingLocalImport, setCheckingLocalImport] = useState(false)
   const [importingLocalAssets, setImportingLocalAssets] = useState(false)
   const load = useCallback(async () => {
@@ -276,8 +283,11 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
       const cloudRows = (data ?? []) as unknown as Record<string, unknown>[]
       const cloudById = new Map(cloudRows.map(row => [String(row.id), row]))
       const cloudByCode = new Map(cloudRows.map(row => [String(row.code), String(row.id)]))
+      const savedLinks = await db.assetCloudLinks.where('organizationId').equals(organizationId).toArray()
+      const linksByAssetId = new Map(savedLinks.map(link => [link.assetId, link]))
       let alreadyPresent = 0
       let toInsert = 0
+      let toLink = 0
       for (const asset of localRows) {
         const existing = cloudById.get(asset.id)
         const existingId = cloudByCode.get(asset.code)
@@ -289,14 +299,16 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
             throw new Error('Thiết bị đã có đúng UUID/mã trên Cloud nhưng nội dung khác Local: ' + asset.code + '. Không tự ghi đè.')
           }
           alreadyPresent++
+          if (!localAssetHasCurrentCloudLink(asset, linksByAssetId.get(asset.id))) toLink++
           continue
         }
         if (existingId !== undefined && existingId !== asset.id) {
           throw new Error('Mã quản lý đã thuộc UUID khác trên Cloud: ' + asset.code)
         }
         toInsert++
+        toLink++
       }
-      setLocalImportPreview({ total: localRows.length, toInsert, alreadyPresent, localSnapshot: localAssetImportSnapshot(localRows) })
+      setLocalImportPreview({ total: localRows.length, toInsert, alreadyPresent, toLink, localSnapshot: localAssetImportSnapshot(localRows) })
       setMessage('Đã kiểm tra Local PC và Cloud. Chưa ghi dữ liệu nào lên Cloud.')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
@@ -306,8 +318,8 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
   }
 
   const confirmLocalAssetImport = async () => {
-    if (!localImportPreview || !localImportPreview.toInsert) return
-    if (!window.confirm('Xác nhận đưa ' + localImportPreview.toInsert + ' thiết bị từ Local PC lên Cloud? Giữ nguyên UUID và mã quản lý. Không đồng bộ vật tư hoặc dữ liệu khác.')) return
+    if (!localImportPreview || !localImportPreview.toLink) return
+    if (!window.confirm('Xác nhận nhập mới hoặc tạo liên kết Cloud cho ' + localImportPreview.toLink + ' thiết bị Local? Giữ nguyên UUID và mã quản lý. Không đồng bộ vật tư hoặc dữ liệu khác.')) return
     setImportingLocalAssets(true)
     setError('')
     setMessage('')
@@ -326,7 +338,9 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
       const cloudRows = (existing ?? []) as unknown as Record<string, unknown>[]
       const cloudById = new Map(cloudRows.map(row => [String(row.id), row]))
       const cloudByCode = new Map(cloudRows.map(row => [String(row.code), String(row.id)]))
-      const rowsToImport: Asset[] = []
+      const savedLinks = await db.assetCloudLinks.where('organizationId').equals(organizationId).toArray()
+      const linksByAssetId = new Map(savedLinks.map(link => [link.assetId, link]))
+      const rowsToLink: Asset[] = []
       for (const asset of localRows) {
         const existingRow = cloudById.get(asset.id)
         const existingId = cloudByCode.get(asset.code)
@@ -337,29 +351,45 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
           if (!localAssetMatchesCloud(asset, existingRow)) {
             throw new Error('Thiết bị Cloud đã tồn tại nhưng nội dung khác Local: ' + asset.code + '. Không tự ghi đè.')
           }
+          if (!localAssetHasCurrentCloudLink(asset, linksByAssetId.get(asset.id))) rowsToLink.push(asset)
           continue
         }
         if (existingId !== undefined && existingId !== asset.id) {
           throw new Error('Mã quản lý bị trùng với thiết bị Cloud khác: ' + asset.code)
         }
-        rowsToImport.push(asset)
+        rowsToLink.push(asset)
       }
-      if (rowsToImport.length !== localImportPreview.toInsert) {
-        throw new Error('Dữ liệu Cloud đã thay đổi sau bước kiểm tra. Hãy kiểm tra lại trước khi xác nhận import.')
+      if (rowsToLink.length !== localImportPreview.toLink) {
+        throw new Error('Trạng thái Cloud hoặc liên kết Local đã thay đổi sau bước kiểm tra. Hãy kiểm tra lại trước khi xác nhận.')
       }
 
       const codesNeedingCounterReview: string[] = []
-      for (let index = 0; index < rowsToImport.length; index++) {
-        const asset = rowsToImport[index]
+      let newlyImportedCount = 0
+      for (let index = 0; index < rowsToLink.length; index++) {
+        const asset = rowsToLink[index]
+        const existedBeforeImport = cloudById.has(asset.id)
         const imported = await importCloudAssetPreservingIdentity(client, organizationId, asset)
         if (!imported.counterReconciled) codesNeedingCounterReview.push(asset.code)
+        if (!existedBeforeImport) newlyImportedCount++
+        const timestamp = now()
+        await db.assetCloudLinks.put({
+          id: organizationId + ':' + asset.id,
+          organizationId,
+          assetId: asset.id,
+          cloudCode: imported.asset.code,
+          cloudUpdatedAt: imported.asset.updatedAt,
+          lastSyncedLocalUpdatedAt: asset.updatedAt,
+          status: 'linked',
+          linkedAt: linksByAssetId.get(asset.id)?.linkedAt ?? timestamp,
+          lastVerifiedAt: timestamp
+        })
         importedCount++
-        setMessage('Đang nhập thiết bị ' + importedCount + '/' + rowsToImport.length + ': ' + asset.code)
+        setMessage('Đang xác nhận liên kết ' + importedCount + '/' + rowsToLink.length + ': ' + asset.code)
       }
 
       await load()
       setLocalImportPreview(null)
-      const baseMessage = 'Đã nhập ' + importedCount + ' thiết bị từ Local PC lên Cloud. UUID và mã quản lý được giữ nguyên; ảnh thiết bị chưa đồng bộ.'
+      const baseMessage = 'Đã xác nhận ' + importedCount + ' liên kết thiết bị; thêm mới Cloud ' + newlyImportedCount + ' thiết bị. UUID và mã quản lý được giữ nguyên; ảnh thiết bị chưa đồng bộ.'
       setMessage(codesNeedingCounterReview.length
         ? baseMessage + ' Cần rà soát bộ đếm mã thủ công cho các mã chưa khớp cấu hình: ' + codesNeedingCounterReview.join(', ') + '.'
         : baseMessage)
@@ -401,12 +431,12 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
         <button type="button" className="soft-btn" disabled={checkingLocalImport || importingLocalAssets} onClick={() => void checkLocalAssetImport()}>
           {checkingLocalImport ? 'Đang kiểm tra Local và Cloud…' : 'Kiểm tra dữ liệu Local PC'}
         </button>
-        {localImportPreview && <button type="button" className="primary-btn" disabled={importingLocalAssets || localImportPreview.toInsert === 0} onClick={() => void confirmLocalAssetImport()}>
-          {importingLocalAssets ? 'Đang đồng bộ…' : 'Xác nhận đồng bộ ' + localImportPreview.toInsert + ' thiết bị'}
+        {localImportPreview && <button type="button" className="primary-btn" disabled={importingLocalAssets || localImportPreview.toLink === 0} onClick={() => void confirmLocalAssetImport()}>
+          {importingLocalAssets ? 'Đang đồng bộ…' : 'Xác nhận nhập/liên kết ' + localImportPreview.toLink + ' thiết bị'}
         </button>}
       </div>
       {localImportPreview && <p className="form-hint" role="status">
-        Local PC: {localImportPreview.total} thiết bị · Cần đưa lên Cloud: {localImportPreview.toInsert} · Đã có đúng UUID/mã trên Cloud: {localImportPreview.alreadyPresent}. Chưa ghi dữ liệu cho đến khi bạn xác nhận.
+        Local PC: {localImportPreview.total} thiết bị · Cần nhập mới lên Cloud: {localImportPreview.toInsert} · Đã có đúng UUID/mã trên Cloud: {localImportPreview.alreadyPresent} · Cần tạo/cập nhật liên kết: {localImportPreview.toLink}. Chưa ghi dữ liệu cho đến khi bạn xác nhận.
       </p>}
     </div>}
 
