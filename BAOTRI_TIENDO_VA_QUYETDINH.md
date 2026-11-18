@@ -3132,3 +3132,19 @@ Thêm hai bảng riêng, không thay đổi bảng `syncQueue` và không chạy
 - Commit `e7b66179e0af33a181ae3cc98323d3d3514022bd`: chỉnh thông báo Cloud panel theo đúng vai trò chỉ xem (không còn nói người dùng bị cấm thao tác sửa/lưu kho vốn đã bỏ khỏi UI); bộ đếm Asset mới thêm Cloud không tính nhầm trường hợp RPC trả về đã tồn tại do chạy đua hoặc retry.
 - Đây là chỉnh sửa giao diện/thông báo; không thay đổi hợp đồng RPC hoặc dữ liệu.
 - Chờ GitHub Actions của commit mới nhất kết thúc để xác nhận build.
+
+## 22. Bảo vệ Asset đã liên kết trong lúc chờ Local lease/receipt (19/11/2026)
+
+Sau khi import tạo mapping, Local hiện vẫn có các đường sửa/lưu kho/khôi phục/thay đổi trạng thái ghi thẳng IndexedDB và generic `syncQueue`. Nếu để các đường này tiếp tục hoạt động trước khi tích hợp lease + receipt, Asset đã liên kết có thể thay đổi Local mà Cloud không được cập nhật, đồng thời bỏ qua khóa Cloud.
+
+Kế hoạch guard tạm thời:
+- Chỉ áp dụng với Asset có bản ghi trong `assetCloudLinks` (bất kể status linked/conflict).
+- Chặn lưu sửa hồ sơ Asset, lưu kho, khôi phục và đổi trạng thái đối với Asset đã liên kết.
+- Không chặn xem hồ sơ, Checklist, bảo trì, nhật ký hoặc các công việc Local được phép.
+- Asset chưa liên kết vẫn giữ hành vi hiện tại.
+- Guard chỉ là lớp an toàn giao diện/Local; chưa thay thế kiểm tra lease ở server. Khi Local lease + receipt hoàn tất và Test SQL 017 PASS, thay guard tạm bằng luồng xin lease + mutation snapshot + RPC receipt.
+- Không xóa queue cũ, không đánh dấu synced, không đổi dữ liệu Cloud.
+
+Phạm vi sửa dự kiến chỉ `src/App.tsx`; thêm kiểm tra link trước các thao tác master data. Cần test thủ công: Asset chưa link vẫn sửa được; Asset linked/conflict bị chặn; Checklist/bảo trì trên Asset linked vẫn hoạt động.
+
+Trạng thái: chưa áp dụng guard tại thời điểm ghi nhận.
