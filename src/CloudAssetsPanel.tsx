@@ -370,7 +370,7 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
         const existedBeforeImport = cloudById.has(asset.id)
         const imported = await importCloudAssetPreservingIdentity(client, organizationId, asset)
         if (!imported.counterReconciled) codesNeedingCounterReview.push(asset.code)
-        if (!existedBeforeImport) newlyImportedCount++
+        if (!existedBeforeImport && !imported.alreadyPresent) newlyImportedCount++
         const timestamp = now()
         await db.assetCloudLinks.put({
           id: organizationId + ':' + asset.id,
@@ -422,7 +422,7 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
     </div>
     {message && <div className="form-hint" role="status">{message}</div>}
     {error && <div className="form-hint warning-hint" role="alert">{error}</div>}
-    {(!lockStateKnown || !isOnline) && <div className="form-hint warning-hint" role="status">{!isOnline ? 'Mất Internet: không được chỉnh sửa hồ sơ thiết bị.' : lockError || 'Chưa xác nhận được trạng thái khóa từ Cloud. Các thao tác sửa/lưu kho/khôi phục đang bị khóa an toàn.'}</div>}
+    {(!lockStateKnown || !isOnline) && <div className="form-hint warning-hint" role="status">{!isOnline ? 'Mất Internet: không thể tải dữ liệu Cloud hoặc xác nhận trạng thái khóa mới nhất.' : lockError || 'Chưa xác nhận được trạng thái khóa từ Cloud; thông tin khóa hiển thị có thể chưa cập nhật.'}</div>}
 
     {canImportAssets && !permissionsLoading && <div className="panel" style={{ margin: '12px 0', padding: 14 }}>
       <h3>Đồng bộ thiết bị từ Local PC lên Cloud</h3>
