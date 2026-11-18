@@ -2272,3 +2272,21 @@ Giới hạn an toàn vẫn giữ:
 - Rủi ro lớn cần giải quyết trước Cloud worker: mô hình mã cơ sở nhiều cơ sở, mã vị trí chưa gán (local dùng 99 nhưng Cloud cần config), thay category code sau khi đã cấp mã, và cập nhật counter sau import.
 - Chưa tạo migration/RPC, chưa chỉnh UI cấu hình, chưa chạy SQL, chưa ghi Supabase.
 - CI của commit ứng dụng trước đó `bef695c702c4716742d7c3926fcb1b299430fbb0` đã PASS build/deploy; commit chú thích mới và tài liệu hiện cần workflow riêng xác nhận.
+
+
+### Chốt nguyên tắc bản nháp Local và định danh chính thức khi online (18/11/2026)
+
+- Local tiếp tục là nơi nhập và lưu dữ liệu nghiệp vụ trước; Cloud không tự tạo thiết bị/vật tư và không cấp UUID/mã quản lý.
+- Khi online: ứng dụng phải đồng bộ/đọc dữ liệu Cloud mới nhất, sau đó phía Local mới sinh UUID chính thức và cấp mã quản lý thiết bị; lưu Local + hàng đợi rồi gửi lên Cloud. Cloud chỉ kiểm tra quyền, unique, idempotency và lưu nguyên giá trị Local gửi.
+- Khi offline: cho phép lưu bản nháp Local bằng ID tạm riêng, chưa có UUID chính thức và chưa có mã quản lý thiết bị chính thức. Khi online trở lại, xử lý bản nháp theo thứ tự tạo, refresh dữ liệu trước khi chính thức hóa.
+- UUID chính thức chỉ được tạo khi online; không tự chuyển đổi UUID hiện có của dữ liệu cũ. ID tạm tuyệt đối không được gửi vào cột UUID Cloud.
+- Vật tư áp dụng cùng quy tắc UUID tạm/chính thức. Mã vật tư hiện do người dùng nhập cần được phân biệt với UUID; không tự đổi thành mã Cloud cấp.
+- Lưu dấu vết người thêm bất biến cho Thiết bị và Vật tư: họ tên tài khoản, fallback email; không thay đổi khi người khác sửa.
+- Một tài khoản có tối đa một phiên PC và một phiên Mobile; đăng nhập mới cùng nền tảng vô hiệu phiên cũ, PC và Mobile vẫn được phép cùng hoạt động.
+- Khi bản nháp Asset được chính thức hóa, phải chuyển tất cả FK ở Tasks, Plans, Logs, Checklist Templates/Versions/Results và queue; với Inventory phải chuyển FK Movement. Thực hiện atomic trong Dexie transaction, rollback nếu có lỗi.
+- Conflict trùng mã/UUID chỉ cảnh báo; không tự đổi mã, xóa hoặc gộp. Người tạo xác minh hai thiết bị riêng hay nhập trùng một thiết bị.
+- Lưu ý: một PC + một Mobile vẫn có thể hoạt động đồng thời trên hai IndexedDB riêng. Vì vậy online flow phải pull đầy đủ dữ liệu mới nhất trước khi cấp mã, đồng bộ ngay sau tạo và xử lý unique conflict. Không tuyên bố bảo đảm tuyệt đối nếu chưa có cơ chế reservation/lock số thứ tự.
+- Migration 012 / RPC `create_asset_with_code` đã tồn tại trong repository nhưng không còn là hướng cấp mã cho luồng tạo thông thường. Không xóa lịch sử migration; cần rà trạng thái đã áp dụng ở Test/Production và thiết kế migration tiến về phía trước nếu cần.
+- Tài liệu thiết kế chi tiết: `supabase/CLOUD_LOCAL_DRAFT_IDENTITY_DESIGN.md`.
+- Trạng thái hiện tại: mới ghi nhận quyết định và thiết kế; chưa sửa mã nguồn, chưa chạy SQL/migration, chưa gọi RPC và chưa ghi dữ liệu Supabase.
+
