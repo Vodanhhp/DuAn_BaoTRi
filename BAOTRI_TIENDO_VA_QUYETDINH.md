@@ -2070,3 +2070,24 @@ assets.images hiện là dữ liệu ảnh local; adapter Cloud trả images r�
 - Commit schema protocol design: `822b8a9b04ea57823677b9f3c7064a9e103b550d`.
 
 **Bước tiếp theo:** rà soát schema fields và permission matrix cụ thể, đối chiếu thêm thao tác kho/Checklist/log với UI; sau đó lập migration draft theo từng phần để review, vẫn chưa áp dụng vào Supabase.
+
+
+---
+
+# ĐỐI CHIẾU QUYỀN VAI TRÒ VỚI THAO TÁC UI – 18/11/2026
+
+- Đã rà soát migration 005 (roles/permissions), migration 006 (RLS), migration 012 (asset allocator RPC), test RLS 009 và các thao tác chính trong `src/App.tsx`.
+- Tạo `supabase/CLOUD_PERMISSION_UI_MATRIX.md`, commit `4d2aa2bcbeb29ce7743eaf1fcbd1e3c2137d7d81`.
+- Xác nhận các khác biệt quan trọng:
+  1. UI hiện chỉ phân biệt Viewer và non-Viewer; chưa kiểm tra permission chi tiết.
+  2. Technician hiện có thể sửa Checklist template trên UI/local nhưng permission catalog không cấp `checklist.template.manage` (Admin-only).
+  3. UI có thể cho Technician xóa kế hoạch, trong khi permission catalog không cấp `maintenance.delete`.
+  4. Direct INSERT `inventory_items` có thể tạo tồn ban đầu không kèm movement; cần thu hồi và thay bằng RPC nguyên tử.
+  5. RPC tạo thiết bị hiện cấp mã Cloud, không nhận mã local; cần RPC import riêng nếu phải bảo toàn UUID + mã hiện có.
+  6. Log local có dueDate/requestedBy/editHistory và có thể được sửa; Cloud schema thiếu trường và RLS hiện append-only. Cần chốt mô hình event/revision, không bỏ dữ liệu hoặc update log cũ âm thầm.
+  7. Hoàn thành task tạo task update + log insert trong cùng Dexie transaction; Cloud cần transaction tương ứng.
+- Workflow #185 (run ID `44234972918`) đã hoàn tất: test mapping, build Vite và deploy đều **success**.
+- Chưa sửa mã ứng dụng, chưa tạo worker, chưa gửi dữ liệu nghiệp vụ lên Cloud.
+- Không chạy SQL/migration, không thay đổi BAOTRI-Mini-Test hoặc Production, không tạo organization/membership/tài khoản mới.
+
+**Bước tiếp theo:** tiếp tục hoàn thiện hợp đồng permission/RPC và schema cho Log, Checklist, thiết bị import và kho; sau đó tạo migration draft trong repository để review, tuyệt đối chưa áp dụng lên Supabase.
