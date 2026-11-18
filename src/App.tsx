@@ -320,6 +320,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
   }, [compact])
 
   const createDemoData = async () => {
+    try {
       if (await db.assets.count() !== 0 || await db.inventory.count() !== 0) {
         alert('Chỉ tạo dữ liệu mẫu khi cả danh sách thiết bị và vật tư đang trống.');
         return;
@@ -432,6 +433,49 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
     } catch (error) {
       console.error('Create local demo data failed', error)
       alert(error instanceof Error ? error.message : 'Không thể tạo bộ dữ liệu mẫu.')
+    }
+  }
+
+  const createAdditionalDemoAssets = async () => {
+    try {
+      const current = await db.assets.toArray()
+      const demoSource = current.filter(item => item.serial.startsWith('DEMO-'))
+      if (demoSource.length < 30) {
+        alert('Cần có đủ 30 thiết bị mẫu ban đầu trước khi tạo thêm.')
+        return
+      }
+      const working = [...current]
+      const additions: Asset[] = demoSource.slice(0, 15).map((item, index) => {
+        const base: Asset = {
+          ...emptyAsset(),
+          ...item,
+          id: uid(),
+          code: '',
+          name: `${item.name} - Bổ sung ${String(index + 1).padStart(2, '0')}`,
+          serial: `DEMO-EXTRA-${String(index + 1).padStart(2, '0')}`,
+          createdAt: now(),
+          updatedAt: now(),
+          notes: 'DỮ LIỆU MẪU BỔ SUNG – tạo riêng để kiểm tra luồng ghi nhận tại Local.'
+        }
+        const code = buildAssetCode(base, working, customAssetCategories)
+        if (!code) throw new Error(`Không cấp được mã cho thiết bị bổ sung: ${base.category}`)
+        const saved: Asset = {
+          ...base,
+          code,
+          images: [makeDemoAssetImage(base.category, code, 1), makeDemoAssetImage(base.category, code, 2)]
+        }
+        working.push(saved)
+        return saved
+      })
+      if (additions.length !== 15) throw new Error('Không tạo đủ 15 thiết bị bổ sung.')
+      await db.transaction('rw', [db.assets, db.syncQueue], async () => {
+        await db.assets.bulkAdd(additions)
+        await Promise.all(additions.map(item => queueChange('assets', item.id)))
+      })
+      flash('Đã tạo thêm 15 thiết bị tại Local. Không thay đổi vật tư và chưa đồng bộ Cloud.')
+    } catch (error) {
+      console.error('Create additional demo assets failed', error)
+      alert(error instanceof Error ? error.message : 'Không thể tạo thêm thiết bị mẫu.')
     }
   }
 
@@ -1128,6 +1172,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
           {organizationRole.trim().toLowerCase()==='admin'&&<OrganizationMembersPanel client={cloudClient} organizationId={organizationId}/>}
           <section className="panel"><div className="panel-head"><div><h2>Dữ liệu và sao lưu</h2><p>Phiên bản thử nghiệm lưu dữ liệu cục bộ trong trình duyệt này</p></div><HardDrive/></div>
             <div className="setting-row"><div><b>Tạo dữ liệu mẫu Local</b><small>Tạo đúng 30 thiết bị và 30 vật tư tại máy này. Chỉ dùng khi cả hai danh sách đang trống; dữ liệu sẽ được đưa vào hàng đợi chờ đồng bộ, không tự gửi lên Cloud.</small></div><button className="soft-btn" disabled={isViewer} onClick={()=>{if(confirm('Tạo 30 thiết bị và 30 vật tư mẫu tại Local? Chỉ thực hiện khi hai danh sách đang trống.'))void createDemoData()}}>Tạo 30 + 30</button></div>
+            <div className="setting-row"><div><b>Tạo thêm thiết bị mẫu</b><small>Tạo thêm 15 thiết bị dựa trên mẫu hiện có, cấp mã mới theo bộ cấp mã Local; không thêm vật tư và không gửi Cloud.</small></div><button className="soft-btn" disabled={isViewer} onClick={()=>{if(confirm('Tạo thêm 15 thiết bị mẫu tại Local? Dữ liệu hiện có sẽ được giữ nguyên.'))void createAdditionalDemoAssets()}}>Tạo thêm 15 thiết bị</button></div>
             <div className="setting-row"><div><b>Xuất bản sao lưu</b><small>Tải đầy đủ thiết bị, vật tư, kế hoạch, nhật ký, Checklist, ảnh, danh mục tự tạo và dữ liệu hàng đợi thành JSON.</small></div><button className="primary-btn" disabled={isViewer} title={isViewer?'Viewer không được sao lưu dữ liệu':undefined} onClick={backup}><Download size={16}/> Sao lưu</button></div>
             <div className="setting-row"><div><b>Khôi phục bản sao lưu</b><small>Chọn file để xem trước. Dữ liệu chỉ bị thay thế sau khi bạn bấm Xác nhận khôi phục.</small></div><label className={`soft-btn file-btn ${isViewer?'disabled':''}`} title={isViewer?'Viewer không được khôi phục dữ liệu':undefined}>Chọn file<input type="file" accept=".json,application/json" disabled={isViewer} onChange={e=>{const selected=e.target.files?.[0];if(selected)void restore(selected);e.target.value=''}}/></label></div>
             {pendingRestore && <div className="setting-row restore-preview"><div><b>Đã chọn: {pendingRestore.fileName}</b><small>File sẽ THAY THẾ toàn bộ dữ liệu Local hiện tại, gồm cả hàng đợi đồng bộ.</small><small>Thiết bị: {pendingRestore.data.assets?.length ?? 0} · Vật tư: {pendingRestore.data.inventory?.length ?? 0} · Công việc: {pendingRestore.data.tasks?.length ?? 0} · Nhật ký: {pendingRestore.data.logs?.length ?? 0} · Checklist: {pendingRestore.data.checklistResults?.length ?? 0}</small></div><div className="setting-inline-actions"><button className="primary-btn" disabled={isViewer} onClick={()=>void applyRestore()}>Xác nhận khôi phục</button><button className="soft-btn" onClick={cancelRestore}>Hủy</button></div></div>}
