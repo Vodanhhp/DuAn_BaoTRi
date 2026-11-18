@@ -77,7 +77,7 @@ begin
   get diagnostics v_rows = row_count;
   insert into pg_temp.rls_results values ('viewer','DELETE','0 rows',v_rows::text || ' rows',v_rows = 0);
 
-  -- Technician: direct INSERT is blocked; allocator RPC and UPDATE are allowed; DELETE denied.
+  -- Technician: direct INSERT is blocked; allocator RPC creates; direct UPDATE is allowed only before Migration 016, then lease RPC is required; DELETE denied.
   perform set_config('request.jwt.claim.sub', 'e8700ff7-a642-45b8-b103-fafdb6286748', true);
   perform set_config('request.jwt.claims',
     '{"sub":"e8700ff7-a642-45b8-b103-fafdb6286748","role":"authenticated","aud":"authenticated"}', true);
@@ -112,7 +112,7 @@ begin
   get diagnostics v_rows = row_count;
   insert into pg_temp.rls_results values ('technician','DELETE','0 rows',v_rows::text || ' rows',v_rows = 0);
 
-  -- Admin: direct INSERT blocked; RPC create, UPDATE and DELETE allowed.
+  -- Admin: direct INSERT blocked; RPC create and DELETE allowed. Direct UPDATE is allowed only before Migration 016; afterwards lease RPC is required.
   perform set_config('request.jwt.claim.sub', '08f0f750-3361-4ae0-b6ed-9dc4a5b41244', true);
   perform set_config('request.jwt.claims',
     '{"sub":"08f0f750-3361-4ae0-b6ed-9dc4a5b41244","role":"authenticated","aud":"authenticated"}', true);
