@@ -122,7 +122,7 @@ export function validateTemplateRelease(pkg) {
 async function main() {
   const file = process.argv[2]
   if (!file) {
-    process.stderr.write('Cách dùng: node scripts/validate-template-release.mjs <file.json>\\n')
+    process.stderr.write('Cách dùng: node scripts/validate-template-release.mjs <file.json>\n')
     process.exitCode = 2
     return
   }
@@ -130,16 +130,16 @@ async function main() {
   try {
     pkg = JSON.parse(await readFile(file, 'utf8'))
   } catch (error) {
-    process.stderr.write(`Không đọc được JSON: ${error.message}\\n`)
+    process.stderr.write(`Không đọc được JSON: ${error.message}\n`)
     process.exitCode = 2
     return
   }
   const errors = validateTemplateRelease(pkg)
   if (errors.length) {
-    process.stderr.write(errors.map((e, i) => `${i + 1}. ${e}`).join('\\n') + '\\n')
+    process.stderr.write(errors.map((e, i) => `${i + 1}. ${e}`).join('\n') + '\n')
     process.exitCode = 1
   } else {
-    process.stdout.write(`Template release hợp lệ về liên kết dữ liệu: ${file}\\n`)
+    process.stdout.write(`Template release hợp lệ về liên kết dữ liệu: ${file}\n`)
   }
 }
 
