@@ -2634,3 +2634,17 @@ Bổ sung vào test 016:
 **CI:** GitHub Actions run #304, ID `44324948772`, commit `a9256b9aaa03347ccb8bc28589903efaf92f90a8` – completed/success; Vite build PASS. Đây chỉ là TypeScript/build và các test tự động đang có trong workflow; các file SQL vẫn chưa được thực thi trên PostgreSQL/Supabase.
 
 **Trạng thái SQL Migration 016:** đã rà soát schema gốc, xác nhận FK kép `(organization_id, asset_id)` tham chiếu unique `assets(organization_id, id)`, các cột hồ sơ và trạng thái phù hợp. Chưa áp dụng migration và chưa chạy bất kỳ SQL test nào trên BAOTRI-Mini-Test.
+
+
+### SỬA LỖI TEST 016 – MÔ PHỎNG LEASE HẾT HẠN (18/11/2026)
+
+Người dùng chạy Test SQL 016 và gặp lỗi CHECK constraint `asset_edit_locks_expiry_order`: test chỉ đẩy `expires_at` về quá khứ, trong khi `acquired_at` vẫn ở thời điểm hiện tại. Điều này tạo bản ghi sai thứ tự thời gian và bị PostgreSQL từ chối.
+
+Đã sửa file `supabase/tests/20261118000200_asset_edit_lock_lease_test.sql` trên `main`, commit `d95c8126373808834424d74b13f8dd016fb2a7d6`:
+- `acquired_at = clock_timestamp() - interval '2 seconds'`
+- `expires_at = clock_timestamp() - interval '1 second'`
+- `updated_at = clock_timestamp()`
+
+Giữ nguyên CHECK constraint của bảng; không sửa Migration 016 và không nới lỏng bảo vệ thứ tự timestamp. Đã fetch lại file trên GitHub xác nhận đúng nội dung. CI run #306 được tạo cho commit sửa test và đang queued tại thời điểm ghi nhận.
+
+**Yêu cầu:** chạy lại riêng Test SQL 016 bằng phiên bản mới trên `main`. Migration 016 không cần chạy lại nếu lần áp dụng trước đã thành công.
