@@ -3043,3 +3043,16 @@ Trước khi sửa:
 - [x] Đã xác định giữ import Local PC → Cloud và phần xem Cloud.
 - [ ] Chưa sửa CloudAssetsPanel trong thời điểm ghi nhận.
 - [ ] Chưa thay đổi backend hoặc SQL.
+
+### 20.5 Kết quả thực hiện UI read-only – 19/11/2026
+
+Đã cập nhật trực tiếp trên `main`:
+
+- Commit `83fcc0a204ccccaf2ba746f6d85ffae28182878a`: chuyển `src/CloudAssetsPanel.tsx` thành màn hình chỉ xem đối với hồ sơ Asset; bỏ form/handler tạo Asset Cloud, sửa hồ sơ, lưu kho và khôi phục; bỏ luồng xin lease/heartbeat/release riêng trong panel.
+- Commit `854f5388a35737a80455c7566067a4e69f3cd768`: dọn state/import/hàm phụ không còn sử dụng sau khi bỏ các form ghi Cloud.
+- Giữ lại: tải danh sách Asset Cloud, hiển thị trạng thái khóa, refresh trạng thái khóa, import Local PC → Cloud có preflight và xác nhận, phần cấu hình mã tổ chức hiện có.
+- Không sửa backend/RPC/permission/SQL; không xóa dữ liệu Cloud; không sửa Local form hoặc Dexie; không bật đồng bộ nền.
+- Đã kiểm tra lại nội dung file trên `main`: không còn tham chiếu UI tới `createCloudAsset`, `updateAssetWithEditLock`, `setAssetArchivedWithEditLock`, `acquireAssetEditLock`, `heartbeatAssetEditLock`, hoặc các handler/form tạo/sửa/lưu kho/khôi phục.
+- GitHub Actions run `44408674037` cho commit trên đang ở trạng thái queued tại thời điểm cập nhật; chưa được đánh dấu PASS. Cần kiểm tra lại kết quả run trước khi kết luận build.
+- Thay đổi này chỉ giới hạn giao diện Cloud. Các RPC/backend cũ vẫn tồn tại; không tuyên bố backend đã cấm mọi client khác ghi trực tiếp.
+- Lưu ý vận hành: cho đến khi Local lease + receipt được tích hợp, không dùng CloudAssetsPanel để thay đổi hồ sơ nghiệp vụ. CloudAssetsPanel hiện giữ import Local PC, xem và cấu hình quản trị.
