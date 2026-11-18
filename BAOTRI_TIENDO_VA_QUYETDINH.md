@@ -2136,3 +2136,8 @@ assets.images hiện là dữ liệu ảnh local; adapter Cloud trả images r�
 - Workflow #185 (run ID `44235551185`, commit `ee4160b2d9b93694c84c63d68ee635776ebabb78`) đã success. Workflow cho commit tài liệu tiếp theo đang chạy/đợi queue, cần kiểm tra trước khi xác nhận deploy.
 
 **Bước kế tiếp:** tiếp tục rà soát delete/archive/restore ở UI và semantics nghiệp vụ; sau đó chuẩn bị danh sách truy vấn chỉ đọc để người vận hành kiểm tra extension/hash trên Test. Chưa viết migration phụ thuộc extension cho đến khi có kết quả xác minh.
+
+
+- Bổ sung đối chiếu trực tiếp UI archive/restore/disposal vào `supabase/CLOUD_DELETE_AND_HASH_PREREQUISITES.md`, commit `5d1526bc0246c6be0c039cf7dd7af7a927901955`.
+- UI xác nhận Lưu kho chỉ đặt `archivedAt`, Khôi phục bỏ `archivedAt`, Thanh lý chỉ đổi trạng thái và không phải xóa; nút Xóa vĩnh viễn hiện disabled, chờ Admin xác thực máy chủ.
+- Vì vậy archive/restore/thanh lý phải là update có row_version, không được biến thành tombstone delete. Xóa vĩnh viễn là nghiệp vụ tương lai, cần RPC Admin riêng và kiểm tra FK/lịch sử.
