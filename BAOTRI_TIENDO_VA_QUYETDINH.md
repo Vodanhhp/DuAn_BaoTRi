@@ -2091,3 +2091,18 @@ assets.images hiện là dữ liệu ảnh local; adapter Cloud trả images r�
 - Không chạy SQL/migration, không thay đổi BAOTRI-Mini-Test hoặc Production, không tạo organization/membership/tài khoản mới.
 
 **Bước tiếp theo:** tiếp tục hoàn thiện hợp đồng permission/RPC và schema cho Log, Checklist, thiết bị import và kho; sau đó tạo migration draft trong repository để review, tuyệt đối chưa áp dụng lên Supabase.
+
+
+---
+
+# DRAFT ROW_VERSION FOUNDATION – 18/11/2026
+
+- Tạo bản nháp SQL `supabase/drafts/015_row_version_foundation_DRAFT.sql`, commit `a7593a2ca738ca532514e644aa9466c56253837e`.
+- Phạm vi gồm các bảng mutable: assets, inventory_items, maintenance_tasks, maintenance_plans, checklist_templates, organization_settings.
+- Không thêm row_version vào các bảng lịch sử append-only: checklist_template_versions, checklist_results, maintenance_logs, inventory_movements.
+- Trigger đặt row_version do database quản lý: insert bắt đầu ở 1; update cột nghiệp vụ tăng 1; chỉ đổi updated_at không tăng version.
+- File nằm trong `supabase/drafts/`, không nằm trong `supabase/migrations/`; không được chạy như migration.
+- Quan trọng: row_version/trigger chỉ là nền tảng. Chưa có optimistic concurrency đầy đủ nếu client còn UPDATE trực tiếp; mọi update Cloud phải qua RPC kiểm tra expected_version và xử lý conflict nguyên tử. Cần thiết kế/review grants trước khi đưa vào migrations chính thức.
+- Chưa chạy SQL, chưa thay đổi Supabase Test/Production, chưa sửa code app, chưa bật worker hoặc ghi dữ liệu Cloud.
+
+**Bước kế tiếp:** review thiết kế RPC update có expected_version và quyền thực thi; tiếp đó thiết kế idempotency ledger/change feed theo cùng nguyên tắc chỉ draft trong repository.
