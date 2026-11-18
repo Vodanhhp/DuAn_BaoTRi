@@ -614,9 +614,17 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
     flash('Đã xuất tài liệu Quy ước mã thiết bị')
   }
 
+  const blockCloudLinkedAssetMutation = async (asset: Asset, action: string): Promise<boolean> => {
+    const link = await db.assetCloudLinks.where('assetId').equals(asset.id).first()
+    if (!link) return false
+    alert('Thiết bị ' + asset.code + ' đã liên kết với Cloud. Tạm thời chưa thể ' + action + ' cho đến khi hoàn tất cơ chế khóa và biên nhận đồng bộ. Checklist và công việc bảo trì Local vẫn được phép thực hiện.')
+    return true
+  }
+
   const saveAsset = async (a: Asset) => {
     if (blockViewer('thêm hoặc sửa thiết bị')) return
     const isNew = !a.code
+    if (!isNew && await blockCloudLinkedAssetMutation(a, 'sửa hồ sơ thiết bị')) return
     if (isNew && !getAssetCategoryCodes(customAssetCategories)[a.category]) {
       alert('Bạn cần chọn một nhóm thiết bị hợp lệ để hệ thống cấp mã định danh.')
       return
@@ -752,17 +760,20 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
   }
   const archiveAsset = async (a: Asset) => {
     if (blockViewer('đưa thiết bị vào lưu kho')) return
+    if (await blockCloudLinkedAssetMutation(a, 'đưa thiết bị vào lưu kho')) return
     if (!confirm(`Đưa “${a.name}” vào Lưu kho? Hồ sơ, ảnh và lịch sử liên quan vẫn được giữ để tra cứu hoặc khôi phục.`)) return
     const value = { ...a, archivedAt: now(), updatedAt: now() }
     await putAndQueue(db.assets, 'assets', value); flash('Đã đưa thiết bị vào Lưu kho')
   }
   const restoreAsset = async (a: Asset) => {
     if (blockViewer('khôi phục thiết bị')) return
+    if (await blockCloudLinkedAssetMutation(a, 'khôi phục thiết bị')) return
     const value = { ...a, archivedAt: undefined, updatedAt: now() }
     await putAndQueue(db.assets, 'assets', value); flash('Đã khôi phục thiết bị khỏi Lưu kho')
   }
   const changeAssetStatus = async (a: Asset, status: Asset['status']) => {
     if (blockViewer('thay đổi tình trạng thiết bị')) return
+    if (await blockCloudLinkedAssetMutation(a, 'thay đổi tình trạng thiết bị')) return
     if (status === 'Thanh lý' && !confirm(`Xác nhận thanh lý “${a.name}”? Hồ sơ và lịch sử vẫn được giữ để tra cứu; đây không phải xóa vĩnh viễn.`)) return
     const value = { ...a, status, updatedAt: now() }
     await putAndQueue(db.assets, 'assets', value); flash(`Đã cập nhật trạng thái: ${status}`)
