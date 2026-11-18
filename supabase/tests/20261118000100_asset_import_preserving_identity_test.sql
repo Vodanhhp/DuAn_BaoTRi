@@ -92,12 +92,8 @@ begin
       v_created.status || ' / ' || (v_created.archived_at is not null)::text || ' / ' || v_created.transferred_from_other_facility::text,
       v_created.status = 'Thanh lý' and v_created.archived_at is not null and v_created.transferred_from_other_facility);
 
-  insert into pg_temp.asset_import_test_results values
-    ('Reconcile recognized sequence', v_sequence::text,
-      (select last_value::text from public.asset_code_counters
-       where organization_id = v_org and category_code = 'MNA'),
-      (select last_value >= v_sequence from public.asset_code_counters
-       where organization_id = v_org and category_code = 'MNA'));
+  -- Counter reconciliation is verified through the public allocator below.
+  -- Do not grant authenticated direct SELECT on the private counter table.
 
   -- Same actor, mutation ID and canonical payload returns the recorded result.
   v_retry := public.import_asset_preserving_identity(
