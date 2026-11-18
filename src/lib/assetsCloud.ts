@@ -249,7 +249,7 @@ export async function importCloudAssetPreservingIdentity(
   client: SupabaseClient,
   organizationId: string,
   asset: Asset
-): Promise<Asset> {
+): Promise<{ asset: Asset; alreadyPresent: boolean; counterReconciled: boolean }> {
   if (!organizationId) throw new Error('Thiếu tổ chức đang hoạt động.')
   if (!asset.id) throw new Error('Thiếu UUID thiết bị Local.')
   if (!asset.code || !asset.code.trim()) throw new Error('Thiếu mã quản lý thiết bị Local.')
@@ -280,11 +280,15 @@ export async function importCloudAssetPreservingIdentity(
   })
 
   if (error) throw new Error('Không thể nhập thiết bị ' + asset.code + ' lên Cloud: ' + error.message)
-  const result = data as { asset?: AssetRow } | null
+  const result = data as { asset?: AssetRow; already_present?: boolean; counter_reconciled?: boolean } | null
   const row = result?.asset
   if (!row?.id || !row?.code) throw new Error('RPC import không trả về hồ sơ thiết bị hợp lệ.')
   if (row.id !== asset.id || row.code !== asset.code) {
     throw new Error('Cloud trả về UUID hoặc mã quản lý không khớp với Local: ' + asset.code)
   }
-  return toAsset(row)
+  return {
+    asset: toAsset(row),
+    alreadyPresent: result?.already_present === true,
+    counterReconciled: result?.counter_reconciled === true
+  }
 }
