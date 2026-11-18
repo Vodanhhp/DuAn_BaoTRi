@@ -2288,5 +2288,8 @@ Giới hạn an toàn vẫn giữ:
 - Lưu ý: một PC + một Mobile vẫn có thể hoạt động đồng thời trên hai IndexedDB riêng. Vì vậy online flow phải pull đầy đủ dữ liệu mới nhất trước khi cấp mã, đồng bộ ngay sau tạo và xử lý unique conflict. Không tuyên bố bảo đảm tuyệt đối nếu chưa có cơ chế reservation/lock số thứ tự.
 - Migration 012 / RPC `create_asset_with_code` đã tồn tại trong repository nhưng không còn là hướng cấp mã cho luồng tạo thông thường. Không xóa lịch sử migration; cần rà trạng thái đã áp dụng ở Test/Production và thiết kế migration tiến về phía trước nếu cần.
 - Tài liệu thiết kế chi tiết: `supabase/CLOUD_LOCAL_DRAFT_IDENTITY_DESIGN.md`.
-- Trạng thái hiện tại: mới ghi nhận quyết định và thiết kế; chưa sửa mã nguồn, chưa chạy SQL/migration, chưa gọi RPC và chưa ghi dữ liệu Supabase.
+- Đã lưu quyết định vào tài liệu tiến độ và thiết kế chi tiết tại `supabase/CLOUD_LOCAL_DRAFT_IDENTITY_DESIGN.md`.
+- Commit tài liệu thiết kế: `c808b9b12084e46727a4568b2df52367aa87b547`.
+- Commit cập nhật tiến độ trước đó: `703528e52897b982d6d2664d1cb99d073595442a`.
+- Trạng thái: mới cập nhật tài liệu; chưa sửa mã nguồn, chưa chạy SQL/migration, chưa gọi RPC và chưa ghi dữ liệu Supabase.
 
