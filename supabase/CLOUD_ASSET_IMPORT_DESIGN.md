@@ -116,4 +116,6 @@ Không chọn desktop hoặc mobile làm nguồn chuẩn cho đến khi người
 
 **Trạng thái kiểm thử:** file test đã bao gồm bảo toàn UUID/mã, dữ liệu lưu kho/trạng thái/chuyển cơ sở, retry idempotent, payload conflict, trùng mã, quyền Admin/Technician/Viewer, user không có membership, anon và bộ cấp mã sau import. Chưa chạy test SQL trên BAOTRI-Mini-Test vì chưa có kết nối Supabase được cấp trong phiên này.
 
-**Bước tiếp theo:** kiểm tra GitHub Actions build; sau khi build đạt, người vận hành chạy migration và test SQL trên `BAOTRI-Mini-Test`, gửi kết quả để rà soát. Không áp dụng Production và không import 45 thiết bị cho đến khi Test PASS và người dùng xác nhận bước import.
+**Build ứng dụng:** GitHub Actions run `44281142922` (commit `40fde79`) đã PASS: kiểm thử Cloud sync mapping, TypeScript build, Vite production build và deploy GitHub Pages đều thành công.
+
+**Bước tiếp theo:** người vận hành chạy migration và test SQL trên `BAOTRI-Mini-Test`, gửi kết quả để rà soát. Chưa chạy SQL trong phiên này vì không có kết nối Supabase được cấp. Không áp dụng Production và không import 45 thiết bị cho đến khi Test PASS và người dùng xác nhận bước import.
