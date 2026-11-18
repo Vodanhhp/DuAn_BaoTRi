@@ -3359,5 +3359,5 @@ Trước khi sửa ứng dụng, đã đọc lại phiên bản mới nhất tr�
 - Lease token chỉ ở React state; không ghi vào Dexie/localStorage/syncQueue.
 - Nếu RPC timeout/lỗi sau khi Local commit, mutation giữ nguyên ID/payload và trạng thái pending; form tiếp tục giữ lease để retry đúng mutation. Khi reload, mutation unresolved bị chặn fail-closed vì hiện chưa có RPC tra receipt độc lập với token; không tự cấp token mới để gửi lại.
 - Chưa sửa `src/db.ts`, không thêm migration, không thay đổi SQL/RLS, không bật worker hoặc đồng bộ Checklist/bảo trì.
-- GitHub Actions run #352 cho commit `ef1b14fb66124572b62675cb9bc85068e88d6c3f` đang in progress tại thời điểm ghi nhận; chưa kết luận build PASS.
+- GitHub Actions run #353 (`44414385705`) cho commit tài liệu sau tích hợp `f60f9a1c627cde08631c8a815eabd7d1b2eef396` đã completed / success; các bước build Vite và deploy GitHub Pages đều PASS. Hai run code #351/#352 bị cancel khi commit mới thay thế; không dùng chúng làm bằng chứng PASS.
 - Chưa kiểm thử runtime trên hai phiên PC/Mobile; chưa tuyên bố luồng tích hợp hoàn tất. Cần đợi CI rồi mới test trên BAOTRI-Mini-Test.
