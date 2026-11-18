@@ -2177,7 +2177,7 @@ function AssetModal({value,close,save,assets,customCategories=[],onAddCategory,o
 }
 function ItemModal({value,close,save}:any){
   const [v,setV]=useState<InventoryItem>(value); const set=(k:keyof InventoryItem,x:any)=>setV(p=>({...p,[k]:x}))
-  const isNew = !value.createdAt
+  const isNew = !value.code
   const units=['Cái','Con','Cuộn','m','mm','cm','Lít','ml','Kg','g','Bộ','Chai','Hộp','Túi','Thùng','Tấm','Ống','Viên','Đôi','Mét','Cuộn dây','Bao','Thanh','Can']
   const groups=['Vật tư điện','Linh kiện điện tử','Cơ khí','Khí nén','Điện lạnh','Dầu mỡ bôi trơn','Vòng bi - bạc đạn','Phớt - gioăng','Vật tư đường ống','Vật tư tiêu hao','Vật tư hàn cắt','Dây cáp điện','Khác']
   return <Modal title={isNew?"Thêm vật tư":"Sửa thông tin vật tư"} close={close}><form className="form-grid" onSubmit={e=>{e.preventDefault();if(!v.code.trim()||!v.name.trim())return alert('Nhập mã vật tư và tên vật tư');save(v)}}>
