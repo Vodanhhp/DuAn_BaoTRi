@@ -2721,3 +2721,88 @@ Quy tắc bắt buộc cho thiết kế Local:
 6. Không được tuyên bố hai nền tảng có dữ liệu đồng nhất cho đến khi Cloud xác nhận và nền tảng còn lại tải/nhận phiên bản mới.
 
 Do đó, phần Local lock và đồng bộ hồ sơ thiết bị phải được thiết kế như một luồng nguyên tử logic gồm: Local transaction → Cloud RPC có lease → xác nhận → release. Đây là đồng bộ hẹp riêng hồ sơ thiết bị, không phải bật sync worker tổng thể cho các bảng khác. Chưa triển khai code cho đến khi thiết kế xử lý rõ timeout, lease hết hạn, retry và conflict.
+
+
+### THIẾT KẾ ĐỢT LOCAL–CLOUD: ĐỒNG BỘ HỒ SƠ THIẾT BỊ CÓ LEASE VÀ IDEMPOTENCY (18/11/2026)
+
+Đã rà soát thực tế:
+- App.tsx: saveAsset ghi assets + syncQueue trong cùng IndexedDB transaction; archiveAsset, restoreAsset, changeAssetStatus ghi qua putAndQueue.
+- db.ts: SyncItem có mutationId nhưng queueChange tự sinh mutationId mới khi coalesce; chưa có base Cloud version, trạng thái mapping theo organization hoặc trạng thái conflict chi tiết.
+- assetsCloud.ts: có listCloudAssets và import_asset_preserving_identity; import giữ nguyên UUID/mã Local, CloudAssetsPanel có preview so khớp hồ sơ trước khi import.
+- Migration 016: update_asset_with_lock và set_asset_archived_with_lock xác minh token, nhưng chưa có biên nhận idempotency cho trường hợp Cloud đã commit mà client mất response.
+- Checklist/task/log/maintenance plan có các queue riêng; không được đưa vào đợt đồng bộ này.
+
+#### A. Mapping thiết bị Local ↔ Cloud
+1. Chỉ xác nhận mapping khi Cloud có đúng organization_id + UUID + mã quản lý trùng Local; không dò ghép theo tên/model.
+2. Nếu UUID trùng nhưng mã khác, hoặc mã trùng nhưng UUID khác, đưa vào trạng thái conflict; không import ghi đè.
+3. Thiết bị mới được tạo ở Local trước. Chỉ sau preview/đối chiếu mới dùng luồng import preserving identity để tạo bản Cloud mirror với nguyên UUID/mã Local. Đây là import có chủ đích, không phải Cloud tự sinh ID/mã.
+4. Thiết bị chưa có counterpart đã xác minh: không mở chức năng sửa hồ sơ master có khóa liên nền tảng. Checklist/bảo dưỡng Local vẫn hoạt động.
+5. Mapping phải gắn organization_id, vì cùng Local UUID không được tự động coi là đã map trong một organization khác.
+
+#### B. Metadata Local cần bổ sung
+Không nhồi token lease vào Asset hoặc SyncItem. Đề xuất bảng IndexedDB riêng assetSyncState, khóa theo organization_id + asset_id, gồm:
+- mappingStatus: unmapped | mapped | conflict;
+- cloudUpdatedAt: phiên bản Cloud cuối cùng đã xác nhận;
+- syncStatus: synced | pending | conflict;
+- pendingMutationId, baseCloudUpdatedAt, lastError, updatedAt;
+- conflictCloudSnapshot (nếu có) để giữ bản Cloud tại thời điểm phát hiện xung đột.
+
+SyncQueue tiếp tục là hàng đợi bền vững; bổ sung khả năng truyền mutationId có sẵn và baseCloudUpdatedAt cho riêng mutation assets. Không sinh mutationId mới khi retry cùng một giao dịch. Không xóa queue trước xác nhận Cloud. Không cho phép sửa tiếp cùng asset khi đang pending/conflict.
+
+Lease token chỉ nằm trong bộ nhớ phiên đang sửa; không ghi vào IndexedDB, localStorage hoặc syncQueue. Khi reload/reconnect không được khôi phục quyền từ token cũ.
+
+#### C. Migration/RPC Cloud kế tiếp – chưa tạo/chưa chạy
+Đề xuất migration 017 bổ sung bảng biên nhận asset_mutation_receipts, không cho client truy cập trực tiếp:
+- khóa duy nhất (organization_id, mutation_id);
+- asset_id, applied_by_user_id, payload jsonb, result_snapshot jsonb, applied_at.
+- Giữ biên nhận đủ lâu để retry sau mất response vẫn nhận được kết quả cũ; chưa thiết kế job xóa tự động.
+
+RPC mới apply_asset_mutation_with_lock:
+1. Nhận organization, asset, token lease, mutationId, expectedCloudUpdatedAt và payload hồ sơ.
+2. Tìm receipt theo organization + mutationId trước. Nếu đã áp dụng bởi cùng user, cùng asset và payload giống hệt thì trả lại kết quả đã ghi (idempotent), kể cả lease cũ đã hết hạn; nếu payload khác thì từ chối.
+3. Nếu chưa có receipt: khóa hàng lease và hàng asset trong cùng transaction; kiểm tra user/token/expiry, permission, organization và expectedCloudUpdatedAt.
+4. Nếu expectedCloudUpdatedAt không khớp Cloud hiện tại thì trả conflict, không update.
+5. Cập nhật asset và insert receipt trong cùng transaction. Không có trường hợp asset update thành công mà receipt không được ghi.
+6. Bao phủ cả sửa trường hồ sơ, trạng thái, lưu kho và khôi phục. Không để các đường ghi Local khác bỏ qua RPC.
+7. Không dùng service_role ở client; mọi quyền vẫn kiểm tra trong RPC.
+
+Lý do cần receipt: nếu Cloud commit thành công nhưng response bị mất, client retry cùng mutationId/payload sẽ nhận lại kết quả đã commit thay vì cập nhật lần hai hoặc bị hiểu nhầm là thất bại. Nếu không có receipt và lease đã hết hạn/bị thay thế, client không được tự xin token mới để gửi lại mutation cũ.
+
+#### D. Luồng cập nhật Local đề xuất
+1. Chặn sửa nếu mapping chưa xác minh, đang pending/conflict hoặc Cloud không truy cập được.
+2. Xin lease Cloud. Sau khi nhận lease, đọc snapshot Cloud hiện tại; so sánh updated_at với cloudUpdatedAt đã lưu. Nếu khác, không mở form; lưu snapshot và chuyển conflict để đối chiếu.
+3. Khi người dùng lưu, trong một IndexedDB transaction: ghi Asset Local, ghi SyncQueue với mutationId cố định, ghi assetSyncState pending + baseCloudUpdatedAt. Local là nơi ghi thao tác trước.
+4. Gọi apply_asset_mutation_with_lock với đúng token, mutationId, baseCloudUpdatedAt và snapshot vừa lưu; heartbeat liên tục trong thời gian chờ.
+5. Chỉ sau response xác nhận (hoặc retry cùng mutationId nhận receipt đã commit) mới đánh dấu mutation đã xác nhận, cập nhật cloudUpdatedAt và nhả lease. Nếu release thất bại thì lease tự hết hạn; không coi đây là lỗi mất dữ liệu.
+6. Khi response không rõ kết quả, giữ queue pending và thử lại cùng mutationId/payload/token trong lúc lease còn hiệu lực. Không sinh mutationId mới.
+7. Nếu lease hết hạn/bị thay thế và receipt không tồn tại, chuyển conflict; giữ nguyên bản Local và queue, không tự gửi lại bằng token mới, không ghi đè Cloud.
+8. Khi receipt cho biết mutation đã commit nhưng Cloud đã có bản cập nhật mới hơn, đánh dấu mutation cũ đã được áp dụng nhưng không ghi snapshot cũ đè lên Cloud mới; tải snapshot Cloud hiện tại và đưa vào đối chiếu nếu Local còn khác.
+9. Chỉ giải quyết conflict bằng thao tác có chủ đích sau khi hiển thị rõ bản Local và bản Cloud; không tự chọn bản mới nhất theo đồng hồ thiết bị.
+
+#### E. Lịch sử Checklist/bảo dưỡng
+- Trong đợt này, Checklist, task, log, maintenance plan vẫn chỉ ghi Local theo các luồng đang chạy.
+- Không đưa các queue đó lên Cloud và không thay đổi trạng thái synced.
+- Thiết kế sync worker lịch sử là đợt riêng sau khi luồng hồ sơ thiết bị ổn định; khi đó worker mới được kiểm tra lease và thứ tự phụ thuộc asset.
+
+#### F. Ma trận kiểm thử bắt buộc trước khi bật
+1. Mapped asset, Cloud/local version trùng: acquire → Local transaction → RPC → receipt → release PASS.
+2. UUID/code mismatch hoặc asset chưa mapped: chặn sửa; không tạo lease sai organization.
+3. Cloud updated_at thay đổi trước khi mở form: phát hiện conflict, không ghi.
+4. Hai nền tảng acquire đồng thời: đúng một lease được cấp.
+5. RPC commit nhưng response bị cắt: retry cùng mutationId trả receipt, không update lần hai.
+6. Retry cùng mutationId nhưng payload khác: bị từ chối.
+7. RPC chưa commit, lease hết hạn và platform khác lấy khóa: token cũ bị từ chối; queue Local giữ nguyên và chuyển conflict.
+8. Mất mạng khi đang sửa: form khóa ngay, không nhận save; không tự khôi phục quyền khi reconnect.
+9. Release RPC lỗi sau khi Cloud đã commit: mutation vẫn được xác nhận; lease hết hạn theo TTL.
+10. Reload trình duyệt khi pending: không khôi phục token; giữ queue và chạy quy trình receipt/conflict an toàn.
+11. Người khác cập nhật Cloud sau khi mutation cũ commit: retry receipt không được ghi đè snapshot mới.
+12. Kiểm tra riêng archive/restore/status để chắc chắn không có đường ghi bỏ qua lease.
+13. Kiểm tra Checklist và bảo dưỡng vẫn lưu Local bình thường trong lúc thiết bị đang bị khóa.
+
+#### G. Trạng thái thực hiện
+- Đây là thiết kế kỹ thuật, chưa thay đổi code Local, chưa tạo migration 017, chưa thực thi SQL.
+- Không bật đồng bộ hàng đợi tổng thể; không đẩy Checklist/task/log/maintenance/inventory.
+- Trước khi code, cần triển khai theo lát nhỏ: (1) migration + SQL test receipt/RPC; (2) metadata IndexedDB và helper queue; (3) Local UI acquire/heartbeat/fail-closed; (4) Local save/status/archive/restore qua RPC; (5) test hai nền tảng và offline.
+- Không mở rộng qua xóa thiết bị hoặc các bảng nghiệp vụ khác.
+
+CI: run #310 cho commit 8b26aae3d1728e2f4f92ce6b240ab60a9a81afd7 completed/success. CI chỉ xác nhận workflow/build; không kiểm thử SQL hoặc runtime hai nền tảng.
