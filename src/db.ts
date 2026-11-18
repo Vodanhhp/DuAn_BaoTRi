@@ -267,7 +267,7 @@ function queueId(tableName: string, recordId: string) {
 }
 
 let cachedDeviceId: string | undefined
-function getDeviceId() {
+export function getDeviceId() {
   if (cachedDeviceId) return cachedDeviceId
   const key = 'baotri-device-id'
   try {
