@@ -3190,3 +3190,28 @@ Trạng thái: chưa áp dụng guard backup restore tại thời điểm ghi nh
 - Các bước Test Cloud sync mapping safety, Test Local identity rekey safety, validate template JSON/reference/package và Build Vite app đều PASS.
 - Job `deploy` đang chạy tại thời điểm cập nhật. Chưa đánh dấu toàn bộ workflow/deploy hoàn tất.
 - CI không chạy SQL Migration 017, không kiểm thử Dexie migration trong trình duyệt thực, không kiểm thử hai thiết bị PC/Mobile đồng thời.
+
+
+## 24. Khắc phục kiểm tra payload của Migration 017 (19/11/2026)
+
+Người dùng đã chạy Migration 017 thành công trên BAOTRI-Mini-Test. Khi chạy Test SQL 017, RPC `apply_asset_mutation_with_lock` báo lỗi PostgreSQL `42883: function jsonb_object_length(jsonb) does not exist`.
+
+Nguyên nhân:
+- Migration 017 dùng `jsonb_object_length(p_payload)` để đếm số key của JSON object.
+- Hàm này không khả dụng trong môi trường PostgreSQL đang dùng.
+- Kiểm tra số lượng key là dư thừa vì điều kiện bắt buộc đủ toàn bộ key (`?& v_required_keys`) và không có key ngoài allowlist (`p_payload - v_required_keys = '{}'`) đã đảm bảo chính xác tập key.
+
+Cách sửa:
+- Loại bỏ phép gọi `jsonb_object_length`; giữ kiểm tra payload phải là JSON object, đủ các key bắt buộc và không có key ngoài allowlist.
+- Dùng `IS DISTINCT FROM 'object'` để xử lý an toàn cả trường hợp payload NULL.
+- Vì Migration 017 đã được áp dụng, không chạy lại toàn bộ Migration 017 (sẽ vướng bảng đã tồn tại). Tạo migration hotfix tiếp theo để thay thế định nghĩa RPC hiện hữu an toàn, sau đó mới chạy lại Test SQL 017.
+- Đồng thời sửa file Migration 017 gốc để các lần cài mới không gặp lại lỗi.
+
+Phạm vi: chỉ hàm kiểm tra payload trong RPC; không đổi schema receipt, lease, quyền, logic cập nhật Asset, idempotency hoặc phạm vi đồng bộ. Không bật worker và không chạy SQL thay người dùng.
+
+Trạng thái:
+- [x] Đã xác định nguyên nhân từ lỗi thực tế.
+- [ ] Đã cập nhật Migration 017 gốc và thêm migration hotfix.
+- [ ] Người dùng chạy hotfix trên BAOTRI-Mini-Test.
+- [ ] Chạy lại Test SQL 017 và xác nhận PASS.
+- [ ] Chưa tích hợp Local lease/receipt trước khi Test 017 PASS.
