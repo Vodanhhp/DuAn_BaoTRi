@@ -2534,3 +2534,25 @@ Chuẩn bị nền tảng dữ liệu cho bản nháp Local và chuyển ID tạ
 - Không bật sync worker tổng thể hoặc tự động import dữ liệu.
 - Không sửa các phân hệ vật tư, Checklist, bảo dưỡng ngoài phần cần thiết để giữ lịch sử chờ đồng bộ theo thiết bị.
 - Mọi thay đổi code tiếp tục thực hiện trực tiếp trên main; cập nhật tài liệu tiến độ trước mỗi đợt sửa code.
+
+
+### TRIỂN KHAI ĐỢT 1 – NỀN TẢNG KHÓA THIẾT BỊ PHÍA CLOUD (18/11/2026)
+
+Đã tạo trên `main` hai file để chuẩn bị kiểm thử cơ chế khóa theo từng thiết bị:
+
+- `supabase/migrations/20261118000200_asset_edit_lock_lease.sql`
+  - Tạo bảng `asset_edit_locks`, khóa duy nhất theo organization + asset.
+  - RPC cấp khóa nguyên tử, gia hạn heartbeat, giải phóng khóa và đọc danh sách khóa đang hiệu lực.
+  - Lease hết hạn sau 2 phút theo đồng hồ máy chủ.
+  - Token bí mật chỉ trả cho nền tảng giữ khóa; danh sách trạng thái không tiết lộ token.
+  - RPC cập nhật hồ sơ và lưu kho/khôi phục yêu cầu đúng token còn hiệu lực.
+  - Thu hồi quyền UPDATE trực tiếp bảng assets của authenticated để không thể bỏ qua khóa bằng PostgREST.
+- `supabase/tests/20261118000200_asset_edit_lock_lease_test.sql`
+  - Kiểm tra Admin lấy khóa, Technician không chiếm được khóa đang hiệu lực, heartbeat, token sai, release, chuyển khóa, hết hạn lease và chặn UPDATE trực tiếp.
+  - Script dùng transaction và kết thúc bằng ROLLBACK.
+
+**Trạng thái:** mới tạo và fetch lại xác minh hai file trên GitHub. Chưa chạy SQL, chưa áp dụng Migration 016 lên BAOTRI-Mini-Test hoặc Production; chưa có kết quả PASS từ PostgreSQL.
+
+**Chưa tích hợp giao diện hoặc luồng Local–Cloud.** Mã `src/lib/assetsCloud.ts` hiện vẫn cập nhật trực tiếp bảng `assets` trong các hàm `updateCloudAsset` và `setCloudAssetArchived`; sau khi Migration 016 được áp dụng, các đường ghi này phải được thay bằng RPC có token. Chưa sửa chúng trong đợt này để tránh làm hỏng màn hình Cloud trước khi người dùng chạy migration và xác nhận SQL test.
+
+**Lưu ý kiến trúc:** CloudAssetsPanel hiện là màn hình thao tác dữ liệu Cloud riêng, còn workspace nghiệp vụ vẫn dùng IndexedDB Local. Cần nối cơ chế khóa vào đúng luồng Local-first và đồng bộ sau khi kiểm chứng nền tảng lease; không được coi việc khóa được tạo trên Cloud là đã hoàn thành đồng bộ PC/Mobile.
