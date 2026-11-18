@@ -2897,3 +2897,62 @@ Các thành phần đã được xác minh tồn tại trên nhánh `main`:
 - Không bật đồng bộ đại trà, không thay đổi dữ liệu nghiệp vụ hoặc thực hiện thao tác destructive.
 - Giữ nguyên các chức năng Local đang hoạt động; chỉ sửa đúng phạm vi đã xác định.
 - Không tuyên bố chức năng hoàn tất chỉ vì code/migration đã tồn tại; phải phân biệt rõ code đã có, SQL đã chạy, kiểm thử đã PASS và kiểm thử runtime thực tế.
+
+---
+
+## RÀ SOÁT CHI TIẾT LOCAL DB / SYNC QUEUE TRƯỚC KHI TÍCH HỢP LEASE (18/11/2026)
+
+Đã đọc trực tiếp các file mới nhất trên `main`:
+- `src/db.ts` (Dexie schema hiện có đến version 7).
+- `src/App.tsx` (luồng save/edit/archive/restore/status của Asset).
+- `src/lib/assetEditLocks.ts`.
+- `src/lib/assetsCloud.ts`.
+- `src/lib/localIdentity.ts`.
+- `supabase/migrations/20261118000300_asset_mutation_receipts.sql`.
+- `supabase/tests/20261118000300_asset_mutation_receipts_test.sql`.
+- `supabase/CLOUD_SYNC_QUEUE_V7_DESIGN.md`.
+
+### 1. Hiện trạng thực tế của Dexie và Asset
+- Dexie hiện đã có schema version 7, không phải version 6. Version 7 bổ sung `identityStatus` cho Asset/Inventory; dữ liệu cũ được giữ nguyên ID/mã và đánh dấu `legacy`.
+- `Asset.identityStatus` hiện hỗ trợ `legacy | draft | ready | synced | conflict`; tuy nhiên đây chỉ là trạng thái định danh, chưa phải mapping/sync state đầy đủ.
+- Chưa có bảng `assetSyncState` hoặc bảng riêng lưu snapshot/version Cloud, organization mapping và conflict snapshot.
+- `Asset` Local chứa `id`, `code`, `category`, thông tin hồ sơ, `updatedAt`; Cloud counterpart phải có cùng UUID trong đúng organization thì mới có thể xin lease do FK của `asset_edit_locks` tham chiếu `assets(organization_id,id)`.
+- `importCloudAssetPreservingIdentity()` là thao tác nhập Local lên Cloud riêng biệt, bảo toàn UUID và mã quản lý; đây là luồng import tường minh, không phải worker đồng bộ tự động.
+
+### 2. Các luồng ghi Asset đã xác minh
+- `saveAsset()` trong `src/App.tsx`: ghi Asset Local và gọi `queueChange('assets', saved.id)` trong cùng Dexie transaction.
+- `archiveAsset()`, `restoreAsset()`, `changeAssetStatus()`: dùng `putAndQueue()`, cùng ghi Local và gọi `queueChange()`.
+- `rekeyAssetDraftId()` trong `src/db.ts`: đổi ID Asset và các FK liên quan trong một Dexie transaction; queue item được tạo lại qua `buildAssetRekeyPlan()`.
+- Checklist/task/log/maintenance tiếp tục có luồng ghi riêng. Không được đưa chúng vào đợt đồng bộ hồ sơ Asset này.
+- Chưa thấy worker đang claim/gửi/xác nhận `syncQueue`; không được bật worker chung trong đợt này.
+
+### 3. Vấn đề kỹ thuật đã xác nhận trong syncQueue
+- Schema hiện dùng primary key `id` dạng `tableName:recordId` và unique index `[tableName+recordId]`.
+- `SyncItem` hiện có operation, status, attempts, deviceId và mutationId; chưa có payload snapshot bất biến, base Cloud version, claim token hoặc organization mapping.
+- Mỗi lần gọi `queueChange()`, hàm dùng `put()`, đặt lại pending/attempts và tạo `mutationId` mới. Vì vậy mutation cũ của cùng Asset có thể bị thay thế.
+- Cơ chế này được mô tả trong `supabase/CLOUD_SYNC_QUEUE_V7_DESIGN.md`: chỉ có thể coalesce thay đổi pending chưa claim; mutation đã processing/sent phải bất biến. Không được triển khai worker trên queue hiện tại trước khi thiết kế và migration queue an toàn.
+- Với đợt Asset lease hiện tại, không được để lần sửa mới thay mutationId/payload của mutation đang pending hoặc chưa có Cloud acknowledgement. Cần chặn sửa tiếp Asset đó hoặc có mô hình mutation riêng theo ID; quyết định phải được kiểm thử trước khi code.
+- `buildAssetRekeyPlan()` tạo mutationId mới khi đổi draft ID; logic hiện từ chối queue processing và queue ID chính thức đã tồn tại, nhưng pending queue của draft được thay bằng mutation mới. Phải bảo toàn ngữ nghĩa mutation khi nối lease; không tái sử dụng hoặc làm mất mutation đã gửi/chưa xác nhận.
+
+### 4. Ràng buộc của Migration 017 và helper hiện tại
+- RPC `apply_asset_mutation_with_lock` yêu cầu Asset Cloud đã tồn tại trong đúng organization, lease hợp lệ, mutationId, expected Cloud `updated_at` và payload hồ sơ đầy đủ.
+- RPC ghi Asset và receipt trong cùng transaction; replay cùng user/asset/mutationId/expected version/payload trả receipt cũ; payload khác hoặc user/asset khác bị từ chối.
+- RPC không tạo Asset mới và không thay mã `code` hoặc `category`; các trường này không nằm trong payload cập nhật. Không dùng RPC này thay cho quy trình import/khởi tạo Asset.
+- Helper `applyAssetMutationWithEditLock()` hiện gửi payload snapshot và nhận Asset + receipt; chưa được gọi từ `App.tsx`.
+- Lease không thể được xin cho Asset chưa có Cloud counterpart. Không được tự ghép Local/Cloud theo tên hoặc mã; chỉ mapping khi xác minh UUID và organization.
+- Phải kiểm tra thêm các khác biệt kiểu dữ liệu/null/date giữa Local Asset và Cloud row trước khi nối UI; không tự chuyển đổi mơ hồ.
+
+### 5. Kết luận thiết kế trước khi triển khai Local
+1. Giữ nguyên queue chung hiện tại; không bật worker hoặc thay đổi sync semantics của các bảng khác.
+2. Xác định một trạng thái đồng bộ Asset riêng theo organization + asset UUID, tối thiểu gồm: Cloud mapping đã xác minh, Cloud updated_at đã xác nhận, mutationId/payload đang chờ, trạng thái pending/conflict và snapshot Cloud khi conflict.
+3. Khi Asset có mutation pending/chưa được receipt xác nhận, chặn lần sửa master tiếp theo trên Asset đó; không để `queueChange()` ghi đè mutationId. Chỉ mở lại sau acknowledgement hoặc xử lý conflict có chủ đích.
+4. Với mutation đang gửi, giữ nguyên mutationId, payload và expected Cloud version; retry chỉ được dùng đúng bộ dữ liệu đó. Không tự xin token mới để gửi mutation cũ.
+5. Khi import Local Asset lần đầu lên Cloud, dùng quy trình import hiện có và xác minh UUID/code/org; sau đó mới ghi nhận mapping + Cloud updated_at để cho phép acquire lease. Import không được chạy nền tự động.
+6. Checklist, task, log, maintenance plan và inventory tiếp tục Local-only; không đưa queue của chúng vào luồng này.
+7. Trước khi sửa code, cần thiết kế migration Dexie tiếp theo (nếu cần) và test chuyển đổi từ version 7, bao gồm backup/restore, pending queue và draft rekey. Không sửa Dexie schema chỉ để thử nghiệm.
+
+### 6. Trạng thái rà soát
+- Đây là audit mã nguồn và cập nhật thiết kế; chưa sửa code ứng dụng, chưa đổi Dexie schema, chưa gọi RPC, chưa ghi dữ liệu Cloud.
+- Migration 017 và SQL Test 017 vẫn chưa có xác nhận người dùng đã chạy trên Supabase Test.
+- GitHub Actions run #317 cho commit `aa493d01c13cbfe7b8db4273786dab17c42f3fb5` đã được kiểm tra lại: completed / success.
+- Bước tiếp theo: review chéo thiết kế `CLOUD_SYNC_QUEUE_V7_DESIGN.md` với luồng lease/receipt của Asset; chốt mô hình asset-specific pending/conflict và mapping trước khi thay đổi code.
