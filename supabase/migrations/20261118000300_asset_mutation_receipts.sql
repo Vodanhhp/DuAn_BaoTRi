@@ -134,7 +134,7 @@ begin
     );
   end if;
 
-  if not found and v_lock.organization_id is null then
+  if v_lock.organization_id is null then
     raise exception 'Asset edit lease is missing'
       using errcode = '55000';
   end if;
@@ -164,7 +164,7 @@ begin
   if nullif(btrim(v_input.name), '') is null then
     raise exception 'Asset name is required' using errcode = '22023';
   end if;
-  if v_input.status not in (
+  if v_input.status is null or v_input.status not in (
     'Đang hoạt động', 'Đang sửa chữa', 'Ngừng sử dụng', 'Thanh lý'
   ) then
     raise exception 'Unsupported asset status' using errcode = '22023';
