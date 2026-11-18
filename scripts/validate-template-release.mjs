@@ -1,10 +1,13 @@
 import { readFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 const code = value => typeof value === 'string' && value.length > 0
 const uniqueBy = (items, key, label, errors) => {
   const seen = new Set()
   for (const item of items ?? []) {
     const value = item?.[key]
+    if (value === undefined || value === null) continue
     if (seen.has(value)) errors.push(`${label}: giá trị trùng "${value}".`)
     seen.add(value)
   }
@@ -140,4 +143,4 @@ async function main() {
   }
 }
 
-if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) await main()
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) await main()
