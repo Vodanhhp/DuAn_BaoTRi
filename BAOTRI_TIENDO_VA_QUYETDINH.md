@@ -2648,3 +2648,25 @@ Người dùng chạy Test SQL 016 và gặp lỗi CHECK constraint `asset_edit_
 Giữ nguyên CHECK constraint của bảng; không sửa Migration 016 và không nới lỏng bảo vệ thứ tự timestamp. Đã fetch lại file trên GitHub xác nhận đúng nội dung. CI run #306 được tạo cho commit sửa test và đang queued tại thời điểm ghi nhận.
 
 **Yêu cầu:** chạy lại riêng Test SQL 016 bằng phiên bản mới trên `main`. Migration 016 không cần chạy lại nếu lần áp dụng trước đã thành công.
+
+
+### XÁC NHẬN KIỂM THỬ SQL SAU MIGRATION 016 (18/11/2026)
+
+Người dùng đã tự chạy trên môi trường BAOTRI-Mini-Test và xác nhận PASS toàn bộ các bài kiểm thử:
+- Test SQL 008 – CRUD/RLS thiết bị.
+- Test SQL 010 – thành viên bị đình chỉ và cô lập tenant.
+- Test SQL 011 – truy cập unauthenticated, không có membership và thu hồi quyền.
+- Test SQL 016 – lease khóa chỉnh sửa thiết bị, heartbeat, release, hết hạn/chuyển khóa và cập nhật qua token.
+
+Các script kiểm thử sử dụng transaction/ROLLBACK theo nội dung file. Kết quả PASS là do người dùng trực tiếp xác nhận; assistant không kết nối hoặc thực thi SQL trên Supabase.
+
+**Bước tiếp theo – kiểm thử runtime riêng CloudAssetsPanel:**
+1. Dùng hai phiên đăng nhập khác nhau trên hai trình duyệt/thiết bị (PC và Mobile), cùng tổ chức Test.
+2. Trên PC, mở Cloud quản lý thiết bị và bắt đầu sửa thiết bị A; xác nhận form chỉ mở sau khi lấy lease.
+3. Trên Mobile, tải/đợi cập nhật danh sách; xác nhận thiết bị A hiển thị người/nền tảng đang giữ khóa và không cho sửa/lưu kho/khôi phục.
+4. Trên PC, hủy chỉnh sửa; xác nhận Mobile thấy khóa được giải phóng và có thể xin khóa.
+5. Lặp lại với PC lưu thay đổi; xác nhận Mobile nhận dữ liệu mới sau khi tải lại.
+6. Kiểm tra mất mạng khi đang giữ khóa: phiên giữ khóa phải khóa cục bộ và không lưu; sau khi lease hết hạn, thiết bị khác có thể xin khóa; phiên cũ không được tự khôi phục quyền khi có mạng lại.
+7. Kiểm tra lease tự hết hạn khi ngừng heartbeat đủ 2 phút. Không rút ngắn thời gian trong production.
+
+**Giới hạn còn lại:** kiểm thử runtime hai phiên chưa được người dùng xác nhận. Cơ chế lease hiện mới được tích hợp trong CloudAssetsPanel; form Local-first trong App.tsx và pipeline Local–Cloud chưa được nối. Không tuyên bố khóa liên nền tảng toàn ứng dụng đã hoàn tất. Chưa bật sync worker, chưa đồng bộ hàng đợi lịch sử, chưa thay đổi Migration hoặc dữ liệu Supabase.
