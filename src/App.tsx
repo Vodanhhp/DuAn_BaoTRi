@@ -13,7 +13,7 @@ import {
 import { QRCodeSVG } from 'qrcode.react'
 import { Html5QrcodeScanner } from 'html5-qrcode'
 import namingConventionText from '../QUY_UOC_MA_DINH_DANH_VA_VIET_TAT_THIET_BI.txt?raw'
-import { db, uid, now, queueChange, type Asset, type InventoryItem, type Task, type MaintenancePlan, type MaintenancePlanPeriod, type Movement, type Log, type ChecklistTemplateItem, type ChecklistTemplateVersion, type ChecklistResultItem, type ChecklistResult } from './db'
+import { db, uid, now, queueChange, type Asset, type InventoryItem, type Task, type MaintenancePlan, type MaintenancePlanPeriod, type Movement, type Log, type ChecklistTemplateItem, type ChecklistTemplateVersion, type ChecklistResultItem, type ChecklistResult, putAndQueue, addAndQueue, deleteAndQueue } from './db'
 import { downloadExcelReport } from './lib/excelExport'
 
 type Page = 'dashboard' | 'checklist' | 'assets' | 'inventory' | 'planning' | 'tasks' | 'logs' | 'reports' | 'settings'
@@ -628,7 +628,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
           : undefined
         const saved: Asset = { ...a, code, cycleStartedAt, images: a.images ?? [], updatedAt: now() }
         await db.assets.put(saved)
-        await db.syncQueue.put({ id: uid(), tableName: 'assets', recordId: saved.id, operation: 'upsert', queuedAt: now() })
+        await queueChange('assets', saved.id)
         return saved
       })
       setModal(null); setEditingAsset(null)
@@ -641,12 +641,12 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
   const saveItem = async (i: InventoryItem) => {
     if (blockViewer('thêm hoặc sửa vật tư')) return
     const value = { ...i, updatedAt: now() }
-    await db.inventory.put(value); await queueChange('inventory', value.id); setModal(null); setEditingItem(null); flash('Đã lưu vật tư')
+    await putAndQueue(db.inventory, 'inventory', value); setModal(null); setEditingItem(null); flash('Đã lưu vật tư')
   }
   const saveTask = async (t: Task) => {
     if (blockViewer('thêm hoặc sửa công việc')) return
     const value = { ...t, updatedAt: now() }
-    await db.tasks.put(value); await queueChange('tasks', value.id); setModal(null); setEditingTask(null); flash('Đã lưu công việc')
+    await putAndQueue(db.tasks, 'tasks', value); setModal(null); setEditingTask(null); flash('Đã lưu công việc')
   }
   const saveMaintenancePlans = async (plans: MaintenancePlan[]) => {
     if (blockViewer('thêm hoặc sửa kế hoạch bảo trì')) return
@@ -666,8 +666,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
   const deleteMaintenancePlan = async (plan: MaintenancePlan) => {
     if (blockViewer('xóa kế hoạch bảo trì')) return
     if (!confirm(`Xóa kế hoạch “${plan.title}”?`)) return
-    await db.maintenancePlans.delete(plan.id)
-    await queueChange('maintenancePlans', plan.id, 'delete')
+    await deleteAndQueue(db.maintenancePlans, 'maintenancePlans', plan.id)
     flash('Đã xóa kế hoạch bảo trì')
   }
   const saveLog = async (entry: Log) => {
@@ -687,7 +686,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
       : entry.editHistory ?? existing?.editHistory
     const completedAt = entry.result ? entry.completedAt || existing?.completedAt || now() : undefined
     const value: Log = { ...entry, dueDate: entry.dueDate || undefined, requestedBy: entry.requestedBy?.trim() || userName, performedBy: entry.result ? (entry.performedBy.trim() || userName) : entry.performedBy.trim(), result: entry.result || '', completedAt, editHistory }
-    await db.logs.put(value); await queueChange('logs', value.id)
+    await putAndQueue(db.logs, 'logs', value)
     setModal(null); setEditingLog(null)
     flash(value.result ? 'Đã lưu Phiếu YC hoàn thành' : 'Đã lưu Phiếu YC, đang chờ xử lý')
   }
@@ -703,17 +702,20 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
     if (blockViewer('ghi nhận hoàn thành công việc')) return
     const completedAt = now()
     const completed = { ...t, status: 'Hoàn thành' as const, completedAt, updatedAt: completedAt }
-    await db.transaction('rw', db.tasks, db.logs, async () => {
+    const log: Log = { id: uid(), assetId: t.assetId, taskId: t.id, date: today(), kind: 'Bảo dưỡng định kỳ', description: t.title, parts: '', readings: t.readings, requestedBy: userName, result: 'Đạt', completedAt, performedBy: userName }
+    await db.transaction('rw', [db.tasks, db.logs, db.syncQueue], async () => {
       await db.tasks.put(completed)
-      await db.logs.add({ id: uid(), assetId: t.assetId, taskId: t.id, date: today(), kind: 'Bảo dưỡng định kỳ', description: t.title, parts: '', readings: t.readings, requestedBy: userName, result: 'Đạt', completedAt, performedBy: userName })
+      await db.logs.add(log)
+      await queueChange('tasks', t.id)
+      await queueChange('logs', log.id)
     })
-    await queueChange('tasks', t.id); flash('Đã ghi nhận hoàn thành')
+    flash('Đã ghi nhận hoàn thành')
   }
   const archiveAsset = async (a: Asset) => {
     if (blockViewer('đưa thiết bị vào lưu kho')) return
     if (!confirm(`Đưa “${a.name}” vào Lưu kho? Hồ sơ, ảnh và lịch sử liên quan vẫn được giữ để tra cứu hoặc khôi phục.`)) return
     const value = { ...a, archivedAt: now(), updatedAt: now() }
-    await db.assets.put(value); await queueChange('assets', a.id); flash('Đã đưa thiết bị vào Lưu kho')
+    await putAndQueue(db.assets, 'assets', value); flash('Đã đưa thiết bị vào Lưu kho')
   }
   const restoreAsset = async (a: Asset) => {
     if (blockViewer('khôi phục thiết bị')) return
@@ -731,11 +733,14 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
     if (!qty || qty <= 0) return
     if (type === 'Xuất' && qty > item.quantity) { flash('Số lượng xuất vượt tồn kho'); return }
     const next = { ...item, quantity: item.quantity + (type === 'Nhập' ? qty : -qty), updatedAt: now() }
-    await db.transaction('rw', db.inventory, db.movements, async () => {
+    const movement: Movement = { id: uid(), itemId: item.id, date: today(), type, quantity: qty, reason: 'Thao tác từ màn hình kho' }
+    await db.transaction('rw', [db.inventory, db.movements, db.syncQueue], async () => {
       await db.inventory.put(next)
-      await db.movements.add({ id: uid(), itemId: item.id, date: today(), type, quantity: qty, reason: 'Thao tác từ màn hình kho' })
+      await db.movements.add(movement)
+      await queueChange('inventory', item.id)
+      await queueChange('movements', movement.id)
     })
-    await queueChange('inventory', item.id); flash(`Đã ${type.toLowerCase()} ${qty} ${item.unit}`)
+    flash(`Đã ${type.toLowerCase()} ${qty} ${item.unit}`)
   }
   const exportRows = async (rows: Record<string, string | number>[], filename: string, title: string, sheetName: string, headers: string[], orientation: 'portrait' | 'landscape' = 'landscape') => {
     if (blockViewer('xuất Excel')) return
@@ -1908,13 +1913,16 @@ async function ensureDefaultChecklist(asset: Asset) {
     const title = 'Checklist bảo trì – ' + (asset.category || 'Thiết bị')
     const description = 'Biểu mẫu nền tự động theo nhóm thiết bị. Admin có thể bổ sung, xóa hoặc chỉnh sửa hạng mục theo cấu hình thực tế.'
     const items = buildDefaultChecklist(asset)
+    const versionId = uid()
     await db.checklistTemplates.add({
       id: templateId, assetId: asset.id, title, description, currentVersion: 1,
       active: true, createdAt: timestamp, updatedAt: timestamp
     })
     await db.checklistVersions.add({
-      id: uid(), templateId, assetId: asset.id, version: 1, title, description, items, createdAt: timestamp
+      id: versionId, templateId, assetId: asset.id, version: 1, title, description, items, createdAt: timestamp
     })
+    await queueChange('checklistTemplates', templateId)
+    await queueChange('checklistVersions', versionId)
     return templateId
   })
 }
@@ -1924,9 +1932,7 @@ function AssetChecklist({asset,allowActions,scheduledFor,isMakeup,createRequestF
   useEffect(() => {
     let active = true
     if (!allowActions) return () => { active = false }
-    void ensureDefaultChecklist(asset).then(async templateId => {
-      if (active && templateId) await queueChange('checklistTemplates', templateId)
-    }).catch(error => console.error('Không thể tạo Checklist mẫu:', error))
+    void ensureDefaultChecklist(asset).catch(error => console.error('Không thể tạo Checklist mẫu:', error))
     return () => { active = false }
   }, [asset.id, allowActions])
   const versions = useLiveQuery(() => template ? db.checklistVersions.where('templateId').equals(template.id).toArray() : Promise.resolve([] as ChecklistTemplateVersion[]), [template?.id])
@@ -1968,8 +1974,9 @@ function AssetChecklist({asset,allowActions,scheduledFor,isMakeup,createRequestF
     await db.transaction('rw',db.checklistTemplates,db.checklistVersions,async()=>{
       await db.checklistTemplates.put(nextTemplate)
       await db.checklistVersions.add({id:versionId,templateId,assetId:asset.id,version:nextVersion,title:draftTitle.trim(),description:draftDescription,items:cleanItems,createdAt:timestamp})
+      await queueChange('checklistTemplates', templateId)
+      await queueChange('checklistVersions', versionId)
     })
-    await queueChange('checklistTemplates',templateId)
     setBuilderOpen(false)
     alert('Đã lưu biểu mẫu phiên bản '+nextVersion+'. Các phiên bản và phiếu cũ được giữ nguyên.')
   }
@@ -1990,8 +1997,7 @@ function AssetChecklist({asset,allowActions,scheduledFor,isMakeup,createRequestF
     const failed=items.some(item=>item.answer==='Không đạt'||item.answer==='Không')
     const performedAt=now()
     const entry: ChecklistResult = {id:uid(),assetId:asset.id,templateId:template.id,templateVersionId:currentVersion.id,templateVersion:currentVersion.version,templateTitle:currentVersion.title,performedAt,performedBy:performedBy.trim()||'Người sử dụng',result:failed?'Không đạt':'Đạt',scheduledFor:scheduledFor||undefined,isMakeup:Boolean(scheduledFor && (isMakeup || performedAt.slice(0,10)>scheduledFor)),notes:resultNotes,items,createdAt:performedAt}
-    await db.checklistResults.add(entry)
-    await queueChange('checklistResults',entry.id)
+    await addAndQueue(db.checklistResults, 'checklistResults', entry)
     setRunOpen(false)
     alert(scheduledFor && (isMakeup || performedAt.slice(0,10)>scheduledFor)?'Đã lưu phiếu Checklist bù cho ngày '+dateText(scheduledFor)+'. Kỳ này đã được ghi nhận hoàn thành.':'Đã lưu phiếu Checklist. Kết quả được lưu thành một lần thực hiện riêng.')
   }
