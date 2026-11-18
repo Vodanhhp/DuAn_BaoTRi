@@ -2573,3 +2573,33 @@ Trước khi nối Local-first, xử lý riêng màn hình Cloud hiện có đ�
 **Ranh giới:** Đây mới là bảo vệ thao tác trong CloudAssetsPanel. Chưa áp dụng khóa vào form Local `saveAsset`, vì Local assets hiện chưa có pipeline đồng bộ hồ sơ đầy đủ và màn hình Local có thể chứa thiết bị chưa được import/mapping lên Cloud. Không được giả định Local ID luôn tồn tại trên Cloud. Sau khi Cloud lease được SQL-test và giao diện xác nhận, thiết kế tiếp mapping Local ID ↔ Cloud ID và đồng bộ Local-first trước khi khóa toàn bộ workspace.
 
 **Trước khi áp dụng Migration 016:** phải kiểm tra lại các RPC create/import hiện có và mọi đường ghi bảng assets; các đường update/archive hiện có sẽ chuyển qua RPC lease. Không được chạy migration chỉ vì client code đã được tạo.
+
+
+### TRIỂN KHAI ĐỢT 2 – CLIENT LEASE CHO MÀN HÌNH THIẾT BỊ CLOUD (18/11/2026)
+
+Đã cập nhật trên `main`:
+
+- `src/lib/assetEditLocks.ts`
+  - Client gọi RPC đọc danh sách lease, xin khóa, heartbeat, release.
+  - Cập nhật hồ sơ và lưu kho/khôi phục đều gọi RPC có token.
+  - Chuyển dữ liệu row trả về từ PostgreSQL sang mô hình `Asset` Local.
+- `src/db.ts`: export helper `getDeviceId()` hiện có; không thay đổi cách tạo/lưu device ID.
+- `src/CloudAssetsPanel.tsx`
+  - Xin lease trước khi mở form sửa và trước thao tác lưu kho/khôi phục.
+  - Hiển thị người/nền tảng giữ khóa trên danh sách Cloud.
+  - Poll trạng thái khóa mỗi 5 giây; heartbeat mỗi 30 giây.
+  - Khi mất Internet hoặc heartbeat lỗi: form chuyển read-only, không cho lưu; không tự lấy lại quyền sau khi kết nối lại.
+  - Hủy/lưu thì release đúng token; nếu không release được, Cloud tự hết hạn lease sau 2 phút.
+  - Nếu không đọc được trạng thái khóa từ Cloud, mặc định chặn thao tác thay đổi.
+- `src/lib/assetsCloud.ts`: đã bỏ các đường UPDATE trực tiếp hồ sơ/lưu kho/khôi phục; chỉ còn đọc danh sách và các RPC tạo/import/cấu hình hiện có.
+
+**CI:** GitHub Actions run #297, run ID `44324086360`, commit `0be9c22166d12481931d864b6a3f12cd4cb3f16e` – completed/success. Các test mapping, local identity, template schema/reference/semantic validator và Vite build đều PASS. Run #296 trước đó thất bại vì một lần chỉnh sửa đã xóa nhầm hàm đọc danh sách Cloud; hàm đã được khôi phục và run #297 xác nhận build PASS.
+
+**Chưa được xác nhận:**
+- Chưa chạy SQL Migration 016 hoặc SQL test trên Supabase.
+- Chưa kiểm thử runtime lease với hai trình duyệt/PC-Mobile.
+- Chưa kiểm thử heartbeat, mất mạng và takeover thực tế.
+- Chưa tích hợp khóa vào form Local `saveAsset` hoặc pipeline Local–Cloud. Workspace Local vẫn lưu IndexedDB độc lập; không được coi đợt này là đã giải quyết xung đột thiết bị trên toàn ứng dụng.
+- Khi Migration 016 chưa được áp dụng, màn hình Cloud vẫn đọc danh sách, nhưng các thao tác sửa/lưu kho/khôi phục bị chặn vì không thể xác nhận lease. Đây là fail-closed có chủ đích.
+
+**Bước tiếp theo:** rà soát SQL Migration 016 và SQL test để chuẩn bị cho người dùng tự chạy trên BAOTRI-Mini-Test; sau khi SQL test PASS mới kiểm thử CloudAssetsPanel. Tiếp đó thiết kế mapping thiết bị Local ↔ Cloud và đưa lease vào Local-first; không bật đồng bộ tổng thể.
