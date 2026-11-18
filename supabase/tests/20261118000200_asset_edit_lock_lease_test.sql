@@ -181,6 +181,24 @@ begin
   insert into pg_temp.asset_lock_results values
     ('Valid token updates asset', 'name=Updated by lock RPC',
      'name=' || v_asset.name, v_asset.name = 'Updated by lock RPC');
+
+  select * into strict v_asset
+  from public.set_asset_archived_with_lock(
+    f.organization_id, f.asset_id, f.admin_token, true
+  );
+  insert into pg_temp.asset_lock_results values
+    ('Archive requires valid lease', 'archived_at is not null',
+     'archived=' || (v_asset.archived_at is not null)::text,
+     v_asset.archived_at is not null);
+
+  select * into strict v_asset
+  from public.set_asset_archived_with_lock(
+    f.organization_id, f.asset_id, f.admin_token, false
+  );
+  insert into pg_temp.asset_lock_results values
+    ('Restore requires valid lease', 'archived_at is null',
+     'archived=' || (v_asset.archived_at is not null)::text,
+     v_asset.archived_at is null);
 end
 $protected_update$;
 
@@ -255,6 +273,27 @@ begin
   if v_result ->> 'acquired' <> 'true' then
     raise exception 'Admin could not replace expired lease: %', v_result;
   end if;
+  update pg_temp.asset_lock_fixture
+  set admin_token = (v_result ->> 'lock_token')::uuid;
+
+  perform set_config('request.jwt.claim.sub', f.technician_uid::text, true);
+  perform set_config('request.jwt.claims',
+    jsonb_build_object('sub', f.technician_uid, 'role', 'authenticated', 'aud', 'authenticated')::text, true);
+
+  begin
+    perform public.update_asset_with_lock(
+      f.organization_id, f.asset_id, f.technician_token,
+      'Stale Mobile write must fail', '', '', '', '',
+      current_date, '', '', null, false, 'Đang hoạt động', 'Stale token test'
+    );
+    insert into pg_temp.asset_lock_results values
+      ('Old token cannot write after takeover', 'lease rejection SQLSTATE 55000',
+       'RPC unexpectedly accepted stale token', false);
+  exception when SQLSTATE '55000' then
+    insert into pg_temp.asset_lock_results values
+      ('Old token cannot write after takeover', 'lease rejection SQLSTATE 55000',
+       'stale token rejected', true);
+  end;
 end
 $expired_lease$;
 
