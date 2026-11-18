@@ -2839,3 +2839,61 @@ CI: run #310 cho commit 8b26aae3d1728e2f4f92ce6b240ab60a9a81afd7 completed/succe
 - CI run #312 (commit tạo migration ban đầu) completed/success; CI không thực thi PostgreSQL. Các run #313–#315 bị cancelled khi commit mới thay thế. Run #316 cho client helper đang in_progress tại thời điểm ghi.
 - Chưa tích hợp helper vào App.tsx; chưa thêm bảng assetSyncState; chưa chặn UI Local; chưa bật sync worker.
 - Migration 017 chỉ được xem là bản đề xuất cho Test sau khi review SQL test và chờ người dùng chạy thủ công; tuyệt đối chưa áp dụng Production.
+
+---
+
+## Cập nhật tiến độ – 18/11/2026 (khóa chỉnh sửa và giao dịch đồng bộ hồ sơ thiết bị)
+
+### 1. Hạ tầng khóa chỉnh sửa Cloud – Migration 016
+- Đã có Migration 016: `supabase/migrations/20261118000200_asset_edit_lock_lease.sql`.
+- Đã có SQL Test 016; người dùng xác nhận chạy PASS.
+- Các SQL Test 008, 010 và 011 cũng đã được người dùng xác nhận PASS sau khi điều chỉnh để tương thích với việc thu hồi quyền UPDATE trực tiếp trên bảng `assets`.
+- Cloud management panel đã tích hợp yêu cầu khóa, heartbeat, release và các thao tác cập nhật/lưu kho/khôi phục có xác thực lease.
+- Phạm vi hiện tại chỉ là Cloud management panel; màn hình thiết bị Local trong `src/App.tsx` chưa tích hợp khóa. Chưa được coi là khóa liên nền tảng PC/Mobile/Cloud hoàn chỉnh.
+
+### 2. Đợt bổ sung biên nhận giao dịch – Migration 017
+Các thành phần đã được xác minh tồn tại trên nhánh `main`:
+- Migration: `supabase/migrations/20261118000300_asset_mutation_receipts.sql`.
+- SQL Test: `supabase/tests/20261118000300_asset_mutation_receipts_test.sql`.
+- RPC: `apply_asset_mutation_with_lock`.
+- Client helper: `applyAssetMutationWithEditLock()` trong `src/lib/assetEditLocks.ts`.
+- Các commit triển khai gần nhất:
+  - `9a5141ec8cb293217e6155b248f7ce2b63c4c70b` – bổ sung kiểm thử biên nhận idempotent.
+  - `9854f93d0109421e39475c767b17e0ef7bdda964` – tăng cường kiểm tra lease cho mutation.
+  - `c8f4733687715991ebf185900b283f3794cb161d` – sửa test giữ token lease đã acquire.
+  - `ad54c43bddf14323565a5b56053d0297155ac52b` – bổ sung client helper dùng biên nhận giao dịch.
+  - `aa493d01c13cbfe7b8db4273786dab17c42f3fb5` – cập nhật tài liệu tiến độ.
+- GitHub Actions run #317 (commit `aa493d01c13cbfe7b8db4273786dab17c42f3fb5`) đã hoàn tất với kết quả SUCCESS.
+- **Lưu ý:** Migration 017 và SQL Test 017 mới được đưa lên repository; chưa có xác nhận người dùng đã chạy migration hoặc SQL Test 017 trên Supabase. Không đánh dấu SQL Test 017 PASS.
+
+### 3. Quy tắc an toàn đồng bộ hồ sơ thiết bị đã chốt
+- Luồng dự kiến: Local lưu thay đổi → gửi mutation lên Cloud bằng RPC xác thực lease → Cloud xác nhận → mới đánh dấu mutation hoàn tất và release lease.
+- Không release lease trước khi Cloud xác nhận cập nhật.
+- Nếu Cloud đã commit nhưng phản hồi bị mất, gửi lại cùng `mutationId` phải nhận biên nhận cũ, không áp dụng mutation lần thứ hai.
+- Cùng `mutationId` nhưng payload khác phải bị từ chối.
+- Kiểm tra phiên bản Cloud trước khi ghi để không ghi đè dữ liệu mới hơn.
+- Token lease hết hạn/bị thay thế không được dùng lại; nếu phát hiện xung đột thì chuyển sang xử lý xung đột, không tự lấy token mới để ghi đè.
+- Không xóa hoặc đánh dấu mutation đã đồng bộ trước khi nhận xác nhận từ Cloud.
+- Chưa bật worker đồng bộ tổng quát; không mở rộng đồng bộ sang vật tư, checklist, bảo dưỡng hoặc các bảng khác.
+
+### 4. Trạng thái Local và phạm vi chưa triển khai
+- Client helper `applyAssetMutationWithEditLock()` đã có trong `src/lib/assetEditLocks.ts`, nhưng chưa được nối vào luồng lưu thiết bị trong `src/App.tsx`.
+- Chưa bổ sung hoàn chỉnh metadata mapping Local↔Cloud, trạng thái đồng bộ và xử lý xung đột trong IndexedDB.
+- Chưa tích hợp khóa vào biểu mẫu chỉnh sửa thiết bị Local.
+- Chưa xác minh bằng kiểm thử thực tế hai phiên PC/Mobile đồng thời.
+- Các luồng Local hiện tại và hàng đợi `syncQueue` chưa được chuyển sang cơ chế đồng bộ hồ sơ mới.
+
+### 5. Việc tiếp theo khi tiếp tục
+1. Người dùng chạy Migration 017 và SQL Test 017 trên môi trường Supabase Test; chỉ ghi PASS khi người dùng xác nhận kết quả.
+2. Rà soát kỹ schema Local, cấu trúc `syncQueue`, các luồng thêm/sửa/lưu kho/khôi phục/trạng thái và cơ chế mapping UUID Local↔Cloud.
+3. Hoàn thiện quy tắc versioning, idempotency, retry, queue coalescing và xử lý conflict; đặc biệt không để mutation mới ghi đè mutation cũ chưa được xác nhận.
+4. Cập nhật tài liệu trước khi sửa code; sau đó mới tích hợp luồng khóa vào màn hình Local theo từng phần nhỏ.
+5. Kiểm thử hai phiên đăng nhập/PC-Mobile và các tình huống mất mạng, timeout, lease hết hạn, phản hồi Cloud bị mất.
+
+### 6. Nguyên tắc bắt buộc khi làm tiếp
+- Làm trực tiếp trên nhánh `main`, không tạo nhánh mới hoặc PR trung gian.
+- Đọc phiên bản file mới nhất trên `main` trước khi sửa.
+- Không tự chạy SQL/migration trên Supabase; người dùng thực hiện và báo kết quả.
+- Không bật đồng bộ đại trà, không thay đổi dữ liệu nghiệp vụ hoặc thực hiện thao tác destructive.
+- Giữ nguyên các chức năng Local đang hoạt động; chỉ sửa đúng phạm vi đã xác định.
+- Không tuyên bố chức năng hoàn tất chỉ vì code/migration đã tồn tại; phải phân biệt rõ code đã có, SQL đã chạy, kiểm thử đã PASS và kiểm thử runtime thực tế.
