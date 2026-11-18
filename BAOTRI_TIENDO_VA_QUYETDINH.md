@@ -2236,3 +2236,26 @@ Giới hạn an toàn vẫn giữ:
 - Chưa bật Cloud worker, chưa đồng bộ nghiệp vụ.
 - Không chạy SQL/migration, không ghi dữ liệu Supabase Test/Production.
 - Không tạo thêm user/organization/membership; không triển khai multi-tenant test.
+
+---
+
+# SỬA UUID HIỂN THỊ, NGƯỜI THỰC HIỆN CHECKLIST VÀ THIẾT KẾ IMPORT ASSET – 18/11/2026
+
+## Sửa ứng dụng
+- Commit `58cddd602fa0dda1830d744283c1935b67faea6f`: loại bỏ chuỗi ký tự xuống dòng thừa `\\n` ở phần UUID trong Chi tiết thiết bị; truyền tên tài khoản đăng nhập xuống Checklist; ô Người thực hiện chuyển sang chỉ đọc và phiếu mới lưu snapshot `performedBy` từ tài khoản hiện tại.
+- Commit `bef695c702c4716742d7c3926fcb1b299430fbb0`: chỉnh lại chữ ký component AssetDetailModal để truyền userName đúng một lần, tránh khai báo trùng prop.
+- Nguồn tên hiện tại: `profile.fullName.trim() || userEmail`. Nếu hồ sơ chưa khai báo họ tên, phiếu sẽ lưu email đăng nhập thay vì tên mặc định “Người sử dụng”.
+- Không đổi cấu trúc ChecklistResult, Dexie schema hoặc dữ liệu phiếu cũ. Phiếu đã lưu trước đây giữ nguyên tên cũ; chỉ phiếu thực hiện sau bản cập nhật mới lấy tên tài khoản tự động.
+- Chưa xác nhận build/deploy CI của commit sửa mới nhất; workflow mới nhất cần được kiểm tra sau khi queue hoàn tất.
+
+## Thiết kế import thiết bị bảo toàn UUID + mã quản lý
+- Tạo `supabase/CLOUD_ASSET_IMPORT_DESIGN.md`, commit `bb091a58d0acd57e1ea8f449229a179610bdd1b8`.
+- Thiết kế RPC import riêng, giữ nguyên UUID và mã quản lý hiện có; không sửa `create_asset_with_code` allocator dùng cho thiết bị mới.
+- Đề xuất quyền riêng `assets.import` (Admin-only), idempotency theo mutation ID, chống trùng UUID/code, đồng bộ counter và transaction nguyên tử.
+- Tách biệt `organization_settings.asset_categories` (cây danh mục) với `asset_code_config` (quy tắc sinh mã).
+- Chưa chọn backup desktop/mobile làm nguồn chuẩn; không merge tự động vì UUID có thể khác giữa browser.
+- Chỉ là tài liệu thiết kế; chưa tạo migration/RPC, chưa chạy SQL, chưa ghi dữ liệu lên Supabase Test/Production.
+
+## Giới hạn tiếp tục
+- Không bật Cloud worker hoặc thực hiện import trước khi chốt nguồn backup và hoàn thiện kiểm thử.
+- Giữ nguyên quy tắc QR dùng mã quản lý; UUID chỉ là khóa nội bộ, hiển thị nhỏ cho Admin trong Chi tiết thiết bị.
