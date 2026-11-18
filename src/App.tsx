@@ -702,11 +702,21 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
 
   const closeAssetEditor = () => {
     const current = assetEditLease
-    setModal(null); setEditingAsset(null); setAssetEditLease(null)
     if (current && !current.lost) {
-      void releaseAssetEditLock(cloudClient, organizationId, current.assetId, current.lease.lock_token)
-        .catch(error => flash('Đã đóng form; Cloud sẽ tự hết lease nếu không giải phóng được: ' + (error instanceof Error ? error.message : String(error))))
+      void (async () => {
+        const pending = await db.assetMutations.where('[organizationId+assetId]').equals([organizationId, current.assetId])
+          .filter(item => item.status === 'pending' || item.status === 'processing' || item.status === 'conflict').first()
+        if (pending) {
+          alert('Mutation ' + pending.mutationId + ' chưa được Cloud xác nhận. Không đóng form hoặc giải phóng lease; hãy retry đúng snapshot hoặc chờ xử lý xung đột.')
+          return
+        }
+        setModal(null); setEditingAsset(null); setAssetEditLease(null)
+        try { await releaseAssetEditLock(cloudClient, organizationId, current.assetId, current.lease.lock_token) }
+        catch (error) { flash('Đã đóng form; Cloud sẽ tự hết lease nếu không giải phóng được: ' + (error instanceof Error ? error.message : String(error))) }
+      })()
+      return
     }
+    setModal(null); setEditingAsset(null); setAssetEditLease(null)
   }
 
   const assetMutationPayload = (asset: Asset): AssetMutationPayload => ({
