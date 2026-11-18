@@ -253,7 +253,6 @@ function getDeviceId() {
 export async function queueChange(tableName: string, recordId: string, operation: 'upsert' | 'delete' = 'upsert') {
   if (!tableName || !recordId) throw new Error('Thiếu tên bảng hoặc ID bản ghi khi tạo hàng đợi đồng bộ.')
   const id = queueId(tableName, recordId)
-  const existing = await db.syncQueue.get(id)
   await db.syncQueue.put({
     id, tableName, recordId, operation, queuedAt: now(),
     status: 'pending', attempts: 0, deviceId: getDeviceId(), mutationId: uid(),
