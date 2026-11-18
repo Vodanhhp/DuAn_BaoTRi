@@ -2106,3 +2106,18 @@ assets.images hiện là dữ liệu ảnh local; adapter Cloud trả images r�
 - Chưa chạy SQL, chưa thay đổi Supabase Test/Production, chưa sửa code app, chưa bật worker hoặc ghi dữ liệu Cloud.
 
 **Bước kế tiếp:** review thiết kế RPC update có expected_version và quyền thực thi; tiếp đó thiết kế idempotency ledger/change feed theo cùng nguyên tắc chỉ draft trong repository.
+
+
+---
+
+# HỢP ĐỒNG RPC UPDATE / IDEMPOTENCY / CHANGE FEED – 18/11/2026
+
+- Tạo `supabase/CLOUD_RPC_IDEMPOTENCY_CHANGEFEED_DESIGN.md`, commit `2569d1836ac9faa6cdf7cf8abfe15500f042b894`.
+- Chốt nguyên tắc: không bật Cloud worker khi client còn UPDATE trực tiếp các bảng; row_version phải đi kèm RPC expected_version và thu hồi direct UPDATE grants tương ứng.
+- Định nghĩa hợp đồng RPC theo bảng/nghiệp vụ, không nhận tên bảng/cột động; kiểm tra auth.uid, active membership, active organization và permission cụ thể; khóa row, so sánh version, trả conflict snapshot.
+- Thiết kế idempotency ledger theo organization + mutationId; server tự tính payload hash, kiểm tra actor/operation/record/hash; replay trả kết quả cũ, key reuse khác payload bị từ chối; ledger và business mutation cùng transaction.
+- Thiết kế change feed theo counter row được khóa trong transaction để cấp cursor commit-order; event/tombstone cùng transaction; pull phân trang và chỉ tiến cursor local sau khi apply page thành công.
+- Ghi rõ các điểm chưa được giả định: phải kiểm tra pgcrypto/hash extension thực tế; phải chốt FK/delete/tombstone; quyền pull theo từng phân hệ; payload và retention.
+- Chưa tạo SQL migration cho RPC/ledger/change feed; chưa sửa grants/RLS; chưa bật worker; không chạy SQL và không ghi dữ liệu lên Supabase Test/Production.
+
+**Bước tiếp theo:** review extension/hash và quan hệ FK/delete, quyền pull; sau đó mới tạo SQL draft cho idempotency và change feed trong `supabase/drafts/`.
