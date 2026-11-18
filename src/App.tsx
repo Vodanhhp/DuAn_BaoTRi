@@ -1032,36 +1032,41 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
     if (!pendingRestore || blockViewer('khôi phục dữ liệu từ bản sao lưu')) return
     try {
       const { data } = pendingRestore
-      const [links, unresolvedMutations, currentAssets] = await Promise.all([
-        db.assetCloudLinks.toArray(),
-        db.assetMutations.where('status').anyOf('pending', 'processing', 'conflict').toArray(),
-        db.assets.toArray()
-      ])
-      if (unresolvedMutations.length) {
-        throw new Error('Không thể khôi phục backup khi còn giao dịch thiết bị Cloud chưa xác nhận hoặc đang xung đột.')
-      }
-      if (links.length) {
-        const currentById = new Map(currentAssets.map(asset => [asset.id, asset]))
-        const restoredAssets = (data.assets ?? []) as Asset[]
-        const restoredById = new Map(restoredAssets.map(asset => [asset.id, asset]))
-        for (const link of links) {
-          const current = currentById.get(link.assetId)
-          const restored = restoredById.get(link.assetId)
-          if (link.status !== 'linked' || !current || !restored ||
-              assetMasterRestoreSnapshot(current) !== assetMasterRestoreSnapshot(restored)) {
-            throw new Error('Backup sẽ thay đổi hoặc loại bỏ thiết bị đã liên kết Cloud (' + link.cloudCode + '). Hãy dùng bản backup có cùng hồ sơ thiết bị hoặc xử lý liên kết trước.')
+      const restoredAssets = (data.assets ?? []) as Asset[]
+      // Khôi phục thay thế toàn bộ dữ liệu Local, không phải gộp (merge).
+      // Kiểm tra liên kết và mutation trong cùng transaction để tránh race với tab khác.
+      await db.transaction('rw', [
+        db.assets, db.inventory, db.tasks, db.logs, db.movements, db.maintenancePlans,
+        db.checklistTemplates, db.checklistVersions, db.checklistResults, db.syncQueue,
+        db.assetCloudLinks, db.assetMutations
+      ], async () => {
+        const [links, unresolvedMutations, currentAssets] = await Promise.all([
+          db.assetCloudLinks.toArray(),
+          db.assetMutations.where('status').anyOf('pending', 'processing', 'conflict').toArray(),
+          db.assets.toArray()
+        ])
+        if (unresolvedMutations.length) {
+          throw new Error('Không thể khôi phục backup khi còn giao dịch thiết bị Cloud chưa xác nhận hoặc đang xung đột.')
+        }
+        if (links.length) {
+          const currentById = new Map(currentAssets.map(asset => [asset.id, asset]))
+          const restoredById = new Map(restoredAssets.map(asset => [asset.id, asset]))
+          for (const link of links) {
+            const current = currentById.get(link.assetId)
+            const restored = restoredById.get(link.assetId)
+            if (link.status !== 'linked' || !current || !restored ||
+                assetMasterRestoreSnapshot(current) !== assetMasterRestoreSnapshot(restored)) {
+              throw new Error('Backup sẽ thay đổi hoặc loại bỏ thiết bị đã liên kết Cloud (' + link.cloudCode + '). Hãy dùng bản backup có cùng hồ sơ thiết bị hoặc xử lý liên kết trước.')
+            }
           }
         }
-      }
-      // Khôi phục thay thế toàn bộ dữ liệu Local, không phải gộp (merge).
-      // Xóa và nạp lại trong cùng transaction để tránh trạng thái nửa chừng.
-      await db.transaction('rw', [db.assets, db.inventory, db.tasks, db.logs, db.movements, db.maintenancePlans, db.checklistTemplates, db.checklistVersions, db.checklistResults, db.syncQueue], async () => {
+        // Xóa và nạp lại trong cùng transaction để tránh trạng thái nửa chừng.
         await Promise.all([
           db.assets.clear(), db.inventory.clear(), db.tasks.clear(), db.logs.clear(),
           db.movements.clear(), db.maintenancePlans.clear(), db.checklistTemplates.clear(),
           db.checklistVersions.clear(), db.checklistResults.clear(), db.syncQueue.clear()
         ])
-        await db.assets.bulkPut((data.assets ?? []).map((asset: Asset) => ({ ...asset, identityStatus: asset.identityStatus ?? 'legacy' })))
+        await db.assets.bulkPut(restoredAssets.map(asset => ({ ...asset, identityStatus: asset.identityStatus ?? 'legacy' })))
         await db.inventory.bulkPut((data.inventory ?? []).map((item: InventoryItem) => ({ ...item, identityStatus: item.identityStatus ?? 'legacy' })))
         await db.tasks.bulkPut(data.tasks ?? [])
         await db.logs.bulkPut(data.logs ?? [])
