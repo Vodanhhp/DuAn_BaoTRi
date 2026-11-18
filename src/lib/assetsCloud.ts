@@ -239,3 +239,52 @@ export async function createCloudAsset(
   if (!row?.id || !row?.code) throw new Error('RPC không trả về hồ sơ thiết bị hợp lệ.')
   return toAsset(row)
 }
+
+/**
+ * Explicit one-off import of an existing Local asset.
+ * The Local UUID and management code are immutable inputs; the mutation ID
+ * reuses the asset UUID so a retry after a partial batch is idempotent.
+ */
+export async function importCloudAssetPreservingIdentity(
+  client: SupabaseClient,
+  organizationId: string,
+  asset: Asset
+): Promise<Asset> {
+  if (!organizationId) throw new Error('Thiếu tổ chức đang hoạt động.')
+  if (!asset.id) throw new Error('Thiếu UUID thiết bị Local.')
+  if (!asset.code || !asset.code.trim()) throw new Error('Thiếu mã quản lý thiết bị Local.')
+
+  const { data, error } = await client.rpc('import_asset_preserving_identity', {
+    p_organization_id: organizationId,
+    p_id: asset.id,
+    p_code: asset.code,
+    p_mutation_id: asset.id,
+    p_asset: {
+      name: asset.name,
+      category: asset.category,
+      brand: asset.brand ?? '',
+      model: asset.model ?? '',
+      serial: asset.serial ?? '',
+      location: asset.location ?? '',
+      commissioned_at: asset.commissionedAt || null,
+      power: asset.power ?? '',
+      cycle: asset.cycle ?? '',
+      cycle_started_at: asset.cycleStartedAt || null,
+      transferred_from_other_facility: Boolean(asset.transferredFromOtherFacility),
+      status: asset.status,
+      notes: asset.notes ?? '',
+      archived_at: asset.archivedAt || null,
+      created_at: asset.createdAt,
+      updated_at: asset.updatedAt
+    }
+  })
+
+  if (error) throw new Error('Không thể nhập thiết bị ' + asset.code + ' lên Cloud: ' + error.message)
+  const result = data as { asset?: AssetRow } | null
+  const row = result?.asset
+  if (!row?.id || !row?.code) throw new Error('RPC import không trả về hồ sơ thiết bị hợp lệ.')
+  if (row.id !== asset.id || row.code !== asset.code) {
+    throw new Error('Cloud trả về UUID hoặc mã quản lý không khớp với Local: ' + asset.code)
+  }
+  return toAsset(row)
+}
