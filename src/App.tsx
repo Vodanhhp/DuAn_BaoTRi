@@ -271,6 +271,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
   const [assetSort, setAssetSort] = useState('code-asc')
   const [showArchived, setShowArchived] = useState(false)
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null)
+  const [movementMonth, setMovementMonth] = useState(today().slice(0, 7))
   const [detailItem, setDetailItem] = useState<InventoryItem | null>(null)
   const [editingTask, setEditingTask] = useState<Task | null>(null)
   const [editingPlan, setEditingPlan] = useState<MaintenancePlan | null>(null)
@@ -642,8 +643,10 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
   }
   const saveItem = async (i: InventoryItem) => {
     if (blockViewer('thêm hoặc sửa vật tư')) return
-    const value = { ...i, updatedAt: now() }
-    await putAndQueue(db.inventory, 'inventory', value); setModal(null); setEditingItem(null); flash('Đã lưu vật tư')
+    const existing = await db.inventory.get(i.id)
+    // Số lượng tồn chỉ được thay đổi qua giao dịch Nhập/Xuất, không qua form sửa vật tư.
+    const value = { ...i, quantity: existing?.quantity ?? 0, updatedAt: now() }
+    await putAndQueue(db.inventory, 'inventory', value); setModal(null); setEditingItem(null); flash(existing ? 'Đã cập nhật thông tin vật tư' : 'Đã thêm vật tư (tồn ban đầu = 0)')
   }
   const saveTask = async (t: Task) => {
     if (blockViewer('thêm hoặc sửa công việc')) return
@@ -730,19 +733,23 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
     const value = { ...a, status, updatedAt: now() }
     await putAndQueue(db.assets, 'assets', value); flash(`Đã cập nhật trạng thái: ${status}`)
   }
-  const addMovement = async (item: InventoryItem, type: 'Nhập'|'Xuất', qty: number) => {
+  const addMovement = async (item: InventoryItem, type: 'Nhập'|'Xuất', qty: number, note = '') => {
     if (blockViewer('nhập hoặc xuất kho')) return
-    if (!qty || qty <= 0) return
+    if (!Number.isFinite(qty) || qty <= 0) { flash('Số lượng phải lớn hơn 0'); return }
     if (type === 'Xuất' && qty > item.quantity) { flash('Số lượng xuất vượt tồn kho'); return }
-    const next = { ...item, quantity: item.quantity + (type === 'Nhập' ? qty : -qty), updatedAt: now() }
-    const movement: Movement = { id: uid(), itemId: item.id, date: today(), type, quantity: qty, reason: 'Thao tác từ màn hình kho' }
+    const timestamp = now()
+    const next = { ...item, quantity: item.quantity + (type === 'Nhập' ? qty : -qty), updatedAt: timestamp }
+    const movement: Movement = {
+      id: uid(), itemId: item.id, date: today(), type, quantity: qty,
+      reason: note.trim(), note: note.trim(), performedBy: userName.trim() || 'Tài khoản'
+    }
     await db.transaction('rw', [db.inventory, db.movements, db.syncQueue], async () => {
       await db.inventory.put(next)
       await db.movements.add(movement)
       await queueChange('inventory', item.id)
       await queueChange('movements', movement.id)
     })
-    flash(`Đã ${type.toLowerCase()} ${qty} ${item.unit}`)
+    flash('Đã ' + type.toLowerCase() + ' ' + qty + ' ' + item.unit + '; đã lưu lịch sử kho')
   }
   const exportRows = async (rows: Record<string, string | number>[], filename: string, title: string, sheetName: string, headers: string[], orientation: 'portrait' | 'landscape' = 'landscape') => {
     if (blockViewer('xuất Excel')) return
@@ -1063,10 +1070,34 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
           {showArchived&&<p className="archive-security-note">Xóa vĩnh viễn sẽ chỉ mở khi BAOTRI có đăng nhập và xác thực Admin ở máy chủ. Bản thử nghiệm lưu cục bộ chưa có bảo mật tài khoản thật.</p>}
         </section>}
         {page==='assets' && showCloudAssets && <CloudAssetsPanel client={cloudClient} organizationId={organizationId} organizationName={organizationName} organizationRole={organizationRole} onBack={()=>setShowCloudAssets(false)}/>}
-         {page==='inventory' && <section className="panel"><div className="panel-head"><div><h2>Kho vật tư</h2><p>Nhập xuất tồn và cảnh báo mức tồn tối thiểu</p></div><div className="asset-photo-actions"><button className="soft-btn" disabled={isViewer} title={isViewer?'Viewer không được xuất Excel':undefined} onClick={exportInventory}><Download size={16}/> Xuất Excel</button><button className="soft-btn" onClick={printInventory}><Printer size={16}/> In danh sách</button></div></div>
-          <div className="table-wrap"><table><thead><tr><th>Mã / Tên vật tư</th><th>Nhóm</th><th>Tồn kho</th><th>Tồn tối thiểu</th><th>Vị trí</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
-          {filteredItems.map(i=><tr key={i.id}><td><button type="button" className="inventory-name-link" onClick={()=>setDetailItem(i)}><b>{i.code}</b><small>{i.name}</small></button></td><td>{i.group}</td><td><b>{i.quantity} {i.unit}</b></td><td>{i.minQuantity} {i.unit}</td><td>{i.location||'—'}</td><td><span className={`status ${i.quantity<=i.minQuantity?'red':'green'}`}>{i.quantity<=i.minQuantity?'Sắp hết':'Đủ tồn'}</span></td><td className="actions"><button className="text-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>addMovement(i,'Nhập',Number(prompt('Số lượng nhập?','1')))}>Nhập</button><button className="text-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>addMovement(i,'Xuất',Number(prompt('Số lượng xuất?','1')))}>Xuất</button><button className="text-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>{setEditingItem(i);setModal('item')}}>Sửa</button></td></tr>)}
-          </tbody></table>{filteredItems.length===0&&<Empty text="Chưa có vật tư."/ >}</div></section>}
+         {page==='inventory' && <>
+          <section className="panel">
+            <div className="panel-head"><div><h2>Kho Vật Tư Bảo Trì</h2><p>Quản lý vật tư nội bộ, nhập – xuất – tồn và cảnh báo tồn tối thiểu</p></div><div className="asset-photo-actions"><button className="soft-btn" disabled={isViewer} title={isViewer?'Viewer không được xuất Excel':undefined} onClick={exportInventory}><Download size={16}/> Xuất Excel</button><button className="soft-btn" onClick={printInventory}><Printer size={16}/> In danh sách</button></div></div>
+            <div className="table-wrap"><table><thead><tr><th>Mã / Tên vật tư</th><th>Nhóm</th><th>Tồn kho</th><th>Tồn tối thiểu</th><th>Vị trí</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
+            {filteredItems.map(i=><tr key={i.id}><td><button type="button" className="inventory-name-link" onClick={()=>setDetailItem(i)}><b>{i.code}</b><small>{i.name}</small></button></td><td>{i.group}</td><td><b>{i.quantity} {i.unit}</b></td><td>{i.minQuantity} {i.unit}</td><td>{i.location||'—'}</td><td><span className={'status '+(i.quantity<=i.minQuantity?'red':'green')}>{i.quantity<=i.minQuantity?'Sắp hết':'Đủ tồn'}</span></td><td className="actions">
+              <button className="text-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>{const raw=prompt('Số lượng nhập?','1');if(raw===null)return;const qty=Number(raw);if(!Number.isFinite(qty)||qty<=0)return alert('Số lượng phải lớn hơn 0.');const note=prompt('Ghi chú nhập kho (có thể để trống):','')??'';void addMovement(i,'Nhập',qty,note)}}>Nhập</button>
+              <button className="text-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>{const raw=prompt('Số lượng xuất?','1');if(raw===null)return;const qty=Number(raw);if(!Number.isFinite(qty)||qty<=0)return alert('Số lượng phải lớn hơn 0.');const note=prompt('Ghi chú xuất kho (có thể để trống):','')??'';void addMovement(i,'Xuất',qty,note)}}>Xuất</button>
+              <button className="text-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>{setEditingItem(i);setModal('item')}}>Sửa</button>
+            </td></tr>)}
+            </tbody></table>{filteredItems.length===0&&<Empty text="Chưa có vật tư."/ >}</div>
+          </section>
+          <section className="panel">
+            <div className="panel-head"><div><h2>Lịch sử kho</h2><p>Lưu riêng từng lần nhập và xuất, có người thực hiện và ghi chú</p></div><label className="plan-period-control"><span>Tháng</span><input type="month" value={movementMonth} onChange={event=>setMovementMonth(event.target.value)}/></label></div>
+            {(() => {
+              const monthRows = movements.filter(entry=>entry.date.slice(0,7)===movementMonth)
+              const totalIn = monthRows.filter(entry=>entry.type==='Nhập').reduce((sum,entry)=>sum+entry.quantity,0)
+              const totalOut = monthRows.filter(entry=>entry.type==='Xuất').reduce((sum,entry)=>sum+entry.quantity,0)
+              const byPerson = [...new Set(monthRows.map(entry=>entry.performedBy||'Chưa ghi nhận người thực hiện'))].sort((a,b)=>a.localeCompare(b,'vi'))
+              return <>
+                <div className="report-summary"><span><b>{monthRows.length}</b> giao dịch</span><span><b>{totalIn}</b> tổng nhập</span><span><b>{totalOut}</b> tổng xuất</span></div>
+                {byPerson.length>0&&<div className="table-wrap"><table><thead><tr><th>Kỹ thuật viên</th><th>Tổng nhập</th><th>Tổng xuất</th><th>Số giao dịch</th></tr></thead><tbody>{byPerson.map(person=>{const rows=monthRows.filter(entry=>(entry.performedBy||'Chưa ghi nhận người thực hiện')===person);return <tr key={person}><td><b>{person}</b></td><td>{rows.filter(entry=>entry.type==='Nhập').reduce((sum,entry)=>sum+entry.quantity,0)}</td><td>{rows.filter(entry=>entry.type==='Xuất').reduce((sum,entry)=>sum+entry.quantity,0)}</td><td>{rows.length}</td></tr>})}</tbody></table></div>}
+                <div className="table-wrap"><table><thead><tr><th>Ngày</th><th>Người thực hiện</th><th>Vật tư</th><th>Loại giao dịch</th><th>Số lượng</th><th>Ghi chú</th></tr></thead><tbody>
+                  {monthRows.map(entry=>{const item=inventory.find(row=>row.id===entry.itemId);return <tr key={entry.id}><td>{dateText(entry.date)}</td><td>{entry.performedBy||'Chưa ghi nhận'}</td><td>{item?.name||'Vật tư đã xóa'}{item?.code?' · '+item.code:''}</td><td><span className={'status '+(entry.type==='Nhập'?'green':'orange')}>{entry.type}</span></td><td>{entry.quantity} {item?.unit||''}</td><td>{entry.note||entry.reason||'—'}</td></tr>})}
+                </tbody></table>{monthRows.length===0&&<Empty text="Chưa có giao dịch kho trong tháng này."/ >}</div>
+              </>
+            })()}
+          </section>
+        </>}
         {page==='planning' && <section className="panel maintenance-plan-panel">
           <div className="panel-head">
             <div><h2>Kế hoạch bảo trì</h2><p>Lập lịch bảo trì thiết bị, phân công nội bộ hoặc thuê ngoài</p></div>
@@ -2146,17 +2177,19 @@ function AssetModal({value,close,save,assets,customCategories=[],onAddCategory,o
 }
 function ItemModal({value,close,save}:any){
   const [v,setV]=useState<InventoryItem>(value); const set=(k:keyof InventoryItem,x:any)=>setV(p=>({...p,[k]:x}))
+  const isNew = !value.createdAt
   const units=['Cái','Con','Cuộn','m','mm','cm','Lít','ml','Kg','g','Bộ','Chai','Hộp','Túi','Thùng','Tấm','Ống','Viên','Đôi','Mét','Cuộn dây','Bao','Thanh','Can']
   const groups=['Vật tư điện','Linh kiện điện tử','Cơ khí','Khí nén','Điện lạnh','Dầu mỡ bôi trơn','Vòng bi - bạc đạn','Phớt - gioăng','Vật tư đường ống','Vật tư tiêu hao','Vật tư hàn cắt','Dây cáp điện','Khác']
-  return <Modal title="Thông tin vật tư" close={close}><form className="form-grid" onSubmit={e=>{e.preventDefault();if(!v.code||!v.name)return alert('Nhập mã vật tư và tên vật tư');save(v)}}>
+  return <Modal title={isNew?"Thêm vật tư":"Sửa thông tin vật tư"} close={close}><form className="form-grid" onSubmit={e=>{e.preventDefault();if(!v.code.trim()||!v.name.trim())return alert('Nhập mã vật tư và tên vật tư');save(v)}}>
+    <div className="form-hint">Số lượng tồn không chỉnh sửa tại đây. Muốn thay đổi tồn kho, dùng thao tác Nhập hoặc Xuất.</div>
     <Field label="Mã vật tư *"><input required value={v.code} onChange={e=>set('code',e.target.value.toUpperCase())}/></Field><Field label="Mã số"><input value={v.partNumber??''} onChange={e=>set('partNumber',e.target.value)}/></Field>
     <Field label="Tên vật tư *"><input required value={v.name} onChange={e=>set('name',e.target.value)}/></Field><Field label="Nhóm"><select value={v.group} onChange={e=>set('group',e.target.value)}>{groups.map(x=><option key={x}>{x}</option>)}</select></Field>
     <Field label="Kích cỡ / quy cách"><input placeholder="Ví dụ: DN50, M10, 6204, 2.5 mm..." value={v.size??''} onChange={e=>set('size',e.target.value)}/></Field>
     <Field label="Đơn vị tính"><select value={v.unit} onChange={e=>set('unit',e.target.value)}>{!units.includes(v.unit)&&<option value={v.unit}>{v.unit}</option>}{units.map(x=><option key={x} value={x}>{x}</option>)}</select></Field>
-    <Field label="Số lượng tồn"><input type="number" min="0" value={v.quantity} onChange={e=>set('quantity',Number(e.target.value))}/></Field><Field label="Tồn tối thiểu"><input type="number" min="0" value={v.minQuantity} onChange={e=>set('minQuantity',Number(e.target.value))}/></Field>
+    <Field label="Tồn tối thiểu"><input type="number" min="0" value={v.minQuantity} onChange={e=>set('minQuantity',Number(e.target.value))}/></Field>
     <Field label="Vị trí lưu kho"><input value={v.location} onChange={e=>set('location',e.target.value)}/></Field><Field label="Nhà cung cấp"><input value={v.supplier} onChange={e=>set('supplier',e.target.value)}/></Field>
     <Field label="Đơn giá tham khảo"><input type="number" min="0" value={v.unitPrice} onChange={e=>set('unitPrice',Number(e.target.value))}/></Field>
-    <div className="modal-actions"><button type="button" className="soft-btn" onClick={close}>Hủy</button><button className="primary-btn"><Check size={16}/> Lưu vật tư</button></div>
+    <div className="modal-actions"><button type="button" className="soft-btn" onClick={close}>Hủy</button><button className="primary-btn"><Check size={16}/> {isNew?'Thêm vật tư':'Lưu thông tin'}</button></div>
   </form></Modal>
 }
 function InventoryDetailModal({value,close,edit,readOnly=false}:any){
