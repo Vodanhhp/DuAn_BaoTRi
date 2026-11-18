@@ -2318,3 +2318,62 @@ Giới hạn an toàn vẫn giữ:
 - Đã thêm `supabase/drafts/016_test_reset_preflight_READ_ONLY.sql`, commit `9a8a6079c4c3b5ac44d1728d0f22814ff7f731b4`. Script chỉ SELECT, liệt kê số lượng từng bảng theo tổ chức và membership của tài khoản hiện tại; không ghi/xóa dữ liệu.
 - Giới hạn thao tác: chưa có kết nối Supabase trực tiếp trong phiên làm việc; chưa chạy bất kỳ SQL nào, chưa xóa Cloud/Local, chưa tạo dữ liệu mẫu. Người dùng cần chạy script preflight trên đúng project Test và gửi kết quả để xác định organization_id + số liệu trước khi viết/chạy script reset có phạm vi chính xác.
 - Chưa bật đồng bộ; `cloudSync.ts` là luồng JSON cũ không tương thích schema chuẩn hóa và tuyệt đối không được kích hoạt lại. Cần hoàn thiện protocol Local-first, quyền ghi, unique validation, idempotency và RPC giao dịch kho trước khi sync bộ 30+30.
+
+---
+
+# ĐỊNH HƯỚNG MÔ HÌNH KHỞI TẠO DOANH NGHIỆP THEO NGÀNH VÀ QUY MÔ – 18/11/2026
+
+Người dùng thống nhất định hướng: khi nhà cung cấp cấp tài khoản Admin chính đầu tiên, doanh nghiệp phải được khởi tạo từ một hồ sơ mẫu phù hợp với loại hình và quy mô hoạt động. BAOTRI Mini không áp dụng một bộ nghiệp vụ bảo trì quá chuyên sâu cho tất cả khách hàng.
+
+## 1. Nguyên tắc kiến trúc đã thống nhất
+- Một nền tảng lõi và một bộ mã nguồn BAOTRI Mini dùng chung; không phát triển một ứng dụng riêng cho từng ngành.
+- Mỗi doanh nghiệp được khởi tạo từ một bộ hồ sơ cấu hình gồm: nhóm ngành, quy mô, mức độ quản lý bảo trì, quy ước mã, danh mục từ điển, phân hệ/menu và mẫu nghiệp vụ.
+- Ba yếu tố phân loại ban đầu: (1) nhóm khách hàng/ngành; (2) quy mô nhỏ, trung bình, lớn; (3) mức quản lý bảo trì cơ bản, tiêu chuẩn, chuyên sâu. Hệ thống có thể đề xuất mức thứ ba theo hai yếu tố đầu, Admin được xác nhận/điều chỉnh.
+- Không chỉ lấy bộ dữ liệu nhà máy rồi ẩn bớt để tạo mô hình đơn giản. Mỗi nhóm ngành cần có bộ từ điển chuyên dụng thực sự, chỉ kế thừa các thành phần lõi phù hợp.
+- Menu/phân hệ thay đổi theo cấu hình, nhưng ẩn menu không đồng nghĩa xóa dữ liệu hoặc xóa chức năng. Phải tách trạng thái kích hoạt phân hệ, quyền truy cập và dữ liệu nghiệp vụ.
+
+## 2. Cấu trúc từ điển ba tầng
+1. Từ điển lõi: các khái niệm dùng chung như thiết bị, vật tư, đơn vị tính, trạng thái, công việc, mức độ ưu tiên.
+2. Từ điển theo ngành: nhóm thiết bị, nhóm vật tư, loại công việc, mẫu checklist và nghiệp vụ đặc thù của từng ngành.
+3. Cấu hình theo quy mô/doanh nghiệp: chọn danh mục sử dụng, tùy chỉnh tên/nhóm, bổ sung danh mục riêng, cấu hình menu, mẫu công việc và quy tắc mã.
+
+Mỗi mục từ điển cần có định danh nội bộ bất biến, mã danh mục, tên hiển thị, loại danh mục, phạm vi ngành/quy mô, trạng thái và nguồn (lõi/ngành/doanh nghiệp). Phân biệt từ điển chuẩn do BAOTRI quản lý, từ điển tùy chỉnh của doanh nghiệp và dữ liệu thực tế phát sinh. Cập nhật từ điển chuẩn không được tự ý sửa/xóa dữ liệu thực tế đã tạo.
+
+## 3. Quy trình onboarding dự kiến
+1. Nhà cung cấp tạo/cấp quyền khởi tạo cho Admin chính đầu tiên.
+2. Admin khai báo thông tin doanh nghiệp, mã doanh nghiệp và số cơ sở/mô hình cơ sở.
+3. Chọn nhóm ngành.
+4. Chọn quy mô.
+5. Chọn hoặc xác nhận mức độ quản lý bảo trì.
+6. Xem trước và xác nhận quy ước mã cho thiết bị, vật tư, công việc, cơ sở và các đối tượng cần thiết.
+7. Hệ thống nạp bộ từ điển, menu/phân hệ, checklist và mẫu bảo trì tương ứng.
+8. Admin rà soát, bổ sung/bỏ chọn danh mục trước khi đưa vào sử dụng.
+
+## 4. Hồ sơ mẫu đầu tiên: Nhà nghỉ – khách sạn nhỏ
+Dùng làm mô hình mẫu đầu tiên để thiết kế và kiểm chứng:
+- Đặc điểm giả định: ít thiết bị, một cơ sở, một kho vật tư chung, đội bảo trì nhỏ hoặc kiêm nhiệm.
+- Thiết bị gợi ý: điện (tủ điện, aptomat, đèn, ổ cắm); điều hòa; nước (máy bơm, bồn nước, phao điện); bình nóng lạnh; camera/đầu ghi; quạt và thiết bị phụ trợ.
+- Vật tư gợi ý: vật tư điện, vật tư nước, vật tư điều hòa, linh kiện/phụ kiện thiết bị thông dụng và vật tư phụ. Không mặc định đưa các nhóm vòng bi công nghiệp, phớt cơ khí, gioăng công nghiệp, khí nén, dầu thủy lực vào giao diện của mô hình này.
+- Vật tư phân loại theo công dụng; một vật tư có thể được liên kết với nhiều thiết bị tương thích.
+- Nghiệp vụ: sửa chữa, kiểm tra định kỳ, bảo trì/bảo dưỡng đơn giản; checklist ngắn theo thiết bị. Kế hoạch bảo trì năm, phân công nhiều cấp và báo cáo kỹ thuật chuyên sâu không bắt buộc ở cấu hình mặc định.
+- Một kho chung: không bắt buộc khai báo vị trí lưu kho cho từng vật tư; cấu hình vị trí phải có thể tắt theo thiết lập doanh nghiệp, không phụ thuộc localStorage riêng của từng trình duyệt/máy.
+
+## 5. Mô hình menu và khả năng nâng cấp
+- Mô hình nhỏ hiển thị các phân hệ thiết yếu: Tổng quan, Thiết bị, Vật tư, Sửa chữa/Công việc, Kiểm tra định kỳ, Nhân sự và Cài đặt.
+- Mô hình lớn có thể kích hoạt thêm Checklist chuyên sâu, Kế hoạch bảo trì, Báo cáo kỹ thuật, quản lý nhiều cơ sở và phân quyền nâng cao.
+- Cho phép doanh nghiệp nâng cấp từ nhỏ lên trung bình/lớn hoặc bật thêm phân hệ mà không đổi ID, mã quản lý hiện có, xóa vật tư, ghi đè checklist đã tùy chỉnh hoặc làm mất lịch sử công việc.
+- Cần có version cho bộ mẫu; cập nhật mẫu của nhà cung cấp không tự động ghi đè tùy chỉnh/dữ liệu doanh nghiệp.
+
+## 6. Kiến trúc cấu hình dự kiến
+Các khái niệm cần thiết kế ở giai đoạn kiến trúc: Business Profiles, Size Profiles, Maintenance Profiles, Module Templates, Dictionary Templates, Checklist Templates, Maintenance Templates, Code Templates và Tenant Configuration. Đây là danh sách khái niệm định hướng, chưa phải quyết định tên bảng/schema cuối cùng.
+
+- Tách cấu hình mẫu do nhà cung cấp quản lý khỏi bản cấu hình đã được khởi tạo cho từng doanh nghiệp.
+- Giữ nguyên nguyên tắc Local-first đã thống nhất: dữ liệu nghiệp vụ thiết bị/vật tư/công việc được tạo tại Local trước; Cloud lưu trữ và đồng bộ, không tự sinh dữ liệu nghiệp vụ hoặc mã quản lý.
+- Cấu hình cần dùng nhất quán giữa PC/Mobile và được đồng bộ theo kiến trúc đã chốt; không dùng localStorage riêng lẻ làm nguồn cấu hình cấp doanh nghiệp.
+- ID nội bộ bất biến tách biệt với mã hiển thị theo quy ước doanh nghiệp; mã thiết bị/vật tư/công việc có thể cấu hình riêng. Không để thay đổi hồ sơ ngành làm thay đổi định danh bản ghi đã tồn tại.
+
+## 7. Phạm vi và bước tiếp theo
+- Đây là quyết định định hướng sản phẩm/kiến trúc; mới ghi nhận trong TIENDO, chưa sửa mã nguồn, chưa thay đổi database/schema, chưa tạo migration/RPC và chưa chạy SQL.
+- Chưa xây dựng đồng loạt tất cả bộ ngành. Thứ tự dự kiến: Nhà nghỉ – khách sạn nhỏ (mẫu đầu tiên), sau đó khách sạn trung bình/lớn, tòa nhà – văn phòng, nhà máy – xưởng sản xuất và các ngành khác.
+- Bước tiếp theo khi tiếp tục: thiết kế chi tiết hồ sơ mẫu Nhà nghỉ – khách sạn nhỏ (danh mục thiết bị, vật tư, công việc, checklist, menu, quy tắc mã và cấu hình một kho chung); rà soát với schema/code hiện tại rồi mới lập kế hoạch triển khai.
+- Theo quy trình dự án, trước mỗi đợt code phải cập nhật mục tiêu, phạm vi, file/bảng dự kiến tác động, rủi ro và cách kiểm thử vào chính file TIENDO. Chỉ sửa code khi người dùng yêu cầu bắt đầu triển khai.
