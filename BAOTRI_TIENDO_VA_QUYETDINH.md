@@ -3319,3 +3319,24 @@ Trạng thái:
 ### 23.5 Trạng thái
 - Đã cập nhật kế hoạch sau khi người dùng xác nhận Test SQL 017 PASS.
 - Chưa sửa `src/App.tsx` hoặc `src/db.ts` trong mục này; chưa gọi RPC từ UI; chưa bật worker tổng thể.
+
+
+
+## 24. Kế hoạch code – tích hợp chỉnh sửa Asset Local mapped (19/11/2026)
+
+Trước khi sửa ứng dụng, đã đọc lại phiên bản mới nhất trên `main` của `src/App.tsx`, `src/db.ts`, `src/lib/assetEditLocks.ts` và `src/CloudAssetsPanel.tsx`.
+
+### Phạm vi lát cắt đầu
+- Chỉ tích hợp luồng mở form và lưu hồ sơ master của Asset đã có `assetCloudLinks` trong đúng `organizationId`.
+- Trước khi mở form: kiểm tra link `linked`, không có mutation chưa xác nhận; acquire lease; đọc lại Cloud row sau acquire và so sánh `id/code/updated_at` với mapping. Nếu lệch, đánh dấu link conflict, release lease và không mở form.
+- Lease token chỉ ở React memory. Heartbeat định kỳ; offline/heartbeat thất bại làm lease cục bộ mất hiệu lực và chặn save. Cancel giải phóng đúng token nếu còn hợp lệ.
+- Khi save: ghi Local Asset + snapshot mutation bất biến trong một Dexie transaction; không gọi generic `queueChange('assets', ...)` cho Asset mapped. Gọi RPC receipt bằng đúng mutationId, payload, expectedCloudUpdatedAt và token.
+- Chỉ khi receipt hợp lệ mới đánh dấu mutation applied, cập nhật link version, rồi release lease.
+- Nếu RPC lỗi/timeout: giữ Local và mutation, giữ lease trong memory để heartbeat/retry cùng mutationId/payload/token; không cấp mutation mới. Mutation còn pending sau reload sẽ fail-closed và bị chặn; chưa tự phục hồi receipt sau reload trong lát này.
+- Asset chưa mapped giữ nguyên luồng Local cũ. Archive/restore/status tiếp tục bị chặn cho Asset mapped; không để các đường này bypass receipt.
+- Checklist/bảo trì và các bảng khác không đổi; không bật worker.
+
+### Giới hạn được ghi nhận trước
+- Lát đầu không xử lý tự động pending mutation sau khi reload vì client không lưu token và hiện chưa có RPC tra receipt không cần token. Giữ pending và chặn sửa tiếp an toàn hơn tự xin lease mới.
+- Không đánh dấu runtime hai nền tảng PASS chỉ qua build. Cần test thủ công trên hai phiên sau khi có code.
+
