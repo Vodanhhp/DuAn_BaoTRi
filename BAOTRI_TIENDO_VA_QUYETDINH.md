@@ -2706,3 +2706,18 @@ Các script kiểm thử sử dụng transaction/ROLLBACK theo nội dung file. 
 - Chỉ bắt đầu tích hợp Local sau khi kiểm thử runtime CloudAssetsPanel bằng hai phiên thật và xác nhận kết quả.
 
 CI: GitHub Actions run #308, commit 22bf7f2b697ed802dd961832ce403c1b2173b599, completed/success. Đây là build/deploy workflow; không thay thế kiểm thử runtime hai phiên hoặc PostgreSQL.
+
+
+### BỔ SUNG ĐIỀU KIỆN GIỮ LEASE KHI LƯU HỒ SƠ TỪ LOCAL (18/11/2026)
+
+Rà soát sâu hơn cho thấy không được giải phóng lease ngay sau khi IndexedDB lưu xong nhưng Cloud chưa xác nhận cập nhật. Nếu làm vậy, nền tảng khác có thể lấy khóa và sửa bản Cloud cũ trước khi mutation Local được đồng bộ, gây ghi đè hoặc xung đột.
+
+Quy tắc bắt buộc cho thiết kế Local:
+1. Khi sửa hồ sơ Local đã mapping, phải lấy lease Cloud trước khi mở form; tiếp tục heartbeat trong cả thời gian sửa và thời gian chờ Cloud xác nhận.
+2. Lưu Local trước theo local-first và ghi mutation vào syncQueue trong transaction. Sau đó gửi chính mutation hồ sơ lên RPC Cloud có token hiện hành.
+3. Chỉ khi Cloud xác nhận cập nhật thành công mới được đánh dấu mutation tương ứng hoàn tất và release lease; sau đó mới cho thiết bị khác sửa.
+4. Nếu Cloud từ chối, timeout hoặc mất mạng sau khi Local đã lưu, giữ mutation ở trạng thái pending/failed, khóa cục bộ hồ sơ đó và không tự release lease khi vẫn có thể heartbeat. UI phải báo rõ Local đã lưu nhưng Cloud chưa xác nhận.
+5. Nếu lease hết hạn hoặc bị nền tảng khác tiếp quản trước khi mutation được Cloud xác nhận, token cũ bị từ chối. Không tự retry mutation bằng token mới và không ghi đè dữ liệu Cloud; chuyển hồ sơ sang trạng thái conflict cần quy trình đối chiếu có chủ đích.
+6. Không được tuyên bố hai nền tảng có dữ liệu đồng nhất cho đến khi Cloud xác nhận và nền tảng còn lại tải/nhận phiên bản mới.
+
+Do đó, phần Local lock và đồng bộ hồ sơ thiết bị phải được thiết kế như một luồng nguyên tử logic gồm: Local transaction → Cloud RPC có lease → xác nhận → release. Đây là đồng bộ hẹp riêng hồ sơ thiết bị, không phải bật sync worker tổng thể cho các bảng khác. Chưa triển khai code cho đến khi thiết kế xử lý rõ timeout, lease hết hạn, retry và conflict.
