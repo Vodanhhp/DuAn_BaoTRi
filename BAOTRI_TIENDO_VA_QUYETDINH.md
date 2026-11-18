@@ -1714,3 +1714,150 @@ Trạng thái:
   - Tích hợp tạo icon vào workflow deploy: `5f8b3752007f7df5835a81e48add7ccbf7b18853`.
 - **Trạng thái xác minh:** đã đọc lại các file trên `main` và xác nhận nội dung cấu hình đã được cập nhật. Chưa có kết quả GitHub Actions build/deploy được xác minh trong phiên này; vì vậy chưa đánh dấu triển khai website thành công và chưa xác nhận favicon đã hiển thị thực tế trên trình duyệt/điện thoại.
 - **Bước tiếp theo:** kiểm tra GitHub Actions của repository BAOTRI; nếu build/deploy thành công, mở `https://baotri.vieclamhp247.com/` và kiểm tra favicon trên trình duyệt, Apple icon/PWA trên thiết bị đã cài. Nếu icon cũ còn do cache, kiểm tra cập nhật service worker/PWA và cache trình duyệt trước khi thay đổi thêm mã nguồn.
+
+
+---
+
+# ĐÁNH GIÁ VÀ PHƯƠNG ÁN ĐỒNG BỘ DỮ LIỆU CLOUD – 18/11/2026
+
+## A. Quyết định hiện hành – ưu tiên hơn mô tả cũ
+
+- Giai đoạn hiện tại dùng một tài khoản Supabase Auth duy nhất của người dùng. Tạm dừng kiểm thử multi-tenant với nhiều tài khoản, tạo thêm tổ chức/membership và mời người dùng.
+- Dữ liệu nghiệp vụ vẫn đọc/ghi tại IndexedDB (baotri-local-v1) trên từng trình duyệt/thiết bị. Chưa bật đồng bộ nghiệp vụ lên Supabase.
+- Kiến trúc đích: dữ liệu nghiệp vụ thuộc một tổ chức được bảo vệ bằng organization_id và RLS; có thể mở rộng nhiều người dùng sau này.
+- Supabase Test (BAOTRI-Mini-Test, ref oyzhxgzltpdebpymuicb) là nơi kiểm tra schema, RLS và đồng bộ. Production (BAOTRI-Mini, ref ahacxsrriwlfzrobrbmc) không thử nghiệm, không chạy migration và không ghi dữ liệu khi chưa có yêu cầu rõ ràng.
+- Các test bảo mật SQL 008, 009, 010, 011 đã được người dùng xác nhận PASS. Điều này không có nghĩa chức năng đồng bộ đã hoàn tất.
+- Các mô tả cũ ở đầu tài liệu như “không đăng nhập thật”, “chưa tạo Supabase” đã lỗi thời. Nội dung cập nhật ngày 16–18/11/2026 và mục này được ưu tiên.
+
+## B. Kết quả rà soát mã nguồn trên main
+
+Đã đọc src/db.ts, src/lib/cloudSync.ts, src/lib/assetsCloud.ts, src/lib/supabase.ts, src/AuthScreen.tsx, src/CloudAssetsPanel.tsx và các migration nghiệp vụ/phân quyền.
+
+### B1. Local IndexedDB
+
+- Dexie database baotri-local-v1 có các bảng: assets, inventory, tasks, logs, movements, syncQueue, checklistTemplates, checklistVersions, checklistResults, maintenancePlans.
+- ID nghiệp vụ hiện là UUID do crypto.randomUUID() sinh; có thể giữ nguyên ID giữa các thiết bị và Cloud. Mã quản lý hiển thị không phải khóa chính.
+- syncQueue hiện chỉ có id, tableName, recordId, operation, queuedAt; chưa có trạng thái xử lý, số lần thử, lỗi, deviceId, mutationId hay thông tin phiên bản máy chủ.
+- queueChange() ghi hàng đợi tách rời thao tác ghi nghiệp vụ, chưa bảo đảm cùng transaction Dexie. Có nguy cơ lưu dữ liệu nhưng thiếu queue hoặc ngược lại.
+- Rà soát App.tsx cho thấy một số luồng đã queue (inventory, tasks, maintenancePlans, logs, assets, Checklist), nhưng chưa đầy đủ: khi hoàn thành task có tạo log nhưng không queue log; nhập/xuất kho tạo movements nhưng chỉ queue inventory; seed/demo và import/restore backup chưa được phân loại để quyết định có đồng bộ hay không.
+- Kết luận: chưa được bật syncLocalDatabase() để chạy dữ liệu thật.
+
+### B2. Hai nhánh Cloud đang tách biệt và chưa tương thích
+
+- Auth dùng Supabase client trong src/lib/supabase.ts và src/AuthScreen.tsx.
+- Phân hệ Thiết bị trên Cloud dùng bảng chuẩn hóa assets và organization_settings qua src/lib/assetsCloud.ts. Module này độc lập với IndexedDB; không tự đẩy dữ liệu local lên Cloud và không tải Cloud về local.
+- src/lib/cloudSync.ts là bộ đồng bộ JSON cũ, dùng maintenance_records(owner_id, collection, record_id, payload, updated_at, deleted_at), được tạo bởi migration 20261117000100_maintenance_records.sql.
+- Schema nghiệp vụ chuẩn hóa trong migration 20261117000200_business_schema.sql dùng organization_id và các bảng assets, inventory_items, maintenance_tasks, maintenance_plans, checklist_templates, checklist_template_versions, checklist_results, maintenance_logs, inventory_movements, asset_images, organization_settings.
+- cloudSync.ts cũ không gắn organization_id, không mapping sang tên bảng/cột chuẩn hóa, không xử lý đầy đủ FK; có cơ chế tự đẩy toàn bộ local khi Cloud rỗng và áp dụng Cloud bằng put() có thể ghi đè local. Không gọi module này, không nối vào giao diện và không dùng maintenance_records làm đường đồng bộ chính.
+- Hai thiết kế maintenance_records JSON và schema chuẩn hóa hiện cùng tồn tại trong migrations. Chọn schema chuẩn hóa organization_id làm đích đồng bộ chính; giữ nguyên bảng/migration JSON cũ, chưa xóa hay chạy migration phá hủy.
+
+## C. Kiến trúc đồng bộ đề xuất
+
+Mô hình: IndexedDB máy tính ↔ Supabase PostgreSQL của tổ chức cá nhân ↔ IndexedDB điện thoại.
+
+- Supabase là nguồn dữ liệu dùng chung sau khi đồng bộ thành công; mỗi thiết bị giữ bản local. Mất mạng không được làm mất dữ liệu đang chờ gửi.
+- Giữ nguyên UUID; không ghép dữ liệu bằng mã hiển thị, tên hoặc số thứ tự.
+- Mọi truy vấn/ghi Cloud lấy organization_id từ membership đang hoạt động của Auth user; RLS là lớp bảo vệ bắt buộc. Không tin organization_id do client tự gửi.
+- Không dùng owner_id cho dữ liệu nghiệp vụ mới; dùng organization_id.
+- Cần lớp repository/sync adapter riêng để mapping dữ liệu local sang schema chuẩn hóa; không copy thủ công từ Cloud Assets panel.
+
+### C1. Mapping local → Cloud
+
+| IndexedDB | Supabase | Lưu ý |
+|---|---|---|
+| assets | assets | Giữ UUID; camelCase → snake_case; ảnh không nằm trong payload |
+| inventory | inventory_items | group → item_group; bảo toàn quantity |
+| tasks | maintenance_tasks | assetId → asset_id; phụ thuộc asset |
+| maintenancePlans | maintenance_plans | Phụ thuộc asset |
+| checklistTemplates | checklist_templates | Một template hiện hành/thiết bị |
+| checklistVersions | checklist_template_versions | Bất biến; phụ thuộc template và asset |
+| checklistResults | checklist_results | Bất biến; giữ liên kết template/version/asset |
+| logs | maintenance_logs | Lịch sử; giữ liên kết asset/task/checklist result |
+| movements | inventory_movements | Lịch sử kho; phải dùng RPC transaction |
+
+Không gửi nguyên object local lên Cloud. Mỗi bảng cần adapter có kiểm tra dữ liệu và chuyển đổi kiểu/ngày/null rõ ràng.
+
+### C2. Thứ tự gửi và tải
+
+1. assets và inventory_items.
+2. maintenance_tasks và maintenance_plans.
+3. checklist_templates.
+4. checklist_template_versions.
+5. checklist_results.
+6. maintenance_logs.
+7. inventory_movements qua RPC riêng.
+
+Phải bảo đảm bản ghi cha có trước bản ghi con. Không xóa thiết bị/vật tư nếu còn dữ liệu phụ thuộc. Checklist versions/results và lịch sử là append-only; không dùng upsert để ghi đè lịch sử.
+
+### C3. Hàng đợi, idempotency và xung đột
+
+Trước khi đồng bộ, nâng cấp syncQueue bằng migration Dexie mới, dự kiến thêm status (pending/processing/failed), attempts, lastError, lastAttemptAt, deviceId ổn định, clientMutationId duy nhất và metadata phiên bản cần thiết.
+
+- Ghi nghiệp vụ và queue trong cùng transaction Dexie.
+- Gửi lặp cùng mutation không được tạo bản ghi trùng hoặc cộng tồn kho lần hai.
+- Chỉ xóa/đánh dấu hoàn tất queue sau khi Cloud xác nhận. Lỗi mạng, RLS, FK hoặc validation phải giữ queue và lưu nguyên nhân.
+- Không gộp các sự kiện lịch sử thành trạng thái cuối. Checklist result, maintenance log, inventory movement phải giữ từng sự kiện riêng.
+- Tombstone chỉ dùng cho loại dữ liệu được phép xóa; không DELETE hàng loạt để ép hai bên giống nhau.
+- Tải theo phân trang và cursor/updated_at; không tải toàn bộ DB mỗi lần mở app. Cần checkpoint có xử lý nhiều bản ghi cùng timestamp.
+- Không tự giải quyết xung đột theo kiểu “bản cập nhật sau cùng thắng” khi có nguy cơ mất nội dung. Dữ liệu master dùng optimistic concurrency/version; khi hai máy cùng sửa, giữ cả hai phiên bản và đánh dấu conflict để xử lý có kiểm soát.
+- Giao diện cần trạng thái Chưa đồng bộ, Đang đồng bộ, Đã đồng bộ, Có lỗi, Có xung đột; hiển thị số queue và thời điểm đồng bộ cuối.
+
+### C4. Giao dịch kho
+
+Migration 002 cố ý không cấp INSERT trực tiếp inventory_movements và hạn chế cập nhật quantity của inventory_items. Không thể đồng bộ tồn và movement bằng hai lệnh REST rời rạc.
+
+Cần RPC PostgreSQL có transaction: kiểm tra quyền inventory.adjust, khóa dòng vật tư, kiểm tra số lượng hợp lệ, cập nhật quantity và thêm movement với clientMutationId chống lặp; tất cả cùng thành công hoặc rollback. Không ghi đè số tồn local lên Cloud; Cloud phải thực hiện phép cộng/trừ trong transaction.
+
+### C5. Ảnh/tệp
+
+assets.images hiện là dữ liệu ảnh local; adapter Cloud trả images rỗng. Không lưu base64 trong PostgreSQL. Giai đoạn sau dùng Storage private, metadata asset_images, đường dẫn theo tổ chức/thiết bị, policy Storage/RLS, upload có retry và kiểm tra checksum/kích thước. Trước mắt bytes ảnh chưa thuộc phạm vi đồng bộ và phải hiển thị rõ ảnh chỉ có trên thiết bị nguồn.
+
+## D. Lộ trình triển khai – chưa bật đồng bộ
+
+### Giai đoạn 0 – Chốt dữ liệu gốc
+- Giữ nguyên dữ liệu trên máy tính và điện thoại, không tự động hợp nhất.
+- Hai backup ngày 16/11 đã rà sơ bộ: nhiều bản ghi tương ứng có ID khác nhau do các trình duyệt tạo dữ liệu độc lập; số lượng một số bảng cũng khác. Không dùng mã thiết bị để tự đổi ID hoặc ghi đè.
+- Trước seed đầu tiên phải chọn một bản dữ liệu chuẩn, lập báo cáo đối chiếu phần phát sinh riêng trên thiết bị còn lại và sao lưu riêng. Không xóa/sửa backup gốc.
+- Xác nhận tổ chức cá nhân và membership Admin trên Test; không tạo thêm tài khoản/tổ chức.
+
+### Giai đoạn 1 – Hoàn thiện local queue, chưa gọi Cloud
+- Kiểm kê tất cả add/put/update/delete/bulk/import/restore/seed trong App.tsx và module khác.
+- Bảo đảm mọi ghi nghiệp vụ cần đồng bộ được queue trong cùng transaction Dexie.
+- Phân loại dữ liệu demo, backup import và nghiệp vụ thật; không tự đẩy dữ liệu mẫu.
+- Thêm retry, lỗi, mutation ID, conflict; kiểm tra offline, refresh, đóng/mở app và queue tồn tại.
+- Chưa gửi request ghi lên Supabase.
+
+### Giai đoạn 2 – Adapter và test schema
+- Viết adapter cho đủ 9 bảng local, kiểm tra kiểu dữ liệu, null/default, ngày giờ, số thập phân và FK.
+- Đối chiếu quyền RLS/permission từng thao tác. Inventory movement phải qua RPC.
+- Test mapping với mock/local trước khi gọi project Test.
+- Không dùng maintenance_records JSON làm đích chính.
+
+### Giai đoạn 3 – Test đồng bộ có kiểm soát trên Test
+- Bắt đầu bằng một bản ghi thiết bị thử riêng, sau đó vật tư, task, Checklist, log.
+- Test gửi lặp, mất mạng giữa chừng, RLS, FK, xung đột hai thiết bị, tombstone, rollback, phân trang và restore backup.
+- Test kho bằng RPC transaction.
+- Chỉ sau khi test đạt mới seed bộ dữ liệu đã được chọn; không lấy dữ liệu Production làm dữ liệu thử.
+
+### Giai đoạn 4 – Đồng bộ hai thiết bị
+- Ban đầu có nút đồng bộ thủ công; tự động hóa sau khi ổn định.
+- Lần đầu chỉ một thiết bị nguồn gửi dữ liệu chuẩn lên Test; thiết bị kia tải dữ liệu từ Cloud. Không cho hai máy cùng seed lần đầu.
+- Kiểm tra thay đổi máy tính xuất hiện trên điện thoại và ngược lại; không nhân đôi, mất lịch sử hoặc ghi đè âm thầm.
+- Có conflict thì dừng tự động ghi bản ghi đó để xử lý có kiểm soát.
+
+### Giai đoạn 5 – Ảnh, backup và vận hành
+- Bổ sung Storage private cho ảnh/tài liệu, retry và xác minh upload/download.
+- Có backup định kỳ và quy trình restore đã thử nghiệm; Cloud không thay thế backup độc lập.
+- Chỉ xem xét triển khai cùng mô hình lên Production khi có yêu cầu riêng và kế hoạch chuyển đổi được duyệt.
+
+## E. Các điểm chặn trước khi viết code đồng bộ
+
+1. Chọn nguồn dữ liệu chuẩn để seed lần đầu; không tự hợp nhất hai backup cũ.
+2. Hoàn thiện transaction queue trên Dexie và kiểm kê các luồng ghi thiếu.
+3. Chọn schema chuẩn hóa organization_id; cloudSync.ts hiện tại là mã cũ không tương thích, không được kích hoạt.
+4. Xây adapter mapping và kiểm tra FK cho đủ 9 bảng local.
+5. Thiết kế RPC kho idempotent và cơ chế version/conflict.
+6. Chạy thử trên BAOTRI-Mini-Test; không đụng Production.
+7. Không xóa dữ liệu local, không xóa bảng/migration cũ, không tạo thêm membership/tài khoản trong bước chuẩn bị.
+
+**Trạng thái:** Đã rà soát và lập phương án. Chưa sửa mã nguồn đồng bộ, chưa gọi syncLocalDatabase(), chưa ghi dữ liệu nghiệp vụ lên Supabase, chưa chạy SQL/migration mới và chưa thay đổi Test/Production. Bước kế tiếp là Giai đoạn 0–1: đối chiếu nguồn dữ liệu và hoàn thiện hàng đợi local.
