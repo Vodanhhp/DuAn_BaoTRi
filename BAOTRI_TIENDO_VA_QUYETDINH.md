@@ -2259,3 +2259,16 @@ Giới hạn an toàn vẫn giữ:
 ## Giới hạn tiếp tục
 - Không bật Cloud worker hoặc thực hiện import trước khi chốt nguồn backup và hoàn thiện kiểm thử.
 - Giữ nguyên quy tắc QR dùng mã quản lý; UUID chỉ là khóa nội bộ, hiển thị nhỏ cho Admin trong Chi tiết thiết bị.
+
+---
+
+# RÀ SOÁT DANH MỤC VÀ CẤU HÌNH MÃ THIẾT BỊ – 18/11/2026
+
+- Commit `e0126a6d90d3efa14e3ee95a2b47c70368937e51`: sửa chú thích tại màn hình thêm thiết bị; nội dung cũ nói QR dùng ID nội bộ, nay khớp quyết định chính thức: QR mã hóa mã quản lý, đổi mã thì phải in lại tem.
+- Commit `998857efc6f53e582923444c5626645dcac046d1`: thêm `supabase/CLOUD_ASSET_CATEGORY_AND_CODE_CONFIG_REVIEW.md`.
+- Đã xác nhận customAssetCategories hiện chỉ lưu localStorage, không đi vào syncQueue; backup/restore có mang theo danh mục custom.
+- Local đang hard-code cơ sở HP01 và mã vị trí; Cloud allocator dùng organization_settings.asset_code_config riêng và yêu cầu mapping category/location hợp lệ.
+- Cloud settings tách asset_categories (cây danh mục) khỏi asset_code_config (quy tắc cấp mã). Cần hai RPC/quyền cập nhật độc lập, versioning và kiểm soát Admin.
+- Rủi ro lớn cần giải quyết trước Cloud worker: mô hình mã cơ sở nhiều cơ sở, mã vị trí chưa gán (local dùng 99 nhưng Cloud cần config), thay category code sau khi đã cấp mã, và cập nhật counter sau import.
+- Chưa tạo migration/RPC, chưa chỉnh UI cấu hình, chưa chạy SQL, chưa ghi Supabase.
+- CI của commit ứng dụng trước đó `bef695c702c4716742d7c3926fcb1b299430fbb0` đã PASS build/deploy; commit chú thích mới và tài liệu hiện cần workflow riêng xác nhận.
