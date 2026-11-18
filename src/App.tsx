@@ -242,6 +242,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
   cloudClient: SupabaseClient
 }) {
   const isViewer = organizationRole.trim().toLowerCase() === 'viewer'
+  const isAdmin = organizationRole.trim().toLowerCase() === 'admin'
   const [page, setPage] = useState<Page>('dashboard')
   const [showCloudAssets, setShowCloudAssets] = useState(false)
   const [search, setSearch] = useState('')
@@ -267,6 +268,9 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
     } catch { return [] }
   })
   const [assetLocationFilter, setAssetLocationFilter] = useState('')
+  const [inventoryLocations, setInventoryLocations] = useState<string[]>(() => {
+    try { const saved = JSON.parse(localStorage.getItem('baotri-inventory-locations') || '[]'); return Array.isArray(saved) ? [...new Set(saved.filter((x:any)=>typeof x==='string'&&x.trim()).map((x:string)=>x.trim()))].sort((a,b)=>a.localeCompare(b,'vi')) : [] } catch { return [] }
+  })
   const [assetStatusFilter, setAssetStatusFilter] = useState('')
   const [assetSort, setAssetSort] = useState('code-asc')
   const [showArchived, setShowArchived] = useState(false)
@@ -641,11 +645,22 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
       alert(error instanceof Error ? error.message : 'Không thể lưu thiết bị. Vui lòng thử lại.')
     }
   }
+  const addInventoryLocation = (name: string) => {
+    if (!isAdmin) return false
+    const clean = name.trim().replace(/\\s+/g,' ')
+    if (!clean) return false
+    const duplicate = inventoryLocations.some(item=>item.localeCompare(clean,'vi',{sensitivity:'base'})===0)
+    if (duplicate) { alert('Vị trí này đã có trong danh mục. Hãy chọn vị trí có sẵn.'); return false }
+    const next = [...inventoryLocations, clean].sort((a,b)=>a.localeCompare(b,'vi'))
+    try { localStorage.setItem('baotri-inventory-locations',JSON.stringify(next)) } catch { alert('Không lưu được danh mục vị trí trên trình duyệt này.'); return false }
+    setInventoryLocations(next)
+    return true
+  }
   const saveItem = async (i: InventoryItem) => {
     if (blockViewer('thêm hoặc sửa vật tư')) return
     const existing = await db.inventory.get(i.id)
-    // Số lượng tồn chỉ được thay đổi qua giao dịch Nhập/Xuất, không qua form sửa vật tư.
-    const value = { ...i, quantity: existing?.quantity ?? 0, updatedAt: now() }
+    // Tồn kho chỉ thay đổi qua Nhập/Xuất; tồn tối thiểu chỉ Admin được cập nhật.
+    const value = { ...i, quantity: existing?.quantity ?? 0, minQuantity: isAdmin ? i.minQuantity : (existing?.minQuantity ?? 0), updatedAt: now() }
     await putAndQueue(db.inventory, 'inventory', value); setModal(null); setEditingItem(null); flash(existing ? 'Đã cập nhật thông tin vật tư' : 'Đã thêm vật tư (tồn ban đầu = 0)')
   }
   const saveTask = async (t: Task) => {
@@ -801,13 +816,13 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
     printWindow.document.open(); printWindow.document.write(html); printWindow.document.close()
     printWindow.focus(); printWindow.onafterprint = () => printWindow.close(); printWindow.print()
   }
-  const exportInventory = () => exportRows(inventory.map(i => ({ 'Mã vật tư':i.code,'Mã số':i.partNumber??'','Tên vật tư':i.name,'Nhóm':i.group,'Kích cỡ':i.size??'','ĐVT':i.unit,'Tồn kho':i.quantity,'Tồn tối thiểu':i.minQuantity,'Vị trí':i.location,'Nhà cung cấp':i.supplier,'Đơn giá (VNĐ)':i.unitPrice })), 'ton-kho-vat-tu.xlsx', 'BÁO CÁO TỒN KHO VẬT TƯ', 'Tồn kho vật tư', ['Mã vật tư','Mã số','Tên vật tư','Nhóm','Kích cỡ','ĐVT','Tồn kho','Tồn tối thiểu','Vị trí','Nhà cung cấp','Đơn giá (VNĐ)'], 'landscape')
+  const exportInventory = () => exportRows(inventory.map(i => ({ 'Mã vật tư':i.code,'Mã số':i.partNumber??'','Tên vật tư':i.name,'Nhóm':i.group,'Kích cỡ':i.size??'','ĐVT':i.unit,'Tồn kho':i.quantity,'Tồn tối thiểu':i.minQuantity,'Vị trí':i.location,'Nhà cung cấp':i.supplier })), 'ton-kho-vat-tu.xlsx', 'BÁO CÁO TỒN KHO VẬT TƯ', 'Tồn kho vật tư', ['Mã vật tư','Mã số','Tên vật tư','Nhóm','Kích cỡ','ĐVT','Tồn kho','Tồn tối thiểu','Vị trí','Nhà cung cấp'], 'landscape')
   const printInventory = () => {
-    const rows = filteredItems.map((i,index)=>'<tr><td class="center">'+(index+1)+'</td><td>'+htmlEscape(i.code)+'</td><td>'+htmlEscape(i.partNumber||'—')+'</td><td><strong>'+htmlEscape(i.name)+'</strong></td><td>'+htmlEscape(i.group)+'</td><td>'+htmlEscape(i.size||'—')+'</td><td class="center">'+htmlEscape(i.unit)+'</td><td class="num">'+i.quantity+'</td><td class="num">'+i.minQuantity+'</td><td>'+htmlEscape(i.location||'—')+'</td><td>'+htmlEscape(i.supplier||'—')+'</td><td class="num">'+Number(i.unitPrice||0).toLocaleString('vi-VN')+'</td></tr>').join('')
+    const rows = filteredItems.map((i,index)=>'<tr><td class="center">'+(index+1)+'</td><td>'+htmlEscape(i.code)+'</td><td>'+htmlEscape(i.partNumber||'—')+'</td><td><strong>'+htmlEscape(i.name)+'</strong></td><td>'+htmlEscape(i.group)+'</td><td>'+htmlEscape(i.size||'—')+'</td><td class="center">'+htmlEscape(i.unit)+'</td><td class="num">'+i.quantity+'</td><td class="num">'+i.minQuantity+'</td><td>'+htmlEscape(i.location||'—')+'</td><td>'+htmlEscape(i.supplier||'—')+'</td></tr>').join('')
     const printWindow=window.open('','_blank')
     if(!printWindow){alert('Trình duyệt đang chặn cửa sổ in. Hãy cho phép cửa sổ bật lên rồi thử lại.');return}
-    const headers=['STT','Mã vật tư','Mã số','Tên vật tư','Nhóm','Kích cỡ','ĐVT','Tồn kho','Tồn tối thiểu','Vị trí lưu kho','Nhà cung cấp','Đơn giá (VNĐ)']
-    const html='<!DOCTYPE html><html lang="vi"><head><meta charset="utf-8"/><title>DANH SÁCH VẬT TƯ</title><style>@page{size:A4 landscape;margin:12mm 8mm 16mm;@bottom-center{content:"Trang " counter(page) " / " counter(pages);font:9pt Tahoma}}*{box-sizing:border-box}body{font-family:Tahoma,sans-serif;font-size:11pt;color:#111;margin:0}h1{text-align:center;font-size:12pt;margin:0 0 12pt}table{width:100%;border-collapse:collapse;table-layout:fixed}thead{display:table-header-group}tr{break-inside:avoid;page-break-inside:avoid}th,td{border:1px solid #333;padding:4pt 3pt;vertical-align:top;overflow-wrap:anywhere;font-size:9pt}th{text-align:center;font-weight:bold;background:#e9eeeb!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.center{text-align:center}.num{text-align:right}.total{text-align:right;font-weight:bold;margin-top:10pt}@media screen{body{padding:16px}}</style></head><body><h1>DANH SÁCH VẬT TƯ</h1><table><colgroup><col style="width:3%"/><col style="width:8%"/><col style="width:8%"/><col style="width:15%"/><col style="width:9%"/><col style="width:8%"/><col style="width:5%"/><col style="width:6%"/><col style="width:7%"/><col style="width:10%"/><col style="width:10%"/><col style="width:11%"/></colgroup><thead><tr>'+headers.map(h=>'<th>'+htmlEscape(h)+'</th>').join('')+'</tr></thead><tbody>'+rows+'</tbody></table><p class="total">Tổng số: '+filteredItems.length+' vật tư</p></body></html>'
+    const headers=['STT','Mã vật tư','Mã số','Tên vật tư','Nhóm','Kích cỡ','ĐVT','Tồn kho','Tồn tối thiểu','Vị trí lưu kho','Nhà cung cấp']
+    const html='<!DOCTYPE html><html lang="vi"><head><meta charset="utf-8"/><title>DANH SÁCH VẬT TƯ</title><style>@page{size:A4 landscape;margin:12mm 8mm 16mm;@bottom-center{content:"Trang " counter(page) " / " counter(pages);font:9pt Tahoma}}*{box-sizing:border-box}body{font-family:Tahoma,sans-serif;font-size:11pt;color:#111;margin:0}h1{text-align:center;font-size:12pt;margin:0 0 12pt}table{width:100%;border-collapse:collapse;table-layout:fixed}thead{display:table-header-group}tr{break-inside:avoid;page-break-inside:avoid}th,td{border:1px solid #333;padding:4pt 3pt;vertical-align:top;overflow-wrap:anywhere;font-size:9pt}th{text-align:center;font-weight:bold;background:#e9eeeb!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.center{text-align:center}.num{text-align:right}.total{text-align:right;font-weight:bold;margin-top:10pt}@media screen{body{padding:16px}}</style></head><body><h1>DANH SÁCH VẬT TƯ</h1><table><colgroup><col style="width:3%"/><col style="width:8%"/><col style="width:8%"/><col style="width:15%"/><col style="width:9%"/><col style="width:8%"/><col style="width:5%"/><col style="width:6%"/><col style="width:7%"/><col style="width:10%"/><col style="width:10%"/></colgroup><thead><tr>'+headers.map(h=>'<th>'+htmlEscape(h)+'</th>').join('')+'</tr></thead><tbody>'+rows+'</tbody></table><p class="total">Tổng số: '+filteredItems.length+' vật tư</p></body></html>'
     printWindow.document.open();printWindow.document.write(html);printWindow.document.close();printWindow.focus();printWindow.onafterprint=()=>printWindow.close();printWindow.print()
   }
   const exportTasks = () => exportRows(tasks.map(t => ({ 'Thiết bị':assets.find(a=>a.id===t.assetId)?.name ?? '', 'Công việc':t.title,'Ngày đến hạn':t.dueDate?dateText(t.dueDate):'','Chu kỳ':t.frequency,'Trạng thái':t.status,'Checklist':t.checklist??'','Thông số':t.readings??'','Ghi chú':t.notes??'' })), 'lich-bao-duong-dinh-ky.xlsx', 'LỊCH BẢO DƯỠNG ĐỊNH KỲ', 'Lịch bảo dưỡng', ['Thiết bị','Công việc','Ngày đến hạn','Chu kỳ','Trạng thái','Checklist','Thông số','Ghi chú'], 'landscape')
@@ -1252,7 +1267,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
     {detailItem&&<InventoryDetailModal value={detailItem} readOnly={isViewer} close={()=>setDetailItem(null)} edit={()=>{setEditingItem(detailItem);setDetailItem(null);setModal('item')}}/>}
     {detailAsset&&<AssetDetailModal value={detailAsset} userName={userName} isAdmin={organizationRole.trim().toLowerCase()==='admin'} logs={logs.filter(l=>l.assetId===detailAsset.id)} allowChecklist={!isViewer && (checklistAccess || (CHECKLIST_TEST_MODE && page==='checklist'))} checklistOccurrence={activeChecklistOccurrence} createRequestFromChecklist={createRequestFromChecklist} readOnly={isViewer} editLog={(entry:Log)=>{if(isViewer)return;setEditingLog(entry);setModal('log')}} close={()=>{setDetailAsset(null);setChecklistAccess(false);setActiveChecklistOccurrence(null)}} edit={()=>{setEditingAsset({...detailAsset,images:detailAsset.images??[]});setDetailAsset(null);setChecklistAccess(false);setModal('asset')}} addLog={()=>{setEditingLog({id:uid(),assetId:detailAsset.id,date:today(),kind:'Sửa chữa',description:'',parts:'',readings:'',requestedBy:userName,result:'',performedBy:''});setModal('log')}}/>}
     {modal==='asset'&&editingAsset&&<AssetModal value={editingAsset} close={()=>{setModal(null);setEditingAsset(null)}} save={saveAsset} assets={assets} customCategories={customAssetCategories} onAddCategory={addAssetCategory} onExportConvention={exportAssetCodeConvention}/>}
-    {modal==='item'&&editingItem&&<ItemModal value={editingItem} close={()=>{setModal(null);setEditingItem(null)}} save={saveItem}/>}
+    {modal==='item'&&editingItem&&<ItemModal value={editingItem} close={()=>{setModal(null);setEditingItem(null)}} save={saveItem} isAdmin={isAdmin} locations={[...new Set([...inventoryLocations,...inventory.map(item=>item.location).filter(Boolean)])].sort((a,b)=>a.localeCompare(b,'vi'))} onAddLocation={addInventoryLocation}/>}
     {modal==='task'&&editingTask&&<TaskModal value={editingTask} assets={assets} close={()=>{setModal(null);setEditingTask(null)}} save={saveTask}/>}
     {modal==='plan'&&editingPlan&&<MaintenancePlanModal value={editingPlan} assets={assets} close={()=>{setModal(null);setEditingPlan(null)}} save={saveMaintenancePlans}/>}
     {modal==='planExport'&&<Modal title="Xuất kế hoạch bảo trì Excel" close={()=>setModal(null)}>
@@ -2175,8 +2190,9 @@ function AssetModal({value,close,save,assets,customCategories=[],onAddCategory,o
     <div className="modal-actions"><button type="button" className="soft-btn" onClick={close}>Hủy</button><button className="primary-btn" disabled={isNew&&!previewCode}><Check size={16}/> {isNew?'Lưu và tạo mã thiết bị':'Lưu thiết bị'}</button></div>
   </form></Modal>
 }
-function ItemModal({value,close,save}:any){
+function ItemModal({value,close,save,isAdmin,locations,onAddLocation}:any){
   const [v,setV]=useState<InventoryItem>(value); const set=(k:keyof InventoryItem,x:any)=>setV(p=>({...p,[k]:x}))
+  const [newLocation,setNewLocation]=useState('')
   const isNew = !value.code
   const units=['Cái','Con','Cuộn','m','mm','cm','Lít','ml','Kg','g','Bộ','Chai','Hộp','Túi','Thùng','Tấm','Ống','Viên','Đôi','Mét','Cuộn dây','Bao','Thanh','Can']
   const groups=['Vật tư điện','Linh kiện điện tử','Cơ khí','Khí nén','Điện lạnh','Dầu mỡ bôi trơn','Vòng bi - bạc đạn','Phớt - gioăng','Vật tư đường ống','Vật tư tiêu hao','Vật tư hàn cắt','Dây cáp điện','Khác']
@@ -2186,14 +2202,13 @@ function ItemModal({value,close,save}:any){
     <Field label="Tên vật tư *"><input required value={v.name} onChange={e=>set('name',e.target.value)}/></Field><Field label="Nhóm"><select value={v.group} onChange={e=>set('group',e.target.value)}>{groups.map(x=><option key={x}>{x}</option>)}</select></Field>
     <Field label="Kích cỡ / quy cách"><input placeholder="Ví dụ: DN50, M10, 6204, 2.5 mm..." value={v.size??''} onChange={e=>set('size',e.target.value)}/></Field>
     <Field label="Đơn vị tính"><select value={v.unit} onChange={e=>set('unit',e.target.value)}>{!units.includes(v.unit)&&<option value={v.unit}>{v.unit}</option>}{units.map(x=><option key={x} value={x}>{x}</option>)}</select></Field>
-    <Field label="Tồn tối thiểu"><input type="number" min="0" value={v.minQuantity} onChange={e=>set('minQuantity',Number(e.target.value))}/></Field>
-    <Field label="Vị trí lưu kho"><input value={v.location} onChange={e=>set('location',e.target.value)}/></Field><Field label="Nhà cung cấp"><input value={v.supplier} onChange={e=>set('supplier',e.target.value)}/></Field>
-    <Field label="Đơn giá tham khảo"><input type="number" min="0" value={v.unitPrice} onChange={e=>set('unitPrice',Number(e.target.value))}/></Field>
+    <Field label="Tồn tối thiểu">{isAdmin?<input type="number" min="0" value={v.minQuantity} onChange={e=>set('minQuantity',Number(e.target.value))}/>:<><input type="number" value={v.minQuantity} readOnly/><small className="muted">Chỉ Admin được thay đổi mức tồn tối thiểu.</small></>}</Field>
+    <Field label="Vị trí lưu kho"><select required value={v.location} onChange={e=>set('location',e.target.value)}><option value="">-- Chọn vị trí đã có --</option>{locations.map((x:string)=><option key={x} value={x}>{x}</option>)}{v.location&&!locations.includes(v.location)&&<option value={v.location}>{v.location} · vị trí cũ</option>}</select>{isAdmin&&<div className="inline-location-add"><input value={newLocation} onChange={e=>setNewLocation(e.target.value)} placeholder="Thêm vị trí mới, ví dụ: Tầng 1 - Kệ A"/><button type="button" className="soft-btn" onClick={()=>{if(onAddLocation(newLocation)){set('location',newLocation.trim().replace(/\\s+/g,' '));setNewLocation('')}}}>Thêm vào danh mục</button></div>}</Field><Field label="Nhà cung cấp"><input value={v.supplier} onChange={e=>set('supplier',e.target.value)}/></Field>
     <div className="modal-actions"><button type="button" className="soft-btn" onClick={close}>Hủy</button><button className="primary-btn"><Check size={16}/> {isNew?'Thêm vật tư':'Lưu thông tin'}</button></div>
   </form></Modal>
 }
 function InventoryDetailModal({value,close,edit,readOnly=false}:any){
-  const rows=[['Mã vật tư',value.code],['Mã số',value.partNumber],['Tên vật tư',value.name],['Nhóm',value.group],['Kích cỡ / quy cách',value.size],['Đơn vị tính',value.unit],['Số lượng tồn',String(value.quantity)+' '+value.unit],['Tồn tối thiểu',String(value.minQuantity)+' '+value.unit],['Vị trí lưu kho',value.location],['Nhà cung cấp',value.supplier],['Đơn giá tham khảo',Number(value.unitPrice||0).toLocaleString('vi-VN')+' VNĐ'],['Cập nhật lần cuối',value.updatedAt?new Date(value.updatedAt).toLocaleString('vi-VN'):'—']]
+  const rows=[['Mã vật tư',value.code],['Mã số',value.partNumber],['Tên vật tư',value.name],['Nhóm',value.group],['Kích cỡ / quy cách',value.size],['Đơn vị tính',value.unit],['Số lượng tồn',String(value.quantity)+' '+value.unit],['Tồn tối thiểu',String(value.minQuantity)+' '+value.unit],['Vị trí lưu kho',value.location],['Nhà cung cấp',value.supplier],['Cập nhật lần cuối',value.updatedAt?new Date(value.updatedAt).toLocaleString('vi-VN'):'—']]
   const print=()=>{window.setTimeout(()=>window.print(),100)}
   return <Modal title="Chi tiết vật tư" close={close}><div className="asset-detail-grid">{rows.map(([label,val])=><div className="asset-detail-field" key={label}><small>{label}</small><b>{val||'—'}</b></div>)}</div><div className="asset-photo-actions"><button className="soft-btn" onClick={print}><Printer size={16}/> In chi tiết</button><button className="primary-btn" disabled={readOnly} title={readOnly?'Viewer chỉ có quyền xem':undefined} onClick={edit}>Sửa vật tư</button></div><div className="asset-print-sheet print-detail"><div className="asset-print-report"><h1 className="asset-print-form-title">BẢNG CHI TIẾT VẬT TƯ</h1><div className="asset-print-header"><div className="company-logo-placeholder"><span className="company-logo-mark">BT</span><span className="company-logo-wording"><strong>BAOTRI</strong><small>LOGO THỬ NGHIỆM</small></span></div></div><h2 className="asset-print-device-name">{value.name}</h2><table><tbody>{rows.map(([label,val])=><tr key={label}><th>{label}</th><td>{val||'—'}</td></tr>)}</tbody></table></div></div></Modal>
 }
