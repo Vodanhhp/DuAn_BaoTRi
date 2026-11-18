@@ -2010,3 +2010,32 @@ assets.images hiện là dữ liệu ảnh local; adapter Cloud trả images r�
 - Chưa bật worker Cloud; chưa gọi Supabase để ghi dữ liệu; không chạy SQL/migration; không thay đổi dữ liệu Test/Production.
 
 **Bước tiếp theo:** tiếp tục review thiết kế schema version/idempotency/change feed và RPC inventory; sau đó mới triển khai kiểm thử worker trên Test khi các hợp đồng dữ liệu đã chốt.
+
+
+---
+
+# REVIEW RACE CONDITION HÀNG ĐỢI CLOUD SYNC – 18/11/2026
+
+## Phát hiện
+
+- `syncQueue` Dexie v6 dùng unique key `[tableName+recordId]`; `queueChange()` luôn ghi đè row hiện có, chuyển về pending và tạo mutationId mới.
+- Cách gộp này an toàn khi chưa có worker và mọi mục đều pending. Khi worker đang gửi mutation A mà người dùng sửa tiếp cùng bản ghi tạo mutation B, row A có thể bị ghi đè. Phản hồi thành công của A có nguy cơ xóa nhầm B hoặc làm mất dữ liệu cần retry.
+- Vì vậy không được bật worker trên queue v6 chỉ bằng cách thêm trạng thái processing/claim.
+
+## Đã thiết kế
+
+- Tạo `supabase/CLOUD_SYNC_QUEUE_V7_DESIGN.md` (commit `3961d6d6fc329adccba98235337734231794e9ac`).
+- Đề xuất mỗi mutation có khóa mutationId riêng; pending chưa claim có thể coalesce, processing/sent là bất biến.
+- Mutation mới trong lúc mutation cũ processing phải tạo row riêng; xác nhận chỉ tác động đúng mutationId + claimToken.
+- Lưu baseVersion và payload snapshot; retry giữ nguyên mutationId/payload; server idempotency ledger và business write phải cùng transaction.
+- Append-only history không coalesce; delete dùng tombstone và giữ thứ tự; conflict chặn mutation kế tiếp của cùng record.
+- Đã ghi rõ 10 nhóm kiểm thử bắt buộc và yêu cầu migration Dexie v7 không đụng bảng nghiệp vụ.
+
+## Trạng thái an toàn
+
+- Chỉ thêm tài liệu thiết kế; không sửa Dexie v6 hoặc dữ liệu local.
+- Không tạo worker, không gọi Supabase, không chạy SQL/migration.
+- Không thay đổi BAOTRI-Mini-Test hoặc Production.
+- Workflow #181 tại commit `42b20b61255f6e03c5aa2366a1d72402e6063c1b` đã success; commit thiết kế mới cần chờ workflow tương ứng hoàn tất.
+
+**Bước tiếp theo:** review schema idempotency + row_version + change feed/tombstone và hợp đồng RPC kho; sau đó mới triển khai migration queue v7 cùng test mô phỏng race condition.
