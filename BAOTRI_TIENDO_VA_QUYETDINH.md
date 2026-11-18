@@ -3056,3 +3056,54 @@ Trước khi sửa:
 - GitHub Actions run `44408674037` cho commit trên đang ở trạng thái queued tại thời điểm cập nhật; chưa được đánh dấu PASS. Cần kiểm tra lại kết quả run trước khi kết luận build.
 - Thay đổi này chỉ giới hạn giao diện Cloud. Các RPC/backend cũ vẫn tồn tại; không tuyên bố backend đã cấm mọi client khác ghi trực tiếp.
 - Lưu ý vận hành: cho đến khi Local lease + receipt được tích hợp, không dùng CloudAssetsPanel để thay đổi hồ sơ nghiệp vụ. CloudAssetsPanel hiện giữ import Local PC, xem và cấu hình quản trị.
+
+## 21. Chuẩn bị liên kết Asset Local–Cloud (19/11/2026)
+
+### 21.1 Vấn đề xác định trong import hiện tại
+
+- Luồng preflight hiện đếm Asset Cloud đã tồn tại đúng UUID/mã/nội dung là `alreadyPresent` rồi bỏ qua RPC import.
+- Nút xác nhận bị disable khi `toInsert === 0`. Vì vậy, một Asset có thể đã tồn tại chính xác trên Cloud nhưng Local chưa có mapping; thao tác import hiện tại không thể tạo liên kết Local–Cloud cho trường hợp đó.
+- Import RPC cũ có tính idempotent theo UUID/mutation ID và có thể trả lại Asset Cloud đã tồn tại nếu payload khớp hoàn toàn. Có thể dùng chính luồng này để xác nhận lại các bản ghi đã tồn tại, sau đó mới ghi mapping Local.
+- Không được tạo mapping chỉ vì UUID hoặc code trùng; phải có kết quả RPC xác nhận đúng organization + asset UUID + code và payload phù hợp.
+
+### 21.2 Phạm vi schema Dexie v8 dự kiến
+
+Thêm hai bảng riêng, không thay đổi bảng `syncQueue` và không chạy worker:
+
+1. `assetCloudLinks`
+   - Primary key: `id = organizationId + ':' + assetId`.
+   - Unique compound index: `[organizationId+assetId]`.
+   - Các trường: `organizationId`, `assetId`, `cloudCode`, `cloudUpdatedAt`, `lastSyncedLocalUpdatedAt`, `status: linked | conflict`, `linkedAt`, `lastVerifiedAt`.
+   - Mỗi tổ chức chỉ có một liên kết Cloud cho một UUID Local. Không tự ghép theo tên/mã.
+2. `assetMutations`
+   - Primary key: `mutationId` (UUID riêng cho từng lần sửa).
+   - Index thường: `[organizationId+assetId]`, `[organizationId+assetId+status]`, `organizationId`, `assetId`, `status`, `createdAt`.
+   - Lưu snapshot payload bất biến theo allowlist của Migration 017, `expectedCloudUpdatedAt`, `localUpdatedAt`, `status: pending | processing | applied | conflict`, `attempts`, `lastError`, `createdAt`, `updatedAt`, `appliedAt`, `cloudUpdatedAt`.
+   - Không dùng unique index cho organization+asset vì cần giữ lịch sử các mutation đã applied. Ứng dụng sẽ kiểm tra và chỉ cho tối đa một mutation chưa xác nhận cho mỗi Asset.
+   - Chưa tích hợp ghi/đọc bảng mutation vào luồng sửa Local cho đến khi Test SQL 017 PASS.
+
+### 21.3 Điều chỉnh import để tạo mapping an toàn
+
+- Preflight tiếp tục kiểm tra toàn bộ Local và Cloud, không ghi dữ liệu khi chưa xác nhận.
+- Khi người dùng xác nhận, chạy RPC import idempotent cho mọi Asset Local trong snapshot, bao gồm Asset đã có đúng UUID/mã/nội dung trên Cloud. Không bỏ qua Asset chỉ vì Cloud đã có.
+- Chỉ sau khi RPC trả về đúng `organizationId`, `asset.id`, `asset.code` và Asset payload hợp lệ, mới ghi `assetCloudLinks` trong Dexie.
+- Nếu Cloud import thành công nhưng ứng dụng đóng trước khi ghi mapping, lần xác nhận lại dùng cùng import mutation ID theo UUID Asset để RPC trả kết quả cũ và hoàn thiện mapping.
+- Nếu Local/Cloud khác payload, UUID hoặc code xung đột, dừng; không ghi mapping và không tự chọn bên thắng.
+- Thông báo import cần phân biệt số Asset mới được thêm Cloud và số Asset đã được xác nhận/liên kết.
+
+### 21.4 Kiểm thử bắt buộc cho Dexie v8/import
+
+- Nâng DB v7 → v8 không mất Asset/Inventory/Checklist/maintenance/queue cũ.
+- Bảng mapping và mutation mới tạo rỗng, không tự sinh mapping từ dữ liệu cũ.
+- Import Asset mới: Cloud xác nhận đúng UUID/code; mapping được ghi.
+- Asset đã tồn tại Cloud đúng payload nhưng chưa có mapping: RPC idempotent trả kết quả, mapping được ghi.
+- Cùng UUID nhưng code khác, cùng code nhưng UUID khác, hoặc payload khác: dừng, không tạo mapping.
+- Mất phản hồi sau khi Cloud commit: chạy lại import không tạo Asset trùng; mapping hoàn tất khi nhận được kết quả xác nhận.
+- Không thay đổi `syncQueue`, không xử lý Checklist, bảo trì, vật tư hoặc bảng khác.
+- Test SQL 017 vẫn là điều kiện bắt buộc riêng trước khi bật Local edit receipt; Dexie v8 không thay thế test SQL.
+
+### 21.5 Trạng thái
+- [x] Đã xác định lỗ hổng nghiệp vụ: Asset Cloud tồn tại đúng nhưng Local chưa thể tạo mapping khi `toInsert = 0`.
+- [x] Đã chốt thiết kế bảng Dexie v8 cho link và mutation; chưa áp dụng vào mã nguồn.
+- [ ] Chưa thêm schema v8 hoặc ghi mapping trong import.
+- [ ] Chưa tích hợp Local edit lease/receipt; chờ người dùng xác nhận Migration 017 + Test 017 PASS.
