@@ -141,3 +141,15 @@ test('Cloud mapping refuses draft identities and draft foreign keys', () => {
     createdAt: '2026-11-18', updatedAt: '2026-11-18'
   }, org), /bản nháp Local/)
 })
+
+test('Cloud mapping refuses creator snapshots until the SQL schema can preserve them', () => {
+  assert.throws(() => mapping.toCloudAssetRow({
+    ...asset, createdByLabel: 'Admin', createdByUserId: '90000000-0000-4000-8000-000000000001'
+  }, org), /chưa có trường người tạo Asset/)
+  assert.throws(() => mapping.toCloudInventoryBaselineRow({
+    id: '20000000-0000-4000-8000-000000000001', code: 'VT-02', name: 'Bóng LED',
+    group: 'Điện', unit: 'cái', quantity: 0, minQuantity: 0, location: '',
+    supplier: '', unitPrice: 0, updatedAt: '2026-11-18T00:00:00.000Z',
+    createdByLabel: 'Admin'
+  }, org), /chưa có trường người tạo InventoryItem/)
+})
