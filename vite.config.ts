@@ -7,16 +7,36 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: [],
+      includeAssets: [
+        'icon-247.svg',
+        'favicon.ico',
+        'favicon-16x16.png',
+        'favicon-32x32.png',
+        'favicon-48x48.png',
+        'apple-touch-icon.png'
+      ],
       manifest: {
-        name: 'Quản lý bảo trì',
-        short_name: 'Bảo trì',
+        name: 'BAOTRI Mini',
+        short_name: 'BAOTRI',
         description: 'Quản lý thiết bị, vật tư và kế hoạch bảo trì',
-        theme_color: '#123b36',
-        background_color: '#f4f7f6',
+        theme_color: '#176B5C',
+        background_color: '#F3F6F5',
         display: 'standalone',
         start_url: '/',
-        icons: []
+        icons: [
+          {
+            src: '/android-chrome-192x192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'any'
+          },
+          {
+            src: '/android-chrome-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any'
+          }
+        ]
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
