@@ -2202,3 +2202,12 @@ Chưa xác minh build/CI cho chuỗi commit trên; cần chờ workflow tương 
 - UI hiện có Nhập/Xuất; chưa có Điều chỉnh riêng. Không tự quyết định semantics Điều chỉnh khi chưa thống nhất.
 - Trước Cloud worker cần khóa trường quantity khi sửa vật tư cũ; số tồn chỉ đổi qua movement. Tồn đầu kỳ phải có movement riêng.
 - Chưa tạo SQL/migration, chưa sửa UI, chưa gọi Supabase, không ghi Test/Production.
+
+
+## Cloud Maintenance Logs – thiết kế revision append-only
+- Tạo `supabase/CLOUD_MAINTENANCE_LOG_REVISION_DESIGN.md`, commit `1935501613fb9e5e8b462f181f5146a9b2752c27`.
+- Local Log có dueDate, requestedBy, editHistory; Cloud `maintenance_logs` hiện thiếu các field này và được thiết kế append-only. Mapper từ chối sync nếu có field bị thiếu.
+- Đề xuất giữ Log ID ổn định ở bảng root, thêm bảng `maintenance_log_revisions` lưu snapshot bất biến cho mỗi lần tạo/sửa; không UPDATE revision cũ.
+- Hoàn thành Task + tạo Log cần một RPC transaction duy nhất để giữ atomicity giống local Dexie transaction.
+- Permission catalog hiện có logs.create nhưng chưa xác nhận logs.update; phải chốt ai được sửa phiếu trước khi viết migration/RPC. Không tự nâng quyền.
+- Chưa sửa schema/UI, chưa tạo migration, không chạy SQL, không ghi Supabase Test/Production.
