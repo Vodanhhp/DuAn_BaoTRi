@@ -3216,3 +3216,21 @@ Trạng thái:
 - [ ] Người dùng chạy hotfix trên BAOTRI-Mini-Test.
 - [ ] Chạy lại Test SQL 017 và xác nhận PASS.
 - [ ] Chưa tích hợp Local lease/receipt trước khi Test 017 PASS.
+
+
+### 24.1 Phân tích kết quả Test SQL 017 – stale version
+
+Người dùng chạy Test SQL 017 sau hotfix và báo tất cả dòng PASS ngoại trừ:
+- `Stale expected Cloud version is rejected`
+- Actual: `blocked=false; name=Asset mutation committed once`
+
+Đã kiểm tra lại mã RPC trên `main`:
+- RPC hiện so sánh `v_asset.updated_at IS DISTINCT FROM p_expected_cloud_updated_at` và phải trả SQLSTATE `40001` nếu phiên bản Cloud khác.
+- Bài test hiện tại chỉ kiểm tra tên Asset sau lời gọi, trong khi payload gửi lại cũng giữ nguyên tên; do đó phần Actual chưa đủ để xác định vì sao lời gọi không bị chặn.
+- Cần tăng độ quan sát của test: xác nhận timestamp sau mutation đầu tiên thực sự khác timestamp gốc; chụp timestamp Cloud ngay trước lời gọi stale; sau lời gọi kiểm tra timestamp không thay đổi. Báo rõ các timestamp trong cột Actual.
+- Không thay đổi RPC hoặc tích hợp Local trước khi test chẩn đoán xác nhận rõ nguyên nhân.
+
+Trạng thái:
+- [x] Đã xác nhận nội dung RPC trên main có điều kiện kiểm tra phiên bản.
+- [ ] Cập nhật Test SQL 017 để kiểm tra trực tiếp timestamp và đưa ra Actual có chẩn đoán.
+- [ ] Người dùng chạy lại Test SQL 017 và gửi dòng kết quả mới.
