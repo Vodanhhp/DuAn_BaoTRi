@@ -298,6 +298,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
   const checklistTemplates = useLiveQuery(() => db.checklistTemplates.toArray(), []) ?? []
   const allChecklistResults = useLiveQuery(() => db.checklistResults.toArray(), []) ?? []
   const queueCount = useLiveQuery(() => db.syncQueue.count(), []) ?? 0
+  const queueItems = useLiveQuery(() => db.syncQueue.orderBy('queuedAt').reverse().limit(50).toArray(), []) ?? []
 
 
 
@@ -1158,6 +1159,18 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
             <div className="setting-row"><div><b>Xuất bản sao lưu</b><small>Tải đầy đủ thiết bị, vật tư, kế hoạch, nhật ký, Checklist, ảnh, danh mục tự tạo và dữ liệu hàng đợi thành JSON.</small></div><button className="primary-btn" disabled={isViewer} title={isViewer?'Viewer không được sao lưu dữ liệu':undefined} onClick={backup}><Download size={16}/> Sao lưu</button></div>
             <div className="setting-row"><div><b>Khôi phục bản sao lưu</b><small>Nhập file JSON đã xuất từ ứng dụng.</small></div><label className={`soft-btn file-btn ${isViewer?'disabled':''}`} title={isViewer?'Viewer không được khôi phục dữ liệu':undefined}>Chọn file<input type="file" accept=".json,application/json" disabled={isViewer} onChange={e=>e.target.files?.[0]&&restore(e.target.files[0])}/></label></div>
             <div className="setting-row"><div><b>Trạng thái dữ liệu</b><small>{queueCount} thay đổi cục bộ đang chờ. Đăng nhập, tổ chức và phép thử ghi/đọc thiết bị đã kết nối Supabase; dữ liệu nghiệp vụ chính vẫn đang lưu trong trình duyệt, chưa đồng bộ tự động.</small></div><span className="status orange">Chưa đồng bộ nghiệp vụ</span></div>
+            <details className="queue-diagnostics">
+              <summary>Kiểm tra hàng đợi đồng bộ local · tối đa 50 mục gần nhất</summary>
+              {queueItems.length === 0 ? <p className="muted">Chưa có thay đổi nào trong hàng đợi trên trình duyệt này.</p> : <div className="table-wrap"><table>
+                <thead><tr><th>Phân hệ</th><th>ID bản ghi</th><th>Thao tác</th><th>Trạng thái</th><th>Số lần thử</th><th>Thời điểm ghi nhận</th><th>Lỗi gần nhất</th></tr></thead>
+                <tbody>{queueItems.map(item => <tr key={item.id}>
+                  <td>{item.tableName}</td><td><code>{item.recordId}</code></td>
+                  <td>{item.operation === 'delete' ? 'Xóa' : 'Tạo / cập nhật'}</td>
+                  <td><span className={`status ${item.status === 'failed' ? 'red' : 'orange'}`}>{item.status === 'pending' ? 'Đang chờ' : item.status === 'processing' ? 'Đang xử lý' : 'Thất bại'}</span></td>
+                  <td>{item.attempts}</td><td>{new Date(item.queuedAt).toLocaleString('vi-VN')}</td><td>{item.lastError || '—'}</td>
+                </tr>)}</tbody>
+              </table></div>}
+            </details>
             <div className="setting-row"><div><b>Giao diện</b><small>Chuyển đổi giữa tối/ sáng và thu gọn thông tin chính.</small></div><div className="setting-inline-actions"><button className={`soft-btn ${theme === 'light' ? 'active' : ''}`} onClick={()=>setTheme('light')}>Sáng</button><button className={`soft-btn ${theme === 'dark' ? 'active' : ''}`} onClick={()=>setTheme('dark')}>Tối</button><button className={`soft-btn ${compact ? 'active' : ''}`} onClick={()=>setCompact(v=>!v)}>{compact ? 'Thu gọn' : 'Mở rộng'}</button></div></div>
           </section>
           <section className="panel about-panel">
