@@ -531,18 +531,20 @@ Các nội dung này sẽ được rà soát theo nhu cầu thực tế; không 
 
 ## 15. Phạm vi và trạng thái
 
-Đã thực hiện:
-- Thiết kế ba lớp dữ liệu.
-- Thiết kế các trục mô hình ngành/quy mô/mức quản lý.
-- Định nghĩa các nhóm thực thể logic cho template catalog, release, tenant config và liên kết dữ liệu nghiệp vụ.
-- Xác định quy tắc version, provenance, tùy chỉnh, cập nhật và conflict.
-- Đưa mô hình Nhà nghỉ – Khách sạn nhỏ vào làm ví dụ kiểm chứng.
+### Đã hoàn thành ở tầng thiết kế và kiểm chứng gói mẫu
+- Thiết kế ba lớp dữ liệu: thư viện mẫu chuẩn của BAOTRI, bản cấu hình doanh nghiệp và dữ liệu nghiệp vụ thực tế.
+- Thiết kế các trục ngành/quy mô/mức quản lý; quy tắc version, provenance, tùy chỉnh, cập nhật và conflict.
+- Định nghĩa JSON Schema Draft 2020-12 tại `docs/schemas/baotri-template-release.schema.json`.
+- Tạo gói mẫu tham chiếu `templates/HOTEL_SMALL_BASIC/1.0.0.json`: sáu nhóm Checklist mặc định, hai Checklist PCCC/thang máy tùy chọn; nhóm thiết bị PCCC/thang máy không bật mặc định; vật tư cơ bản; bảo trì đơn giản; một cơ sở/một kho chung; quy tắc mã và vai trò gợi ý.
+- Tạo semantic validator `scripts/validate-template-release.mjs` để đọc JSON và kiểm tra liên kết giữa các danh mục; validator chỉ đọc và kiểm tra, không ghi dữ liệu.
+- Thêm test cho gói mẫu và các trường hợp tham chiếu sai tại `tests/templateRelease.test.mjs`.
+- CI kiểm tra JSON Schema bằng Ajv, kiểm tra tham chiếu nghiệp vụ, chạy validator, sau đó build và deploy.
 
-Chưa thực hiện:
-- Chưa sửa TypeScript/React/Dexie.
-- Chưa tạo hoặc sửa Supabase migration.
-- Chưa chạy SQL, RPC hoặc ghi dữ liệu vào Supabase Test/Production.
-- Chưa tạo cấu hình doanh nghiệp từ mô hình mẫu.
+### Chưa triển khai – chủ ý để dành giai đoạn sau
+- Chưa tích hợp thư viện mẫu vào TypeScript/React/Dexie của app.
+- Chưa tạo hoặc sửa Supabase migration; chưa chạy SQL, RPC hoặc ghi dữ liệu vào Supabase Test/Production.
+- Chưa tạo cấu hình doanh nghiệp thật từ gói mẫu.
 - Chưa thay đổi dữ liệu nghiệp vụ hiện có.
+- Chưa có giao diện quản trị/phát hành template catalog.
 
-**Kết luận:** Tài liệu này là nền thiết kế để tham chiếu về sau. Công việc tiếp theo của project vẫn quay lại hoàn thiện BAOTRI Mini hiện tại; thư viện mô hình chuẩn chưa thuộc phạm vi code cho đến khi có kế hoạch riêng.
+**Kết luận:** Cấu trúc dữ liệu mẫu và gói mẫu đầu tiên đã có thể lưu trữ, kiểm tra định dạng và kiểm tra liên kết độc lập với app. Tạm đóng phần thư viện mẫu tại đây; quay lại hoàn thiện BAOTRI Mini hiện tại. Khi cần tạo mô hình ngành khác, dùng JSON Schema và gói `HOTEL_SMALL_BASIC` làm chuẩn tham chiếu, không tự động nạp gói vào dữ liệu doanh nghiệp.
