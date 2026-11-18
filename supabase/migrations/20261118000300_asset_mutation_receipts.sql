@@ -69,10 +69,9 @@ begin
     raise exception 'Missing assets.update permission for this organization'
       using errcode = '42501';
   end if;
-  if jsonb_typeof(p_payload) <> 'object'
+  if jsonb_typeof(p_payload) is distinct from 'object'
      or not (p_payload ?& v_required_keys)
-     or (p_payload - v_required_keys) <> '{}'::jsonb
-     or jsonb_object_length(p_payload) <> cardinality(v_required_keys) then
+     or (p_payload - v_required_keys) <> '{}'::jsonb then
     raise exception 'Asset mutation payload has missing or unsupported fields'
       using errcode = '22023';
   end if;
