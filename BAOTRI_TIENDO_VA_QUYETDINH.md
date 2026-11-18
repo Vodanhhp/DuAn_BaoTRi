@@ -1861,3 +1861,50 @@ assets.images hiện là dữ liệu ảnh local; adapter Cloud trả images r�
 7. Không xóa dữ liệu local, không xóa bảng/migration cũ, không tạo thêm membership/tài khoản trong bước chuẩn bị.
 
 **Trạng thái:** Đã rà soát và lập phương án. Chưa sửa mã nguồn đồng bộ, chưa gọi syncLocalDatabase(), chưa ghi dữ liệu nghiệp vụ lên Supabase, chưa chạy SQL/migration mới và chưa thay đổi Test/Production. Bước kế tiếp là Giai đoạn 0–1: đối chiếu nguồn dữ liệu và hoàn thiện hàng đợi local.
+
+
+---
+
+# TRIỂN KHAI GIAI ĐOẠN 1 – NỀN TẢNG HÀNG ĐỢI ĐỒNG BỘ LOCAL – 18/11/2026
+
+## Phạm vi đã thực hiện
+
+Đã cập nhật trực tiếp trên nhánh main, không tạo branch/PR. Chỉ thay đổi lớp lưu trữ local và các điểm ghi nghiệp vụ cần đưa vào hàng đợi. Không gọi Supabase để đồng bộ, không thay đổi SQL/migration, không ghi dữ liệu lên Test hoặc Production.
+
+### 1. Nâng cấp Dexie database lên version 6
+
+- Giữ nguyên database name baotri-local-v1 và toàn bộ các bảng nghiệp vụ.
+- Mở rộng syncQueue với các trường status (pending/processing/failed), attempts, lastError, lastAttemptAt, deviceId và mutationId.
+- Thêm unique compound index theo tableName + recordId; hàng đợi được coalesce theo một bản ghi/bảng để tránh phát sinh nhiều queue trùng cho cùng một thay đổi đang chờ.
+- Migration v6 chuẩn hóa queue cũ: gộp các mục trùng theo bảng + record, giữ mục mới nhất, bổ sung metadata còn thiếu. Migration chỉ thao tác bảng syncQueue, không sửa/xóa dữ liệu nghiệp vụ.
+- deviceId được lưu ổn định theo browser installation bằng localStorage; mutationId mới được tạo mỗi lần ghi nhận thay đổi.
+
+### 2. Bảo đảm ghi nghiệp vụ và queue cùng transaction
+
+- Bổ sung helper putAndQueue, addAndQueue và deleteAndQueue trong src/db.ts.
+- Đã chuyển các luồng lưu/sửa vật tư, công việc, nhật ký, lưu kho/khôi phục/thay đổi trạng thái thiết bị, xóa kế hoạch và tạo kết quả Checklist sang cơ chế transaction ghi dữ liệu + queue.
+- Lưu Checklist template và Checklist version cùng transaction với hai queue tương ứng; mỗi lần sửa biểu mẫu tạo version riêng như nguyên tắc Checklist đã chốt.
+- Khi hoàn thành task: cập nhật task, thêm maintenance log và queue cả hai trong cùng transaction.
+- Khi nhập/xuất kho local: cập nhật số lượng vật tư, thêm movement và queue cả inventory + movement trong cùng transaction. Đây mới là queue local; chưa gửi movement lên Cloud. Khi làm đồng bộ Cloud, movement vẫn phải qua RPC transaction phía PostgreSQL.
+- Khi khôi phục backup: dữ liệu được ghi local và các bản ghi khôi phục được đưa vào queue trong transaction; không nhập nguyên syncQueue cũ từ file backup để tránh đưa cấu trúc queue lỗi thời vào DB mới.
+- Các lệnh seed/demo tự động ban đầu vẫn không tự queue hàng loạt; không tự động đưa dữ liệu demo lên Cloud chỉ vì app khởi động.
+
+### 3. Build/deploy
+
+- Commit nâng cấp DB/queue: c753e5a817a741f4a10293b8b8af27d37622fac1.
+- Commit chuyển các luồng nghiệp vụ sang queue: 695096a6ce90597473e191fe5a11f43fe465629e.
+- Commit hoàn thiện luồng restore và các thao tác thiết bị còn lại: 1f2c85fea16239698bdfdd14f2ff1c08817b735e.
+- Workflow run #166 ở commit đầu tiên thất bại do một điểm ghi queue cũ chưa bổ sung các trường metadata mới. Đã sửa ở commit tiếp theo.
+- Workflow run #169 (ID 44231478875) tại commit 1f2c85fea16239698bdfdd14f2ff1c08817b735e: job build **success**, job deploy **success**. Không có lỗi TypeScript/build/deploy ở bản cuối.
+- Đã triển khai lên GitHub Pages; chưa thực hiện nghiệm thu thủ công toàn bộ thao tác trên trình duyệt/điện thoại sau nâng cấp.
+
+## Trạng thái sau Giai đoạn 1
+
+- Đã có nền tảng queue local có metadata và transaction cho các luồng ghi nghiệp vụ chính.
+- Chưa có worker gửi queue lên Cloud, chưa có adapter schema chuẩn hóa, chưa có xử lý retry thực tế/conflict/version server, chưa có RPC kho, chưa có đồng bộ ảnh.
+- Không gọi src/lib/cloudSync.ts cũ.
+- Không chạy SQL/migration Supabase; không thay đổi BAOTRI-Mini-Test hoặc BAOTRI-Mini Production.
+- Không xóa dữ liệu IndexedDB hiện có. Trình duyệt sẽ tự chạy migration Dexie v6 khi mở bản mới; migration chỉ chuẩn hóa syncQueue.
+- Việc chọn dữ liệu gốc giữa backup máy tính và điện thoại vẫn là điểm chặn riêng trước lần seed Cloud đầu tiên. Không tự chọn một thiết bị làm nguồn chuẩn.
+
+**Bước kế tiếp:** kiểm thử mở ứng dụng sau migration v6 và các thao tác lưu/sửa/xóa, Checklist, hoàn thành công việc, nhập/xuất kho, restore backup; sau đó hoàn thành đối chiếu backup và thiết kế trạng thái conflict/version trước khi viết adapter Cloud.
