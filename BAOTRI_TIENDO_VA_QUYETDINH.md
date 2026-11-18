@@ -2433,3 +2433,35 @@ Chuẩn bị nền tảng dữ liệu cho bản nháp Local và chuyển ID tạ
 - Sau khi build PASS mới yêu cầu người dùng pull và kiểm tra thao tác thực tế; không đánh dấu hoàn tất chỉ từ kiểm tra tĩnh.
 
 **Trạng thái:** kế hoạch trước triển khai; chưa sửa code hoặc Dexie schema tại thời điểm ghi mục này.
+
+
+# TRIỂN KHAI NỀN TẢNG ĐỊNH DANH LOCAL – PHASE A – 18/11/2026
+
+## Đã cập nhật trên main
+- `src/db.ts`: Dexie version 7 bổ sung `identityStatus` cho Asset/InventoryItem; migration đánh dấu bản ghi hiện có là `legacy`, không đổi ID, mã, foreign key, số lượng, timestamps hoặc lịch sử. Bổ sung helper rekey Asset và Inventory chạy trong một Dexie transaction, cập nhật các FK và queue liên quan.
+- `src/lib/localIdentity.ts`: tạo namespace ID `draft:`, nhận diện UUID/ID draft, lập kế hoạch chuyển Asset và Inventory sang UUID chính thức; cập nhật Tasks, Plans, Logs, Checklist Templates/Versions/Results, Movements liên quan và queue; chặn collision hoặc mutation đang processing.
+- `src/App.tsx`: bản ghi Asset/Inventory mới theo luồng hiện tại lưu snapshot người thêm (tên, fallback email, Auth user ID) và trạng thái `legacy`; chi tiết thiết bị/vật tư hiển thị Người thêm. Backup tăng version 3; restore backup cũ tự bổ sung `identityStatus=legacy` mà không đổi ID/mã.
+- `src/lib/syncMapping.ts`: từ chối ID draft/foreign key draft; từ chối mapping Asset/Inventory có creator snapshot cho đến khi schema Cloud có trường tương ứng, tránh âm thầm bỏ dữ liệu.
+- Thêm `tests/localIdentity.test.mjs`, bổ sung test chặn draft/creator metadata trong `tests/syncMapping.test.mjs`; workflow CI chạy cả hai bộ test.
+
+## Các commit chính
+- Thiết kế helper: `e1afe958014eabe05f63a5afb060482601b1c194`.
+- Dexie v7 + transaction rekey: `8fabd84b3f13f69fa7d138ebde5acd26d14e4dd0`.
+- Lưu metadata người tạo: `6a5b2d245f7a3e294920908d39359ec3d74522ee`.
+- Chặn draft trong Cloud mapping: `6c835ebf698c5353e8a90539f05dd1b299cb427a` và `5eee32b42898ad88a9ae2ac0f61c482c36bf4b18`.
+- Unit tests + CI: `1eea3f0a3d2381e639d062463575cad50d0876cb`, `a2c2a8d810965eb41d70b78f9d9787a0b6a03995`, `698cc316b5a9ab681dbee66e009f289d9959514d`, `2d25a22f90cd912fb3c904bde79beabcee6b327f`, `e62f33c929153f7e8a95c38f7867fb7548b7c2bc`, `c61ffe531468053b6632f6e2558c9fa31853d9a7`.
+- Hiển thị Người thêm: `7c19a48f6f00f56ec8ddb73fcf3bb5026b5ec41c`.
+
+## Xác minh tự động
+- GitHub Actions run #270, ID `44316658162`, commit `7c19a48f6f00f56ec8ddb73fcf3bb5026b5ec41c`: test Cloud mapping **success**, test Local identity **success**, build Vite **success**, deploy GitHub Pages **success**.
+- Link: https://github.com/Vodanhhp/DuAn_BaoTRi/actions/runs/44316658162
+
+## Giới hạn chưa triển khai
+- Luồng tạo draft offline chưa bật; `emptyAsset()`/`emptyItem()` và cách cấp mã hiện tại chưa thay đổi. Bản ghi mới trong giai đoạn chuyển tiếp vẫn ở trạng thái `legacy`.
+- Helper rekey đã có transaction thực tế; unit test hiện kiểm tra kế hoạch chuyển đổi thuần, chưa có integration test IndexedDB/browser để chứng minh rollback transaction trên runtime.
+- Chưa có Cloud pull/push worker; chưa xác minh Cloud mới nhất trước khi chính thức hóa; không gọi RPC và không gửi dữ liệu nghiệp vụ.
+- Schema Supabase hiện chưa có `created_by_label`/`created_by_user_id`; mapper chủ động chặn các bản ghi có creator metadata, không được bật worker trước khi có migration/contract tương ứng.
+- Chưa triển khai session registry một PC + một Mobile.
+- Dexie v7 sẽ chạy migration khi người dùng mở phiên bản mới; cần kiểm tra trên trình duyệt hiện có dữ liệu: số lượng bản ghi, ID, mã, FK, ảnh và lịch sử phải giữ nguyên. Cần thử thêm mới Asset/Inventory, xem Người thêm và backup/restore bản cũ.
+
+**Kết luận:** Phase A mới hoàn thành nền tảng metadata và helper rekey; chưa bật draft Local hoặc Cloud sync. Tiếp tục theo thứ tự an toàn: kiểm thử migration/runtime trên dữ liệu Local hiện có, sau đó mới thiết kế Phase B pull/push và online finalization. Không thao tác Supabase Test/Production.
