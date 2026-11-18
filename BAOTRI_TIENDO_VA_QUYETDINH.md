@@ -3107,3 +3107,23 @@ Thêm hai bảng riêng, không thay đổi bảng `syncQueue` và không chạy
 - [x] Đã chốt thiết kế bảng Dexie v8 cho link và mutation; chưa áp dụng vào mã nguồn.
 - [ ] Chưa thêm schema v8 hoặc ghi mapping trong import.
 - [ ] Chưa tích hợp Local edit lease/receipt; chờ người dùng xác nhận Migration 017 + Test 017 PASS.
+
+### 21.6 Kết quả triển khai Dexie v8 và mapping import – 19/11/2026
+
+Đã cập nhật trên `main`:
+
+- Commit `c7bbf60ee074af907efb55c7e35dd2c91353d690`: thêm type và Dexie schema version 8:
+  - `assetCloudLinks`: liên kết Local–Cloud theo organization + asset UUID, lưu code và phiên bản Cloud/Local đã xác nhận.
+  - `assetMutations`: cấu trúc lưu snapshot mutation bất biến và trạng thái; hiện mới tạo bảng/index, chưa có luồng ghi/đọc mutation.
+- Commit `f5cd368128ab78a00a4258f964aaf2a9e9ce0897`: chỉnh import trong `CloudAssetsPanel`:
+  - Preflight tính riêng số Asset cần thêm mới lên Cloud và số Asset cần tạo/cập nhật mapping.
+  - Nếu Cloud đã có Asset đúng UUID/code/nội dung nhưng Local chưa có mapping, vẫn cho xác nhận.
+  - Khi xác nhận, chạy import RPC idempotent cho Asset cần liên kết, kể cả bản ghi Cloud đã tồn tại đúng; chỉ sau khi RPC trả về Asset hợp lệ mới ghi `assetCloudLinks`.
+  - Retry sau khi Cloud commit nhưng Local chưa ghi mapping dùng lại mutation ID theo Asset UUID; không tạo Asset trùng.
+  - Nếu UUID/code/payload khác nhau thì dừng, không ghi mapping.
+- Dexie v8 không có upgrade transform; dữ liệu cũ được giữ nguyên, hai bảng mới để trống. Không tự động gán link cho dữ liệu legacy.
+- Không thay đổi `syncQueue`, không bật worker, không đồng bộ Checklist/bảo trì/vật tư.
+- Không gọi Migration 017; `assetMutations` hiện chỉ là schema chuẩn bị, chưa được dùng.
+- GitHub Actions cho commit `f5cd368` đang pending tại thời điểm ghi nhận; chưa xác nhận build PASS. Run trước đó cho commit `c7bbf60` đang in progress.
+- Lưu ý: import RPC ledger ràng buộc mutation với actor. Giai đoạn hiện tại đang dùng một Auth account như quyết định trước; nếu sau này cho nhiều Admin import cùng organization, cần đánh giá lại luồng retry/mutation ID theo actor trước khi mở rộng.
+
