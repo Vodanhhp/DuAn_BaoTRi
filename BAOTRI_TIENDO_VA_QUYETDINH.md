@@ -3235,3 +3235,29 @@ Trạng thái:
 - [x] Cập nhật Test SQL 017 tại commit `4e55cdc60855f3043eabdb9a1daa8635bae45ba2`: kiểm tra timestamp sau mutation đầu tiên, timestamp ngay trước stale call và timestamp sau stale call; cột Actual in đủ các mốc để xác định lỗi nằm ở dữ liệu phiên bản hay nhánh RPC.
 - [ ] Người dùng chạy lại Test SQL 017 và gửi dòng kết quả mới.
 - [ ] Người dùng chạy lại Test SQL 017 và gửi dòng kết quả mới.
+
+
+### 24.2 Xác định nguyên nhân timestamp không đổi – 19/11/2026
+
+Người dùng chạy lại Test SQL 017 với chẩn đoán chi tiết và nhận được:
+- `original`, `after_first`, `before_stale`, `after_stale` đều bằng `2026-11-18 22:28:02.599598+00`.
+- `blocked=false`; Asset vẫn giữ tên `Asset mutation committed once`.
+
+Đã kiểm tra mã nguồn trên `main`:
+- Bảng `assets` có trigger `assets_set_updated_at` gọi `public.set_updated_at()`.
+- Hàm dùng `new.updated_at := now()`.
+- Trong một transaction, `now()` trả về thời điểm bắt đầu transaction, nên trigger ghi đè giá trị `clock_timestamp()` mà RPC đặt; timestamp không đổi so với lúc tạo fixture.
+- Vì optimistic version không thay đổi, stale request không bị phát hiện.
+
+Phương án sửa đã chốt để triển khai:
+- Không thay đổi hàm `set_updated_at()` dùng chung, tránh tác động các bảng khác.
+- Tạo trigger function riêng cho Asset, dùng `clock_timestamp()`, và thay trigger `assets_set_updated_at` hiện tại bằng trigger riêng này.
+- Migration riêng, không cập nhật dữ liệu hiện có; chỉ thay hành vi cập nhật timestamp cho các lần UPDATE Asset từ sau khi migration được áp dụng.
+- Giữ nguyên RPC receipt/lease và bài test stale-version; chạy lại Test SQL 017 sau migration mới.
+- Chưa tích hợp Local lease/receipt cho đến khi Test SQL 017 PASS toàn bộ.
+
+Trạng thái:
+- [x] Xác định đúng nguyên nhân từ trigger `set_updated_at()`.
+- [ ] Tạo migration sửa riêng trigger Asset.
+- [ ] Người dùng chạy migration mới trên BAOTRI-Mini-Test.
+- [ ] Chạy lại Test SQL 017 và xác nhận tất cả PASS.
