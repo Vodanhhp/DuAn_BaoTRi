@@ -106,8 +106,20 @@ export interface Movement {
   id: string; itemId: string; date: string; type: 'Nhập' | 'Xuất' | 'Điều chỉnh'
   quantity: number; reason: string; linkedAssetId?: string
 }
+export type SyncStatus = 'pending' | 'processing' | 'failed'
+
 export interface SyncItem {
-  id: string; tableName: string; recordId: string; operation: string; queuedAt: string
+  id: string
+  tableName: string
+  recordId: string
+  operation: 'upsert' | 'delete'
+  queuedAt: string
+  status: SyncStatus
+  attempts: number
+  lastError?: string
+  lastAttemptAt?: string
+  deviceId: string
+  mutationId: string
 }
 
 class MaintenanceDB extends Dexie {
@@ -178,11 +190,94 @@ class MaintenanceDB extends Dexie {
       checklistResults: 'id, assetId, templateId, templateVersionId, performedAt, result',
       maintenancePlans: 'id, assetId, period, startDate, endDate, updatedAt'
     })
+    // v6: queue bền vững, coalesce theo bảng + record và hỗ trợ retry/idempotency.
+    this.version(6).stores({
+      assets: 'id, code, name, category, status, archivedAt, updatedAt',
+      inventory: 'id, code, name, group, quantity, updatedAt',
+      tasks: 'id, assetId, dueDate, status, updatedAt',
+      logs: 'id, assetId, taskId, checklistResultId, date, kind',
+      movements: 'id, itemId, date, type',
+      syncQueue: 'id, &[tableName+recordId], tableName, recordId, operation, queuedAt, status, attempts, lastAttemptAt, deviceId, mutationId',
+      checklistTemplates: 'id, assetId, active, updatedAt',
+      checklistVersions: 'id, templateId, assetId, version, createdAt',
+      checklistResults: 'id, assetId, templateId, templateVersionId, performedAt, result',
+      maintenancePlans: 'id, assetId, period, startDate, endDate, updatedAt'
+    }).upgrade(async tx => {
+      const table = tx.table('syncQueue')
+      const previous = await table.toArray() as Array<Partial<SyncItem> & { id: string; tableName: string; recordId: string; operation: string; queuedAt: string }>
+      const latest = new Map<string, SyncItem>()
+      for (const item of previous) {
+        const id = queueId(item.tableName, item.recordId)
+        const current = latest.get(id)
+        if (!current || item.queuedAt > current.queuedAt) {
+          latest.set(id, {
+            id, tableName: item.tableName, recordId: item.recordId,
+            operation: item.operation === 'delete' ? 'delete' : 'upsert',
+            queuedAt: item.queuedAt || now(), status: 'pending',
+            attempts: Number(item.attempts) || 0,
+            lastError: item.lastError,
+            lastAttemptAt: item.lastAttemptAt,
+            deviceId: item.deviceId || getDeviceId(),
+            mutationId: item.mutationId || uid()
+          })
+        }
+      }
+      await table.clear()
+      if (latest.size) await table.bulkPut([...latest.values()])
+    })
   }
 }
 export const db = new MaintenanceDB()
 export const uid = () => crypto.randomUUID()
 export const now = () => new Date().toISOString()
-export async function queueChange(tableName: string, recordId: string, operation = 'upsert') {
-  await db.syncQueue.put({ id: uid(), tableName, recordId, operation, queuedAt: now() })
+
+function queueId(tableName: string, recordId: string) {
+  return `${tableName}:${recordId}`
+}
+
+let cachedDeviceId: string | undefined
+function getDeviceId() {
+  if (cachedDeviceId) return cachedDeviceId
+  const key = 'baotri-device-id'
+  try {
+    const existing = localStorage.getItem(key)
+    if (existing) return cachedDeviceId = existing
+    const created = uid()
+    localStorage.setItem(key, created)
+    return cachedDeviceId = created
+  } catch {
+    return cachedDeviceId = uid()
+  }
+}
+
+export async function queueChange(tableName: string, recordId: string, operation: 'upsert' | 'delete' = 'upsert') {
+  if (!tableName || !recordId) throw new Error('Thiếu tên bảng hoặc ID bản ghi khi tạo hàng đợi đồng bộ.')
+  const id = queueId(tableName, recordId)
+  const existing = await db.syncQueue.get(id)
+  await db.syncQueue.put({
+    id, tableName, recordId, operation, queuedAt: now(),
+    status: 'pending', attempts: 0, deviceId: getDeviceId(), mutationId: uid(),
+    lastError: undefined, lastAttemptAt: undefined
+  })
+}
+
+export async function putAndQueue<T extends { id: string }>(table: Table<T, string>, tableName: string, value: T) {
+  await db.transaction('rw', table, db.syncQueue, async () => {
+    await table.put(value)
+    await queueChange(tableName, value.id)
+  })
+}
+
+export async function addAndQueue<T extends { id: string }>(table: Table<T, string>, tableName: string, value: T) {
+  await db.transaction('rw', table, db.syncQueue, async () => {
+    await table.add(value)
+    await queueChange(tableName, value.id)
+  })
+}
+
+export async function deleteAndQueue<T>(table: Table<T, string>, tableName: string, recordId: string) {
+  await db.transaction('rw', table, db.syncQueue, async () => {
+    await table.delete(recordId)
+    await queueChange(tableName, recordId, 'delete')
+  })
 }
