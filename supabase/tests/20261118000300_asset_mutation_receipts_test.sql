@@ -117,6 +117,7 @@ begin
   update pg_temp.asset_mutation_fixture
   set admin_token = (v_lock ->> 'lock_token')::uuid
   where asset_id = f.asset_id;
+  f.admin_token := (v_lock ->> 'lock_token')::uuid;
 
   select updated_at into strict v_expected
   from public.assets
