@@ -146,3 +146,13 @@ F. Chỉ lập kế hoạch Production sau khi Test đạt; mọi thao tác Prod
 - Mapping layer: `src/lib/syncMapping.ts` – commit `d2a5107882a929814717088561a060074e12cf38`.
 - Build và deploy workflow #173: thành công.
 - Không có worker Cloud, không có lệnh ghi Supabase, không chạy SQL, không thay đổi dữ liệu Test/Production.
+
+## 10. Ràng buộc đặc biệt với thiết bị và mã định danh
+
+- Migration 012 đã thu hồi quyền INSERT trực tiếp trên `assets` cho authenticated và yêu cầu tạo thiết bị Cloud qua RPC `create_asset_with_code`.
+- RPC hiện tại nhận p_id nhưng tự cấp code từ cấu hình tổ chức; nó không nhận code local. Vì vậy `toCloudAssetRow()` chỉ là mapper dữ liệu, tuyệt đối không được dùng để upsert INSERT trực tiếp.
+- Cần thiết kế hai đường riêng:
+  1. Tạo thiết bị mới khi online: gọi allocator RPC và nhận code Cloud; cập nhật code trả về vào local trong transaction an toàn.
+  2. Import/đồng bộ hồ sơ local đã có code (kể cả offline): cần RPC import có quyền hạn hẹp, xác thực Admin, giữ nguyên UUID + code, kiểm tra code unique và audit. Không tự cấp code mới làm thay đổi QR/mã đang sử dụng.
+- Khi offline, hai thiết bị có thể cùng tự sinh một code dựa trên local sequence. Khi push, unique constraint `(organization_id, code)` phải phát hiện collision; không tự ghi đè hoặc tự đổi code mà không có quy trình xử lý QR và tham chiếu.
+- `customAssetCategories` trong localStorage và `organization_settings.asset_categories`/ `asset_code_config` là các cấu trúc khác nhau. Cần adapter cấu hình được review; không đồng nhất hai JSON chỉ vì cùng nói về danh mục thiết bị.
