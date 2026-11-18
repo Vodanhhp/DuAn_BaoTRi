@@ -248,6 +248,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
   const [theme, setTheme] = useState<'light' | 'dark'>('light')
   const [compact, setCompact] = useState(false)
   const [profileEditOpen, setProfileEditOpen] = useState(false)
+  const [pendingRestore, setPendingRestore] = useState<{ fileName: string; data: any } | null>(null)
   const [modal, setModal] = useState<'asset'|'item'|'task'|'plan'|'planExport'|'log'|'scan'|null>(null)
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null)
   const [detailAsset, setDetailAsset] = useState<Asset | null>(null)
@@ -475,7 +476,10 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
       const checklistAssets = (await db.assets.toArray()).filter(asset => !asset.archivedAt)
       for (const asset of checklistAssets) await ensureDefaultChecklist(asset)
     }
-    seed()
+    // Legacy auto-seed disabled: it created official-looking UUIDs/codes locally
+    // and inserted 30 assets + 40 inventory rows without the new draft/online validation flow.
+    // Sample data will be created explicitly after the Local-first draft workflow is implemented.
+    void seed
   }, [])
 
   const assetCategories = useMemo(() => [...new Set(activeAssets.map(a => a.category).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'vi')), [activeAssets])
@@ -948,7 +952,18 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
       if (!data || typeof data !== 'object' || tableKeys.some(key => data[key] !== undefined && !Array.isArray(data[key]))) {
         throw new Error('Invalid backup structure')
       }
-      // Khôi phục là thay thế toàn bộ dữ liệu Local, không phải gộp (merge).
+      setPendingRestore({ fileName: file.name, data })
+    } catch {
+      setPendingRestore(null)
+      flash('File sao lưu không hợp lệ hoặc không thể đọc')
+    }
+  }
+  const cancelRestore = () => setPendingRestore(null)
+  const applyRestore = async () => {
+    if (!pendingRestore || blockViewer('khôi phục dữ liệu từ bản sao lưu')) return
+    try {
+      const { data } = pendingRestore
+      // Khôi phục thay thế toàn bộ dữ liệu Local, không phải gộp (merge).
       // Xóa và nạp lại trong cùng transaction để tránh trạng thái nửa chừng.
       await db.transaction('rw', [db.assets, db.inventory, db.tasks, db.logs, db.movements, db.maintenancePlans, db.checklistTemplates, db.checklistVersions, db.checklistResults, db.syncQueue], async () => {
         await Promise.all([
@@ -971,8 +986,11 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
         localStorage.setItem('baotri-custom-asset-categories', JSON.stringify(data.customAssetCategories))
         setCustomAssetCategories(data.customAssetCategories)
       }
-      flash('Đã nhập dữ liệu sao lưu')
-    } catch { flash('File sao lưu không hợp lệ hoặc không thể khôi phục') }
+      setPendingRestore(null)
+      flash('Đã khôi phục dữ liệu sao lưu')
+    } catch {
+      flash('Không thể khôi phục file sao lưu; dữ liệu Local được giữ nguyên nếu giao dịch chưa hoàn tất')
+    }
   }
 
   const nav = [
@@ -1157,7 +1175,8 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
           {organizationRole.trim().toLowerCase()==='admin'&&<OrganizationMembersPanel client={cloudClient} organizationId={organizationId}/>}
           <section className="panel"><div className="panel-head"><div><h2>Dữ liệu và sao lưu</h2><p>Phiên bản thử nghiệm lưu dữ liệu cục bộ trong trình duyệt này</p></div><HardDrive/></div>
             <div className="setting-row"><div><b>Xuất bản sao lưu</b><small>Tải đầy đủ thiết bị, vật tư, kế hoạch, nhật ký, Checklist, ảnh, danh mục tự tạo và dữ liệu hàng đợi thành JSON.</small></div><button className="primary-btn" disabled={isViewer} title={isViewer?'Viewer không được sao lưu dữ liệu':undefined} onClick={backup}><Download size={16}/> Sao lưu</button></div>
-            <div className="setting-row"><div><b>Khôi phục bản sao lưu</b><small>Nhập file JSON đã xuất từ ứng dụng.</small></div><label className={`soft-btn file-btn ${isViewer?'disabled':''}`} title={isViewer?'Viewer không được khôi phục dữ liệu':undefined}>Chọn file<input type="file" accept=".json,application/json" disabled={isViewer} onChange={e=>e.target.files?.[0]&&restore(e.target.files[0])}/></label></div>
+            <div className="setting-row"><div><b>Khôi phục bản sao lưu</b><small>Chọn file để xem trước. Dữ liệu chỉ bị thay thế sau khi bạn bấm Xác nhận khôi phục.</small></div><label className={`soft-btn file-btn ${isViewer?'disabled':''}`} title={isViewer?'Viewer không được khôi phục dữ liệu':undefined}>Chọn file<input type="file" accept=".json,application/json" disabled={isViewer} onChange={e=>{const selected=e.target.files?.[0];if(selected)void restore(selected);e.target.value=''}}/></label></div>
+            {pendingRestore && <div className="setting-row restore-preview"><div><b>Đã chọn: {pendingRestore.fileName}</b><small>File sẽ THAY THẾ toàn bộ dữ liệu Local hiện tại, gồm cả hàng đợi đồng bộ.</small><small>Thiết bị: {pendingRestore.data.assets?.length ?? 0} · Vật tư: {pendingRestore.data.inventory?.length ?? 0} · Công việc: {pendingRestore.data.tasks?.length ?? 0} · Nhật ký: {pendingRestore.data.logs?.length ?? 0} · Checklist: {pendingRestore.data.checklistResults?.length ?? 0}</small></div><div className="setting-inline-actions"><button className="primary-btn" disabled={isViewer} onClick={()=>void applyRestore()}>Xác nhận khôi phục</button><button className="soft-btn" onClick={cancelRestore}>Hủy</button></div></div>}
             <div className="setting-row"><div><b>Trạng thái dữ liệu</b><small>{queueCount} thay đổi cục bộ đang chờ. Đăng nhập, tổ chức và phép thử ghi/đọc thiết bị đã kết nối Supabase; dữ liệu nghiệp vụ chính vẫn đang lưu trong trình duyệt, chưa đồng bộ tự động.</small></div><span className="status orange">Chưa đồng bộ nghiệp vụ</span></div>
             <details className="queue-diagnostics">
               <summary>Kiểm tra hàng đợi đồng bộ local · tối đa 50 mục gần nhất</summary>
