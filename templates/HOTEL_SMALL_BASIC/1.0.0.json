@@ -576,6 +576,14 @@
           "symbol": "l",
           "enabledByDefault": true,
           "decimalAllowed": true
+        },
+        {
+          "templateItemId": "unit-pack",
+          "code": "PACK",
+          "name": "Gói",
+          "symbol": "gói",
+          "enabledByDefault": true,
+          "decimalAllowed": false
         }
       ],
       "taskTypes": [
