@@ -1940,3 +1940,46 @@ assets.images hiện là dữ liệu ảnh local; adapter Cloud trả images r�
 - Dùng bảng kiểm tra này để nghiệm thu queue local trên trình duyệt thật.
 - Hoàn tất thiết kế conflict/version và mapping theo schema chuẩn hóa.
 - Chỉ sau khi hoàn tất đối chiếu nguồn dữ liệu và cơ chế bảo vệ xung đột mới triển khai worker Cloud trên project Test. Không thay đổi Production và không chạy SQL/migration nếu chưa có phê duyệt riêng.
+
+---
+
+# MAPPING DỮ LIỆU VÀ REVIEW GIAO THỨC CLOUD SYNC – 18/11/2026
+
+## Đã triển khai trên main
+
+- Thêm `src/lib/syncMapping.ts`: lớp mapping thuần local ↔ Cloud cho assets, inventory, tasks, maintenancePlans, checklistTemplates, checklistVersions, checklistResults và maintenance_logs.
+- Mapping yêu cầu organization_id không rỗng; giữ UUID; chuyển camelCase → snake_case; ảnh không được đưa vào row PostgreSQL.
+- Inventory có hai hàm tách biệt: baseline có quantity chỉ dành cho seed có kiểm soát; metadata upsert thường ngày loại quantity để không ghi đè số tồn đã được cập nhật qua movement RPC.
+- maintenance_logs từ chối sync nếu local có dueDate, requestedBy hoặc editHistory vì schema SQL hiện tại chưa có các cột đó; không âm thầm bỏ dữ liệu.
+- inventory_movements bị chặn ghi trực tiếp; chỉ được đồng bộ khi có RPC transaction + idempotency đã review.
+- Thêm tài liệu `supabase/CLOUD_SYNC_PROTOCOL_REVIEW.md` mô tả push/pull, conflict, retry, cursor, tombstone, idempotency và các khoảng trống schema.
+
+## Build/deploy
+
+- Mapping commit: `d2a5107882a929814717088561a060074e12cf38`.
+- GitHub Actions workflow #173: build **success**, deploy **success**.
+- Tài liệu giao thức review commit: `5455fc21954ee98da1c0a1969fa3fc090e670f56`.
+- Không có worker chạy và không có request ghi dữ liệu nghiệp vụ lên Supabase.
+
+## Các khoảng trống đã xác định
+
+1. Chưa có row_version/revision cho optimistic concurrency.
+2. Chưa có idempotency ledger theo mutationId.
+3. Chưa có RPC inventory movement cập nhật tồn và ghi lịch sử cùng transaction.
+4. maintenance_logs thiếu due_date, requested_by, edit_history so với local model.
+5. Chưa có change feed/cursor/tombstone để pull phân trang và truyền delete.
+6. Queue chưa lưu base Cloud version/snapshot để xác định xung đột.
+7. Ảnh còn local; chưa có Storage transfer.
+8. customAssetCategories còn localStorage; chưa có luồng đồng bộ vào organization_settings.asset_categories.
+
+## Lưu ý nguồn dữ liệu
+
+- Repository hiện có file `backup-baotri-day-du-2026-11-16.json` với 34 assets, 41 inventory, 4 tasks, 6 logs, 34 Checklist templates, 34 versions và 17 syncQueue items.
+- Đây là file backup đã commit trong repository; không mặc định đó là một trong hai bản backup desktop/mobile đã đối chiếu trong cuộc trao đổi trước (30 assets desktop, 31 mobile). Không dùng file này làm nguồn seed Cloud khi chưa đối chiếu nguồn gốc và quan hệ.
+- Không tự chọn desktop/mobile, không hợp nhất theo mã/tên, không sửa/xóa các backup gốc.
+
+## Trạng thái và bước kế tiếp
+
+- Đã có mapping an toàn bước đầu và tài liệu giao thức; chưa có đồng bộ Cloud thực tế.
+- Tiếp theo: review schema delta (row_version, mutation idempotency, change feed/tombstone, log fields, inventory RPC), bổ sung kiểm thử mapping, tiếp tục đối chiếu backup desktop/mobile.
+- Chưa tạo hoặc chạy SQL migration; chưa gửi dữ liệu nghiệp vụ lên Supabase Test hoặc Production; chưa thay đổi dữ liệu Cloud.
