@@ -2039,3 +2039,34 @@ assets.images hiện là dữ liệu ảnh local; adapter Cloud trả images r�
 - Workflow #181 tại commit `42b20b61255f6e03c5aa2366a1d72402e6063c1b` đã success; commit thiết kế mới cần chờ workflow tương ứng hoàn tất.
 
 **Bước tiếp theo:** review schema idempotency + row_version + change feed/tombstone và hợp đồng RPC kho; sau đó mới triển khai migration queue v7 cùng test mô phỏng race condition.
+
+---
+
+# REVIEW SCHEMA VERSION / IDEMPOTENCY / CHANGE FEED / INVENTORY RPC – 18/11/2026
+
+## Đã review tĩnh
+
+- Migration 002 có trigger `updated_at` nhưng chưa có `row_version`; timestamp không đủ làm optimistic concurrency token.
+- Migration 002 cấp INSERT trực tiếp `inventory_items`; RLS member cũng cho phép INSERT. Dù authenticated không được UPDATE cột quantity, đường INSERT hiện tại vẫn có thể tạo item với số tồn mà không có movement.
+- Migration 012 đã thu hồi INSERT trực tiếp `assets`, buộc tạo mới qua allocator RPC; RPC hiện không hỗ trợ import code local.
+- UI local hiện tính tồn `+quantity` cho Nhập và `-quantity` cho Xuất/Điều chỉnh. Nghiệp vụ “Điều chỉnh” chưa rõ là delta có dấu hay đặt tồn thực tế; chưa được tự viết RPC trước khi chốt.
+- Kiểm tra thao tác kho cho thấy inventory balance và movement đang được ghi cùng Dexie transaction; Cloud phải bảo toàn tính nguyên tử tương tự trong một transaction PostgreSQL.
+
+## Đã thiết kế
+
+- Tạo `supabase/CLOUD_SYNC_SCHEMA_PROTOCOL_DESIGN.md`, commit `822b8a9b04ea57823677b9f3c7064a9e103b550d`.
+- Thiết kế row_version do DB tăng, optimistic concurrency theo expected version; không dùng updated_at làm version.
+- Thiết kế idempotency ledger unique theo organization + mutationId, lưu payload hash và kết quả; ledger + business mutation cùng transaction.
+- Thiết kế change feed theo counter từng organization được khóa trong transaction, sequence commit-order, tombstone cho delete; không dùng sequence độc lập dễ phát sinh commit đảo thứ tự.
+- Thiết kế RPC kho khóa row FOR UPDATE, tính tồn phía DB, ghi movement + balance + idempotency trong cùng transaction.
+- Ghi rõ cần thu hồi direct INSERT inventory_items và thay bằng RPC tạo item + tồn đầu kỳ/movement.
+- Liệt kê test bắt buộc: duplicate mutation, payload mismatch, rollback, conflict, cursor commit-order, tombstone, permission revoked và cross-organization.
+
+## Trạng thái
+
+- Chỉ thêm tài liệu review/thiết kế; không tạo SQL migration, không sửa database grants/RLS.
+- Không chạy SQL, không gọi RPC, không bật worker.
+- Không thay đổi dữ liệu local, BAOTRI-Mini-Test hoặc Production.
+- Commit schema protocol design: `822b8a9b04ea57823677b9f3c7064a9e103b550d`.
+
+**Bước tiếp theo:** rà soát schema fields và permission matrix cụ thể, đối chiếu thêm thao tác kho/Checklist/log với UI; sau đó lập migration draft theo từng phần để review, vẫn chưa áp dụng vào Supabase.
