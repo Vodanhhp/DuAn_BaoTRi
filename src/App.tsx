@@ -948,24 +948,24 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
       if (!data || typeof data !== 'object' || tableKeys.some(key => data[key] !== undefined && !Array.isArray(data[key]))) {
         throw new Error('Invalid backup structure')
       }
+      // Khôi phục là thay thế toàn bộ dữ liệu Local, không phải gộp (merge).
+      // Xóa và nạp lại trong cùng transaction để tránh trạng thái nửa chừng.
       await db.transaction('rw', [db.assets, db.inventory, db.tasks, db.logs, db.movements, db.maintenancePlans, db.checklistTemplates, db.checklistVersions, db.checklistResults, db.syncQueue], async () => {
-        await db.assets.bulkPut(data.assets ?? []); await db.inventory.bulkPut(data.inventory ?? [])
-        await db.tasks.bulkPut(data.tasks ?? []); await db.logs.bulkPut(data.logs ?? []); await db.movements.bulkPut(data.movements ?? [])
+        await Promise.all([
+          db.assets.clear(), db.inventory.clear(), db.tasks.clear(), db.logs.clear(),
+          db.movements.clear(), db.maintenancePlans.clear(), db.checklistTemplates.clear(),
+          db.checklistVersions.clear(), db.checklistResults.clear(), db.syncQueue.clear()
+        ])
+        await db.assets.bulkPut(data.assets ?? [])
+        await db.inventory.bulkPut(data.inventory ?? [])
+        await db.tasks.bulkPut(data.tasks ?? [])
+        await db.logs.bulkPut(data.logs ?? [])
+        await db.movements.bulkPut(data.movements ?? [])
         await db.maintenancePlans.bulkPut(data.maintenancePlans ?? [])
         await db.checklistTemplates.bulkPut(data.checklistTemplates ?? [])
         await db.checklistVersions.bulkPut(data.checklistVersions ?? [])
         await db.checklistResults.bulkPut(data.checklistResults ?? [])
-        const restoredCollections: Array<[string, Array<{ id: string }>]> = [
-          ['assets', data.assets ?? []], ['inventory', data.inventory ?? []],
-          ['tasks', data.tasks ?? []], ['logs', data.logs ?? []],
-          ['movements', data.movements ?? []], ['maintenancePlans', data.maintenancePlans ?? []],
-          ['checklistTemplates', data.checklistTemplates ?? []],
-          ['checklistVersions', data.checklistVersions ?? []],
-          ['checklistResults', data.checklistResults ?? []]
-        ]
-        for (const [tableName, records] of restoredCollections) {
-          for (const record of records) await queueChange(tableName, record.id)
-        }
+        await db.syncQueue.bulkPut(data.syncQueue ?? [])
       })
       if (Array.isArray(data.customAssetCategories)) {
         localStorage.setItem('baotri-custom-asset-categories', JSON.stringify(data.customAssetCategories))
