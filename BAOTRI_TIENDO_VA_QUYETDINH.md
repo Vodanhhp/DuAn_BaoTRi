@@ -2488,3 +2488,49 @@ Chuẩn bị nền tảng dữ liệu cho bản nháp Local và chuyển ID tạ
 - Khi cần thiết kế ngành khác, tạo gói JSON theo schema và đối chiếu gói `HOTEL_SMALL_BASIC`; không tự động nạp vào app.
 
 **Quyết định tiếp theo:** Tạm đóng nhánh công việc thiết kế thư viện mô hình mẫu. Quay lại BAOTRI Mini hiện tại. Việc tiếp theo là trao đổi và rà soát kiến trúc đồng bộ Local–Cloud trước khi sửa code đồng bộ; chưa bật worker hoặc thay đổi Supabase cho đến khi chốt thiết kế.
+
+
+## QUYẾT ĐỊNH MỚI – KHÓA CHỈNH SỬA THIẾT BỊ GIỮA CÁC NỀN TẢNG (18/11/2026)
+
+### 1. Phạm vi
+- Đợt thiết kế/triển khai tiếp theo tập trung vào **hồ sơ thiết bị** và cơ chế khóa chỉnh sửa giữa PC/Mobile.
+- Tạm thời không mở rộng xử lý xung đột vật tư, Checklist và bảo dưỡng trong đợt này. Các nghiệp vụ Checklist/bảo dưỡng vẫn được phép thực hiện Local theo quy tắc đã thống nhất; lịch sử liên quan thiết bị đang khóa chưa được đẩy lên Cloud cho đến khi khóa được giải phóng.
+- Không coi màn hình Cloud hiện có là luồng đồng bộ Local–Cloud hoàn chỉnh. Hiện ứng dụng vẫn có workspace Local và màn hình quản lý thiết bị Cloud riêng; chưa có sync worker tổng thể.
+
+### 2. Quy tắc khóa thiết bị đã thống nhất
+1. Khóa theo từng thiết bị, không khóa toàn bộ hệ thống.
+2. Khi một nền tảng bắt đầu chỉnh sửa hồ sơ thiết bị, nền tảng đó phải xin khóa từ Cloud trước. Chỉ khi Cloud xác nhận cấp khóa mới được phép chỉnh sửa/lưu.
+3. Trong thời gian khóa, các nền tảng khác hiển thị thiết bị màu đỏ, kèm tên/người dùng hoặc nền tảng đang giữ khóa; chỉ được xem hồ sơ, không được thêm/sửa/xóa thông tin thiết bị đó.
+4. Checklist, bảo dưỡng và công việc khác vẫn được thực hiện trên Local của nền tảng hiện trường. Nếu thiết bị đang bị khóa, lịch sử/các dữ liệu liên quan thiết bị đó phải chờ nhả khóa mới được đồng bộ lên Cloud.
+5. Khi chủ khóa hoàn tất hoặc hủy chỉnh sửa, chủ khóa giải phóng khóa; thiết bị trở lại trạng thái bình thường và các nền tảng có thể nhận dữ liệu thiết bị mới nhất. Sau đó mới đồng bộ các lịch sử/công việc đang chờ của thiết bị.
+6. Khóa Cloud có thời hạn 2 phút tính từ lần gia hạn/heartbeat hợp lệ cuối cùng. Nếu Cloud không nhận được heartbeat trong 2 phút, Cloud tự hết hạn khóa để nền tảng khác có thể xin khóa.
+7. Nếu PC mất Internet trong lúc đang chỉnh sửa: PC lập tức chuyển phiên chỉnh sửa sang trạng thái khóa cục bộ do mất kết nối, không cho tiếp tục sửa/lưu. Sau 2 phút không nhận heartbeat, Cloud giải phóng khóa cho nền tảng khác. Trên PC cũ, thiết bị vẫn bị khóa cho đến khi PC kết nối lại, đồng bộ trạng thái và kiểm tra quyền khóa mới; PC cũ không được tự khôi phục quyền chỉnh sửa.
+8. Nếu không xác nhận được quyền khóa từ Cloud (mất Internet, Cloud lỗi hoặc timeout), nền tảng không được chỉnh sửa hồ sơ thiết bị. Vẫn cho phép xem dữ liệu Local hiện có và tiếp tục nghiệp vụ Checklist/bảo dưỡng Local theo phạm vi được phép.
+9. Khi PC kết nối lại sau khi đã mất quyền khóa, mọi thao tác lưu cũ phải bị từ chối. Không được ghi đè dữ liệu mà nền tảng khác đã cập nhật.
+
+### 3. Yêu cầu kỹ thuật bắt buộc khi triển khai
+- Cloud là nguồn có thẩm quyền duy nhất về quyền khóa dùng chung; thời gian hết hạn phải dựa trên thời gian máy chủ, không dựa vào đồng hồ client.
+- Khóa phải có token/lease riêng cho từng lần cấp. Mọi heartbeat, release và cập nhật hồ sơ phải kiểm tra đúng token hiện hành; token cũ không có quyền ghi.
+- Cấp khóa phải atomic để hai nền tảng không thể cùng nhận khóa cho một thiết bị.
+- Client giữ trạng thái khóa cục bộ khi mất kết nối; không tự mở khóa chỉ vì Cloud đã hết hạn lease.
+- Khi lưu hồ sơ thiết bị, máy chủ phải kiểm tra lease còn hiệu lực và token đúng trong cùng transaction với cập nhật dữ liệu. Chỉ kiểm tra giao diện hoặc bảng khóa ở client là không đủ.
+- Khi thiết bị đang khóa, hàng đợi đồng bộ của các bản ghi liên quan thiết bị phải được giữ lại; không xóa/đánh dấu hoàn tất trước khi Cloud xác nhận.
+- Mỗi bản ghi lịch sử cần idempotency để retry sau khi nhả khóa mà không sinh bản sao.
+- Giao diện phải phân biệt ít nhất: đang được nền tảng khác khóa; chính máy đang giữ khóa; chính máy mất kết nối/không còn quyền; thiết bị không xác định được trạng thái khóa.
+
+### 4. Trình tự triển khai an toàn
+1. Rà soát toàn bộ luồng tạo/sửa/lưu kho/khôi phục/xóa thiết bị và quyền SQL hiện tại trên nhánh main.
+2. Thiết kế bảng lease và các RPC cấp khóa, gia hạn, giải phóng; dùng server time và token.
+3. Thiết kế RPC cập nhật hồ sơ thiết bị có kiểm tra lease trong cùng transaction; không để đường UPDATE trực tiếp bỏ qua khóa.
+4. Soạn migration SQL và SQL test thành file để người dùng review/chạy thủ công trên BAOTRI-Mini-Test. Assistant không tự chạy SQL hoặc thay đổi Supabase.
+5. Tích hợp UI khóa đỏ/xanh, tên người giữ khóa, heartbeat, xử lý mất mạng và chặn lưu trên client.
+6. Kiểm thử nhiều phiên PC/Mobile, hết hạn 2 phút, mất mạng, token cũ, hai máy xin khóa đồng thời và máy cũ kết nối lại.
+7. Sau khi khóa hồ sơ thiết bị được kiểm chứng, mới nối luồng đồng bộ hồ sơ và lịch sử công việc theo thứ tự: cập nhật thiết bị → xác nhận Cloud → đồng bộ lịch sử đang chờ.
+8. Chưa bật đồng bộ đại trà cho vật tư, Checklist, bảo dưỡng hoặc các bảng khác trong đợt khóa thiết bị này.
+
+### 5. Ranh giới an toàn
+- Không sửa dữ liệu Local hiện có hoặc xóa IndexedDB.
+- Không tự chạy migration/SQL, không thay đổi dữ liệu Supabase Test/Production.
+- Không bật sync worker tổng thể hoặc tự động import dữ liệu.
+- Không sửa các phân hệ vật tư, Checklist, bảo dưỡng ngoài phần cần thiết để giữ lịch sử chờ đồng bộ theo thiết bị.
+- Mọi thay đổi code tiếp tục thực hiện trực tiếp trên main; cập nhật tài liệu tiến độ trước mỗi đợt sửa code.
