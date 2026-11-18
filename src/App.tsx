@@ -720,13 +720,13 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
   const restoreAsset = async (a: Asset) => {
     if (blockViewer('khôi phục thiết bị')) return
     const value = { ...a, archivedAt: undefined, updatedAt: now() }
-    await db.assets.put(value); await queueChange('assets', a.id); flash('Đã khôi phục thiết bị khỏi Lưu kho')
+    await putAndQueue(db.assets, 'assets', value); flash('Đã khôi phục thiết bị khỏi Lưu kho')
   }
   const changeAssetStatus = async (a: Asset, status: Asset['status']) => {
     if (blockViewer('thay đổi tình trạng thiết bị')) return
     if (status === 'Thanh lý' && !confirm(`Xác nhận thanh lý “${a.name}”? Hồ sơ và lịch sử vẫn được giữ để tra cứu; đây không phải xóa vĩnh viễn.`)) return
     const value = { ...a, status, updatedAt: now() }
-    await db.assets.put(value); await queueChange('assets', a.id); flash(`Đã cập nhật trạng thái: ${status}`)
+    await putAndQueue(db.assets, 'assets', value); flash(`Đã cập nhật trạng thái: ${status}`)
   }
   const addMovement = async (item: InventoryItem, type: 'Nhập'|'Xuất', qty: number) => {
     if (blockViewer('nhập hoặc xuất kho')) return
@@ -954,7 +954,17 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
         await db.checklistTemplates.bulkPut(data.checklistTemplates ?? [])
         await db.checklistVersions.bulkPut(data.checklistVersions ?? [])
         await db.checklistResults.bulkPut(data.checklistResults ?? [])
-        await db.syncQueue.bulkPut(data.syncQueue ?? [])
+        const restoredCollections: Array<[string, Array<{ id: string }>]> = [
+          ['assets', data.assets ?? []], ['inventory', data.inventory ?? []],
+          ['tasks', data.tasks ?? []], ['logs', data.logs ?? []],
+          ['movements', data.movements ?? []], ['maintenancePlans', data.maintenancePlans ?? []],
+          ['checklistTemplates', data.checklistTemplates ?? []],
+          ['checklistVersions', data.checklistVersions ?? []],
+          ['checklistResults', data.checklistResults ?? []]
+        ]
+        for (const [tableName, records] of restoredCollections) {
+          for (const record of records) await queueChange(tableName, record.id)
+        }
       })
       if (Array.isArray(data.customAssetCategories)) {
         localStorage.setItem('baotri-custom-asset-categories', JSON.stringify(data.customAssetCategories))
@@ -1905,7 +1915,7 @@ function buildDefaultChecklist(asset: Asset): ChecklistTemplateItem[] {
 }
 
 async function ensureDefaultChecklist(asset: Asset) {
-  return db.transaction('rw', db.checklistTemplates, db.checklistVersions, async () => {
+  return db.transaction('rw', [db.checklistTemplates, db.checklistVersions, db.syncQueue], async () => {
     const existing = await db.checklistTemplates.where('assetId').equals(asset.id).first()
     if (existing) return existing.id
     const timestamp = now()
@@ -1930,10 +1940,8 @@ async function ensureDefaultChecklist(asset: Asset) {
 function AssetChecklist({asset,allowActions,scheduledFor,isMakeup,createRequestFromChecklist}:{asset:Asset;allowActions:boolean;scheduledFor?:string;isMakeup?:boolean;createRequestFromChecklist:(entry:ChecklistResult)=>void}) {
   const template = useLiveQuery(() => db.checklistTemplates.where('assetId').equals(asset.id).first(), [asset.id])
   useEffect(() => {
-    let active = true
-    if (!allowActions) return () => { active = false }
+    if (!allowActions) return
     void ensureDefaultChecklist(asset).catch(error => console.error('Không thể tạo Checklist mẫu:', error))
-    return () => { active = false }
   }, [asset.id, allowActions])
   const versions = useLiveQuery(() => template ? db.checklistVersions.where('templateId').equals(template.id).toArray() : Promise.resolve([] as ChecklistTemplateVersion[]), [template?.id])
   const results = useLiveQuery(() => db.checklistResults.where('assetId').equals(asset.id).toArray(), [asset.id]) ?? []
@@ -1971,7 +1979,7 @@ function AssetChecklist({asset,allowActions,scheduledFor,isMakeup,createRequestF
     const nextVersion=(template?.currentVersion ?? 0)+1
     const versionId=uid()
     const nextTemplate={id:templateId,assetId:asset.id,title:draftTitle.trim(),description:draftDescription,currentVersion:nextVersion,active:true,createdAt:template?.createdAt??timestamp,updatedAt:timestamp}
-    await db.transaction('rw',db.checklistTemplates,db.checklistVersions,async()=>{
+    await db.transaction('rw',[db.checklistTemplates,db.checklistVersions,db.syncQueue],async()=>{
       await db.checklistTemplates.put(nextTemplate)
       await db.checklistVersions.add({id:versionId,templateId,assetId:asset.id,version:nextVersion,title:draftTitle.trim(),description:draftDescription,items:cleanItems,createdAt:timestamp})
       await queueChange('checklistTemplates', templateId)
