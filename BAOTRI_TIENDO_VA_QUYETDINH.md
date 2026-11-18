@@ -2392,3 +2392,12 @@ Các khái niệm cần thiết kế ở giai đoạn kiến trúc: Business Pro
 - Giữ nguyên nguyên tắc Local-first và quyết định Local/Cloud mới nhất: Cloud không tự sinh dữ liệu nghiệp vụ hoặc mã quản lý; cấu hình doanh nghiệp phải nhất quán PC/Mobile.
 - **Chỉ là tài liệu thiết kế. Chưa sửa code, chưa tạo/chạy migration, chưa ghi dữ liệu Supabase Test/Production.**
 - **Thứ tự công việc:** tạm dừng triển khai thư viện mẫu; quay lại hoàn thiện và kiểm thử BAOTRI Mini hiện tại. Chỉ triển khai template engine sau khi app lõi ổn định và có kế hoạch riêng.
+
+
+### Bổ sung hợp đồng dữ liệu Template Release – 18/11/2026
+
+- Đã tạo JSON Schema `docs/schemas/baotri-template-release.schema.json`, commit `eb4a58260550f9b2618134bb3ec15b8fb54fbb9e`.
+- Hợp đồng mô tả manifest/version/compatibility; hồ sơ ngành-quy mô-mức quản lý; module/menu; từ điển thiết bị/vật tư/đơn vị/công việc/trạng thái/ưu tiên; checklist; mẫu bảo trì; cơ cấu cơ sở/kho; code profile; gợi ý vai trò/quyền; quy tắc an toàn.
+- JSON đã được parse kiểm tra cú pháp thành công khi tạo file. Chưa chạy JSON Schema validator chuyên dụng và chưa có package mô hình thực tế nào được phát hành.
+- Schema chỉ là hợp đồng dữ liệu cho thư viện mẫu, không phải schema Dexie/Supabase và không được dùng để tạo dữ liệu nghiệp vụ trực tiếp.
+- Chưa sửa code, chưa tạo/chạy migration, chưa ghi dữ liệu Test/Production.
