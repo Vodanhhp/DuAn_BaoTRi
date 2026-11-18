@@ -3232,5 +3232,6 @@ Người dùng chạy Test SQL 017 sau hotfix và báo tất cả dòng PASS ngo
 
 Trạng thái:
 - [x] Đã xác nhận nội dung RPC trên main có điều kiện kiểm tra phiên bản.
-- [ ] Cập nhật Test SQL 017 để kiểm tra trực tiếp timestamp và đưa ra Actual có chẩn đoán.
+- [x] Cập nhật Test SQL 017 tại commit `4e55cdc60855f3043eabdb9a1daa8635bae45ba2`: kiểm tra timestamp sau mutation đầu tiên, timestamp ngay trước stale call và timestamp sau stale call; cột Actual in đủ các mốc để xác định lỗi nằm ở dữ liệu phiên bản hay nhánh RPC.
+- [ ] Người dùng chạy lại Test SQL 017 và gửi dòng kết quả mới.
 - [ ] Người dùng chạy lại Test SQL 017 và gửi dòng kết quả mới.
