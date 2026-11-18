@@ -1983,3 +1983,9 @@ assets.images hiện là dữ liệu ảnh local; adapter Cloud trả images r�
 - Đã có mapping an toàn bước đầu và tài liệu giao thức; chưa có đồng bộ Cloud thực tế.
 - Tiếp theo: review schema delta (row_version, mutation idempotency, change feed/tombstone, log fields, inventory RPC), bổ sung kiểm thử mapping, tiếp tục đối chiếu backup desktop/mobile.
 - Chưa tạo hoặc chạy SQL migration; chưa gửi dữ liệu nghiệp vụ lên Supabase Test hoặc Production; chưa thay đổi dữ liệu Cloud.
+
+### Ràng buộc mã thiết bị phát hiện khi review giao thức
+- Migration 012 đã thu hồi INSERT trực tiếp trên `assets`; thiết bị Cloud mới phải qua `create_asset_with_code`.
+- RPC hiện tại nhận p_id nhưng tự sinh code, không nhận code local. Do đó mapper không đồng nghĩa với quyền upsert; cần RPC import riêng để giữ UUID + code hiện hữu có kiểm tra Admin/audit, hoặc quy trình online tạo mã Cloud trước.
+- Thiết bị tạo offline trên hai máy có thể sinh trùng code dù UUID khác nhau; unique constraint của organization sẽ chặn. Không tự đổi mã vì có thể ảnh hưởng QR và hồ sơ tham chiếu.
+- `customAssetCategories`, `organization_settings.asset_categories` và `asset_code_config` là các cấu trúc khác nhau, cần mapping cấu hình riêng.
