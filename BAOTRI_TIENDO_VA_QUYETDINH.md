@@ -2293,3 +2293,14 @@ Giới hạn an toàn vẫn giữ:
 - Commit cập nhật tiến độ trước đó: `703528e52897b982d6d2664d1cb99d073595442a`.
 - Trạng thái: mới cập nhật tài liệu; chưa sửa mã nguồn, chưa chạy SQL/migration, chưa gọi RPC và chưa ghi dữ liệu Supabase.
 
+
+
+### Audit triển khai bản nháp Local / UUID chính thức (18/11/2026)
+
+- Tạo `supabase/CLOUD_LOCAL_DRAFT_IMPLEMENTATION_AUDIT.md`, commit `9f73c5b74a146031198de3c151b227b9c748f904`.
+- Xác minh hiện trạng: `emptyAsset()` và `emptyItem()` sinh UUID ngay khi mở form; Asset cấp mã tại Local trong `saveAsset()`; mã vật tư hiện do người dùng nhập tay; chưa có Cloud pull/push worker theo protocol mới.
+- Đã lập dependency map cho Asset ID: Tasks, Maintenance Plans, Logs, Checklist Templates/Versions/Results, syncQueue và state UI; Inventory ID: Movements, linkedAssetId và syncQueue.
+- Đổi ID phải chạy trong Dexie transaction bao gồm tất cả bảng liên quan, giữ nguyên ID bản ghi con/lịch sử và rollback toàn bộ nếu lỗi.
+- Không thể dùng riêng `navigator.onLine` để xác nhận dữ liệu Cloud mới nhất. Cần Auth + Cloud reachability + pull đầy đủ pagination/cursor trước khi Local cấp UUID/mã chính thức.
+- Inventory code là mã nhập tay, không phải mã thiết bị tự sinh; chỉ kiểm tra trùng khi chính thức hóa, không tự đổi quy tắc mã vật tư.
+- Chưa sửa mã nguồn hoặc Dexie schema, chưa chạy SQL/migration, chưa gọi RPC và chưa ghi dữ liệu Supabase. Bước tiếp theo là Phase A: thiết kế và kiểm thử helper chuyển ID + migration Dexie tương thích, sau đó mới triển khai draft UI.
