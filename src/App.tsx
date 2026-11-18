@@ -357,48 +357,22 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
         { code: 'SEN-001', name: 'Cảm biến áp suất đường khí', category: 'Thiết bị đo lường', brand: 'WIKA', model: 'A-10', location: 'Đường ống khí nén', commissionedAt: '2023-05-10', power: '0–10 bar', cycle: 'Hàng quý' },
         { code: 'PMP-001', name: 'Bơm thoát nước hố gom', category: 'Máy bơm', brand: 'Tsurumi', model: 'PU-series', location: 'Hố gom tầng hầm', commissionedAt: '2021-07-11', power: '1.5 kW', cycle: 'Hàng tháng' }
       ]
-      // Chuẩn hóa 30 thiết bị mẫu theo cấu trúc ABC-ABXY-xxx-BB-MM-YY.
-      // Giữ nguyên ID, ảnh, lịch sử và các chỉnh sửa của hồ sơ demo đã tồn tại.
-      const typeCodes: Record<string, string> = {
-        COMP: 'MNA', KHO: 'KLA', BOM: 'MB', MOT: 'DCD', FAN: 'QCN',
-        AHU: 'AHU', FCU: 'FCU', CHL: 'CHL', CTW: 'TGN', GEN: 'MPD',
-        ATS: 'ATS', MDB: 'TDT', DB: 'TDP', VFD: 'BT', UPS: 'UPS',
-        TRF: 'MBA', CAP: 'TCB', BOI: 'NH', DRY: 'MSK', FLT: 'BLK',
-        WLD: 'MHD', LFT: 'TM', FIR: 'BCC', SEN: 'CBAS', PMP: 'MB'
-      }
-      const locationCodes: Record<string, string> = {
-        'Phòng máy nén khí': '01', 'Khu sản xuất': '02', 'Phòng bơm tầng hầm': '03',
-        'Dây chuyền 1': '04', 'Khu xử lý bụi': '05', 'Nhà xưởng A': '06',
-        'Khu kỹ thuật': '07', 'Phòng kỹ thuật tầng 1': '08', 'Tầng 2': '09',
-        'Khu vực Chiller': '10', 'Sân kỹ thuật mái': '11', 'Phòng máy phát điện': '12',
-        'Phòng điện tổng': '13', 'Tầng 1': '14', 'Phòng bơm': '15',
-        'Phòng IT': '16', 'Trạm biến áp': '17', 'Nhà lò hơi': '18',
-        'Xưởng bảo trì': '19', 'Sảnh chính': '20', 'Phòng bơm PCCC': '21',
-        'Đường ống khí nén': '22', 'Hố gom tầng hầm': '23'
-      }
-      const typeSequences: Record<string, number> = {}
-      const normalizedDemoAssets = demoAssets.map(item => {
-        const legacyCode = item.code
-        const legacyType = legacyCode.split('-')[0]
-        const typeCode = typeCodes[legacyType] ?? 'TBK'
-        typeSequences[typeCode] = (typeSequences[typeCode] ?? 0) + 1
-        const sequence = String(typeSequences[typeCode]).padStart(3, '0')
-        const date = item.commissionedAt
-        const locationCode = locationCodes[item.location] ?? '99'
-        return {
-          ...item,
-          legacyCode,
-          code: `${typeCode}-HP01-${sequence}-${locationCode}-${date.slice(5, 7)}-${date.slice(2, 4)}`
-        }
-      })
+      // Sinh mã theo đúng danh mục và bộ cấp mã đang dùng trong ứng dụng.
+      // UUID và mã chính thức được tạo tại Local; từng mã được tính trên danh sách đã thêm trước đó.
       const existing = await db.assets.toArray()
-      const missing: Asset[] = normalizedDemoAssets.map(item => ({
-        ...emptyAsset(), ...item, serial: `DEMO-${item.legacyCode}`,
-        images: [makeDemoAssetImage(item.category, item.code, 1), makeDemoAssetImage(item.category, item.code, 2)],
-        notes: 'DỮ LIỆU MẪU – ảnh minh họa kỹ thuật, không phải ảnh thực tế của thiết bị.'
-      }))
+      const missing: Asset[] = demoAssets.map(item => {
+        const base = { ...emptyAsset(), ...item }
+        const code = buildAssetCode(base, existing, customAssetCategories)
+        if (!code) throw new Error(`Chưa có mã danh mục cho thiết bị mẫu: ${item.category}`)
+        const saved: Asset = {
+          ...base, code, serial: `DEMO-${item.code}`,
+          images: [makeDemoAssetImage(item.category, code, 1), makeDemoAssetImage(item.category, code, 2)],
+          notes: 'DỮ LIỆU MẪU – ảnh minh họa kỹ thuật, không phải ảnh thực tế của thiết bị.'
+        }
+        existing.push(saved)
+        return saved
+      })
       if (missing.length !== 30) throw new Error('Bộ dữ liệu mẫu thiết bị không đủ 30 hồ sơ.')
-      await db.assets.bulkAdd(missing)
       // 30 vật tư mẫu; mã và UUID được tạo tại Local.
       const demoInventory = [
         { code:'VT-001', name:'Lọc dầu máy nén khí', group:'Khí nén', unit:'Bộ', quantity:3, minQuantity:5, location:'Kho cơ điện - Kệ A1', supplier:'Nhà cung cấp mẫu A', unitPrice:450000 },
@@ -444,9 +418,11 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
       ]
       const missingInventory = demoInventory.slice(0, 30).map(item => ({ ...emptyItem(), ...item, updatedAt: now() }))
       if (missingInventory.length !== 30) throw new Error('Bộ dữ liệu mẫu vật tư không đủ 30 mã.')
-      await db.inventory.bulkAdd(missingInventory)
-      // Ghi hàng đợi đồng bộ cho từng bản ghi mới; không gọi Cloud và không tự đồng bộ.
-      await db.transaction('rw', db.syncQueue, async () => {
+      // Ghi 60 hồ sơ và 60 mục hàng đợi trong cùng transaction Dexie.
+      // Không gọi Cloud và không tự đồng bộ.
+      await db.transaction('rw', [db.assets, db.inventory, db.syncQueue], async () => {
+        await db.assets.bulkAdd(missing)
+        await db.inventory.bulkAdd(missingInventory)
         await Promise.all([
           ...missing.map(item => queueChange('assets', item.id)),
           ...missingInventory.map(item => queueChange('inventory', item.id))
