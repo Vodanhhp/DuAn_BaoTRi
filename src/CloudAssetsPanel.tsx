@@ -332,16 +332,21 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
         rowsToImport.push(asset)
       }
 
+      const codesNeedingCounterReview: string[] = []
       for (let index = 0; index < rowsToImport.length; index++) {
         const asset = rowsToImport[index]
-        await importCloudAssetPreservingIdentity(client, organizationId, asset)
+        const imported = await importCloudAssetPreservingIdentity(client, organizationId, asset)
+        if (!imported.counterReconciled) codesNeedingCounterReview.push(asset.code)
         importedCount++
         setMessage('Đang nhập thiết bị ' + importedCount + '/' + rowsToImport.length + ': ' + asset.code)
       }
 
       await load()
       setLocalImportPreview(null)
-      setMessage('Đã nhập ' + importedCount + ' thiết bị từ Local PC lên Cloud. UUID và mã quản lý được giữ nguyên; ảnh thiết bị chưa đồng bộ.')
+      const baseMessage = 'Đã nhập ' + importedCount + ' thiết bị từ Local PC lên Cloud. UUID và mã quản lý được giữ nguyên; ảnh thiết bị chưa đồng bộ.'
+      setMessage(codesNeedingCounterReview.length
+        ? baseMessage + ' Cần rà soát bộ đếm mã thủ công cho các mã chưa khớp cấu hình: ' + codesNeedingCounterReview.join(', ') + '.'
+        : baseMessage)
     } catch (cause) {
       if (importedCount > 0) {
         setMessage('Đã nhập ' + importedCount + ' thiết bị trước khi gặp lỗi. Hãy kiểm tra lại dữ liệu; lần chạy tiếp theo sẽ bỏ qua các thiết bị đã nhập chính xác.')
