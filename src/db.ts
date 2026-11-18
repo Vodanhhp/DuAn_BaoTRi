@@ -104,7 +104,7 @@ export interface Log {
 }
 export interface Movement {
   id: string; itemId: string; date: string; type: 'Nhập' | 'Xuất' | 'Điều chỉnh'
-  quantity: number; reason: string; linkedAssetId?: string
+  quantity: number; reason: string; note?: string; performedBy?: string; linkedAssetId?: string
 }
 export type SyncStatus = 'pending' | 'processing' | 'failed'
 
