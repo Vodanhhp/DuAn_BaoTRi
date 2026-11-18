@@ -2211,3 +2211,28 @@ Chưa xác minh build/CI cho chuỗi commit trên; cần chờ workflow tương 
 - Hoàn thành Task + tạo Log cần một RPC transaction duy nhất để giữ atomicity giống local Dexie transaction.
 - Permission catalog hiện có logs.create nhưng chưa xác nhận logs.update; phải chốt ai được sửa phiếu trước khi viết migration/RPC. Không tự nâng quyền.
 - Chưa sửa schema/UI, chưa tạo migration, không chạy SQL, không ghi Supabase Test/Production.
+
+
+---
+
+# TỔNG KẾT ĐỢT TIẾP TỤC – 18/11/2026
+
+Các nội dung mới trong đợt này:
+- QR payload đã đổi sang mã quản lý `value.code` tại cả 3 vị trí; UUID chỉ hiển thị nhỏ cho Admin trong chi tiết thiết bị.
+- Scanner đã được sửa stale closure bằng refs; callback bị vô hiệu khi scan thành công hoặc modal đóng.
+- Đã tạo thiết kế RPC Kho tại `supabase/CLOUD_INVENTORY_RPC_DESIGN.md`: tạo vật tư + tồn đầu kỳ; update metadata không được sửa quantity; Nhập/Xuất phải cập nhật balance + movement nguyên tử.
+- Đã tạo thiết kế revision Nhật ký tại `supabase/CLOUD_MAINTENANCE_LOG_REVISION_DESIGN.md`: giữ Log ID gốc, revision append-only; hoàn thành task + tạo log qua một RPC transaction.
+- QR review: `QR_GENERATION_AND_SCAN_REVIEW.md`; quy ước QR: `QUY_UOC_MA_DINH_DANH_VA_VIET_TAT_THIET_BI.txt`.
+
+Trạng thái kiểm thử:
+- Deploy workflow #44236669550 (commit `0a7dd946`) success, xác nhận QR payload/UUID UI đã được build và deploy.
+- Workflow #44237030709 (commit `70ca03ec`) success; đây là commit tài liệu sau code scanner fix, build trên tree đã bao gồm thay đổi scanner.
+- Workflow cho các commit tài liệu sau cùng bị cancel do push liên tiếp; cần một workflow cuối chạy hết để xác nhận trạng thái repository hiện tại.
+- Chưa kiểm thử camera thật, tem in thật hoặc giải mã QR tự động.
+
+Giới hạn an toàn vẫn giữ:
+- Chưa tạo migration mới cho Inventory/Log RPC.
+- Chưa sửa UI quantity, chưa thay đổi permission catalog.
+- Chưa bật Cloud worker, chưa đồng bộ nghiệp vụ.
+- Không chạy SQL/migration, không ghi dữ liệu Supabase Test/Production.
+- Không tạo thêm user/organization/membership; không triển khai multi-tenant test.
