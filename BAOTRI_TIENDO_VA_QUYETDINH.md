@@ -1989,3 +1989,24 @@ assets.images hiện là dữ liệu ảnh local; adapter Cloud trả images r�
 - RPC hiện tại nhận p_id nhưng tự sinh code, không nhận code local. Do đó mapper không đồng nghĩa với quyền upsert; cần RPC import riêng để giữ UUID + code hiện hữu có kiểm tra Admin/audit, hoặc quy trình online tạo mã Cloud trước.
 - Thiết bị tạo offline trên hai máy có thể sinh trùng code dù UUID khác nhau; unique constraint của organization sẽ chặn. Không tự đổi mã vì có thể ảnh hưởng QR và hồ sơ tham chiếu.
 - `customAssetCategories`, `organization_settings.asset_categories` và `asset_code_config` là các cấu trúc khác nhau, cần mapping cấu hình riêng.
+
+---
+
+# KIỂM THỬ TỰ ĐỘNG LỚP MAPPING CLOUD – 18/11/2026
+
+- Thêm `tests/syncMapping.test.mjs` với 8 nhóm kiểm thử:
+  1. Asset mapping giữ UUID/trường nghiệp vụ, không đưa ảnh local vào payload.
+  2. Mapper từ chối organization_id rỗng.
+  3. Inventory baseline có quantity, metadata upsert không có quantity.
+  4. Task mapping giữ asset foreign key và status.
+  5. Checklist version/result giữ snapshot.
+  6. Maintenance log từ chối dueDate, requestedBy, editHistory khi schema chưa hỗ trợ.
+  7. Inventory movement bị chặn ghi trực tiếp.
+  8. Kiểm tra thứ tự phụ thuộc và vị trí movement cuối.
+- Thêm script `npm run test:sync-mapping`.
+- GitHub Actions chạy test trước bước build.
+- Workflow #180: test thành công, build thành công, deploy thành công.
+- Run: https://github.com/Vodanhhp/DuAn_BaoTRi/actions/runs/44234010852
+- Chưa bật worker Cloud; chưa gọi Supabase để ghi dữ liệu; không chạy SQL/migration; không thay đổi dữ liệu Test/Production.
+
+**Bước tiếp theo:** tiếp tục review thiết kế schema version/idempotency/change feed và RPC inventory; sau đó mới triển khai kiểm thử worker trên Test khi các hợp đồng dữ liệu đã chốt.
