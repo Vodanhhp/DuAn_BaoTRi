@@ -370,8 +370,6 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
       void refreshLocks()
       setMessage('Đã cập nhật hồ sơ thiết bị ' + saved.code + '.')
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
-    } catch (cause) {
       if (editLease && navigator.onLine) {
         try {
           const renewed = await heartbeatAssetEditLock(client, organizationId, editLease.asset_id, editLease.lock_token)
@@ -586,6 +584,7 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
     </div>
     {message && <div className="form-hint" role="status">{message}</div>}
     {error && <div className="form-hint warning-hint" role="alert">{error}</div>}
+    {(!lockStateKnown || !isOnline) && <div className="form-hint warning-hint" role="status">{!isOnline ? 'Mất Internet: không được chỉnh sửa hồ sơ thiết bị.' : lockError || 'Chưa xác nhận được trạng thái khóa từ Cloud. Các thao tác sửa/lưu kho/khôi phục đang bị khóa an toàn.'}</div>}
 
     {canImportAssets && !permissionsLoading && <div className="panel" style={{ margin: '12px 0', padding: 14 }}>
       <h3>Đồng bộ thiết bị từ Local PC lên Cloud</h3>
@@ -604,10 +603,10 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
     </div>}
 
     <div className="asset-photo-actions" style={{ margin: '12px 0', flexWrap: 'wrap' }}>
-      {canManageSettings && !permissionsLoading && <button type="button" className="soft-btn" onClick={() => { setShowConfig(v => !v); setShowCreate(false); setEditDraft(null) }}>
+      {canManageSettings && !permissionsLoading && <button type="button" className="soft-btn" onClick={() => { setShowConfig(v => !v); setShowCreate(false); void cancelEdit() }}>
         {showConfig ? 'Đóng cấu hình mã' : config ? 'Cấu hình mã thiết bị' : 'Thiết lập mã thiết bị Cloud'}
       </button>}
-      <button type="button" className="primary-btn" disabled={!config || permissionsLoading || !canCreateAssets} title={!canCreateAssets ? 'Tài khoản không có quyền tạo thiết bị.' : undefined} onClick={() => { setShowCreate(v => !v); setShowConfig(false); setEditDraft(null) }}>
+      <button type="button" className="primary-btn" disabled={!config || permissionsLoading || !canCreateAssets} title={!canCreateAssets ? 'Tài khoản không có quyền tạo thiết bị.' : undefined} onClick={() => { setShowCreate(v => !v); setShowConfig(false); void cancelEdit() }}>
         {showCreate ? 'Đóng biểu mẫu' : 'Thêm thiết bị Cloud'}
       </button>
     </div>
@@ -645,7 +644,8 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
 
     {editDraft && <form className="panel" onSubmit={submitEdit} style={{ marginBottom: 16 }}>
       <h3>Sửa hồ sơ thiết bị: {editDraft.code}</h3>
-      <p className="muted">Mã định danh và loại thiết bị được giữ nguyên. Ảnh chưa được chỉnh sửa trên Cloud.</p>
+      <p className="muted">{editLeaseLost || !isOnline ? 'Lỗi mất kết nối hoặc đã mất quyền khóa. Thiết bị vẫn bị khóa cục bộ trên máy này; không thể tiếp tục sửa/lưu.' : 'Bạn đang giữ khóa chỉnh sửa thiết bị này. Khóa được gia hạn tự động và sẽ hết hạn trên Cloud sau 2 phút nếu không còn heartbeat.'}</p>
+      <fieldset disabled={editLeaseLost || !isOnline || !editLease || savingEdit} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
       <div className="form-grid">
         <label>Mã thiết bị<input value={editDraft.code} disabled /></label>
         <label>Loại thiết bị<input value={editDraft.category} disabled /></label>
@@ -660,7 +660,8 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
         <label>Trạng thái<select value={editDraft.status} onChange={e => setEditDraft(current => current ? { ...current, status: e.target.value as Asset['status'] } : current)}>{['Đang hoạt động', 'Đang sửa chữa', 'Ngừng sử dụng', 'Thanh lý'].map(value => <option key={value}>{value}</option>)}</select></label>
       </div>
       <label>Ghi chú<textarea rows={3} value={editDraft.notes} onChange={e => setEditDraft(current => current ? { ...current, notes: e.target.value } : current)} /></label>
-      <div className="asset-photo-actions"><button type="button" className="soft-btn" onClick={() => setEditDraft(null)}>Hủy</button><button type="submit" className="primary-btn" disabled={savingEdit}>{savingEdit ? 'Đang lưu…' : 'Lưu thay đổi'}</button></div>
+      </fieldset>
+      <div className="asset-photo-actions"><button type="button" className="soft-btn" onClick={() => void cancelEdit()}>Hủy</button><button type="submit" className="primary-btn" disabled={savingEdit || editLeaseLost || !isOnline || !editLease}>{savingEdit ? 'Đang lưu…' : 'Lưu thay đổi'}</button></div>
     </form>}
 
     {showCreate && config && <form className="panel" onSubmit={submitCreate} style={{ marginBottom: 16 }}>
@@ -692,11 +693,11 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
               <td>{asset.category}</td>
               <td>{asset.location || '—'}</td>
               <td>{dateText(asset.commissionedAt)}</td>
-              <td>{asset.status}</td>
+              <td>{asset.status}{locks[asset.id] && <small className="status red">Đang khóa · {locks[asset.id].holder_label}</small>}</td>
               <td className="actions">
                 {canUpdateAssets ? <>
-                  <button type="button" className="text-btn" onClick={() => { setEditDraft({ ...asset }); setShowConfig(false); setShowCreate(false) }}>Sửa</button>
-                  <button type="button" className="text-btn" disabled={busyAssetId === asset.id} onClick={() => void toggleArchive(asset, true)}>{busyAssetId === asset.id ? 'Đang xử lý…' : 'Lưu kho'}</button>
+                  <button type="button" className="text-btn" disabled={!lockStateKnown || !isOnline || Boolean(locks[asset.id]) || busyAssetId === asset.id} onClick={() => void openEdit(asset)}>Sửa</button>
+                  <button type="button" className="text-btn" disabled={!lockStateKnown || !isOnline || Boolean(locks[asset.id]) || busyAssetId === asset.id} onClick={() => void toggleArchive(asset, true)}>{busyAssetId === asset.id ? 'Đang xử lý…' : 'Lưu kho'}</button>
                 </> : <span className="muted">Chỉ xem</span>}
               </td>
             </tr>)}
@@ -715,9 +716,9 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
               <td>{asset.category}</td>
               <td>{asset.location || '—'}</td>
               <td>{dateText(asset.commissionedAt)}</td>
-              <td>{dateText(asset.archivedAt)}</td>
+              <td>{dateText(asset.archivedAt)}{locks[asset.id] && <small className="status red">Đang khóa · {locks[asset.id].holder_label}</small>}</td>
               <td className="actions">
-                {canUpdateAssets ? <button type="button" className="text-btn success-text" disabled={busyAssetId === asset.id} onClick={() => void toggleArchive(asset, false)}>{busyAssetId === asset.id ? 'Đang xử lý…' : 'Khôi phục'}</button> : <span className="muted">Chỉ xem</span>}
+                {canUpdateAssets ? <button type="button" className="text-btn success-text" disabled={!lockStateKnown || !isOnline || Boolean(locks[asset.id]) || busyAssetId === asset.id} onClick={() => void toggleArchive(asset, false)}>{busyAssetId === asset.id ? 'Đang xử lý…' : 'Khôi phục'}</button> : <span className="muted">Chỉ xem</span>}
               </td>
             </tr>)}
           </tbody>
