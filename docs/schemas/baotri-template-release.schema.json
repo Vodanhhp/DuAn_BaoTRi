@@ -1,0 +1,1052 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:baotri:template-release:1",
+  "title": "BAOTRI Template Release",
+  "description": "Hợp đồng dữ liệu cho một gói mô hình mẫu do BAOTRI phát hành. Không chứa dữ liệu nghiệp vụ thực tế của tenant.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "manifest",
+    "profile",
+    "packages"
+  ],
+  "properties": {
+    "manifest": {
+      "$ref": "#/$defs/manifest"
+    },
+    "profile": {
+      "$ref": "#/$defs/profile"
+    },
+    "packages": {
+      "$ref": "#/$defs/packages"
+    }
+  },
+  "$defs": {
+    "code": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Z0-9][A-Z0-9_-]*$"
+    },
+    "text": {
+      "type": "string",
+      "maxLength": 2000
+    },
+    "refList": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/code"
+      },
+      "uniqueItems": true
+    },
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "packageId",
+        "packageVersion",
+        "schemaVersion",
+        "status",
+        "compatibility"
+      ],
+      "properties": {
+        "packageId": {
+          "$ref": "#/$defs/code"
+        },
+        "packageVersion": {
+          "type": "string",
+          "pattern": "^[0-9]+\\\\.[0-9]+\\\\.[0-9]+$"
+        },
+        "schemaVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "status": {
+          "enum": [
+            "draft",
+            "preview",
+            "released",
+            "deprecated"
+          ]
+        },
+        "publishedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "checksum": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "compatibility": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "minAppVersion"
+          ],
+          "properties": {
+            "minAppVersion": {
+              "type": "string"
+            },
+            "maxAppVersion": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "requiredCapabilities": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "uniqueItems": true
+            }
+          }
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "packageId",
+              "versionRange"
+            ],
+            "properties": {
+              "packageId": {
+                "$ref": "#/$defs/code"
+              },
+              "versionRange": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "releaseNotes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        }
+      }
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "modelCode",
+        "name",
+        "industryCode",
+        "sizeCode",
+        "maintenanceLevelCode"
+      ],
+      "properties": {
+        "modelCode": {
+          "$ref": "#/$defs/code"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "description": {
+          "$ref": "#/$defs/text"
+        },
+        "industryCode": {
+          "$ref": "#/$defs/code"
+        },
+        "sizeCode": {
+          "enum": [
+            "SMALL",
+            "MEDIUM",
+            "LARGE"
+          ]
+        },
+        "maintenanceLevelCode": {
+          "enum": [
+            "BASIC",
+            "STANDARD",
+            "ADVANCED"
+          ]
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "recommendedFor": {
+          "$ref": "#/$defs/text"
+        }
+      }
+    },
+    "packages": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "modules",
+        "dictionaries",
+        "checklists",
+        "maintenanceTemplates",
+        "organizationStructure",
+        "codeProfiles",
+        "roleSuggestions",
+        "safetyRules"
+      ],
+      "properties": {
+        "modules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/module"
+          },
+          "uniqueItems": true
+        },
+        "dictionaries": {
+          "$ref": "#/$defs/dictionaries"
+        },
+        "checklists": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/checklistTemplate"
+          }
+        },
+        "maintenanceTemplates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/maintenanceTemplate"
+          }
+        },
+        "organizationStructure": {
+          "$ref": "#/$defs/organizationStructure"
+        },
+        "codeProfiles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/codeProfile"
+          }
+        },
+        "roleSuggestions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/roleSuggestion"
+          }
+        },
+        "safetyRules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/safetyRule"
+          }
+        }
+      }
+    },
+    "module": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "moduleCode",
+        "enabledByDefault",
+        "required",
+        "optional",
+        "menuItems"
+      ],
+      "properties": {
+        "moduleCode": {
+          "$ref": "#/$defs/code"
+        },
+        "enabledByDefault": {
+          "type": "boolean"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "optional": {
+          "type": "boolean"
+        },
+        "dependsOn": {
+          "$ref": "#/$defs/refList"
+        },
+        "menuItems": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "menuCode",
+              "label",
+              "order"
+            ],
+            "properties": {
+              "menuCode": {
+                "$ref": "#/$defs/code"
+              },
+              "label": {
+                "type": "string"
+              },
+              "order": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "parentMenuCode": {
+                "$ref": "#/$defs/code"
+              },
+              "visibleByDefault": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "required": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "optional": {
+                "const": false
+              }
+            }
+          }
+        }
+      ]
+    },
+    "dictionaries": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assetGroups",
+        "assetTypes",
+        "inventoryGroups",
+        "inventoryItems",
+        "units",
+        "taskTypes",
+        "taskStatuses",
+        "priorities"
+      ],
+      "properties": {
+        "assetGroups": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/assetGroup"
+          }
+        },
+        "assetTypes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/assetType"
+          }
+        },
+        "inventoryGroups": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/inventoryGroup"
+          }
+        },
+        "inventoryItems": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/inventoryDictionaryItem"
+          }
+        },
+        "units": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/unit"
+          }
+        },
+        "taskTypes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/taskType"
+          }
+        },
+        "taskStatuses": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/statusItem"
+          }
+        },
+        "priorities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/priorityItem"
+          }
+        },
+        "assetStatuses": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/statusItem"
+          }
+        }
+      }
+    },
+    "baseDictionaryItem": {
+      "type": "object",
+      "required": [
+        "templateItemId",
+        "code",
+        "name",
+        "enabledByDefault",
+        "optional"
+      ],
+      "properties": {
+        "templateItemId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "code": {
+          "$ref": "#/$defs/code"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "description": {
+          "$ref": "#/$defs/text"
+        },
+        "aliases": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "industryTags": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/code"
+          },
+          "uniqueItems": true
+        },
+        "enabledByDefault": {
+          "type": "boolean"
+        },
+        "optional": {
+          "type": "boolean"
+        },
+        "sortOrder": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "dependsOn": {
+          "$ref": "#/$defs/refList"
+        },
+        "safetyRuleRefs": {
+          "$ref": "#/$defs/refList"
+        }
+      }
+    },
+    "assetGroup": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/baseDictionaryItem"
+        },
+        {
+          "type": "object",
+          "required": [
+            "parentGroupCode"
+          ],
+          "properties": {
+            "parentGroupCode": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "assetType": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/baseDictionaryItem"
+        },
+        {
+          "type": "object",
+          "required": [
+            "groupCode",
+            "attributeDefinitions"
+          ],
+          "properties": {
+            "groupCode": {
+              "$ref": "#/$defs/code"
+            },
+            "attributeDefinitions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/attributeDefinition"
+              }
+            },
+            "checklistTemplateRefs": {
+              "$ref": "#/$defs/refList"
+            },
+            "maintenanceTemplateRefs": {
+              "$ref": "#/$defs/refList"
+            },
+            "compatibleInventoryItemCodes": {
+              "$ref": "#/$defs/refList"
+            }
+          }
+        }
+      ]
+    },
+    "attributeDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fieldCode",
+        "label",
+        "valueType",
+        "required"
+      ],
+      "properties": {
+        "fieldCode": {
+          "$ref": "#/$defs/code"
+        },
+        "label": {
+          "type": "string"
+        },
+        "valueType": {
+          "enum": [
+            "text",
+            "number",
+            "date",
+            "boolean",
+            "select"
+          ]
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "unitCode": {
+          "$ref": "#/$defs/code"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "inventoryGroup": {
+      "$ref": "#/$defs/baseDictionaryItem"
+    },
+    "inventoryDictionaryItem": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/baseDictionaryItem"
+        },
+        {
+          "type": "object",
+          "required": [
+            "groupCode",
+            "defaultUnitCode"
+          ],
+          "properties": {
+            "groupCode": {
+              "$ref": "#/$defs/code"
+            },
+            "defaultUnitCode": {
+              "$ref": "#/$defs/code"
+            },
+            "compatibleAssetTypeCodes": {
+              "$ref": "#/$defs/refList"
+            },
+            "partNumberSuggested": {
+              "type": "boolean"
+            },
+            "sizeSuggested": {
+              "type": "boolean"
+            }
+          }
+        }
+      ]
+    },
+    "unit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "templateItemId",
+        "code",
+        "name",
+        "enabledByDefault"
+      ],
+      "properties": {
+        "templateItemId": {
+          "type": "string"
+        },
+        "code": {
+          "$ref": "#/$defs/code"
+        },
+        "name": {
+          "type": "string"
+        },
+        "symbol": {
+          "type": "string"
+        },
+        "enabledByDefault": {
+          "type": "boolean"
+        },
+        "decimalAllowed": {
+          "type": "boolean"
+        }
+      }
+    },
+    "taskType": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/baseDictionaryItem"
+        },
+        {
+          "type": "object",
+          "required": [
+            "taskCategory"
+          ],
+          "properties": {
+            "taskCategory": {
+              "enum": [
+                "repair",
+                "inspection",
+                "servicing",
+                "maintenance",
+                "statutory_inspection",
+                "other"
+              ]
+            },
+            "defaultPriorityCode": {
+              "$ref": "#/$defs/code"
+            },
+            "applicableAssetTypeCodes": {
+              "$ref": "#/$defs/refList"
+            },
+            "suggestedChecklistRefs": {
+              "$ref": "#/$defs/refList"
+            }
+          }
+        }
+      ]
+    },
+    "statusItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "label",
+        "terminal"
+      ],
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/code"
+        },
+        "label": {
+          "type": "string"
+        },
+        "terminal": {
+          "type": "boolean"
+        },
+        "sortOrder": {
+          "type": "integer"
+        }
+      }
+    },
+    "priorityItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "label",
+        "rank"
+      ],
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/code"
+        },
+        "label": {
+          "type": "string"
+        },
+        "rank": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "colorToken": {
+          "type": "string"
+        }
+      }
+    },
+    "checklistTemplate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "templateItemId",
+        "templateCode",
+        "name",
+        "assetTypeCodes",
+        "version",
+        "items",
+        "enabledByDefault",
+        "optional"
+      ],
+      "properties": {
+        "templateItemId": {
+          "type": "string"
+        },
+        "templateCode": {
+          "$ref": "#/$defs/code"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "$ref": "#/$defs/text"
+        },
+        "assetTypeCodes": {
+          "$ref": "#/$defs/refList"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "enabledByDefault": {
+          "type": "boolean"
+        },
+        "optional": {
+          "type": "boolean"
+        },
+        "requiresQualifiedPerson": {
+          "type": "boolean"
+        },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/checklistItem"
+          }
+        }
+      }
+    },
+    "checklistItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "itemCode",
+        "label",
+        "answerType",
+        "required",
+        "order"
+      ],
+      "properties": {
+        "itemCode": {
+          "$ref": "#/$defs/code"
+        },
+        "label": {
+          "type": "string"
+        },
+        "description": {
+          "$ref": "#/$defs/text"
+        },
+        "answerType": {
+          "enum": [
+            "pass-fail-na",
+            "yes-no",
+            "text",
+            "number"
+          ]
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "order": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unitCode": {
+          "$ref": "#/$defs/code"
+        },
+        "safetyNote": {
+          "$ref": "#/$defs/text"
+        }
+      }
+    },
+    "maintenanceTemplate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "templateItemId",
+        "templateCode",
+        "name",
+        "assetTypeCodes",
+        "taskTypeCode",
+        "interval",
+        "requiresAdminConfirmation"
+      ],
+      "properties": {
+        "templateItemId": {
+          "type": "string"
+        },
+        "templateCode": {
+          "$ref": "#/$defs/code"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "$ref": "#/$defs/text"
+        },
+        "assetTypeCodes": {
+          "$ref": "#/$defs/refList"
+        },
+        "taskTypeCode": {
+          "$ref": "#/$defs/code"
+        },
+        "interval": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "value",
+            "unit"
+          ],
+          "properties": {
+            "value": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "unit": {
+              "enum": [
+                "day",
+                "week",
+                "month",
+                "quarter",
+                "year",
+                "manufacturer"
+              ]
+            }
+          }
+        },
+        "guidance": {
+          "$ref": "#/$defs/text"
+        },
+        "requiresAdminConfirmation": {
+          "type": "boolean"
+        },
+        "safetyRuleRefs": {
+          "$ref": "#/$defs/refList"
+        }
+      }
+    },
+    "organizationStructure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "facilityCountDefault",
+        "warehouseModeDefault",
+        "manageLocationsDefault"
+      ],
+      "properties": {
+        "facilityCountDefault": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "facilityModel": {
+          "enum": [
+            "single",
+            "multiple",
+            "selectable"
+          ]
+        },
+        "warehouseModeDefault": {
+          "enum": [
+            "single_shared",
+            "multiple",
+            "selectable"
+          ]
+        },
+        "manageLocationsDefault": {
+          "type": "boolean"
+        },
+        "suggestedAreas": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "requiresAdminConfirmation": {
+          "type": "boolean"
+        }
+      }
+    },
+    "codeProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entityType",
+        "segments",
+        "uniquenessScope"
+      ],
+      "properties": {
+        "entityType": {
+          "enum": [
+            "organization",
+            "facility",
+            "asset",
+            "inventory",
+            "task",
+            "location"
+          ]
+        },
+        "prefix": {
+          "type": "string"
+        },
+        "segments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "source"
+            ],
+            "properties": {
+              "source": {
+                "enum": [
+                  "literal",
+                  "facility_code",
+                  "category_code",
+                  "location_code",
+                  "year",
+                  "month",
+                  "sequence"
+                ]
+              },
+              "value": {
+                "type": "string"
+              },
+              "separator": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "sequence": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "minimumDigits": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "scope": {
+              "enum": [
+                "organization",
+                "facility",
+                "category",
+                "year"
+              ]
+            },
+            "startAt": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "uniquenessScope": {
+          "enum": [
+            "organization",
+            "facility",
+            "category"
+          ]
+        },
+        "transferSuffix": {
+          "type": "string"
+        },
+        "requiresAdminConfirmation": {
+          "type": "boolean"
+        }
+      }
+    },
+    "roleSuggestion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "roleCode",
+        "label",
+        "permissionCodes"
+      ],
+      "properties": {
+        "roleCode": {
+          "$ref": "#/$defs/code"
+        },
+        "label": {
+          "type": "string"
+        },
+        "description": {
+          "$ref": "#/$defs/text"
+        },
+        "permissionCodes": {
+          "$ref": "#/$defs/refList"
+        },
+        "note": {
+          "$ref": "#/$defs/text"
+        }
+      }
+    },
+    "safetyRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ruleCode",
+        "severity",
+        "message",
+        "appliesTo"
+      ],
+      "properties": {
+        "ruleCode": {
+          "$ref": "#/$defs/code"
+        },
+        "severity": {
+          "enum": [
+            "info",
+            "warning",
+            "critical"
+          ]
+        },
+        "message": {
+          "$ref": "#/$defs/text"
+        },
+        "appliesTo": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "asset",
+              "inventory",
+              "task",
+              "checklist",
+              "maintenance",
+              "module"
+            ]
+          }
+        },
+        "requiresAcknowledgement": {
+          "type": "boolean"
+        },
+        "sourceReference": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
