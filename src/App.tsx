@@ -1494,7 +1494,7 @@ function OrganizationMembersPanel({client,organizationId}:{client:SupabaseClient
   </section>
 }
 
-function AssetDetailModal({value,logs,userName,allowChecklist,checklistOccurrence,createRequestFromChecklist,editLog,close,edit,addLog,readOnly=false,isAdmin=false,userName='Tài khoản'}:any){
+function AssetDetailModal({value,logs,allowChecklist,checklistOccurrence,createRequestFromChecklist,editLog,close,edit,addLog,readOnly=false,isAdmin=false,userName='Tài khoản'}:any){
   const [showPhotos,setShowPhotos]=useState(false)
   const [activePhoto,setActivePhoto]=useState<string|null>(null)
   const [printMode,setPrintMode]=useState<null|'sticker'|'detail'|'history'>(null)
