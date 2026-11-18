@@ -319,9 +319,12 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
     localStorage.setItem('baotri-compact', String(compact))
   }, [compact])
 
-  useEffect(() => {
-    const seed = async () => {
-      // 30 hồ sơ thiết bị mẫu; đối chiếu theo mã để không tạo trùng khi tải lại.
+  const createDemoData = async () => {
+      if (await db.assets.count() !== 0 || await db.inventory.count() !== 0) {
+        alert('Chỉ tạo dữ liệu mẫu khi cả danh sách thiết bị và vật tư đang trống.');
+        return;
+      }
+      // Tạo mới 30 hồ sơ thiết bị mẫu trực tiếp tại Local.
       const demoAssets = [
         { code: 'COMP-001', name: 'Máy nén khí trục vít số 1', category: 'Máy nén khí', brand: 'Atlas Copco', model: 'GA22', location: 'Phòng máy nén khí', commissionedAt: '2023-05-10', power: '22 kW', cycle: 'Hàng tháng' },
         { code: 'KHO-001', name: 'Kho lạnh bảo quản số 1', category: 'Kho lạnh', brand: 'Bitzer', model: 'Cụm lạnh 1', location: 'Khu sản xuất', commissionedAt: '2022-08-01', power: '18 kW', cycle: 'Hàng ngày' },
@@ -389,37 +392,14 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
         }
       })
       const existing = await db.assets.toArray()
-      const existingCodes = new Set(existing.map(a => a.code))
-      const updates: Asset[] = []
-      const missing: Asset[] = []
-      for (const item of normalizedDemoAssets) {
-        const oldDemo = existing.find(a => a.serial === `DEMO-${item.legacyCode}` || a.code === item.legacyCode)
-        if (oldDemo) {
-          if (oldDemo.code !== item.code) updates.push({ ...oldDemo, code: item.code, updatedAt: now() })
-        } else if (!existingCodes.has(item.code)) {
-          missing.push({
-            ...emptyAsset(), ...item, serial: `DEMO-${item.legacyCode}`,
-            images: [makeDemoAssetImage(item.category, item.code, 1), makeDemoAssetImage(item.category, item.code, 2)],
-            notes: 'DỮ LIỆU MẪU – ảnh minh họa kỹ thuật, không phải ảnh thực tế của thiết bị.'
-          })
-        }
-      }
-      if (updates.length) await db.assets.bulkPut(updates)
-      if (missing.length) await db.assets.bulkAdd(missing)
-      // Bổ sung ảnh minh họa cho hồ sơ demo cũ; không ghi đè ảnh người dùng đã tải lên.
-      const demoRows = (await db.assets.toArray()).filter(a => a.serial?.startsWith('DEMO-') || a.notes?.includes('DỮ LIỆU MẪU'))
-      const demoWithoutPhotos = demoRows.filter(a => !Array.isArray(a.images) || a.images.length === 0)
-      if (demoWithoutPhotos.length) await db.assets.bulkPut(demoWithoutPhotos.map(a => ({
-        ...a,
-        images: [makeDemoAssetImage(a.category, a.code, 1), makeDemoAssetImage(a.category, a.code, 2)],
+      const missing: Asset[] = normalizedDemoAssets.map(item => ({
+        ...emptyAsset(), ...item, serial: `DEMO-${item.legacyCode}`,
+        images: [makeDemoAssetImage(item.category, item.code, 1), makeDemoAssetImage(item.category, item.code, 2)],
         notes: 'DỮ LIỆU MẪU – ảnh minh họa kỹ thuật, không phải ảnh thực tế của thiết bị.'
-      })))
-      const legacyAssets = (await db.assets.toArray()).filter(a => !Array.isArray(a.images))
-      if (legacyAssets.length) await db.assets.bulkPut(legacyAssets.map(a => ({ ...a, images: [] })))
-
-      const compressor = await db.assets.filter(a => a.serial === 'DEMO-COMP-001').first()
-      const coldStore = await db.assets.filter(a => a.serial === 'DEMO-KHO-001').first()
-      // 40 vật tư giả định để thử nghiệm kho; chỉ bổ sung mã còn thiếu, không ghi đè dữ liệu đã sửa.
+      }))
+      if (missing.length !== 30) throw new Error('Bộ dữ liệu mẫu thiết bị không đủ 30 hồ sơ.')
+      await db.assets.bulkAdd(missing)
+      // 30 vật tư mẫu; mã và UUID được tạo tại Local.
       const demoInventory = [
         { code:'VT-001', name:'Lọc dầu máy nén khí', group:'Khí nén', unit:'Bộ', quantity:3, minQuantity:5, location:'Kho cơ điện - Kệ A1', supplier:'Nhà cung cấp mẫu A', unitPrice:450000 },
         { code:'VT-002', name:'Lọc tách dầu máy nén khí', group:'Khí nén', unit:'Cái', quantity:2, minQuantity:2, location:'Kho cơ điện - Kệ A1', supplier:'Nhà cung cấp mẫu A', unitPrice:1850000 },
@@ -462,25 +442,22 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
         { code:'VT-039', name:'Đầu cos đồng 4 mm²', group:'Dây cáp điện', unit:'Cái', quantity:100, minQuantity:30, location:'Kho điện - Kệ C5', supplier:'Nhà cung cấp mẫu D', unitPrice:1200 },
         { code:'VT-040', name:'Dây rút nhựa 200 mm', group:'Vật tư tiêu hao', unit:'Bịch', quantity:10, minQuantity:5, location:'Kho vật tư chung - Kệ F2', supplier:'Nhà cung cấp mẫu F', unitPrice:28000 }
       ]
-      const existingInventoryCodes = new Set((await db.inventory.toArray()).map(item => item.code))
-      const missingInventory = demoInventory
-        .filter(item => !existingInventoryCodes.has(item.code))
-        .map(item => ({ ...emptyItem(), ...item, updatedAt: now() }))
-      if (missingInventory.length) await db.inventory.bulkAdd(missingInventory)
-      if (!(await db.tasks.count())) {
-        const t1 = { ...emptyTask(), assetId: compressor?.id ?? '', title: 'Kiểm tra máy nén khí định kỳ', dueDate: today(), frequency: 'Hàng tháng', checklist: 'Kiểm tra rò rỉ\nKiểm tra áp suất\nKiểm tra nhiệt độ dầu' }
-        const t2 = { ...emptyTask(), assetId: coldStore?.id ?? '', title: 'Ghi nhận nhiệt độ kho lạnh', dueDate: today(), frequency: 'Hàng ngày', checklist: 'Ghi nhiệt độ hiển thị\nKiểm tra cửa kho\nKiểm tra tình trạng dàn lạnh' }
-        await db.tasks.bulkPut([t1, t2])
-      }
-      // Khởi tạo biểu mẫu riêng cho mọi thiết bị đang quản lý; không đụng vào biểu mẫu đã có.
-      const checklistAssets = (await db.assets.toArray()).filter(asset => !asset.archivedAt)
-      for (const asset of checklistAssets) await ensureDefaultChecklist(asset)
+      const missingInventory = demoInventory.slice(0, 30).map(item => ({ ...emptyItem(), ...item, updatedAt: now() }))
+      if (missingInventory.length !== 30) throw new Error('Bộ dữ liệu mẫu vật tư không đủ 30 mã.')
+      await db.inventory.bulkAdd(missingInventory)
+      // Ghi hàng đợi đồng bộ cho từng bản ghi mới; không gọi Cloud và không tự đồng bộ.
+      await db.transaction('rw', db.syncQueue, async () => {
+        await Promise.all([
+          ...missing.map(item => queueChange('assets', item.id)),
+          ...missingInventory.map(item => queueChange('inventory', item.id))
+        ])
+      })
+      flash('Đã tạo 30 thiết bị và 30 vật tư mẫu tại Local. Chưa đồng bộ Cloud.')
+    } catch (error) {
+      console.error('Create local demo data failed', error)
+      alert(error instanceof Error ? error.message : 'Không thể tạo bộ dữ liệu mẫu.')
     }
-    // Legacy auto-seed disabled: it created official-looking UUIDs/codes locally
-    // and inserted 30 assets + 40 inventory rows without the new draft/online validation flow.
-    // Sample data will be created explicitly after the Local-first draft workflow is implemented.
-    void seed
-  }, [])
+  }
 
   const assetCategories = useMemo(() => [...new Set(activeAssets.map(a => a.category).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'vi')), [activeAssets])
   const assetLocations = useMemo(() => [...new Set(activeAssets.map(a => a.location).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'vi')), [activeAssets])
@@ -1174,6 +1151,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
           </section>
           {organizationRole.trim().toLowerCase()==='admin'&&<OrganizationMembersPanel client={cloudClient} organizationId={organizationId}/>}
           <section className="panel"><div className="panel-head"><div><h2>Dữ liệu và sao lưu</h2><p>Phiên bản thử nghiệm lưu dữ liệu cục bộ trong trình duyệt này</p></div><HardDrive/></div>
+            <div className="setting-row"><div><b>Tạo dữ liệu mẫu Local</b><small>Tạo đúng 30 thiết bị và 30 vật tư tại máy này. Chỉ dùng khi cả hai danh sách đang trống; dữ liệu sẽ được đưa vào hàng đợi chờ đồng bộ, không tự gửi lên Cloud.</small></div><button className="soft-btn" disabled={isViewer} onClick={()=>{if(confirm('Tạo 30 thiết bị và 30 vật tư mẫu tại Local? Chỉ thực hiện khi hai danh sách đang trống.'))void createDemoData()}}>Tạo 30 + 30</button></div>
             <div className="setting-row"><div><b>Xuất bản sao lưu</b><small>Tải đầy đủ thiết bị, vật tư, kế hoạch, nhật ký, Checklist, ảnh, danh mục tự tạo và dữ liệu hàng đợi thành JSON.</small></div><button className="primary-btn" disabled={isViewer} title={isViewer?'Viewer không được sao lưu dữ liệu':undefined} onClick={backup}><Download size={16}/> Sao lưu</button></div>
             <div className="setting-row"><div><b>Khôi phục bản sao lưu</b><small>Chọn file để xem trước. Dữ liệu chỉ bị thay thế sau khi bạn bấm Xác nhận khôi phục.</small></div><label className={`soft-btn file-btn ${isViewer?'disabled':''}`} title={isViewer?'Viewer không được khôi phục dữ liệu':undefined}>Chọn file<input type="file" accept=".json,application/json" disabled={isViewer} onChange={e=>{const selected=e.target.files?.[0];if(selected)void restore(selected);e.target.value=''}}/></label></div>
             {pendingRestore && <div className="setting-row restore-preview"><div><b>Đã chọn: {pendingRestore.fileName}</b><small>File sẽ THAY THẾ toàn bộ dữ liệu Local hiện tại, gồm cả hàng đợi đồng bộ.</small><small>Thiết bị: {pendingRestore.data.assets?.length ?? 0} · Vật tư: {pendingRestore.data.inventory?.length ?? 0} · Công việc: {pendingRestore.data.tasks?.length ?? 0} · Nhật ký: {pendingRestore.data.logs?.length ?? 0} · Checklist: {pendingRestore.data.checklistResults?.length ?? 0}</small></div><div className="setting-inline-actions"><button className="primary-btn" disabled={isViewer} onClick={()=>void applyRestore()}>Xác nhận khôi phục</button><button className="soft-btn" onClick={cancelRestore}>Hủy</button></div></div>}
