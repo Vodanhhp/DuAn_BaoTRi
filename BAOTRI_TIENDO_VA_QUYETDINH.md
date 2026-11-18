@@ -3183,3 +3183,10 @@ Trạng thái: chưa áp dụng guard backup restore tại thời điểm ghi nh
 - Hai bảng `assetCloudLinks` và `assetMutations` không bị xóa trong restore. Backup format cũ vẫn không chứa hai bảng này.
 - Asset chưa liên kết tiếp tục theo luồng restore cũ.
 - Chưa có kiểm thử runtime IndexedDB/restore trên trình duyệt; cần test thủ công sau khi build PASS.
+
+### 23.2 CI xác nhận mã nguồn – 19/11/2026
+
+- GitHub Actions run `44409619749`, commit `2118937bdde443c9415e605a3b5ad82ac85be078`: job `build` đã PASS.
+- Các bước Test Cloud sync mapping safety, Test Local identity rekey safety, validate template JSON/reference/package và Build Vite app đều PASS.
+- Job `deploy` đang chạy tại thời điểm cập nhật. Chưa đánh dấu toàn bộ workflow/deploy hoàn tất.
+- CI không chạy SQL Migration 017, không kiểm thử Dexie migration trong trình duyệt thực, không kiểm thử hai thiết bị PC/Mobile đồng thời.
