@@ -90,6 +90,8 @@ declare
   v_archived_payload jsonb;
   v_expected timestamptz;
   v_after_first timestamptz;
+  v_current_before_stale timestamptz;
+  v_after_stale timestamptz;
   v_name text;
   v_blocked boolean;
   v_receipt_access boolean;
@@ -211,6 +213,10 @@ begin
   perform set_config('request.jwt.claims',
     jsonb_build_object('sub', f.admin_uid, 'role', 'authenticated', 'aud', 'authenticated')::text, true);
 
+  select updated_at into strict v_current_before_stale
+  from public.assets
+  where organization_id = f.organization_id and id = f.asset_id;
+
   v_blocked := false;
   begin
     perform public.apply_asset_mutation_with_lock(
@@ -220,13 +226,25 @@ begin
   exception when SQLSTATE '40001' then
     v_blocked := true;
   end;
-  select name into strict v_name from public.assets
+
+  select name, updated_at into strict v_name, v_after_stale
+  from public.assets
   where organization_id = f.organization_id and id = f.asset_id;
+
   insert into pg_temp.asset_mutation_results values (
     'Stale expected Cloud version is rejected',
-    'SQLSTATE 40001 and first committed name preserved',
-    'blocked=' || v_blocked::text || '; name=' || v_name,
-    v_blocked and v_name = 'Asset mutation committed once'
+    'SQLSTATE 40001; timestamp unchanged by rejected mutation',
+    'blocked=' || v_blocked::text
+      || '; original=' || v_expected::text
+      || '; after_first=' || v_after_first::text
+      || '; before_stale=' || v_current_before_stale::text
+      || '; after_stale=' || v_after_stale::text
+      || '; name=' || v_name,
+    v_blocked
+      and v_after_first is distinct from v_expected
+      and v_current_before_stale = v_after_first
+      and v_after_stale = v_current_before_stale
+      and v_name = 'Asset mutation committed once'
   );
 
   v_blocked := false;
