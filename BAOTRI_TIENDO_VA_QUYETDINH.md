@@ -2614,3 +2614,23 @@ Quyết định:
 - Test 016 riêng sẽ kiểm tra đường update mới: chỉ RPC `update_asset_with_lock` với lease/token đúng mới được ghi.
 - Bổ sung test token cũ không thể ghi sau khi lease hết hạn và nền tảng khác đã nhận khóa; bổ sung kiểm tra archive/restore qua lease.
 - Không thay đổi dữ liệu Test/Production; chỉ cập nhật file test SQL.
+
+
+### HOÀN TẤT RÀ SOÁT TƯƠNG THÍCH BỘ TEST SAU KHI THU HỒI UPDATE TRỰC TIẾP (18/11/2026)
+
+Đã cập nhật các test SQL cũ để không bị hỏng khi Migration 016 thu hồi UPDATE trực tiếp trên `assets`:
+
+- `supabase/tests/20261117000800_authenticated_asset_crud_rls_test.sql`
+- `supabase/tests/20261117001000_suspended_membership_tenant_isolation_test.sql`
+- `supabase/tests/20261117001100_unauthenticated_no_membership_permission_revoked_test.sql`
+
+Các test chấp nhận đúng hai kết quả an toàn: RLS trả 0 dòng (trước Migration 016) hoặc SQL privilege chặn UPDATE (sau Migration 016). Không chấp nhận có thay đổi trái quyền. Test 008 không còn coi UPDATE trực tiếp là đường ghi hợp lệ sau Migration 016; test 016 riêng xác nhận chỉ RPC với token lease hợp lệ được cập nhật.
+
+Bổ sung vào test 016:
+- Archive và restore phải có lease hợp lệ.
+- Token Mobile cũ không được ghi sau khi lease hết hạn và Admin/PC đã tiếp quản.
+- Tiếp tục kiểm tra heartbeat của token hết hạn, thay lease và chặn direct UPDATE.
+
+**CI:** GitHub Actions run #304, ID `44324948772`, commit `a9256b9aaa03347ccb8bc28589903efaf92f90a8` – completed/success; Vite build PASS. Đây chỉ là TypeScript/build và các test tự động đang có trong workflow; các file SQL vẫn chưa được thực thi trên PostgreSQL/Supabase.
+
+**Trạng thái SQL Migration 016:** đã rà soát schema gốc, xác nhận FK kép `(organization_id, asset_id)` tham chiếu unique `assets(organization_id, id)`, các cột hồ sơ và trạng thái phù hợp. Chưa áp dụng migration và chưa chạy bất kỳ SQL test nào trên BAOTRI-Mini-Test.
