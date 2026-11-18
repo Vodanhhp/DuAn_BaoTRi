@@ -31,6 +31,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Generate shared 247 favicon and PWA icons
+        run: |
+          python -m pip install pillow
+          python scripts/generate-brand-icons.py
+
       - name: Build Vite app
         run: npm run build
         env:
