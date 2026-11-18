@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { db, type Asset } from './db'
 import {
@@ -223,8 +223,6 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
 
   const active = assets.filter(asset => !asset.archivedAt)
   const archived = assets.filter(asset => Boolean(asset.archivedAt))
-  const categoryOptions = useMemo(() => Object.keys(config?.category_codes ?? {}).sort((a, b) => a.localeCompare(b, 'vi')), [config])
-  const locationOptions = useMemo(() => Object.keys(config?.location_codes ?? {}).filter(x => x !== '__UNASSIGNED__').sort((a, b) => a.localeCompare(b, 'vi')), [config])
 
   const saveConfig = async (event: FormEvent) => {
     event.preventDefault()
