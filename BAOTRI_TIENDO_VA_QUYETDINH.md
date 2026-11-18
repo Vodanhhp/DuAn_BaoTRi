@@ -998,7 +998,6 @@ Người dùng xác nhận đồng ý đưa cả dữ liệu thử nghiệm đan
 
 
 ## 17/11/2026 – Migration 002 và Smoke test đã chạy thành công trên Test
-
 - Người dùng xác nhận Migration 002 trả về `Success. No rows returned` trên project `BAOTRI-Mini-Test`.
 - Người dùng chạy Smoke test; ảnh kết quả cho thấy cột `row_security_active` là `true` cho các bảng hiển thị và người dùng xác nhận **cả 11/11 bảng đều true**.
 - Kết luận trong phạm vi bằng chứng hiện có: Migration 002 thực thi không báo lỗi; RLS đang bật trên toàn bộ 11 bảng. Các kiểm tra khác trong Smoke test đã được script chạy nhưng chưa có ảnh/toàn bộ output để lưu từng dòng kết quả. Không diễn giải kết quả này thành kiểm thử RLS runtime dưới các vai trò authenticated/anon hoặc kiểm thử cách ly tenant thực tế.
@@ -1997,8 +1996,7 @@ assets.images hiện là dữ liệu ảnh local; adapter Cloud trả images r�
 - Thêm `tests/syncMapping.test.mjs` với 8 nhóm kiểm thử:
   1. Asset mapping giữ UUID/trường nghiệp vụ, không đưa ảnh local vào payload.
   2. Mapper từ chối organization_id rỗng.
-  3. Inventory baseline có quantity, metadata upsert không có quantity.
-  4. Task mapping giữ asset foreign key và status.
+  3. Inventory baseline có quantity, metadata upsert không có quantity.  4. Task mapping giữ asset foreign key và status.
   5. Checklist version/result giữ snapshot.
   6. Maintenance log từ chối dueDate, requestedBy, editHistory khi schema chưa hỗ trợ.
   7. Inventory movement bị chặn ghi trực tiếp.
@@ -2997,7 +2995,6 @@ Không dùng `syncQueue` hiện tại làm nguồn mutation Cloud cho Asset. Que
 8. Chỉ tích hợp Asset master. Checklist, bảo trì, nhật ký, vật tư và movement tiếp tục Local, chưa có worker/đồng bộ.
 
 ### 19.4 Trạng thái và việc chưa làm
-
 - [x] Đã xác nhận `code` và `category` không thể sửa từ AssetModal hiện tại.
 - [x] Đã xác nhận Local save vẫn ghi IndexedDB + generic `syncQueue`, chưa gọi RPC receipt.
 - [x] Đã xác nhận CloudAssetsPanel vẫn có đường tạo/sửa/lưu kho trực tiếp trên Cloud và chưa dùng Migration 017.
@@ -3271,3 +3268,54 @@ Trạng thái:
 - Migration tạo hàm trigger riêng `public.set_asset_updated_at()`, dùng `clock_timestamp()`; thay trigger trên `public.assets` để dùng hàm mới.
 - Không sửa hàm `public.set_updated_at()` dùng chung, không tác động timestamp các bảng khác, không cập nhật hàng Asset hiện có.
 - Chưa chạy SQL. Người dùng cần chạy Migration 019 trên BAOTRI-Mini-Test, sau đó chạy lại Test SQL 017.
+
+
+## 22. Kết quả Migration 019 và Test SQL 017 – 19/11/2026
+
+- Người dùng xác nhận đã áp dụng Migration 019 `supabase/migrations/20261119000200_asset_updated_at_wall_clock.sql` trên BAOTRI-Mini-Test và chạy lại toàn bộ Test SQL 017; **PASS toàn bộ**.
+- Migration 019 tạo trigger riêng `set_asset_updated_at()` dùng `clock_timestamp()` cho bảng `assets`, thay trigger cũ dùng `set_updated_at()`/ `now()`. Không sửa hàm timestamp dùng chung, không ảnh hưởng các bảng khác và không cập nhật hàng Asset hiện có.
+- Lỗi stale expected Cloud version đã được xử lý: trong cùng transaction, timestamp Asset thay đổi theo wall-clock, do đó RPC optimistic version check phát hiện phiên bản cũ đúng như yêu cầu.
+- Ghi nhận theo xác nhận của người dùng: Migration 016, 017, 018, 019 và Test SQL 016, 017 đã PASS trên BAOTRI-Mini-Test. Assistant không trực tiếp thực thi SQL.
+- Không chạy lại Migration 017/018; Migration 019 là hotfix tiến về phía trước.
+
+## 23. Kế hoạch tích hợp Asset Local lease + receipt – đợt tiếp theo
+
+### 23.1 Hiện trạng đã đối chiếu trên `main`
+- `src/db.ts` đã có Dexie v8 với `assetCloudLinks` và `assetMutations`; không cần tạo thêm bảng hoặc nâng version chỉ để bắt đầu tích hợp.
+- `src/lib/assetEditLocks.ts` đã có acquire/heartbeat/release và `applyAssetMutationWithEditLock()`.
+- `src/App.tsx` hiện vẫn có `blockCloudLinkedAssetMutation()`: Asset đã liên kết Cloud bị chặn sửa; `saveAsset()` vẫn ghi Asset + generic `syncQueue`, chưa gọi RPC receipt.
+- `src/App.tsx` hiện có Supabase client và organization context; cần dùng đúng `organizationId` + `cloudClient` trong Workspace, không suy đoán mapping từ tên/mã.
+- Import Local → Cloud hiện có xác nhận; mapping được lưu ở Dexie v8. Không thay đổi luồng import trong đợt tích hợp save nếu không cần thiết.
+- Cloud version làm mốc là `assetCloudLinks.cloudUpdatedAt`; trước khi mở form phải đọc/đối chiếu phiên bản Cloud hiện hành. Nếu khác mốc Local, chuyển conflict và không mở quyền sửa.
+
+### 23.2 Phạm vi triển khai
+1. Với Asset chưa mapping Cloud: giữ nguyên hành vi Local hiện tại; không xin lease cho Asset chưa có Cloud counterpart.
+2. Với Asset đã mapping: kiểm tra không có mutation `pending/processing/conflict`; lấy snapshot Cloud mới nhất và so sánh `updated_at` với `cloudUpdatedAt` đã lưu.
+3. Chỉ sau khi xác minh version và acquire lease thành công mới mở form sửa.
+4. Duy trì heartbeat trong toàn bộ phiên chỉnh sửa và trong lúc chờ Cloud receipt. Heartbeat lỗi/mất mạng phải fail-closed; token không được lưu vào IndexedDB/localStorage.
+5. Khi lưu Asset mapped: ghi Local snapshot và mutation bất biến vào Dexie transaction; không gọi `queueChange('assets', ...)` cho mutation Asset đã đi theo receipt protocol.
+6. Gửi đúng mutationId, payload snapshot, expectedCloudUpdatedAt và lease token tới `applyAssetMutationWithEditLock()`.
+7. Chỉ khi nhận receipt hợp lệ mới cập nhật `assetCloudLinks.cloudUpdatedAt`, đánh dấu mutation `applied`, và release lease.
+8. Nếu Cloud từ chối/timeout/mất mạng sau Local commit: giữ mutation và dữ liệu Local, không release lease chủ động khi lease còn hoạt động; khóa thao tác sửa tiếp. Không tự xin token mới để gửi mutation cũ. Cần có đường phục hồi/reconcile rõ ràng trước khi xem là hoàn tất.
+9. Cancel form: release đúng token; không ghi Local mutation.
+10. Các luồng archive/restore/status chỉ tích hợp nếu được chứng minh đi qua cùng receipt RPC; không để đường ghi Local bypass lease.
+11. Checklist/task/log/maintenance và queue tương ứng tiếp tục Local-only; không bật worker hoặc sync bảng khác.
+
+### 23.3 Rủi ro và điều kiện dừng
+- Không được mở form nếu Cloud version không đọc được, không khớp link version, mapping không ở trạng thái `linked`, hoặc còn mutation chưa xác nhận.
+- Không đánh dấu `applied` chỉ vì Local transaction thành công; phải có receipt Cloud.
+- Không xóa mutation/queue trước Cloud acknowledgement; không đổi mutationId/payload/expected version khi retry.
+- Nếu chưa có cách xử lý an toàn trường hợp Cloud đã commit nhưng client mất response, không được release lease hoặc cho sửa tiếp.
+- Không tự thay đổi CloudAssetsPanel, import, migration/RLS hoặc dữ liệu nghiệp vụ trong đợt này.
+- Không tự chạy SQL/migration; người dùng tiếp tục chạy SQL trên BAOTRI-Mini-Test.
+
+### 23.4 Cách kiểm thử
+- Unit tests cho payload snapshot, mutation id ổn định, chặn mutation đang pending/conflict và trạng thái link/version.
+- Build TypeScript/Vite qua CI.
+- Người dùng kiểm tra trên BAOTRI-Mini-Test: sửa Asset mapped, hủy form, lưu thành công, Cloud version tăng, receipt được replay nếu retry; Asset chưa mapped vẫn sửa Local; Asset Cloud đổi từ nền tảng khác thì form bị chặn; mất mạng/heartbeat lỗi thì không thể lưu.
+- Kiểm tra riêng rằng Checklist/bảo trì vẫn hoạt động Local và không có hàng đợi các bảng này bị gửi lên Cloud.
+- Chỉ đánh dấu runtime PASS khi người dùng trực tiếp xác nhận kết quả.
+
+### 23.5 Trạng thái
+- Đã cập nhật kế hoạch sau khi người dùng xác nhận Test SQL 017 PASS.
+- Chưa sửa `src/App.tsx` hoặc `src/db.ts` trong mục này; chưa gọi RPC từ UI; chưa bật worker tổng thể.
