@@ -3261,3 +3261,13 @@ Trạng thái:
 - [ ] Tạo migration sửa riêng trigger Asset.
 - [ ] Người dùng chạy migration mới trên BAOTRI-Mini-Test.
 - [ ] Chạy lại Test SQL 017 và xác nhận tất cả PASS.
+
+
+### 24.3 Migration 019 đã tạo – 19/11/2026
+
+- Commit tài liệu chẩn đoán: `3bc613101614fe7a5151ef8d34e07c6fd3df3fd8`.
+- Commit Migration 019: `17dd94500b3ccc157e4affa54f602a1253ea7550`.
+- File: `supabase/migrations/20261119000200_asset_updated_at_wall_clock.sql`.
+- Migration tạo hàm trigger riêng `public.set_asset_updated_at()`, dùng `clock_timestamp()`; thay trigger trên `public.assets` để dùng hàm mới.
+- Không sửa hàm `public.set_updated_at()` dùng chung, không tác động timestamp các bảng khác, không cập nhật hàng Asset hiện có.
+- Chưa chạy SQL. Người dùng cần chạy Migration 019 trên BAOTRI-Mini-Test, sau đó chạy lại Test SQL 017.
