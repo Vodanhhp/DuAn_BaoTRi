@@ -50,6 +50,32 @@ const sameTimestamp = (left?: string | null, right?: string | null): boolean => 
   return Number.isFinite(leftTime) && Number.isFinite(rightTime) && leftTime === rightTime
 }
 
+
+const localAssetImportSnapshot = (assets: Asset[]): string => JSON.stringify(
+  [...assets]
+    .sort((left, right) => left.id.localeCompare(right.id))
+    .map(asset => ({
+      id: asset.id,
+      code: asset.code,
+      name: asset.name,
+      category: asset.category,
+      brand: asset.brand ?? '',
+      model: asset.model ?? '',
+      serial: asset.serial ?? '',
+      location: asset.location ?? '',
+      commissionedAt: asset.commissionedAt || null,
+      power: asset.power ?? '',
+      cycle: asset.cycle ?? '',
+      cycleStartedAt: asset.cycleStartedAt || null,
+      transferredFromOtherFacility: Boolean(asset.transferredFromOtherFacility),
+      status: asset.status,
+      notes: asset.notes ?? '',
+      archivedAt: asset.archivedAt || null,
+      createdAt: asset.createdAt,
+      updatedAt: asset.updatedAt
+    }))
+)
+
 const localAssetMatchesCloud = (asset: Asset, row: Record<string, unknown>): boolean =>
   row.id === asset.id &&
   row.code === asset.code &&
@@ -93,7 +119,7 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
   const [canImportAssets, setCanImportAssets] = useState(false)
   const [canManageSettings, setCanManageSettings] = useState(false)
   const [permissionsLoading, setPermissionsLoading] = useState(true)
-  const [localImportPreview, setLocalImportPreview] = useState<{ total: number; toInsert: number; alreadyPresent: number } | null>(null)
+  const [localImportPreview, setLocalImportPreview] = useState<{ total: number; toInsert: number; alreadyPresent: number; localSnapshot: string } | null>(null)
   const [checkingLocalImport, setCheckingLocalImport] = useState(false)
   const [importingLocalAssets, setImportingLocalAssets] = useState(false)
   const [name, setName] = useState('')
@@ -287,7 +313,7 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
         }
         toInsert++
       }
-      setLocalImportPreview({ total: localRows.length, toInsert, alreadyPresent })
+      setLocalImportPreview({ total: localRows.length, toInsert, alreadyPresent, localSnapshot: localAssetImportSnapshot(localRows) })
       setMessage('Đã kiểm tra Local PC và Cloud. Chưa ghi dữ liệu nào lên Cloud.')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
@@ -306,6 +332,10 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
     try {
       // Re-read both sources after confirmation; the preview is not trusted as a write snapshot.
       const localRows = await db.assets.toArray()
+      if (localRows.length !== localImportPreview.total ||
+          localAssetImportSnapshot(localRows) !== localImportPreview.localSnapshot) {
+        throw new Error('Dữ liệu Local PC đã thay đổi sau bước kiểm tra. Hãy kiểm tra lại trước khi xác nhận import.')
+      }
       const { data: existing, error: readError } = await client.from('assets')
         .select('*')
         .eq('organization_id', organizationId)
@@ -330,6 +360,9 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
           throw new Error('Mã quản lý bị trùng với thiết bị Cloud khác: ' + asset.code)
         }
         rowsToImport.push(asset)
+      }
+      if (rowsToImport.length !== localImportPreview.toInsert) {
+        throw new Error('Dữ liệu Cloud đã thay đổi sau bước kiểm tra. Hãy kiểm tra lại trước khi xác nhận import.')
       }
 
       const codesNeedingCounterReview: string[] = []
