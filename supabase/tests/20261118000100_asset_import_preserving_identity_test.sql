@@ -36,6 +36,7 @@ declare
   v_admin uuid := '08f0f750-3361-4ae0-b6ed-9dc4a5b41244';
   v_technician uuid := 'e8700ff7-a642-45b8-b103-fafdb6286748';
   v_viewer uuid := 'f7425dee-0073-4bb4-9353-5385e9d64895';
+  v_no_member uuid := gen_random_uuid();
   v_asset_id uuid := gen_random_uuid();
   v_mutation_id uuid := gen_random_uuid();
   v_duplicate_mutation uuid := gen_random_uuid();
@@ -181,6 +182,23 @@ begin
     ('Viewer import denied', 'denied',
       case when v_blocked then 'denied' else 'allowed' end, v_blocked);
 
+  -- Authenticated identity without an organization membership must be denied.
+  perform set_config('request.jwt.claim.sub', v_no_member::text, true);
+  perform set_config('request.jwt.claims',
+    pg_catalog.jsonb_build_object('sub', v_no_member, 'role', 'authenticated', 'aud', 'authenticated')::text, true);
+  v_blocked := false;
+  begin
+    perform public.import_asset_preserving_identity(
+      v_org, gen_random_uuid(), 'MNA-HP01-9999999999999999997-01-05-26',
+      v_payload, gen_random_uuid()
+    );
+  exception when insufficient_privilege then
+    v_blocked := true;
+  end;
+  insert into pg_temp.asset_import_test_results values
+    ('No organization membership import denied', 'denied',
+      case when v_blocked then 'denied' else 'allowed' end, v_blocked);
+
   -- Admin creates a new asset after import; allocator must advance beyond imported sequence.
   perform set_config('request.jwt.claim.sub', v_admin::text, true);
   perform set_config('request.jwt.claims',
@@ -200,6 +218,43 @@ begin
 
 end
 $test$;
+
+reset role;
+
+-- Anonymous callers cannot execute the import RPC at all.
+do $grant_anon_temp$
+declare v_temp_schema text;
+begin
+  select nspname into v_temp_schema
+  from pg_namespace where oid = pg_my_temp_schema();
+  execute format('grant usage on schema %I to anon', v_temp_schema);
+end
+$grant_anon_temp$;
+grant insert on table pg_temp.asset_import_test_results to anon;
+set local role anon;
+
+do $anon_import_test$
+declare
+  v_blocked boolean := false;
+begin
+  perform set_config('request.jwt.claim.sub', '', true);
+  perform set_config('request.jwt.claims', '{}', true);
+  begin
+    perform public.import_asset_preserving_identity(
+      'dfb443ec-a1ee-496b-842c-0bef3f50b8ce',
+      gen_random_uuid(),
+      'MNA-HP01-9999999999999999996-01-05-26',
+      '{"name":"Anonymous import","category":"Máy nén khí","status":"Đang hoạt động","transferred_from_other_facility":false,"created_at":"2026-05-01T08:00:00Z","updated_at":"2026-05-01T08:00:00Z"}'::jsonb,
+      gen_random_uuid()
+    );
+  exception when insufficient_privilege then
+    v_blocked := true;
+  end;
+  insert into pg_temp.asset_import_test_results values
+    ('Anonymous import denied', 'denied',
+      case when v_blocked then 'denied' else 'allowed' end, v_blocked);
+end
+$anon_import_test$;
 
 reset role;
 
