@@ -1,6 +1,6 @@
 # BAOTRI – Tiến độ và các quyết định đã chốt
 
-Cập nhật: 17/11/2026 (đã bổ sung tiến độ backup và thiết kế schema cloud)
+Cập nhật: 18/11/2026 (đồng bộ bộ icon thương hiệu 247 cho BAOTRI Mini)
 
 Tài liệu này ghi lại các quyết định kiến trúc và tiến độ thực tế để tiếp tục dự án ở những cuộc làm việc sau. Khi thay đổi quyết định hoặc hoàn thành chức năng, phải cập nhật tài liệu này.
 
@@ -1694,3 +1694,23 @@ Trạng thái:
 - Bản CSS đã triển khai: trên màn hình tối đa 680px, ô nhập mã QR chiếm toàn bộ chiều ngang, cao 68px, chữ 18px; nút Tìm thiết bị rộng 100%, cao tối thiểu 54px.
 - Không có lỗi TypeScript/build/deploy được ghi nhận trong workflow #157. Tuy nhiên, **chưa nghiệm thu trực quan trên điện thoại thật**; cần người dùng mở `https://baotri.vieclamhp247.com`, tải lại trang rồi kiểm tra ô nhập mã QR.
 - Phạm vi thay đổi chỉ là giao diện mobile của ô nhập mã QR; không thay đổi logic camera, tra cứu thiết bị, Checklist, dữ liệu nghiệp vụ hoặc Supabase.
+
+
+## Đồng bộ nhận diện thương hiệu 247 cho BAOTRI Mini – 18/11/2026
+
+- Người dùng yêu cầu đồng bộ favicon của `baotri.vieclamhp247.com` với bộ nhận diện 247 mới đang dùng trên `vieclamhp247.com`.
+- Đã cập nhật trực tiếp trên repository `Vodanhhp/DuAn_BaoTRi`, nhánh `main`; phạm vi chỉ gồm favicon, Apple Touch Icon, icon cài PWA và quy trình tạo icon khi build. Không sửa chức năng nghiệp vụ, dữ liệu IndexedDB, schema/migration, Supabase hoặc giao diện ứng dụng.
+- Các thay đổi đã ghi nhận:
+  - Thêm `public/icon-247.svg` làm biểu tượng SVG chủ đạo, dùng màu xanh `#176B5C`, bạc hà `#B9D1C8` và chữ 24/7 trắng/bạc hà.
+  - Thêm `scripts/generate-brand-icons.py` để tạo bộ ảnh raster PNG/ICO thống nhất: favicon 16×16, 32×32, 48×48; favicon.ico nhiều kích thước; Apple Touch Icon 180×180; Android/PWA 192×192 và 512×512. Ảnh được tạo trong thư mục `public/` khi build, không cần lưu các bản sinh tự động vào Git.
+  - Cập nhật `index.html`: khai báo SVG favicon, PNG 48/32/16, favicon.ico và Apple Touch Icon; thêm tham số phiên bản `v=20261118` để hạn chế dùng cache icon cũ.
+  - Cập nhật `vite.config.ts`: đưa icon vào `includeAssets`, khai báo hai kích thước icon Android/PWA trong manifest và đồng bộ màu giao diện PWA sang bộ màu 247. Giữ nguyên `registerType: 'autoUpdate'`, cấu hình Workbox và các phần build còn lại.
+  - Cập nhật `.github/workflows/deploy-pages.yml`: cài Pillow và chạy script tạo icon trước bước `npm run build`, để các file được đưa vào bản build GitHub Pages.
+- Các commit trên `main`:
+  - Thêm script tạo icon: `60a077cd20ae2a63446e699b4b5d79f564a075bf`.
+  - Thêm SVG master: `27efced2c2d9919216a0b2712a1aa9ffc9037c89`.
+  - Cập nhật HTML: `e580c7b9d359e573576d55d8f7baa2cf7c9b46d6`.
+  - Cập nhật manifest PWA: `9569cbbbebe903318742de5dec3cbfe37e7ab57d`.
+  - Tích hợp tạo icon vào workflow deploy: `5f8b3752007f7df5835a81e48add7ccbf7b18853`.
+- **Trạng thái xác minh:** đã đọc lại các file trên `main` và xác nhận nội dung cấu hình đã được cập nhật. Chưa có kết quả GitHub Actions build/deploy được xác minh trong phiên này; vì vậy chưa đánh dấu triển khai website thành công và chưa xác nhận favicon đã hiển thị thực tế trên trình duyệt/điện thoại.
+- **Bước tiếp theo:** kiểm tra GitHub Actions của repository BAOTRI; nếu build/deploy thành công, mở `https://baotri.vieclamhp247.com/` và kiểm tra favicon trên trình duyệt, Apple icon/PWA trên thiết bị đã cài. Nếu icon cũ còn do cache, kiểm tra cập nhật service worker/PWA và cache trình duyệt trước khi thay đổi thêm mã nguồn.
