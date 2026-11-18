@@ -3173,3 +3173,13 @@ Kế hoạch:
 Phạm vi sửa chỉ `src/App.tsx`; không thay đổi định dạng backup hoặc các bảng khác. Cần test: backup không đổi Asset linked thì restore được; backup đổi/bỏ Asset linked thì bị chặn; có mutation chưa xử lý thì bị chặn; Asset unlinked restore như trước.
 
 Trạng thái: chưa áp dụng guard backup restore tại thời điểm ghi nhận.
+
+### 23.1 Guard backup restore đã triển khai – 19/11/2026
+
+- Commit `b59cf661b246d79156dbc4dc56a7e1d515ecc424`: thêm kiểm tra Asset Cloud-linked và mutation chưa xử lý trước khi restore.
+- Commit `88716b17206a6ae514c0f27e4f26dc85ccd5b879`: chuyển việc đọc links/mutations/current assets vào cùng Dexie read-write transaction với restore để tránh race giữa các tab.
+- Restore bị chặn nếu có mutation pending/processing/conflict, hoặc backup thiếu/thay đổi master snapshot của Asset linked/conflict.
+- Ảnh Local không nằm trong master snapshot; backup vẫn có thể cập nhật ảnh nếu hồ sơ master không đổi.
+- Hai bảng `assetCloudLinks` và `assetMutations` không bị xóa trong restore. Backup format cũ vẫn không chứa hai bảng này.
+- Asset chưa liên kết tiếp tục theo luồng restore cũ.
+- Chưa có kiểm thử runtime IndexedDB/restore trên trình duyệt; cần test thủ công sau khi build PASS.
