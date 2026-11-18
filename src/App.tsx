@@ -647,7 +647,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
   }
   const addInventoryLocation = (name: string) => {
     if (!isAdmin) return false
-    const clean = name.trim().replace(/\\s+/g,' ')
+    const clean = name.trim().replace(/\s+/g,' ')
     if (!clean) return false
     const duplicate = inventoryLocations.some(item=>item.localeCompare(clean,'vi',{sensitivity:'base'})===0)
     if (duplicate) { alert('Vị trí này đã có trong danh mục. Hãy chọn vị trí có sẵn.'); return false }
@@ -2203,7 +2203,7 @@ function ItemModal({value,close,save,isAdmin,locations,onAddLocation}:any){
     <Field label="Kích cỡ / quy cách"><input placeholder="Ví dụ: DN50, M10, 6204, 2.5 mm..." value={v.size??''} onChange={e=>set('size',e.target.value)}/></Field>
     <Field label="Đơn vị tính"><select value={v.unit} onChange={e=>set('unit',e.target.value)}>{!units.includes(v.unit)&&<option value={v.unit}>{v.unit}</option>}{units.map(x=><option key={x} value={x}>{x}</option>)}</select></Field>
     <Field label="Tồn tối thiểu">{isAdmin?<input type="number" min="0" value={v.minQuantity} onChange={e=>set('minQuantity',Number(e.target.value))}/>:<><input type="number" value={v.minQuantity} readOnly/><small className="muted">Chỉ Admin được thay đổi mức tồn tối thiểu.</small></>}</Field>
-    <Field label="Vị trí lưu kho"><select required value={v.location} onChange={e=>set('location',e.target.value)}><option value="">-- Chọn vị trí đã có --</option>{locations.map((x:string)=><option key={x} value={x}>{x}</option>)}{v.location&&!locations.includes(v.location)&&<option value={v.location}>{v.location} · vị trí cũ</option>}</select>{isAdmin&&<div className="inline-location-add"><input value={newLocation} onChange={e=>setNewLocation(e.target.value)} placeholder="Thêm vị trí mới, ví dụ: Tầng 1 - Kệ A"/><button type="button" className="soft-btn" onClick={()=>{if(onAddLocation(newLocation)){set('location',newLocation.trim().replace(/\\s+/g,' '));setNewLocation('')}}}>Thêm vào danh mục</button></div>}</Field><Field label="Nhà cung cấp"><input value={v.supplier} onChange={e=>set('supplier',e.target.value)}/></Field>
+    <Field label="Vị trí lưu kho"><select required value={v.location} onChange={e=>set('location',e.target.value)}><option value="">-- Chọn vị trí đã có --</option>{locations.map((x:string)=><option key={x} value={x}>{x}</option>)}{v.location&&!locations.includes(v.location)&&<option value={v.location}>{v.location} · vị trí cũ</option>}</select>{isAdmin&&<div className="inline-location-add"><input value={newLocation} onChange={e=>setNewLocation(e.target.value)} placeholder="Thêm vị trí mới, ví dụ: Tầng 1 - Kệ A"/><button type="button" className="soft-btn" onClick={()=>{if(onAddLocation(newLocation)){set('location',newLocation.trim().replace(/\s+/g,' '));setNewLocation('')}}}>Thêm vào danh mục</button></div>}</Field><Field label="Nhà cung cấp"><input value={v.supplier} onChange={e=>set('supplier',e.target.value)}/></Field>
     <div className="modal-actions"><button type="button" className="soft-btn" onClick={close}>Hủy</button><button className="primary-btn"><Check size={16}/> {isNew?'Thêm vật tư':'Lưu thông tin'}</button></div>
   </form></Modal>
 }
