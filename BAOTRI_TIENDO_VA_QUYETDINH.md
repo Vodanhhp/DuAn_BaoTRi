@@ -2121,3 +2121,18 @@ assets.images hiện là dữ liệu ảnh local; adapter Cloud trả images r�
 - Chưa tạo SQL migration cho RPC/ledger/change feed; chưa sửa grants/RLS; chưa bật worker; không chạy SQL và không ghi dữ liệu lên Supabase Test/Production.
 
 **Bước tiếp theo:** review extension/hash và quan hệ FK/delete, quyền pull; sau đó mới tạo SQL draft cho idempotency và change feed trong `supabase/drafts/`.
+
+
+---
+
+# REVIEW HASH / FK / DELETE SEMANTICS – 18/11/2026
+
+- Tạo `supabase/CLOUD_DELETE_AND_HASH_PREREQUISITES.md`, commit `f8f9183809e0e4ace6aa55e40a5bcac2686d17cc`.
+- Repository chưa khai báo pgcrypto hoặc hàm digest SHA-256. Chưa thể kết luận extension chưa bật trên Supabase runtime; cần kiểm tra metadata Test trước khi chọn cách hash. Không dùng MD5 thay thế.
+- Review FK từ migration 002: assets được tasks, plans, checklist templates/results, logs, movements, asset_images tham chiếu; inventory_items được movements tham chiếu; tasks được logs tham chiếu; template/version được result tham chiếu. Nhiều FK ON DELETE RESTRICT.
+- Kết luận: không đổi FK sang CASCADE; không hard-delete thiết bị/vật tư/công việc/template có lịch sử. Phải phân biệt lưu kho, ngừng hoạt động, xóa logic và tombstone đồng bộ. `archived_at` không thể thay thế `deleted_at`.
+- RPC `create_asset_with_code` hiện chưa idempotent: retry sau commit có thể lỗi duplicate ID và không được tăng sequence/cấp mã lần hai. Khi thêm ledger, ledger + cấp counter + insert asset phải cùng transaction.
+- Chưa tạo SQL migration cho ledger/change feed/delete; chưa chạy SQL hoặc truy vấn database runtime; không thay đổi Test/Production.
+- Workflow #185 (run ID `44235551185`, commit `ee4160b2d9b93694c84c63d68ee635776ebabb78`) đã success. Workflow cho commit tài liệu tiếp theo đang chạy/đợi queue, cần kiểm tra trước khi xác nhận deploy.
+
+**Bước kế tiếp:** tiếp tục rà soát delete/archive/restore ở UI và semantics nghiệp vụ; sau đó chuẩn bị danh sách truy vấn chỉ đọc để người vận hành kiểm tra extension/hash trên Test. Chưa viết migration phụ thuộc extension cho đến khi có kết quả xác minh.
