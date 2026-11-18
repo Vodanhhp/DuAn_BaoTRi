@@ -115,6 +115,51 @@ export async function releaseAssetEditLock(
   return requireRpcData<boolean>(data, error, 'Không thể giải phóng khóa thiết bị')
 }
 
+type AssetRow = {
+  id: string
+  code: string
+  name: string
+  category: string
+  brand: string
+  model: string
+  serial: string
+  location: string
+  commissioned_at: string | null
+  power: string
+  cycle: string
+  cycle_started_at: string | null
+  transferred_from_other_facility: boolean
+  status: Asset['status']
+  notes: string
+  archived_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+function fromAssetRow(row: AssetRow): Asset {
+  return {
+    id: row.id,
+    code: row.code,
+    name: row.name,
+    category: row.category,
+    brand: row.brand ?? '',
+    model: row.model ?? '',
+    serial: row.serial ?? '',
+    location: row.location ?? '',
+    commissionedAt: row.commissioned_at ?? '',
+    power: row.power ?? '',
+    cycle: row.cycle ?? '',
+    cycleStartedAt: row.cycle_started_at ?? undefined,
+    transferredFromOtherFacility: row.transferred_from_other_facility,
+    status: row.status,
+    notes: row.notes ?? '',
+    images: [],
+    archivedAt: row.archived_at ?? undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  }
+}
+
 export async function updateAssetWithEditLock(
   client: SupabaseClient,
   organizationId: string,
@@ -138,7 +183,7 @@ export async function updateAssetWithEditLock(
     p_status: asset.status,
     p_notes: asset.notes ?? ''
   })
-  return requireRpcData<Asset>(data, error, 'Không thể cập nhật thiết bị')
+  return fromAssetRow(requireRpcData<AssetRow>(data, error, 'Không thể cập nhật thiết bị'))
 }
 
 export async function setAssetArchivedWithEditLock(
@@ -154,5 +199,5 @@ export async function setAssetArchivedWithEditLock(
     p_lock_token: lockToken,
     p_archived: archived
   })
-  return requireRpcData<Asset>(data, error, 'Không thể thay đổi trạng thái lưu kho thiết bị')
+  return fromAssetRow(requireRpcData<AssetRow>(data, error, 'Không thể thay đổi trạng thái lưu kho thiết bị'))
 }
