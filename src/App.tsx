@@ -230,7 +230,8 @@ const dateTimeText = (s?: string) => s ? new Date(s).toLocaleString('vi-VN') : '
 
 type EmployeeProfile = { fullName: string; phone: string; dateOfBirth: string; position: string }
 
-function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, organizationId, organizationName, organizationRole, cloudClient }: {
+function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onSignOut, organizationId, organizationName, organizationRole, cloudClient }: {
+  userId: string
   userName: string
   userEmail: string
   profile: EmployeeProfile
@@ -634,7 +635,12 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
         const cycleStartedAt = a.cycle
           ? (previousAsset?.cycle === a.cycle ? (previousAsset.cycleStartedAt || undefined) : today())
           : undefined
-        const saved: Asset = { ...a, code, cycleStartedAt, images: a.images ?? [], updatedAt: now() }
+        const saved: Asset = {
+          ...a, code, cycleStartedAt, images: a.images ?? [], updatedAt: now(),
+          identityStatus: previousAsset?.identityStatus ?? 'legacy',
+          createdByLabel: previousAsset?.createdByLabel ?? (isNew ? (userName.trim() || userEmail) : undefined),
+          createdByUserId: previousAsset?.createdByUserId ?? (isNew ? userId : undefined)
+        }
         await db.assets.put(saved)
         await queueChange('assets', saved.id)
         return saved
@@ -666,7 +672,14 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
     if (blockViewer('thêm hoặc sửa vật tư')) return
     const existing = await db.inventory.get(i.id)
     // Tồn kho chỉ thay đổi qua Nhập/Xuất; tồn tối thiểu chỉ Admin được cập nhật.
-    const value = { ...i, quantity: existing?.quantity ?? 0, minQuantity: isAdmin ? i.minQuantity : (existing?.minQuantity ?? 0), location: inventoryLocationEnabled ? i.location : '', updatedAt: now() }
+    const value: InventoryItem = {
+      ...i, quantity: existing?.quantity ?? 0,
+      minQuantity: isAdmin ? i.minQuantity : (existing?.minQuantity ?? 0),
+      location: inventoryLocationEnabled ? i.location : '', updatedAt: now(),
+      identityStatus: existing?.identityStatus ?? 'legacy',
+      createdByLabel: existing?.createdByLabel ?? (!existing ? (userName.trim() || userEmail) : undefined),
+      createdByUserId: existing?.createdByUserId ?? (!existing ? userId : undefined)
+    }
     await putAndQueue(db.inventory, 'inventory', value); setModal(null); setEditingItem(null); flash(existing ? 'Đã cập nhật thông tin vật tư' : 'Đã thêm vật tư (tồn ban đầu = 0)')
   }
   const saveTask = async (t: Task) => {
@@ -951,7 +964,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
   const backup = async () => {
     if (blockViewer('sao lưu dữ liệu')) return
     const data = {
-      backupVersion: 2,
+      backupVersion: 3,
       exportedAt: now(),
       database: 'baotri-local-v1',
       assets: await db.assets.toArray(),
@@ -996,8 +1009,8 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
           db.movements.clear(), db.maintenancePlans.clear(), db.checklistTemplates.clear(),
           db.checklistVersions.clear(), db.checklistResults.clear(), db.syncQueue.clear()
         ])
-        await db.assets.bulkPut(data.assets ?? [])
-        await db.inventory.bulkPut(data.inventory ?? [])
+        await db.assets.bulkPut((data.assets ?? []).map((asset: Asset) => ({ ...asset, identityStatus: asset.identityStatus ?? 'legacy' })))
+        await db.inventory.bulkPut((data.inventory ?? []).map((item: InventoryItem) => ({ ...item, identityStatus: item.identityStatus ?? 'legacy' })))
         await db.tasks.bulkPut(data.tasks ?? [])
         await db.logs.bulkPut(data.logs ?? [])
         await db.movements.bulkPut(data.movements ?? [])
@@ -2506,6 +2519,7 @@ export default function App() {
     organizationId={organizationContext.id}
     organizationName={organizationContext.name}
     organizationRole={organizationContext.role}
+    userId={session.user.id}
     userName={userName}
     userEmail={userEmail}
     profile={profile}
