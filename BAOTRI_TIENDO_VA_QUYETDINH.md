@@ -2806,3 +2806,36 @@ Lý do cần receipt: nếu Cloud commit thành công nhưng response bị mất
 - Không mở rộng qua xóa thiết bị hoặc các bảng nghiệp vụ khác.
 
 CI: run #310 cho commit 8b26aae3d1728e2f4f92ce6b240ab60a9a81afd7 completed/success. CI chỉ xác nhận workflow/build; không kiểm thử SQL hoặc runtime hai nền tảng.
+
+
+### TRIỂN KHAI ĐỢT 1 – BIÊN NHẬN IDEMPOTENCY CHO HỒ SƠ THIẾT BỊ (18/11/2026)
+
+Đã bắt đầu triển khai theo lát nhỏ, chỉ thêm nền tảng RPC/biên nhận; chưa nối vào luồng Local UI và chưa bật sync.
+
+#### File mới/sửa
+- Mới: supabase/migrations/20261118000300_asset_mutation_receipts.sql (Migration 017).
+- Mới: supabase/tests/20261118000300_asset_mutation_receipts_test.sql.
+- Sửa: src/lib/assetEditLocks.ts – thêm applyAssetMutationWithEditLock(...).
+
+#### Nội dung Migration 017
+- Bảng asset_mutation_receipts lưu mutationId, organization, asset, user, expected Cloud version, payload và snapshot kết quả.
+- Client không được truy cập trực tiếp bảng receipt.
+- RPC apply_asset_mutation_with_lock:
+  - xác thực permission assets.update;
+  - kiểm tra receipt trước để khôi phục kết quả khi response cũ bị mất;
+  - khóa lease row, kiểm tra token và hạn lease;
+  - khóa asset row, so sánh updated_at với expectedCloudUpdatedAt;
+  - cập nhật hồ sơ và ghi receipt trong cùng transaction;
+  - từ chối dùng lại mutationId với payload khác hoặc từ user/asset khác.
+- Payload dùng chung cho sửa hồ sơ, thay đổi trạng thái, lưu kho/khôi phục; tránh nhiều đường cập nhật Local bỏ qua kiểm soát.
+
+#### Client helper
+- applyAssetMutationWithEditLock gửi đúng mutationId, token, expected Cloud version và snapshot hồ sơ.
+- Helper chỉ là hàm chưa được gọi từ App.tsx; không thay đổi hành vi ứng dụng hiện tại.
+
+#### Trạng thái kiểm thử
+- Chưa chạy Migration 017 hoặc SQL test 017 trên Supabase. Người dùng vẫn là người thực thi SQL trên BAOTRI-Mini-Test.
+- SQL test 017 được viết cho: receipt replay, payload mismatch, replay khác user, stale Cloud version, wrong token, archive field và quyền đọc bảng receipt.
+- CI run #312 (commit tạo migration ban đầu) completed/success; CI không thực thi PostgreSQL. Các run #313–#315 bị cancelled khi commit mới thay thế. Run #316 cho client helper đang in_progress tại thời điểm ghi.
+- Chưa tích hợp helper vào App.tsx; chưa thêm bảng assetSyncState; chưa chặn UI Local; chưa bật sync worker.
+- Migration 017 chỉ được xem là bản đề xuất cho Test sau khi review SQL test và chờ người dùng chạy thủ công; tuyệt đối chưa áp dụng Production.
