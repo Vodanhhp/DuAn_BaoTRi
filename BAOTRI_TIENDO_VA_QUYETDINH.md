@@ -2603,3 +2603,14 @@ Trước khi nối Local-first, xử lý riêng màn hình Cloud hiện có đ�
 - Khi Migration 016 chưa được áp dụng, màn hình Cloud vẫn đọc danh sách, nhưng các thao tác sửa/lưu kho/khôi phục bị chặn vì không thể xác nhận lease. Đây là fail-closed có chủ đích.
 
 **Bước tiếp theo:** rà soát SQL Migration 016 và SQL test để chuẩn bị cho người dùng tự chạy trên BAOTRI-Mini-Test; sau khi SQL test PASS mới kiểm thử CloudAssetsPanel. Tiếp đó thiết kế mapping thiết bị Local ↔ Cloud và đưa lease vào Local-first; không bật đồng bộ tổng thể.
+
+
+### RÀ SOÁT TƯƠNG THÍCH MIGRATION 016 VỚI BỘ TEST BẢO MẬT CŨ (18/11/2026)
+
+Phát hiện trước khi cho chạy Migration 016: migration thu hồi quyền UPDATE trực tiếp bảng `assets` của authenticated. Vì vậy ba test bảo mật cũ 008, 010, 011 đang chạy câu UPDATE trực tiếp để chứng minh RLS trả 0 dòng; sau Migration 016, các câu lệnh này có thể ném lỗi thiếu SQL privilege và làm test dừng giữa chừng.
+
+Quyết định:
+- Sửa ba test 008/010/011 theo hướng tương thích cả trước và sau Migration 016: chấp nhận hai kết quả an toàn tương đương là UPDATE bị SQL privilege chặn hoặc RLS trả 0 dòng; không cho phép có dòng bị thay đổi.
+- Test 016 riêng sẽ kiểm tra đường update mới: chỉ RPC `update_asset_with_lock` với lease/token đúng mới được ghi.
+- Bổ sung test token cũ không thể ghi sau khi lease hết hạn và nền tảng khác đã nhận khóa; bổ sung kiểm tra archive/restore qua lease.
+- Không thay đổi dữ liệu Test/Production; chỉ cập nhật file test SQL.
