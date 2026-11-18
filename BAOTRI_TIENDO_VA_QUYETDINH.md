@@ -3157,3 +3157,19 @@ Trạng thái: chưa áp dụng guard tại thời điểm ghi nhận.
 - Checklist, công việc bảo trì và nhật ký không bị chặn bởi guard này.
 - Guard là biện pháp tạm thời phía Local, không thay thế lease/RPC server. Khi Local lease + receipt hoàn tất, phải thay guard bằng luồng khóa Cloud và biên nhận.
 - Chưa xác nhận build; GitHub Actions của commit mới nhất đang chờ.
+
+## 23. Guard thao tác khôi phục backup đối với Asset đã liên kết (19/11/2026)
+
+Rà soát thêm phát hiện `applyRestore()` thay thế toàn bộ Asset bằng backup và không đi qua các handler sửa/lưu kho/khôi phục thông thường. Đây là đường có thể ghi đè hoặc loại bỏ Asset đã liên kết Cloud, đi vòng qua guard mới.
+
+Kế hoạch:
+- Trước khi restore, kiểm tra mọi Asset có `assetCloudLinks`.
+- Chỉ cho phép restore nếu backup vẫn có đủ các Asset đã liên kết và snapshot master data của chúng giống hệt dữ liệu Local hiện tại (bao gồm UUID/code/category, hồ sơ, trạng thái, archivedAt, createdAt/updatedAt; ảnh local không thuộc snapshot master).
+- Nếu backup thiếu hoặc thay đổi bất kỳ Asset đã liên kết nào, dừng toàn bộ restore; không ghi một phần.
+- Nếu `assetMutations` có trạng thái pending/processing/conflict, chặn restore để không làm mất dấu giao dịch chưa được xác nhận/giải quyết.
+- Không xóa mapping hoặc mutation ledger trong restore. Các bảng mới không nằm trong backup cũ và phải được giữ nguyên.
+- Backup/restore vẫn có thể thao tác các Asset chưa liên kết và các bảng nghiệp vụ khác theo luồng hiện có.
+
+Phạm vi sửa chỉ `src/App.tsx`; không thay đổi định dạng backup hoặc các bảng khác. Cần test: backup không đổi Asset linked thì restore được; backup đổi/bỏ Asset linked thì bị chặn; có mutation chưa xử lý thì bị chặn; Asset unlinked restore như trước.
+
+Trạng thái: chưa áp dụng guard backup restore tại thời điểm ghi nhận.
