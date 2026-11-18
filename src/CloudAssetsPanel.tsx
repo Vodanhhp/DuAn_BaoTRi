@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { db, type Asset } from './db'
 import {
-  createCloudAsset, getCloudAssetCodeConfig, listCloudAssets, saveCloudAssetCodeConfig,
+  createCloudAsset, getCloudAssetCodeConfig, importCloudAssetPreservingIdentity, listCloudAssets, saveCloudAssetCodeConfig,
   setCloudAssetArchived, updateCloudAsset, type AssetCodeConfig
 } from './lib/assetsCloud'
 
@@ -42,6 +42,35 @@ const entriesToMap = (entries: CodeEntry[], label: string, maxLength: number, re
   return result
 }
 
+const sameTimestamp = (left?: string | null, right?: string | null): boolean => {
+  if (!left && !right) return true
+  if (!left || !right) return false
+  const leftTime = Date.parse(left)
+  const rightTime = Date.parse(right)
+  return Number.isFinite(leftTime) && Number.isFinite(rightTime) && leftTime === rightTime
+}
+
+const localAssetMatchesCloud = (asset: Asset, row: Record<string, unknown>): boolean =>
+  row.id === asset.id &&
+  row.code === asset.code &&
+  row.name === asset.name &&
+  row.category === asset.category &&
+  (row.brand ?? '') === (asset.brand ?? '') &&
+  (row.model ?? '') === (asset.model ?? '') &&
+  (row.serial ?? '') === (asset.serial ?? '') &&
+  (row.location ?? '') === (asset.location ?? '') &&
+  (row.commissioned_at ?? null) === (asset.commissionedAt || null) &&
+  (row.power ?? '') === (asset.power ?? '') &&
+  (row.cycle ?? '') === (asset.cycle ?? '') &&
+  (row.cycle_started_at ?? null) === (asset.cycleStartedAt || null) &&
+  Boolean(row.transferred_from_other_facility) === Boolean(asset.transferredFromOtherFacility) &&
+  row.status === asset.status &&
+  (row.notes ?? '') === (asset.notes ?? '') &&
+  sameTimestamp(row.archived_at as string | null | undefined, asset.archivedAt || null) &&
+  sameTimestamp(row.created_at as string | null | undefined, asset.createdAt) &&
+  sameTimestamp(row.updated_at as string | null | undefined, asset.updatedAt)
+
+
 export default function CloudAssetsPanel({ client, organizationId, organizationName, organizationRole, onBack }: Props) {
   const [assets, setAssets] = useState<Asset[]>([])
   const [loading, setLoading] = useState(true)
@@ -61,6 +90,7 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
   const [busyAssetId, setBusyAssetId] = useState('')
   const [canUpdateAssets, setCanUpdateAssets] = useState(false)
   const [canCreateAssets, setCanCreateAssets] = useState(false)
+  const [canImportAssets, setCanImportAssets] = useState(false)
   const [canManageSettings, setCanManageSettings] = useState(false)
   const [permissionsLoading, setPermissionsLoading] = useState(true)
   const [localImportPreview, setLocalImportPreview] = useState<{ total: number; toInsert: number; alreadyPresent: number } | null>(null)
@@ -112,23 +142,27 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
     const loadPermissions = async () => {
       setPermissionsLoading(true)
       try {
-        const [updateResult, createResult, settingsResult] = await Promise.all([
+        const [updateResult, createResult, importResult, settingsResult] = await Promise.all([
           client.rpc('has_org_permission', { p_organization_id: organizationId, p_permission_code: 'assets.update' }),
           client.rpc('has_org_permission', { p_organization_id: organizationId, p_permission_code: 'assets.create' }),
+          client.rpc('has_org_permission', { p_organization_id: organizationId, p_permission_code: 'assets.import' }),
           client.rpc('has_org_permission', { p_organization_id: organizationId, p_permission_code: 'settings.manage' })
         ])
         if (updateResult.error) throw updateResult.error
         if (createResult.error) throw createResult.error
+        if (importResult.error) throw importResult.error
         if (settingsResult.error) throw settingsResult.error
         if (active) {
           setCanUpdateAssets(updateResult.data === true)
           setCanCreateAssets(createResult.data === true)
+          setCanImportAssets(importResult.data === true)
           setCanManageSettings(settingsResult.data === true)
         }
       } catch (cause) {
         if (active) {
           setCanUpdateAssets(false)
           setCanCreateAssets(false)
+          setCanImportAssets(false)
           setCanManageSettings(false)
           setError('Không xác định được quyền thao tác thiết bị từ Supabase: ' + (cause instanceof Error ? cause.message : String(cause)))
         }
@@ -222,25 +256,35 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
           throw new Error('Có thiết bị Local thiếu UUID, mã quản lý, tên hoặc nhóm thiết bị. Không thể đồng bộ an toàn.')
         }
         if (localIds.has(asset.id)) throw new Error('Local có UUID thiết bị bị trùng: ' + asset.id)
-        if (localCodes.has(asset.code.trim())) throw new Error('Local có mã quản lý bị trùng: ' + asset.code)
+        if (localCodes.has(asset.code)) throw new Error('Local có mã quản lý bị trùng: ' + asset.code)
         localIds.add(asset.id)
-        localCodes.add(asset.code.trim())
+        localCodes.add(asset.code)
       }
-      const { data, error } = await client.from('assets').select('id,code').eq('organization_id', organizationId)
+      const { data, error } = await client.from('assets')
+        .select('*')
+        .eq('organization_id', organizationId)
       if (error) throw new Error('Không thể kiểm tra thiết bị hiện có trên Cloud: ' + error.message)
-      const cloudById = new Map((data ?? []).map((row: { id: string; code: string }) => [row.id, row.code]))
-      const cloudByCode = new Map((data ?? []).map((row: { id: string; code: string }) => [row.code, row.id]))
+      const cloudRows = (data ?? []) as unknown as Record<string, unknown>[]
+      const cloudById = new Map(cloudRows.map(row => [String(row.id), row]))
+      const cloudByCode = new Map(cloudRows.map(row => [String(row.code), String(row.id)]))
       let alreadyPresent = 0
       let toInsert = 0
       for (const asset of localRows) {
-        const existingCode = cloudById.get(asset.id)
-        const existingId = cloudByCode.get(asset.code.trim())
-        if (existingCode !== undefined) {
-          if (existingCode !== asset.code.trim()) throw new Error('UUID đã tồn tại trên Cloud nhưng mã quản lý khác: ' + asset.code)
+        const existing = cloudById.get(asset.id)
+        const existingId = cloudByCode.get(asset.code)
+        if (existing) {
+          if (existing.code !== asset.code) {
+            throw new Error('UUID đã tồn tại trên Cloud nhưng mã quản lý khác: ' + asset.code)
+          }
+          if (!localAssetMatchesCloud(asset, existing)) {
+            throw new Error('Thiết bị đã có đúng UUID/mã trên Cloud nhưng nội dung khác Local: ' + asset.code + '. Không tự ghi đè.')
+          }
           alreadyPresent++
           continue
         }
-        if (existingId !== undefined && existingId !== asset.id) throw new Error('Mã quản lý đã thuộc UUID khác trên Cloud: ' + asset.code)
+        if (existingId !== undefined && existingId !== asset.id) {
+          throw new Error('Mã quản lý đã thuộc UUID khác trên Cloud: ' + asset.code)
+        }
         toInsert++
       }
       setLocalImportPreview({ total: localRows.length, toInsert, alreadyPresent })
@@ -258,39 +302,50 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
     setImportingLocalAssets(true)
     setError('')
     setMessage('')
+    let importedCount = 0
     try {
+      // Re-read both sources after confirmation; the preview is not trusted as a write snapshot.
       const localRows = await db.assets.toArray()
-      const { data: existing, error: readError } = await client.from('assets').select('id,code').eq('organization_id', organizationId)
+      const { data: existing, error: readError } = await client.from('assets')
+        .select('*')
+        .eq('organization_id', organizationId)
       if (readError) throw new Error('Không thể kiểm tra lại Cloud trước khi ghi: ' + readError.message)
-      const cloudById = new Map((existing ?? []).map((row: { id: string; code: string }) => [row.id, row.code]))
-      const cloudByCode = new Map((existing ?? []).map((row: { id: string; code: string }) => [row.code, row.id]))
-      const rowsToInsert = localRows.filter(asset => {
-        const sameCode = cloudById.get(asset.id)
-        if (sameCode !== undefined) {
-          if (sameCode !== asset.code.trim()) throw new Error('UUID đã có trên Cloud nhưng mã quản lý không khớp: ' + asset.code)
-          return false
+      const cloudRows = (existing ?? []) as unknown as Record<string, unknown>[]
+      const cloudById = new Map(cloudRows.map(row => [String(row.id), row]))
+      const cloudByCode = new Map(cloudRows.map(row => [String(row.code), String(row.id)]))
+      const rowsToImport: Asset[] = []
+      for (const asset of localRows) {
+        const existingRow = cloudById.get(asset.id)
+        const existingId = cloudByCode.get(asset.code)
+        if (existingRow) {
+          if (existingRow.code !== asset.code) {
+            throw new Error('UUID đã có trên Cloud nhưng mã quản lý không khớp: ' + asset.code)
+          }
+          if (!localAssetMatchesCloud(asset, existingRow)) {
+            throw new Error('Thiết bị Cloud đã tồn tại nhưng nội dung khác Local: ' + asset.code + '. Không tự ghi đè.')
+          }
+          continue
         }
-        const otherId = cloudByCode.get(asset.code.trim())
-        if (otherId !== undefined && otherId !== asset.id) throw new Error('Mã quản lý bị trùng với thiết bị Cloud khác: ' + asset.code)
-        return true
-      }).map(asset => ({
-        id: asset.id, organization_id: organizationId, code: asset.code.trim(),
-        name: asset.name.trim(), category: asset.category.trim(), brand: asset.brand ?? '',
-        model: asset.model ?? '', serial: asset.serial ?? '', location: asset.location ?? '',
-        commissioned_at: asset.commissionedAt || null, power: asset.power ?? '', cycle: asset.cycle ?? '',
-        cycle_started_at: asset.cycleStartedAt || null,
-        transferred_from_other_facility: Boolean(asset.transferredFromOtherFacility),
-        status: asset.status, notes: asset.notes ?? '', archived_at: asset.archivedAt || null,
-        created_at: asset.createdAt, updated_at: asset.updatedAt
-      }))
-      if (rowsToInsert.length) {
-        const { error: insertError } = await client.from('assets').insert(rowsToInsert)
-        if (insertError) throw new Error('Cloud từ chối ghi thiết bị: ' + insertError.message)
+        if (existingId !== undefined && existingId !== asset.id) {
+          throw new Error('Mã quản lý bị trùng với thiết bị Cloud khác: ' + asset.code)
+        }
+        rowsToImport.push(asset)
       }
+
+      for (let index = 0; index < rowsToImport.length; index++) {
+        const asset = rowsToImport[index]
+        await importCloudAssetPreservingIdentity(client, organizationId, asset)
+        importedCount++
+        setMessage('Đang nhập thiết bị ' + importedCount + '/' + rowsToImport.length + ': ' + asset.code)
+      }
+
       await load()
       setLocalImportPreview(null)
-      setMessage('Đã đồng bộ ' + rowsToInsert.length + ' thiết bị từ Local PC lên Cloud. UUID và mã quản lý được giữ nguyên. Ảnh thiết bị chưa đồng bộ.')
+      setMessage('Đã nhập ' + importedCount + ' thiết bị từ Local PC lên Cloud. UUID và mã quản lý được giữ nguyên; ảnh thiết bị chưa đồng bộ.')
     } catch (cause) {
+      if (importedCount > 0) {
+        setMessage('Đã nhập ' + importedCount + ' thiết bị trước khi gặp lỗi. Hãy kiểm tra lại dữ liệu; lần chạy tiếp theo sẽ bỏ qua các thiết bị đã nhập chính xác.')
+      }
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
       setImportingLocalAssets(false)
@@ -339,7 +394,7 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
     {message && <div className="form-hint" role="status">{message}</div>}
     {error && <div className="form-hint warning-hint" role="alert">{error}</div>}
 
-    {canCreateAssets && !permissionsLoading && <div className="panel" style={{ margin: '12px 0', padding: 14 }}>
+    {canImportAssets && !permissionsLoading && <div className="panel" style={{ margin: '12px 0', padding: 14 }}>
       <h3>Đồng bộ thiết bị từ Local PC lên Cloud</h3>
       <p className="muted">Chỉ lấy thiết bị trên máy đang mở ứng dụng. Giữ nguyên UUID và mã quản lý Local; không tạo mã mới, không đồng bộ vật tư hoặc phân hệ khác. Ảnh thiết bị chưa được đưa lên Storage.</p>
       <div className="asset-photo-actions" style={{ flexWrap: 'wrap' }}>
