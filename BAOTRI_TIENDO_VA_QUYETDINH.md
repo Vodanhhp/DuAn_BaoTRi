@@ -3127,3 +3127,8 @@ Thêm hai bảng riêng, không thay đổi bảng `syncQueue` và không chạy
 - GitHub Actions cho commit `f5cd368` đang pending tại thời điểm ghi nhận; chưa xác nhận build PASS. Run trước đó cho commit `c7bbf60` đang in progress.
 - Lưu ý: import RPC ledger ràng buộc mutation với actor. Giai đoạn hiện tại đang dùng một Auth account như quyết định trước; nếu sau này cho nhiều Admin import cùng organization, cần đánh giá lại luồng retry/mutation ID theo actor trước khi mở rộng.
 
+### 21.7 Hoàn thiện thông báo và đếm import – 19/11/2026
+
+- Commit `e7b66179e0af33a181ae3cc98323d3d3514022bd`: chỉnh thông báo Cloud panel theo đúng vai trò chỉ xem (không còn nói người dùng bị cấm thao tác sửa/lưu kho vốn đã bỏ khỏi UI); bộ đếm Asset mới thêm Cloud không tính nhầm trường hợp RPC trả về đã tồn tại do chạy đua hoặc retry.
+- Đây là chỉnh sửa giao diện/thông báo; không thay đổi hợp đồng RPC hoặc dữ liệu.
+- Chờ GitHub Actions của commit mới nhất kết thúc để xác nhận build.
