@@ -3340,3 +3340,24 @@ Trước khi sửa ứng dụng, đã đọc lại phiên bản mới nhất tr�
 - Lát đầu không xử lý tự động pending mutation sau khi reload vì client không lưu token và hiện chưa có RPC tra receipt không cần token. Giữ pending và chặn sửa tiếp an toàn hơn tự xin lease mới.
 - Không đánh dấu runtime hai nền tảng PASS chỉ qua build. Cần test thủ công trên hai phiên sau khi có code.
 
+
+
+
+## 25. Tích hợp Local Asset lease + receipt – code lát đầu (19/11/2026)
+
+Đã cập nhật trực tiếp trên `main`:
+
+- Commit `189cb65aa54108691f5d2fa17a7e176af906d159`: tích hợp trong `src/App.tsx`:
+  - Nút Sửa từ danh sách và từ màn hình chi tiết đều đi qua `openAssetEditor()`.
+  - Asset chưa mapping giữ luồng Local cũ.
+  - Asset mapped phải có link `linked`, không có mutation unresolved; ứng dụng acquire lease, đọc Cloud row sau acquire và kiểm tra đúng organization + UUID + code + `updated_at` bằng link version trước khi mở form.
+  - Heartbeat 30 giây; sự kiện offline hoặc heartbeat thất bại làm lease Local mất hiệu lực và chặn Save.
+  - Khi Save Asset mapped: Local Asset + mutation snapshot được ghi trong cùng Dexie transaction; gọi `applyAssetMutationWithEditLock()`; chỉ khi RPC receipt hợp lệ mới cập nhật mutation `applied` + Cloud version trong link và giải phóng lease.
+  - Không gọi `queueChange('assets', ...)` cho Asset mapped trong luồng Save mới. Asset chưa mapped vẫn dùng Local queue hiện tại.
+  - Archive/restore/status của Asset mapped vẫn bị chặn vì chưa tích hợp qua receipt RPC; Checklist/bảo trì không đổi.
+- Commit `ef1b14fb66124572b62675cb9bc85068e88d6c3f`: sửa đóng form để không giải phóng lease khi mutation còn pending/processing/conflict. Nếu lease đã mất, client không gửi release bằng token cũ.
+- Lease token chỉ ở React state; không ghi vào Dexie/localStorage/syncQueue.
+- Nếu RPC timeout/lỗi sau khi Local commit, mutation giữ nguyên ID/payload và trạng thái pending; form tiếp tục giữ lease để retry đúng mutation. Khi reload, mutation unresolved bị chặn fail-closed vì hiện chưa có RPC tra receipt độc lập với token; không tự cấp token mới để gửi lại.
+- Chưa sửa `src/db.ts`, không thêm migration, không thay đổi SQL/RLS, không bật worker hoặc đồng bộ Checklist/bảo trì.
+- GitHub Actions run #352 cho commit `ef1b14fb66124572b62675cb9bc85068e88d6c3f` đang in progress tại thời điểm ghi nhận; chưa kết luận build PASS.
+- Chưa kiểm thử runtime trên hai phiên PC/Mobile; chưa tuyên bố luồng tích hợp hoàn tất. Cần đợi CI rồi mới test trên BAOTRI-Mini-Test.
