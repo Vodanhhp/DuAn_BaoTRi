@@ -275,8 +275,17 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
         return
       }
       setEditLease(result.lease)
+      setLocks(current => ({ ...current, [asset.id]: {
+        asset_id: result.lease.asset_id,
+        holder_user_id: result.lease.holder_user_id,
+        holder_device_id: result.lease.holder_device_id,
+        holder_label: result.lease.holder_label,
+        acquired_at: result.lease.acquired_at,
+        expires_at: result.lease.expires_at
+      } }))
       setEditLeaseLost(false)
       setEditDraft({ ...asset })
+      void refreshLocks()
       setShowConfig(false)
       setShowCreate(false)
     } catch (cause) {
