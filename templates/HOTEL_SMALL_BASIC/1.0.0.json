@@ -1,0 +1,1307 @@
+{
+  "manifest": {
+    "packageId": "HOTEL_SMALL_BASIC",
+    "packageVersion": "1.0.0",
+    "schemaVersion": 1,
+    "status": "released",
+    "publishedAt": "2026-11-18T00:00:00Z",
+    "compatibility": {
+      "minAppVersion": "1.0.0",
+      "requiredCapabilities": [
+        "asset-checklist",
+        "inventory-basic"
+      ]
+    },
+    "releaseNotes": [
+      "Bản mẫu tham chiếu cho nhà nghỉ và khách sạn nhỏ."
+    ]
+  },
+  "profile": {
+    "modelCode": "HOTEL_SMALL_BASIC",
+    "name": "Nhà nghỉ – Khách sạn nhỏ",
+    "description": "Mô hình bảo trì cơ bản cho một cơ sở lưu trú nhỏ, một kho chung.",
+    "industryCode": "LODGING",
+    "sizeCode": "SMALL",
+    "maintenanceLevelCode": "BASIC",
+    "tags": [
+      "HOTEL",
+      "GUESTHOUSE",
+      "LODGING"
+    ],
+    "recommendedFor": "Nhà nghỉ, khách sạn nhỏ có đội kỹ thuật nội bộ gọn nhẹ."
+  },
+  "packages": {
+    "modules": [
+      {
+        "moduleCode": "DASHBOARD",
+        "enabledByDefault": true,
+        "required": true,
+        "optional": false,
+        "menuItems": [
+          {
+            "menuCode": "OVERVIEW",
+            "label": "Tổng quan",
+            "order": 1,
+            "visibleByDefault": true
+          }
+        ]
+      },
+      {
+        "moduleCode": "ASSETS",
+        "enabledByDefault": true,
+        "required": true,
+        "optional": false,
+        "menuItems": [
+          {
+            "menuCode": "ASSET_LIST",
+            "label": "Thiết bị",
+            "order": 2,
+            "visibleByDefault": true
+          }
+        ]
+      },
+      {
+        "moduleCode": "INVENTORY",
+        "enabledByDefault": true,
+        "required": false,
+        "optional": false,
+        "menuItems": [
+          {
+            "menuCode": "INVENTORY_LIST",
+            "label": "Vật tư",
+            "order": 3,
+            "visibleByDefault": true
+          }
+        ]
+      },
+      {
+        "moduleCode": "TASKS",
+        "enabledByDefault": true,
+        "required": true,
+        "optional": false,
+        "menuItems": [
+          {
+            "menuCode": "TASK_LIST",
+            "label": "Công việc",
+            "order": 4,
+            "visibleByDefault": true
+          }
+        ]
+      },
+      {
+        "moduleCode": "CHECKLIST",
+        "enabledByDefault": true,
+        "required": false,
+        "optional": false,
+        "menuItems": [
+          {
+            "menuCode": "PERIODIC_CHECK",
+            "label": "Kiểm tra định kỳ",
+            "order": 5,
+            "visibleByDefault": true
+          }
+        ]
+      },
+      {
+        "moduleCode": "STAFF",
+        "enabledByDefault": true,
+        "required": false,
+        "optional": false,
+        "menuItems": [
+          {
+            "menuCode": "STAFF_LIST",
+            "label": "Nhân sự",
+            "order": 6,
+            "visibleByDefault": true
+          }
+        ]
+      },
+      {
+        "moduleCode": "PCCC",
+        "enabledByDefault": false,
+        "required": false,
+        "optional": true,
+        "menuItems": [
+          {
+            "menuCode": "FIRE_SAFETY",
+            "label": "PCCC",
+            "order": 7,
+            "visibleByDefault": false
+          }
+        ]
+      },
+      {
+        "moduleCode": "ELEVATOR",
+        "enabledByDefault": false,
+        "required": false,
+        "optional": true,
+        "menuItems": [
+          {
+            "menuCode": "ELEVATOR_MAINTENANCE",
+            "label": "Thang máy",
+            "order": 8,
+            "visibleByDefault": false
+          }
+        ]
+      }
+    ],
+    "dictionaries": {
+      "assetGroups": [
+        {
+          "templateItemId": "asset-group-dien",
+          "code": "DIEN",
+          "name": "Điện",
+          "enabledByDefault": true,
+          "optional": false,
+          "sortOrder": 1,
+          "parentGroupCode": null
+        },
+        {
+          "templateItemId": "asset-group-dh",
+          "code": "DH",
+          "name": "Điều hòa",
+          "enabledByDefault": true,
+          "optional": false,
+          "sortOrder": 2,
+          "parentGroupCode": null
+        },
+        {
+          "templateItemId": "asset-group-nuoc",
+          "code": "NUOC",
+          "name": "Cấp nước",
+          "enabledByDefault": true,
+          "optional": false,
+          "sortOrder": 3,
+          "parentGroupCode": null
+        },
+        {
+          "templateItemId": "asset-group-nn",
+          "code": "NN",
+          "name": "Nước nóng",
+          "enabledByDefault": true,
+          "optional": false,
+          "sortOrder": 4,
+          "parentGroupCode": null
+        },
+        {
+          "templateItemId": "asset-group-an",
+          "code": "AN",
+          "name": "An ninh",
+          "enabledByDefault": true,
+          "optional": false,
+          "sortOrder": 5,
+          "parentGroupCode": null
+        },
+        {
+          "templateItemId": "asset-group-khac",
+          "code": "KHAC",
+          "name": "Thiết bị khác",
+          "enabledByDefault": true,
+          "optional": false,
+          "sortOrder": 6,
+          "parentGroupCode": null
+        },
+        {
+          "templateItemId": "asset-group-pccc",
+          "code": "PCCC",
+          "name": "Phòng cháy chữa cháy",
+          "enabledByDefault": false,
+          "optional": true,
+          "sortOrder": 7,
+          "parentGroupCode": null
+        },
+        {
+          "templateItemId": "asset-group-thang",
+          "code": "THANG",
+          "name": "Thang máy",
+          "enabledByDefault": false,
+          "optional": true,
+          "sortOrder": 8,
+          "parentGroupCode": null
+        }
+      ],
+      "assetTypes": [
+        {
+          "templateItemId": "asset-type-main_panel",
+          "code": "MAIN_PANEL",
+          "name": "Tủ điện tổng",
+          "groupCode": "DIEN",
+          "enabledByDefault": true,
+          "optional": false,
+          "sortOrder": 1,
+          "attributeDefinitions": []
+        },
+        {
+          "templateItemId": "asset-type-floor_panel",
+          "code": "FLOOR_PANEL",
+          "name": "Tủ điện tầng",
+          "groupCode": "DIEN",
+          "enabledByDefault": true,
+          "optional": false,
+          "sortOrder": 2,
+          "attributeDefinitions": []
+        },
+        {
+          "templateItemId": "asset-type-wall_ac",
+          "code": "WALL_AC",
+          "name": "Điều hòa treo tường",
+          "groupCode": "DH",
+          "enabledByDefault": true,
+          "optional": false,
+          "sortOrder": 3,
+          "attributeDefinitions": []
+        },
+        {
+          "templateItemId": "asset-type-ceiling_ac",
+          "code": "CEILING_AC",
+          "name": "Điều hòa âm trần",
+          "groupCode": "DH",
+          "enabledByDefault": true,
+          "optional": false,
+          "sortOrder": 4,
+          "attributeDefinitions": []
+        },
+        {
+          "templateItemId": "asset-type-water_pump",
+          "code": "WATER_PUMP",
+          "name": "Máy bơm nước",
+          "groupCode": "NUOC",
+          "enabledByDefault": true,
+          "optional": false,
+          "sortOrder": 5,
+          "attributeDefinitions": []
+        },
+        {
+          "templateItemId": "asset-type-water_tank",
+          "code": "WATER_TANK",
+          "name": "Bồn nước",
+          "groupCode": "NUOC",
+          "enabledByDefault": true,
+          "optional": false,
+          "sortOrder": 6,
+          "attributeDefinitions": []
+        },
+        {
+          "templateItemId": "asset-type-water_heater",
+          "code": "WATER_HEATER",
+          "name": "Bình nóng lạnh",
+          "groupCode": "NN",
+          "enabledByDefault": true,
+          "optional": false,
+          "sortOrder": 7,
+          "attributeDefinitions": []
+        },
+        {
+          "templateItemId": "asset-type-camera",
+          "code": "CAMERA",
+          "name": "Camera",
+          "groupCode": "AN",
+          "enabledByDefault": true,
+          "optional": false,
+          "sortOrder": 8,
+          "attributeDefinitions": []
+        },
+        {
+          "templateItemId": "asset-type-tv",
+          "code": "TV",
+          "name": "Tivi",
+          "groupCode": "KHAC",
+          "enabledByDefault": true,
+          "optional": false,
+          "sortOrder": 9,
+          "attributeDefinitions": []
+        },
+        {
+          "templateItemId": "asset-type-refrigerator",
+          "code": "REFRIGERATOR",
+          "name": "Tủ lạnh",
+          "groupCode": "KHAC",
+          "enabledByDefault": true,
+          "optional": false,
+          "sortOrder": 10,
+          "attributeDefinitions": []
+        },
+        {
+          "templateItemId": "asset-type-fire_alarm",
+          "code": "FIRE_ALARM",
+          "name": "Tủ báo cháy",
+          "groupCode": "PCCC",
+          "enabledByDefault": false,
+          "optional": true,
+          "sortOrder": 11,
+          "attributeDefinitions": []
+        },
+        {
+          "templateItemId": "asset-type-fire_extinguisher",
+          "code": "FIRE_EXTINGUISHER",
+          "name": "Bình chữa cháy",
+          "groupCode": "PCCC",
+          "enabledByDefault": false,
+          "optional": true,
+          "sortOrder": 12,
+          "attributeDefinitions": []
+        },
+        {
+          "templateItemId": "asset-type-passenger_lift",
+          "code": "PASSENGER_LIFT",
+          "name": "Thang máy chở khách",
+          "groupCode": "THANG",
+          "enabledByDefault": false,
+          "optional": true,
+          "sortOrder": 13,
+          "attributeDefinitions": []
+        }
+      ],
+      "inventoryGroups": [
+        {
+          "templateItemId": "inventory-group-vtd",
+          "code": "VTD",
+          "name": "Vật tư điện",
+          "enabledByDefault": true,
+          "optional": false,
+          "sortOrder": 1
+        },
+        {
+          "templateItemId": "inventory-group-vtn",
+          "code": "VTN",
+          "name": "Vật tư nước",
+          "enabledByDefault": true,
+          "optional": false,
+          "sortOrder": 2
+        },
+        {
+          "templateItemId": "inventory-group-vtdh",
+          "code": "VTDH",
+          "name": "Vật tư điều hòa",
+          "enabledByDefault": true,
+          "optional": false,
+          "sortOrder": 3
+        },
+        {
+          "templateItemId": "inventory-group-vttb",
+          "code": "VTTB",
+          "name": "Vật tư thiết bị",
+          "enabledByDefault": true,
+          "optional": false,
+          "sortOrder": 4
+        },
+        {
+          "templateItemId": "inventory-group-vtpccc",
+          "code": "VTPCCC",
+          "name": "Vật tư PCCC",
+          "enabledByDefault": true,
+          "optional": true,
+          "sortOrder": 5
+        },
+        {
+          "templateItemId": "inventory-group-vtpt",
+          "code": "VTPT",
+          "name": "Vật tư phụ",
+          "enabledByDefault": true,
+          "optional": false,
+          "sortOrder": 6
+        }
+      ],
+      "inventoryItems": [
+        {
+          "templateItemId": "inventory-item-led_bulb",
+          "code": "LED_BULB",
+          "name": "Bóng đèn LED",
+          "groupCode": "VTD",
+          "defaultUnitCode": "PIECE",
+          "enabledByDefault": true,
+          "optional": false,
+          "sortOrder": 1,
+          "partNumberSuggested": false,
+          "sizeSuggested": false
+        },
+        {
+          "templateItemId": "inventory-item-mcb",
+          "code": "MCB",
+          "name": "Aptomat",
+          "groupCode": "VTD",
+          "defaultUnitCode": "PIECE",
+          "enabledByDefault": true,
+          "optional": false,
+          "sortOrder": 2,
+          "partNumberSuggested": false,
+          "sizeSuggested": false
+        },
+        {
+          "templateItemId": "inventory-item-electric_wire",
+          "code": "ELECTRIC_WIRE",
+          "name": "Dây điện",
+          "groupCode": "VTD",
+          "defaultUnitCode": "METER",
+          "enabledByDefault": true,
+          "optional": false,
+          "sortOrder": 3,
+          "partNumberSuggested": false,
+          "sizeSuggested": false
+        },
+        {
+          "templateItemId": "inventory-item-water_valve",
+          "code": "WATER_VALVE",
+          "name": "Van nước",
+          "groupCode": "VTN",
+          "defaultUnitCode": "PIECE",
+          "enabledByDefault": true,
+          "optional": false,
+          "sortOrder": 4,
+          "partNumberSuggested": false,
+          "sizeSuggested": false
+        },
+        {
+          "templateItemId": "inventory-item-pvc_pipe",
+          "code": "PVC_PIPE",
+          "name": "Ống PVC",
+          "groupCode": "VTN",
+          "defaultUnitCode": "METER",
+          "enabledByDefault": true,
+          "optional": false,
+          "sortOrder": 5,
+          "partNumberSuggested": false,
+          "sizeSuggested": false
+        },
+        {
+          "templateItemId": "inventory-item-ac_capacitor",
+          "code": "AC_CAPACITOR",
+          "name": "Tụ điện điều hòa",
+          "groupCode": "VTDH",
+          "defaultUnitCode": "PIECE",
+          "enabledByDefault": true,
+          "optional": false,
+          "sortOrder": 6,
+          "partNumberSuggested": false,
+          "sizeSuggested": false
+        },
+        {
+          "templateItemId": "inventory-item-ac_remote",
+          "code": "AC_REMOTE",
+          "name": "Điều khiển điều hòa",
+          "groupCode": "VTDH",
+          "defaultUnitCode": "PIECE",
+          "enabledByDefault": true,
+          "optional": false,
+          "sortOrder": 7,
+          "partNumberSuggested": false,
+          "sizeSuggested": false
+        },
+        {
+          "templateItemId": "inventory-item-repair_part",
+          "code": "REPAIR_PART",
+          "name": "Linh kiện thay thế",
+          "groupCode": "VTTB",
+          "defaultUnitCode": "PIECE",
+          "enabledByDefault": true,
+          "optional": false,
+          "sortOrder": 8,
+          "partNumberSuggested": false,
+          "sizeSuggested": false
+        },
+        {
+          "templateItemId": "inventory-item-cable_tie",
+          "code": "CABLE_TIE",
+          "name": "Dây rút",
+          "groupCode": "VTPT",
+          "defaultUnitCode": "PACK",
+          "enabledByDefault": true,
+          "optional": false,
+          "sortOrder": 9,
+          "partNumberSuggested": false,
+          "sizeSuggested": false
+        }
+      ],
+      "units": [
+        {
+          "templateItemId": "unit-piece",
+          "code": "PIECE",
+          "name": "Cái",
+          "symbol": "cái",
+          "enabledByDefault": true,
+          "decimalAllowed": false
+        },
+        {
+          "templateItemId": "unit-set",
+          "code": "SET",
+          "name": "Bộ",
+          "symbol": "bộ",
+          "enabledByDefault": true,
+          "decimalAllowed": false
+        },
+        {
+          "templateItemId": "unit-meter",
+          "code": "METER",
+          "name": "Mét",
+          "symbol": "m",
+          "enabledByDefault": true,
+          "decimalAllowed": true
+        },
+        {
+          "templateItemId": "unit-roll",
+          "code": "ROLL",
+          "name": "Cuộn",
+          "symbol": "cuộn",
+          "enabledByDefault": true,
+          "decimalAllowed": false
+        },
+        {
+          "templateItemId": "unit-box",
+          "code": "BOX",
+          "name": "Hộp",
+          "symbol": "hộp",
+          "enabledByDefault": true,
+          "decimalAllowed": false
+        },
+        {
+          "templateItemId": "unit-bottle",
+          "code": "BOTTLE",
+          "name": "Chai",
+          "symbol": "chai",
+          "enabledByDefault": true,
+          "decimalAllowed": false
+        },
+        {
+          "templateItemId": "unit-kg",
+          "code": "KG",
+          "name": "Kilogram",
+          "symbol": "kg",
+          "enabledByDefault": true,
+          "decimalAllowed": true
+        },
+        {
+          "templateItemId": "unit-liter",
+          "code": "LITER",
+          "name": "Lít",
+          "symbol": "l",
+          "enabledByDefault": true,
+          "decimalAllowed": true
+        }
+      ],
+      "taskTypes": [
+        {
+          "templateItemId": "task-repair",
+          "code": "REPAIR",
+          "name": "Sửa chữa",
+          "taskCategory": "repair",
+          "enabledByDefault": true,
+          "optional": false,
+          "sortOrder": 1
+        },
+        {
+          "templateItemId": "task-inspection",
+          "code": "INSPECTION",
+          "name": "Kiểm tra",
+          "taskCategory": "inspection",
+          "enabledByDefault": true,
+          "optional": false,
+          "sortOrder": 2
+        },
+        {
+          "templateItemId": "task-servicing",
+          "code": "SERVICING",
+          "name": "Bảo dưỡng",
+          "taskCategory": "servicing",
+          "enabledByDefault": true,
+          "optional": false,
+          "sortOrder": 3
+        },
+        {
+          "templateItemId": "task-maintenance",
+          "code": "MAINTENANCE",
+          "name": "Bảo trì",
+          "taskCategory": "maintenance",
+          "enabledByDefault": true,
+          "optional": false,
+          "sortOrder": 4
+        },
+        {
+          "templateItemId": "task-statutory_inspection",
+          "code": "STATUTORY_INSPECTION",
+          "name": "Kiểm định",
+          "taskCategory": "statutory_inspection",
+          "enabledByDefault": false,
+          "optional": true,
+          "sortOrder": 5
+        }
+      ],
+      "taskStatuses": [
+        {
+          "code": "PENDING",
+          "label": "Chờ thực hiện",
+          "terminal": false,
+          "sortOrder": 1
+        },
+        {
+          "code": "IN_PROGRESS",
+          "label": "Đang thực hiện",
+          "terminal": false,
+          "sortOrder": 2
+        },
+        {
+          "code": "COMPLETED",
+          "label": "Hoàn thành",
+          "terminal": true,
+          "sortOrder": 3
+        }
+      ],
+      "priorities": [
+        {
+          "code": "LOW",
+          "label": "Thấp",
+          "rank": 1
+        },
+        {
+          "code": "NORMAL",
+          "label": "Bình thường",
+          "rank": 2
+        },
+        {
+          "code": "HIGH",
+          "label": "Cao",
+          "rank": 3
+        },
+        {
+          "code": "URGENT",
+          "label": "Khẩn cấp",
+          "rank": 4
+        }
+      ],
+      "assetStatuses": [
+        {
+          "code": "ACTIVE",
+          "label": "Đang hoạt động",
+          "terminal": false,
+          "sortOrder": 1
+        },
+        {
+          "code": "REPAIRING",
+          "label": "Đang sửa chữa",
+          "terminal": false,
+          "sortOrder": 2
+        },
+        {
+          "code": "STOPPED",
+          "label": "Ngừng sử dụng",
+          "terminal": true,
+          "sortOrder": 3
+        },
+        {
+          "code": "DISPOSED",
+          "label": "Thanh lý",
+          "terminal": true,
+          "sortOrder": 4
+        }
+      ]
+    },
+    "checklists": [
+      {
+        "templateItemId": "checklist-pump_check",
+        "templateCode": "PUMP_CHECK",
+        "name": "Kiểm tra máy bơm",
+        "assetTypeCodes": [
+          "WATER_PUMP"
+        ],
+        "version": 1,
+        "enabledByDefault": true,
+        "optional": false,
+        "requiresQualifiedPerson": false,
+        "items": [
+          {
+            "itemCode": "ITEM_1",
+            "label": "Tiếng ồn bất thường",
+            "answerType": "pass-fail-na",
+            "required": true,
+            "order": 1
+          },
+          {
+            "itemCode": "ITEM_2",
+            "label": "Rung lắc",
+            "answerType": "pass-fail-na",
+            "required": true,
+            "order": 2
+          },
+          {
+            "itemCode": "ITEM_3",
+            "label": "Rò rỉ nước",
+            "answerType": "pass-fail-na",
+            "required": true,
+            "order": 3
+          },
+          {
+            "itemCode": "ITEM_4",
+            "label": "Dây điện và thiết bị đóng cắt quan sát bên ngoài",
+            "answerType": "pass-fail-na",
+            "required": true,
+            "order": 4
+          },
+          {
+            "itemCode": "ITEM_5",
+            "label": "Khả năng cấp nước",
+            "answerType": "pass-fail-na",
+            "required": true,
+            "order": 5
+          }
+        ]
+      },
+      {
+        "templateItemId": "checklist-ac_check",
+        "templateCode": "AC_CHECK",
+        "name": "Kiểm tra điều hòa",
+        "assetTypeCodes": [
+          "WALL_AC"
+        ],
+        "version": 1,
+        "enabledByDefault": true,
+        "optional": false,
+        "requiresQualifiedPerson": false,
+        "items": [
+          {
+            "itemCode": "ITEM_1",
+            "label": "Khả năng làm lạnh",
+            "answerType": "pass-fail-na",
+            "required": true,
+            "order": 1
+          },
+          {
+            "itemCode": "ITEM_2",
+            "label": "Tiếng ồn",
+            "answerType": "pass-fail-na",
+            "required": true,
+            "order": 2
+          },
+          {
+            "itemCode": "ITEM_3",
+            "label": "Nước ngưng và đường thoát nước",
+            "answerType": "pass-fail-na",
+            "required": true,
+            "order": 3
+          },
+          {
+            "itemCode": "ITEM_4",
+            "label": "Lưới lọc",
+            "answerType": "pass-fail-na",
+            "required": true,
+            "order": 4
+          },
+          {
+            "itemCode": "ITEM_5",
+            "label": "Điều khiển",
+            "answerType": "pass-fail-na",
+            "required": true,
+            "order": 5
+          }
+        ]
+      },
+      {
+        "templateItemId": "checklist-panel_check",
+        "templateCode": "PANEL_CHECK",
+        "name": "Kiểm tra tủ điện",
+        "assetTypeCodes": [
+          "MAIN_PANEL"
+        ],
+        "version": 1,
+        "enabledByDefault": true,
+        "optional": false,
+        "requiresQualifiedPerson": false,
+        "items": [
+          {
+            "itemCode": "ITEM_1",
+            "label": "Vỏ tủ và dấu hiệu bất thường",
+            "answerType": "pass-fail-na",
+            "required": true,
+            "order": 1
+          },
+          {
+            "itemCode": "ITEM_2",
+            "label": "Dấu hiệu nóng bên ngoài",
+            "answerType": "pass-fail-na",
+            "required": true,
+            "order": 2
+          },
+          {
+            "itemCode": "ITEM_3",
+            "label": "Tiếng kêu bất thường",
+            "answerType": "pass-fail-na",
+            "required": true,
+            "order": 3
+          },
+          {
+            "itemCode": "ITEM_4",
+            "label": "Dây dẫn/đầu nối quan sát được từ vị trí an toàn",
+            "answerType": "pass-fail-na",
+            "required": true,
+            "order": 4
+          }
+        ]
+      },
+      {
+        "templateItemId": "checklist-heater_check",
+        "templateCode": "HEATER_CHECK",
+        "name": "Kiểm tra bình nóng lạnh",
+        "assetTypeCodes": [
+          "WATER_HEATER"
+        ],
+        "version": 1,
+        "enabledByDefault": true,
+        "optional": false,
+        "requiresQualifiedPerson": false,
+        "items": [
+          {
+            "itemCode": "ITEM_1",
+            "label": "Tình trạng bên ngoài",
+            "answerType": "pass-fail-na",
+            "required": true,
+            "order": 1
+          },
+          {
+            "itemCode": "ITEM_2",
+            "label": "Rò rỉ nước",
+            "answerType": "pass-fail-na",
+            "required": true,
+            "order": 2
+          },
+          {
+            "itemCode": "ITEM_3",
+            "label": "Dấu hiệu bất thường về điện",
+            "answerType": "pass-fail-na",
+            "required": true,
+            "order": 3
+          },
+          {
+            "itemCode": "ITEM_4",
+            "label": "Khả năng làm nóng",
+            "answerType": "pass-fail-na",
+            "required": true,
+            "order": 4
+          }
+        ]
+      },
+      {
+        "templateItemId": "checklist-camera_check",
+        "templateCode": "CAMERA_CHECK",
+        "name": "Kiểm tra camera",
+        "assetTypeCodes": [
+          "CAMERA"
+        ],
+        "version": 1,
+        "enabledByDefault": true,
+        "optional": false,
+        "requiresQualifiedPerson": false,
+        "items": [
+          {
+            "itemCode": "ITEM_1",
+            "label": "Hình ảnh",
+            "answerType": "pass-fail-na",
+            "required": true,
+            "order": 1
+          },
+          {
+            "itemCode": "ITEM_2",
+            "label": "Tín hiệu",
+            "answerType": "pass-fail-na",
+            "required": true,
+            "order": 2
+          },
+          {
+            "itemCode": "ITEM_3",
+            "label": "Ghi hình",
+            "answerType": "pass-fail-na",
+            "required": true,
+            "order": 3
+          },
+          {
+            "itemCode": "ITEM_4",
+            "label": "Lưu trữ",
+            "answerType": "pass-fail-na",
+            "required": true,
+            "order": 4
+          },
+          {
+            "itemCode": "ITEM_5",
+            "label": "Nguồn cấp",
+            "answerType": "pass-fail-na",
+            "required": true,
+            "order": 5
+          }
+        ]
+      },
+      {
+        "templateItemId": "checklist-lighting_check",
+        "templateCode": "LIGHTING_CHECK",
+        "name": "Kiểm tra chiếu sáng",
+        "assetTypeCodes": [
+          "MAIN_PANEL"
+        ],
+        "version": 1,
+        "enabledByDefault": true,
+        "optional": false,
+        "requiresQualifiedPerson": false,
+        "items": [
+          {
+            "itemCode": "ITEM_1",
+            "label": "Đèn hoạt động",
+            "answerType": "pass-fail-na",
+            "required": true,
+            "order": 1
+          },
+          {
+            "itemCode": "ITEM_2",
+            "label": "Công tắc",
+            "answerType": "pass-fail-na",
+            "required": true,
+            "order": 2
+          },
+          {
+            "itemCode": "ITEM_3",
+            "label": "Nhấp nháy",
+            "answerType": "pass-fail-na",
+            "required": true,
+            "order": 3
+          },
+          {
+            "itemCode": "ITEM_4",
+            "label": "Khu vực thiếu sáng",
+            "answerType": "pass-fail-na",
+            "required": true,
+            "order": 4
+          }
+        ]
+      },
+      {
+        "templateItemId": "checklist-fire_check",
+        "templateCode": "FIRE_CHECK",
+        "name": "Kiểm tra PCCC",
+        "assetTypeCodes": [
+          "FIRE_EXTINGUISHER"
+        ],
+        "version": 1,
+        "enabledByDefault": false,
+        "optional": true,
+        "requiresQualifiedPerson": true,
+        "items": [
+          {
+            "itemCode": "ITEM_1",
+            "label": "Tình trạng bên ngoài",
+            "answerType": "pass-fail-na",
+            "required": true,
+            "order": 1
+          },
+          {
+            "itemCode": "ITEM_2",
+            "label": "Niêm phong",
+            "answerType": "pass-fail-na",
+            "required": true,
+            "order": 2
+          },
+          {
+            "itemCode": "ITEM_3",
+            "label": "Khả năng tiếp cận",
+            "answerType": "pass-fail-na",
+            "required": true,
+            "order": 3
+          },
+          {
+            "itemCode": "ITEM_4",
+            "label": "Chỉ dẫn và hồ sơ kiểm tra",
+            "answerType": "pass-fail-na",
+            "required": true,
+            "order": 4
+          }
+        ]
+      },
+      {
+        "templateItemId": "checklist-lift_check",
+        "templateCode": "LIFT_CHECK",
+        "name": "Kiểm tra thang máy",
+        "assetTypeCodes": [
+          "PASSENGER_LIFT"
+        ],
+        "version": 1,
+        "enabledByDefault": false,
+        "optional": true,
+        "requiresQualifiedPerson": true,
+        "items": [
+          {
+            "itemCode": "ITEM_1",
+            "label": "Vận hành quan sát",
+            "answerType": "pass-fail-na",
+            "required": true,
+            "order": 1
+          },
+          {
+            "itemCode": "ITEM_2",
+            "label": "Cửa và tín hiệu cảnh báo",
+            "answerType": "pass-fail-na",
+            "required": true,
+            "order": 2
+          },
+          {
+            "itemCode": "ITEM_3",
+            "label": "Hiển thị tầng",
+            "answerType": "pass-fail-na",
+            "required": true,
+            "order": 3
+          },
+          {
+            "itemCode": "ITEM_4",
+            "label": "Hồ sơ bảo trì/kiểm định",
+            "answerType": "pass-fail-na",
+            "required": true,
+            "order": 4
+          }
+        ]
+      }
+    ],
+    "maintenanceTemplates": [
+      {
+        "templateItemId": "maintenance-pump_monthly",
+        "templateCode": "PUMP_MONTHLY",
+        "name": "Kiểm tra máy bơm hàng tháng",
+        "assetTypeCodes": [
+          "WATER_PUMP"
+        ],
+        "taskTypeCode": "INSPECTION",
+        "interval": {
+          "value": 1,
+          "unit": "month"
+        },
+        "requiresAdminConfirmation": true,
+        "guidance": "Chu kỳ chỉ là gợi ý; Admin xác nhận và điều chỉnh theo hướng dẫn nhà sản xuất, điều kiện vận hành và yêu cầu chuyên ngành."
+      },
+      {
+        "templateItemId": "maintenance-ac_cleaning",
+        "templateCode": "AC_CLEANING",
+        "name": "Vệ sinh và kiểm tra điều hòa",
+        "assetTypeCodes": [
+          "WALL_AC"
+        ],
+        "taskTypeCode": "SERVICING",
+        "interval": {
+          "value": 3,
+          "unit": "month"
+        },
+        "requiresAdminConfirmation": true,
+        "guidance": "Chu kỳ chỉ là gợi ý; Admin xác nhận và điều chỉnh theo hướng dẫn nhà sản xuất, điều kiện vận hành và yêu cầu chuyên ngành."
+      },
+      {
+        "templateItemId": "maintenance-panel_monthly",
+        "templateCode": "PANEL_MONTHLY",
+        "name": "Kiểm tra bên ngoài tủ điện",
+        "assetTypeCodes": [
+          "MAIN_PANEL"
+        ],
+        "taskTypeCode": "INSPECTION",
+        "interval": {
+          "value": 1,
+          "unit": "month"
+        },
+        "requiresAdminConfirmation": true,
+        "guidance": "Chu kỳ chỉ là gợi ý; Admin xác nhận và điều chỉnh theo hướng dẫn nhà sản xuất, điều kiện vận hành và yêu cầu chuyên ngành."
+      },
+      {
+        "templateItemId": "maintenance-camera_monthly",
+        "templateCode": "CAMERA_MONTHLY",
+        "name": "Kiểm tra camera và lưu trữ",
+        "assetTypeCodes": [
+          "CAMERA"
+        ],
+        "taskTypeCode": "INSPECTION",
+        "interval": {
+          "value": 1,
+          "unit": "month"
+        },
+        "requiresAdminConfirmation": true,
+        "guidance": "Chu kỳ chỉ là gợi ý; Admin xác nhận và điều chỉnh theo hướng dẫn nhà sản xuất, điều kiện vận hành và yêu cầu chuyên ngành."
+      },
+      {
+        "templateItemId": "maintenance-heater_manufacturer",
+        "templateCode": "HEATER_MANUFACTURER",
+        "name": "Bảo dưỡng bình nóng lạnh theo NSX",
+        "assetTypeCodes": [
+          "WATER_HEATER"
+        ],
+        "taskTypeCode": "MAINTENANCE",
+        "interval": {
+          "value": 1,
+          "unit": "year"
+        },
+        "requiresAdminConfirmation": true,
+        "guidance": "Chu kỳ chỉ là gợi ý; Admin xác nhận và điều chỉnh theo hướng dẫn nhà sản xuất, điều kiện vận hành và yêu cầu chuyên ngành."
+      }
+    ],
+    "organizationStructure": {
+      "facilityCountDefault": 1,
+      "facilityModel": "single",
+      "warehouseModeDefault": "single_shared",
+      "manageLocationsDefault": false,
+      "requiresAdminConfirmation": true
+    },
+    "codeProfiles": [
+      {
+        "entityType": "organization",
+        "prefix": "DN",
+        "segments": [
+          {
+            "source": "literal",
+            "value": "DN"
+          },
+          {
+            "source": "sequence",
+            "separator": ""
+          }
+        ],
+        "sequence": {
+          "minimumDigits": 3,
+          "scope": "organization",
+          "startAt": 1
+        },
+        "uniquenessScope": "organization",
+        "requiresAdminConfirmation": true
+      },
+      {
+        "entityType": "facility",
+        "prefix": "CS",
+        "segments": [
+          {
+            "source": "literal",
+            "value": "CS"
+          },
+          {
+            "source": "sequence",
+            "separator": ""
+          }
+        ],
+        "sequence": {
+          "minimumDigits": 2,
+          "scope": "organization",
+          "startAt": 1
+        },
+        "uniquenessScope": "organization",
+        "requiresAdminConfirmation": true
+      },
+      {
+        "entityType": "asset",
+        "prefix": "TB",
+        "segments": [
+          {
+            "source": "literal",
+            "value": "TB"
+          },
+          {
+            "source": "sequence",
+            "separator": "-"
+          }
+        ],
+        "sequence": {
+          "minimumDigits": 4,
+          "scope": "organization",
+          "startAt": 1
+        },
+        "uniquenessScope": "organization",
+        "requiresAdminConfirmation": true
+      },
+      {
+        "entityType": "inventory",
+        "prefix": "VT",
+        "segments": [
+          {
+            "source": "literal",
+            "value": "VT"
+          },
+          {
+            "source": "sequence",
+            "separator": "-"
+          }
+        ],
+        "sequence": {
+          "minimumDigits": 4,
+          "scope": "organization",
+          "startAt": 1
+        },
+        "uniquenessScope": "organization",
+        "requiresAdminConfirmation": true
+      },
+      {
+        "entityType": "task",
+        "prefix": "CV",
+        "segments": [
+          {
+            "source": "literal",
+            "value": "CV"
+          },
+          {
+            "source": "year",
+            "separator": "-"
+          },
+          {
+            "source": "sequence",
+            "separator": "-"
+          }
+        ],
+        "sequence": {
+          "minimumDigits": 4,
+          "scope": "year",
+          "startAt": 1
+        },
+        "uniquenessScope": "organization",
+        "requiresAdminConfirmation": true
+      }
+    ],
+    "roleSuggestions": [
+      {
+        "roleCode": "ADMIN",
+        "label": "Admin",
+        "permissionCodes": [
+          "ASSET_MANAGE",
+          "INVENTORY_MANAGE",
+          "TASK_MANAGE",
+          "SETTINGS_MANAGE"
+        ],
+        "note": "Ánh xạ vào quyền thực tế hiện có; không tạo hệ thống phân quyền song song."
+      },
+      {
+        "roleCode": "TECHNICIAN",
+        "label": "Kỹ thuật viên",
+        "permissionCodes": [
+          "ASSET_VIEW",
+          "INVENTORY_VIEW",
+          "TASK_EXECUTE"
+        ]
+      },
+      {
+        "roleCode": "VIEWER",
+        "label": "Người xem",
+        "permissionCodes": [
+          "ASSET_VIEW",
+          "INVENTORY_VIEW",
+          "TASK_VIEW"
+        ]
+      }
+    ],
+    "safetyRules": [
+      {
+        "ruleCode": "ELECTRICAL_SAFE_WORK",
+        "severity": "critical",
+        "message": "Checklist nội bộ không thay thế quy trình an toàn điện. Chỉ người đủ chuyên môn và được phép mới thao tác; không mở tủ điện hoặc làm việc trên thiết bị đang mang điện khi không đủ điều kiện an toàn.",
+        "appliesTo": [
+          "asset",
+          "checklist",
+          "maintenance"
+        ],
+        "requiresAcknowledgement": true
+      },
+      {
+        "ruleCode": "FIRE_ELEVATOR_COMPLIANCE",
+        "severity": "warning",
+        "message": "PCCC và thang máy phải tuân thủ yêu cầu chuyên ngành, bảo trì và kiểm định theo quy định hiện hành; checklist gợi ý không thay thế nghĩa vụ pháp lý.",
+        "appliesTo": [
+          "asset",
+          "checklist",
+          "maintenance"
+        ],
+        "requiresAcknowledgement": true
+      }
+    ]
+  }
+}
