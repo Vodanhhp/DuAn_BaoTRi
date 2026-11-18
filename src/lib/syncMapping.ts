@@ -119,6 +119,7 @@ function nullable(value?: string | null): string | null {
 
 export function toCloudAssetRow(value: Asset, organizationId: string): CloudAssetRow {
   rejectDraftIdentity(value.id, 'Asset.id', value.identityStatus)
+  if (value.createdByLabel || value.createdByUserId) throw new UnsupportedCloudFieldError('Schema Cloud hiện chưa có trường người tạo Asset; từ chối bỏ mất dấu vết người tạo.')
   return {
     organization_id: requireOrganizationId(organizationId),
     id: value.id, code: value.code, name: value.name, category: value.category,
@@ -148,6 +149,7 @@ export function fromCloudAssetRow(row: CloudAssetRow): Asset {
 /** Full quantity is only valid for a deliberate baseline/initial import. */
 export function toCloudInventoryBaselineRow(value: InventoryItem, organizationId: string): CloudInventoryItemRow {
   rejectDraftIdentity(value.id, 'InventoryItem.id', value.identityStatus)
+  if (value.createdByLabel || value.createdByUserId) throw new UnsupportedCloudFieldError('Schema Cloud hiện chưa có trường người tạo InventoryItem; từ chối bỏ mất dấu vết người tạo.')
   return {
     organization_id: requireOrganizationId(organizationId),
     id: value.id, code: value.code, name: value.name, item_group: value.group ?? '',
