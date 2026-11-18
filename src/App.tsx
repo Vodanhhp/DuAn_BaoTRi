@@ -1300,7 +1300,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
 function Dashboard({assets,tasks,dueToday,dueTodayCount,dueChecklistToday=[],pendingRequests=[],lowStock,overdue,go,complete,inventory,readOnly=false}:any) {
   const completed = tasks.filter((t:Task)=>t.status==='Hoàn thành').length
   const repairCount = assets.filter((a:Asset)=>a.status==='Đang sửa chữa').length
-  const inventoryValue = (inventory as InventoryItem[]).reduce((sum:number, item:InventoryItem) => sum + item.quantity * item.unitPrice, 0)
+  const inventoryCount = (inventory as InventoryItem[]).length
   const completionRate = tasks.length ? Math.round((completed / tasks.length) * 100) : 0
   const categoryStats: [string, number][] = (Object.entries(
     (assets as Asset[]).reduce((acc:Record<string, number>, asset:Asset) => {
@@ -1330,7 +1330,7 @@ function Dashboard({assets,tasks,dueToday,dueTodayCount,dueChecklistToday=[],pen
         <div className="mini-stat-list">
           <div className="mini-stat"><span>Hoàn thành</span><strong>{completed}</strong></div>
           <div className="mini-stat"><span>Đang sửa</span><strong>{repairCount}</strong></div>
-          <div className="mini-stat"><span>Giá trị kho</span><strong>{money(inventoryValue)}</strong></div>
+          <div className="mini-stat"><span>Số loại vật tư</span><strong>{inventoryCount}</strong></div>
         </div>
         <div className="bar-chart">
           {categoryStats.map(([label, count]) => (
