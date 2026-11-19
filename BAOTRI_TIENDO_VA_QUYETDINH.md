@@ -4227,3 +4227,25 @@ Một authenticated PostgREST RPC wrapper hẹp có thể bỏ được Edge DB 
 5. Recipient HMAC có thể tính trong DB bằng pgcrypto nếu secret được function owner đọc an toàn mà không cấp quyền đọc decrypted secret cho browser/service_role. Nếu chưa giải quyết được secret isolation thì phương án này chưa hoàn chỉnh.
 
 RPC được authenticated gọi trực tiếp không tự động là lỗ hổng nếu actor lấy từ JWT PostgREST đã xác minh và mọi invariant được kiểm tra phía server. Tuy nhiên phải kiểm tra chính xác JWT context trong SECURITY DEFINER, exposed-schema, ACL wrapper/inner function, cô lập Vault và concurrency test. Chưa chốt kiến trúc, không triển khai.
+
+## 73. Xác minh ngữ cảnh actor của PostgREST và quyền Vault hiệu lực
+
+### Catalog chỉ đọc trên BAOTRI-Mini-Test
+Đã đọc định nghĩa `auth.uid()`: hàm lấy UUID từ `request.jwt.claim.sub`; nếu trống thì đọc `sub` trong JSON `request.jwt.claims`. Đây là cơ chế lấy subject của JWT request. Kiểm tra quyền hiệu lực:
+- anon và authenticated: có USAGE schema auth, EXECUTE auth.uid(); không có USAGE schema vault, không SELECT vault.secrets/decrypted_secrets.
+- service_role và postgres: có USAGE schema vault và SELECT cả hai đối tượng Vault.
+Không giả mạo/set JWT claim để thử; không sửa user, dữ liệu hay quyền.
+
+### Hệ quả cho phương án RPC
+1. Client gọi wrapper bằng Supabase session bình thường; PostgREST xác minh bearer JWT và thiết lập request claims.
+2. Wrapper và hàm SECURITY DEFINER nội bộ chỉ lấy actor bằng auth.uid(); không tin UID/email/org/role từ client.
+3. Không ghi đè request.jwt.claim.sub hoặc request.jwt.claims. Gọi SQL trực tiếp không tương đương request PostgREST đã xác minh; session setting có thể do caller trực tiếp điều khiển.
+4. UUID từ auth.uid() chưa đủ: phải khóa và đọc lại auth.users, xác minh email hiện tại + confirmed state + recipient digest; sau đó khóa invitation và kiểm tra quyền actor trong cùng transaction.
+5. Wrapper RPC là endpoint authenticated có chủ đích: revoke EXECUTE từ PUBLIC/anon, chỉ grant authenticated. Hàm nội bộ đặt trong schema không expose, EXECUTE chỉ cho đường gọi cần thiết. Kiểm tra default ACL và SECURITY DEFINER owner.
+6. search_path cố định/rỗng; mọi object fully-qualified; không dựa vào tên object do caller/search_path điều khiển.
+
+### Làm rõ quyền Vault
+anon/authenticated không có quyền trực tiếp vào Vault; service_role và postgres có quyền đọc secrets/decrypted_secrets. Có thể nghiên cứu đường đọc secret qua SECURITY DEFINER được giới hạn chặt, nhưng function owner postgres là ranh giới đặc quyền cao; cần đánh giá owner hẹp hơn. Schema vault không xuất hiện trong pg_extension không có nghĩa Vault không tồn tại; schema và objects đã có. Cần xác minh thêm cơ chế quản lý/phiên bản.
+
+### Trạng thái
+Authenticated PostgREST RPC hiện là candidate ưu tiên để prototype trước direct Edge DB login, vì tận dụng actor context do PostgREST xác minh và tránh DB credential riêng. Chưa phải quyết định kiến trúc cuối cùng. Còn phải thử JWT context qua API thật bên trong SECURITY DEFINER, kiểm tra exposed schemas, thiết kế secret access và kiểm thử concurrency khi email Auth thay đổi. Không DDL/RPC/grant/secret/config nào được thay đổi.
