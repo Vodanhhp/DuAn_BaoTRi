@@ -287,3 +287,41 @@ Static review migration `20261118000300_asset_mutation_receipts.sql` cho thấy 
 - Replay phải là read-only confirmation có authorization phù hợp; không được mặc định permission hiện tại giống thời điểm commit.
 - Đã đối chiếu `CLOUD_RPC_IDEMPOTENCY_CHANGEFEED_DESIGN.md`, `015_row_version_foundation_DRAFT.sql`, `CLOUD_SYNC_SCHEMA_PROTOCOL_DESIGN.md`, `CLOUD_INVENTORY_RPC_DESIGN.md`, `CLOUD_MAINTENANCE_LOG_REVISION_DESIGN.md` và migration Asset receipt.
 - Chưa sửa SQL/RPC, chưa tạo migration, chưa chạy SQL hoặc runtime test; chưa xác minh pgcrypto hay migration state trên Supabase.
+
+
+## 14. Đề xuất quy tắc nghiệp vụ Kho và Nhật ký (19/11/2026)
+
+Trạng thái: phương án kỹ thuật/permission đề xuất để người dùng duyệt; chưa được coi là quyết định nghiệp vụ đã chốt.
+
+### 14.1 Kho – phân biệt nhập/xuất và kiểm kê điều chỉnh
+**Đề xuất:** thao tác “Điều chỉnh” nhập số tồn thực tế sau kiểm kê, không nhập một con số tăng/giảm tùy ý.
+- Nhập: nhập lượng tăng thêm; balance mới = balance cũ + quantity.
+- Xuất: xuất lượng giảm; balance mới = balance cũ - quantity; không cho tồn âm.
+- Điều chỉnh: người dùng nhập `counted_quantity` (số tồn thực tế đếm được). Server khóa dòng vật tư, đọc balance hiện tại, tính `quantity_delta = counted_quantity - balance_before`, ghi balance mới bằng counted_quantity.
+- Ví dụ: tồn hệ thống 12, kiểm kê thực tế 9 → delta -3; tồn mới 9. Tồn hệ thống 12, kiểm kê thực tế 15 → delta +3; tồn mới 15.
+- Lưu movement với `balance_before`, `balance_after`, `counted_quantity` và `quantity_delta` có dấu. Trường `quantity` hiện tại đang CHECK > 0 nên không thể dùng nó một mình để thể hiện delta âm; cần migration bổ sung field có dấu hoặc cặp hướng + lượng tuyệt đối. Không đổi nghĩa cột cũ âm thầm.
+- Bắt buộc lý do điều chỉnh; lưu actor, thời điểm, mutation ID và expected item version. Không tạo movement nếu không có chênh lệch, trừ khi người dùng muốn lưu cả biên bản kiểm kê không chênh lệch (khi đó nên có loại record kiểm kê riêng, không giả làm movement).
+- Toàn bộ lock → kiểm tra version → tính delta → cập nhật balance/row_version → insert movement → receipt/change events phải cùng một DB transaction.
+- Quyền: dùng quyền hiện tại `inventory.adjust` cho Admin/Technician; không tạo permission mới nếu phạm vi chỉ là Nhập/Xuất/Điều chỉnh như catalog mô tả. Xóa vật tư vẫn Admin-only.
+- Khi tạo vật tư mới, `initial_quantity` là tồn đầu kỳ và tạo movement Nhập/Tồn đầu kỳ trong cùng transaction. Cần xác nhận Technician được phép tạo tồn đầu kỳ theo quyền `inventory.create` hiện tại; không tự mở rộng quyền ngoài catalog.
+
+### 14.2 Nhật ký – phân biệt bản nháp và phiếu đã lưu
+**Đề xuất an toàn mặc định:** sau khi Cloud đã xác nhận tạo Log, nội dung revision đã lưu là bất biến; mọi sửa đổi phải tạo revision mới, không UPDATE/DELETE revision cũ.
+- Trước khi gửi Cloud: người tạo có thể sửa draft trong form; draft chưa phải Log chính thức và chưa ghi IndexedDB business tables.
+- Sau khi Cloud commit: không sửa trực tiếp bản revision. Tạo revision mới với `expected_revision_no`, actor, thời gian, action và lý do sửa; mọi revision trước vẫn truy vấn được.
+- Permission catalog hiện có `logs.create`, chưa có `logs.update` hoặc `logs.revise`. Không suy diễn rằng Technician có quyền sửa chỉ vì họ được tạo Log.
+- Đề xuất mặc định ít quyền nhất: thêm permission riêng `logs.revise` và chỉ cấp cho Admin; Technician vẫn được tạo Log, nhưng muốn sửa phiếu đã lưu thì gửi yêu cầu Admin. Admin có thể tạo revision correction; không hard-delete Log. Hủy phiếu nếu cần cũng là revision/event riêng có lý do.
+- Phương án thay thế cần người dùng duyệt: cấp `logs.revise.own` cho Technician để chỉ sửa Log do chính mình tạo, còn Admin sửa mọi Log. Nếu chọn phương án này cần lưu `created_by_user_id` bất biến trên Log root và server kiểm tra ownership; không dựa vào trường `performed_by`/tên hiển thị.
+- Hoàn thành Task + tạo Log revision 1 tiếp tục là một transaction Cloud; nếu Log đã được tạo thì sửa sau này là mutation riêng, không được làm thay đổi lịch sử lần hoàn thành ban đầu.
+- Không tự sửa permission catalog/migration cho đến khi người dùng chọn chính sách.
+
+### 14.3 Các quyết định chờ duyệt
+1. Điều chỉnh kho có đồng ý nhập **số tồn thực tế sau kiểm kê** và server tự tính delta không?
+2. Nhật ký có đồng ý chính sách **Admin-only sửa phiếu đã lưu**, Technician chỉ tạo mới không? Hay cần Technician sửa phiếu do chính mình tạo?
+3. Tồn đầu kỳ khi tạo vật tư: Technician có được phép nhập số tồn ban đầu theo `inventory.create` hay chỉ Admin?
+4. Có cần lưu biên bản kiểm kê không chênh lệch (counted_quantity bằng balance hiện tại) không?
+
+### 14.4 Trạng thái
+- Đã đối chiếu business schema 002: movement.quantity hiện > 0; movement_type có Nhập/Xuất/Điều chỉnh; inventory_items.quantity không âm; permission catalog có inventory.adjust nhưng chưa có logs.update/revise.
+- Đây là phương án đề xuất, chưa được người dùng phê duyệt.
+- Chưa sửa permission catalog, schema/migration/RPC, UI hoặc dữ liệu; chưa chạy SQL/runtime test.
