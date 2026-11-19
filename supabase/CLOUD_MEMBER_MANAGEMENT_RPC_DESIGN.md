@@ -2620,3 +2620,27 @@ Lock order Auth -> Membership đã xuất hiện trong legacy create function; A
  
 ### Trạng thái
 Chỉ đọc GitHub, Edge Function metadata và catalog/dữ liệu Test. Không triển khai migration, không thay đổi function, Edge Function, grants, role, Auth user hoặc dữ liệu.
+
+
+## 67. Asset permission serialization và domain lock inventory – 20/11/2026
+
+### Function-level inventory
+- Asset update/archive/mutation kiểm tra permission qua `has_org_permission` trước khi khóa Lease; sau đó Lease → Asset. Permission helper không khóa Membership/Role/Permission.
+- Asset create: permission precheck → settings/read aggregate → Counter → Asset.
+- Asset import: permission precheck → advisory mutation lock → import ledger lookup → settings → Counter → Asset → import ledger insert.
+- Lease acquire/heartbeat cũng chỉ precheck permission rồi ghi Lease; không khóa Membership. Lease không đại diện cho quyền được cấp lâu dài và không thay thế authorization ở mutation RPC.
+
+### Kết luận về revoke race
+- Admin status/role/remove và Asset write hiện chưa dùng một shared membership-row serialization protocol. Permission precheck có thể xảy ra trước thao tác revoke, còn Asset write tiếp tục sau đó.
+- Đây là TOCTOU candidate; chưa có concurrency test để kết luận transaction nào phải thắng theo yêu cầu nghiệp vụ.
+- Đề xuất cần review: tất cả business mutation khóa membership actor và xác minh active + permission trong cùng transaction trước domain lock; Admin mutation khóa chính membership row trước khi thay role/status/remove. Phải thống nhất thêm organization lock/version nếu cần tuần tự hóa organization suspension.
+
+### Candidate domain order (chưa được chứng minh toàn cục)
+- Asset update/archive/mutation: Lease → Asset.
+- Asset create: Counter → Asset.
+- Asset import: advisory mutation key → Counter (khi reconcile) → Asset → import ledger.
+- Asset direct DELETE: Asset → FK cascade Lease, đảo thứ tự update hiện tại; deadlock candidate đã ghi §74/§88.
+- Shared Receipt draft cần đặt receipt claim/finalize tương thích với domain order và replay semantics; không dual-write với Asset Receipt.
+
+### Trạng thái
+Read-only review function definitions và migrations Test. Không chạy concurrency tests hoặc thay đổi DB/RPC/grants/policies.
