@@ -763,3 +763,76 @@ Nếu có bất kỳ dòng mơ hồ nào, dừng cutover; không xóa assignment
 6. Chuyển authorization helper/RLS/Edge Function sang member_roles-only; kiểm thử rồi mới triển khai Production theo phê duyệt riêng.
 
 Không có truy vấn nào được chạy trên Supabase trong bước này. Đây không phải migration SQL; không sửa code, dữ liệu, RLS hoặc Cloud.
+
+## 23. Static audit writer role assignment sau preflight Test
+
+### 23.1 Phạm vi và nguồn
+
+Đã đọc trực tiếp:
+- `supabase/migrations/20261117000500_roles_and_permissions.sql`
+- `supabase/migrations/20261117001300_member_management.sql`
+- `supabase/migrations/20261117001400_remove_org_member.sql`
+- `supabase/functions/manage-organization-members/index.ts`
+
+Đối chiếu với kết quả preflight Supabase Test do người vận hành báo ngày 19/11/2026: 4 membership; Q3/Q4/Q5/Q7/Q8 không có dòng; Q6 gồm Admin 1, Technician 2, Viewer 1. Kết quả này chỉ xác nhận snapshot Test tại thời điểm chạy, không thay thế các kiểm tra transaction/concurrency.
+
+### 23.2 Ma trận writer hiện tại
+
+| Đường nghiệp vụ | Writer thực tế | Tính nguyên tử | Nhận xét |
+|---|---|---|---|
+| Backfill migration 005 | INSERT member_roles từ organization_members.role | Trong transaction migration | Backfill chỉ chạy lúc migration; ON CONFLICT DO NOTHING không tự reconciliation dữ liệu đã có |
+| Invite/create membership | Edge Function gọi admin_create_org_membership | INSERT membership + assignment cùng RPC transaction | Đang tạo đúng một assignment cho role Technician/Viewer; có unique membership org/user; chưa khóa Organization và Role theo lock matrix |
+| Change role | Edge Function gọi admin_update_org_member_role | DELETE assignment cũ + INSERT assignment mới trong một RPC transaction | Atomic khi RPC chạy thành công, nhưng SELECT target không FOR UPDATE; không khóa Organization/Role; legacy mirror không được cập nhật |
+| Suspend/reactivate | Edge Function gọi admin_update_org_member_status | Chỉ UPDATE membership status trong RPC transaction | Không thay role assignment; target/organization chưa được khóa theo lock matrix |
+| Remove member | Edge Function gọi admin_remove_org_membership | DELETE membership; FK cascade xóa assignments | RPC có FOR UPDATE membership nhưng chưa khóa Organization trước; query role có thể nhiều dòng nếu dữ liệu duplicate |
+| Auth email confirmation | Trigger sync_auth_user_profile trên auth.users | Cùng transaction cập nhật Auth user | Trigger cập nhật mọi membership invited thành active; không khóa Organization/Membership theo thứ tự chuẩn và không phát membership audit/event |
+| List roster | Edge Function đọc membership, assignments, roles riêng rồi Map theo member_id | Không phải writer | Nếu có nhiều assignment, Map ghi đè theo thứ tự trả về; kết quả role không xác định. Sau unique constraint, vẫn cần xử lý integrity error khi thiếu assignment |
+
+### 23.3 Các vấn đề cần xử lý trước cutover
+
+**P1 — Lock order chưa thống nhất**
+- admin_create_org_membership kiểm tra Organization active và Role active nhưng không khóa hai dòng đó.
+- admin_update_org_member_role không khóa target membership trước khi thay assignment; role được tra cứu riêng và không khóa.
+- admin_update_org_member_status không khóa Organization/Membership trước khi đổi status.
+- admin_remove_org_membership khóa membership nhưng chưa khóa Organization trước.
+- Chuẩn hóa: Organization → Membership (nếu đã tồn tại) → Role/assignment/permission → Receipt/audit/event theo mutation contract. Không được có đường ngược thứ tự.
+- Khi tạo membership chưa có row: khóa Organization trước, khóa/check Role, sau đó insert membership và assignment.
+
+**P1 — Change role cần enforce đúng một assignment và mirror**
+- DELETE + INSERT trong một PL/pgSQL RPC là atomic; không có trạng thái commit giữa hai lệnh.
+- Tuy nhiên SELECT INTO hiện join assignment có thể trả nhiều dòng nếu duplicate; khi đó role được chọn không xác định. Preflight hiện tại Test không có duplicate, nhưng RPC vẫn phải phát hiện integrity violation thay vì chọn tùy tiện.
+- Sau khi thêm unique (organization_id, member_id), RPC đổi role phải xác nhận assignment hiện tại đúng một dòng và role hiện tại active; role đích active và thuộc đúng organization; khóa target và role theo lock matrix.
+- Cập nhật organization_members.role mirror trong cùng transaction: role Admin → legacy admin; Technician/Viewer → legacy user. Hiện RPC chỉ nhận Technician/Viewer nên legacy user giữ nguyên; cần cập nhật rõ để tránh lỗi khi mở rộng role hoặc Admin workflow.
+- DELETE + INSERT + mirror + Receipt/audit/change event phải cùng transaction. Nếu bất kỳ bước nào lỗi, rollback toàn bộ.
+
+**P1 — Create membership phải khóa và chống race**
+- admin_create_org_membership hiện insert membership rồi assignment trong cùng transaction; đây là điểm tốt.
+- Cần khóa Organization active trước khi tạo; khóa Role active theo cùng lock order; giữ khóa Auth user nếu cần giải quyết email-confirmation race nhưng phải phân tích deadlock với trigger Auth.
+- Duplicate membership phải trả conflict có kiểm soát; không được xóa Auth user đã tồn tại trước đó.
+- Không cho phép membership commit nếu assignment insert không thành công; sau unique constraint, một membership chỉ có thể nhận một assignment.
+
+**P1 — Auth trigger không được tự ý thay lifecycle membership ngoài protocol**
+- sync_auth_user_profile hiện cập nhật status invited → active trực tiếp từ trigger auth.users.
+- Trigger không cập nhật role assignment, nhưng vẫn là một writer lifecycle membership; nó có thể chạy đồng thời với suspend/remove/invite và không tuân thủ lock order Organization → Membership.
+- Theo hướng thiết kế Invite Saga đã review: trigger chỉ đồng bộ Profile; membership activation phải qua RPC self-activation/Finalize có khóa, điều kiện Auth confirmation, idempotency và audit rõ ràng. Chưa sửa trigger hoặc tạo migration ở bước audit này.
+
+**P1 — Edge Function pre-check không thay thế server transaction authorization**
+- Edge Function kiểm tra users.manage qua caller JWT trước khi gọi service_role RPC. RPC hiện chỉ kiểm tra auth.role() = service_role và nhận p_actor_user_id từ caller do Edge Function truyền vào.
+- Cần giữ kiểm tra users.manage ở server-side mutation protocol/RPC, xác thực actor từ JWT tin cậy hoặc một service-only contract không thể bị gọi tùy tiện; kiểm tra quyền và mutation phải được serialize phù hợp với suspend/revoke race.
+- Các thao tác list/reset/remove hiện có pre-read qua service_role; không dùng kết quả pre-read làm căn cứ cuối cùng cho mutation. RPC phải kiểm tra lại target, role, trạng thái và điều kiện cấm ngay trong transaction.
+- Invite flow hiện có thể xóa Auth user vừa được invite nếu RPC tạo membership lỗi. Phải thay bằng Invite Saga đã thiết kế; không rollback bằng cách xóa Auth user mù quáng khi outcome không rõ hoặc user có thể đã được dùng ở tenant khác.
+
+### 23.4 Điều kiện cutover đề xuất
+
+1. Preflight Test đạt như báo cáo ngày 19/11/2026; trước migration vẫn chạy precondition trong chính transaction migration để dừng nếu duplicate xuất hiện sau snapshot.
+2. Thêm unique constraint/index (organization_id, member_id) chỉ sau precondition duplicate = 0.
+3. Thay/thiết kế lại RPC create/change/status/remove theo lock order; mỗi writer phải giữ tenant boundary, membership state, role active, actor permission và Receipt/audit trong transaction.
+4. Cập nhật legacy mirror trong cùng transaction; member_roles là nguồn quyền, legacy role chỉ là compatibility mirror.
+5. Chuyển Auth trigger membership activation sang RPC lifecycle có kiểm soát theo Invite Saga.
+6. Roster phải trả một role duy nhất; thiếu/nhiều assignment là integrity error, không fallback legacy và không chọn tùy tiện.
+7. Sau khi các writer mới sẵn sàng, chuyển has_org_role, RLS, member-management RPC và Edge Function sang member_roles-only; chạy đầy đủ permission/RLS/concurrency tests.
+
+### 23.5 Ranh giới xác minh
+
+Đây là static audit repository. Không sửa migration, SQL draft, Edge Function, UI hoặc test; không chạy SQL/RPC; không thay đổi Supabase Test hay Production. Kết quả preflight Test được ghi nhận riêng, không có nghĩa các vấn đề concurrency/authorization đã được kiểm thử runtime.
+
