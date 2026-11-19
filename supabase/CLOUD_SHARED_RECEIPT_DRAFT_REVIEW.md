@@ -163,3 +163,15 @@ DDL draft 021 tạo riêng organization_member_invite_operations và organizatio
 - Asset-specific Receipt/Lease tiếp tục là ngoại lệ riêng, không dual-write hoặc thay schema trong Member cutover.
 
 DDL 021 chưa có RPC để insert audit + Receipt atomic; yêu cầu này vẫn bắt buộc cho business RPC. Chưa chạy SQL hoặc thay đổi database.
+
+
+## 9. Audit constraints và transaction boundary (19/11/2026)
+
+DDL 021 đã yêu cầu mutation_id cho audit membership lifecycle và invite_operation_id cho create/adopt/Saga-state events. Đây mới là schema-level completeness check, không thay thế Shared Receipt:
+- Business membership RPC phải claim/replay Shared Receipt theo contract §7/Member §27.
+- Membership mutation + audit row + receipt finalize phải cùng một DB transaction.
+- Saga state transitions nằm ở transaction riêng, không tạo giả Shared Receipt cho mỗi lần gọi Auth Admin API.
+- RPC phải xác thực actor và permission bên trong transaction; không tin actor_user_id do Edge Function truyền vào.
+- Audit CHECK chỉ kiểm tra shape/allowlist; authorization, state transition và idempotency vẫn thuộc RPC.
+
+Chưa chạy SQL hoặc thay đổi database.
