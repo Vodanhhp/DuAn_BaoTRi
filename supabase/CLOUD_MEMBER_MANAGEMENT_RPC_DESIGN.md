@@ -1943,3 +1943,23 @@ Không thể đóng crash window bằng cách tạo user trước rồi gọi up
 - Không log raw marker, access token, service key, email hoặc payload nhạy cảm.
 
 **Trạng thái:** proposal cần review; marker create-time support chưa được xác minh cho endpoint/SDK cụ thể. Fail-closed: nếu không có bằng chứng correlation, `needs_review`. Chưa sửa DDL 021, chưa viết RPC/worker, không chạy SQL hoặc thay đổi Supabase.
+
+
+### 42. Technical verification: createUser khác inviteUserByEmail về create-time app_metadata (20/11/2026)
+
+Đã kiểm tra `supabase/auth-js` và Supabase Auth server source hiện hành trên nhánh `master`:
+
+1. `supabase.auth.admin.createUser(attributes)` nhận `AdminUserAttributes`; type hiện hành khai báo `app_metadata?: object`. SDK gửi nguyên `attributes` trong POST `/admin/users`. GoTrue `adminUserCreate` nhận `AppMetaData`, tạo user trong DB transaction, sau đó gọi `user.UpdateAppMetaData(tx, params.AppMetaData)` trong chính transaction đó trước commit. Vì vậy, với endpoint **createUser**, server-managed marker có thể được ghi nguyên tử cùng quá trình tạo Auth user theo source hiện tại. Đây là bằng chứng source-level, chưa phải xác nhận version đang chạy trong project; cần pin phiên bản Auth server và `@supabase/supabase-js` trước implementation.
+
+2. Nhưng luồng nghiệp vụ Invite Saga của BAOTRI Mini là **invite email**, không đơn thuần `createUser`. SDK `inviteUserByEmail(email, options)` hiện chỉ gửi body `{ email, data: options.data }` tới POST `/invite`; `data` được lưu ở `user_metadata`, không có `app_metadata` parameter. GoTrue `InviteParams` hiện chỉ nhận `Email` và `Data`; endpoint tạo user qua signup flow và không nhận create-time `AppMetaData`. Do đó không được chuyển marker sang `user_metadata`.
+
+3. `generateLink({type:'invite', ...})` cũng không được mặc định xem là hỗ trợ marker; SDK generateLink body phải được kiểm tra theo `GenerateLinkParams`/server handler version cụ thể. Tài liệu hiện hành chỉ mô tả custom data/user_metadata cho invite; chưa có căn cứ để dùng app_metadata làm correlation marker trong native invite flow.
+
+**Kết luận quan trọng:** hướng `app_metadata` create-time marker có cơ sở cho `admin.createUser`, nhưng **không áp dụng trực tiếp cho `admin.inviteUserByEmail`** đang phù hợp với luồng Invite Saga. Không được ghi nhận đây là giải pháp đã đóng crash window của Invite Saga.
+
+Các hướng còn lại cần đánh giá riêng, không tự ý chọn:
+- Kiểm tra khả năng Supabase Auth hook/before-user-created hook nhận correlation marker server-trusted và bảo toàn nó trong transaction; phải chứng minh semantics cụ thể, không dựa vào payload client.
+- Xem xét thay đổi quy trình provisioning (ví dụ createUser + cơ chế gửi invite riêng) chỉ khi chấp nhận được khác biệt về hành vi email/confirmation và bảo đảm không có khoảng hở tạo user rồi mới gửi mail; đây là thay đổi nghiệp vụ, chưa được duyệt.
+- Nếu không có correlation atomic cho native invite endpoint, giữ `outcome_unknown`/`needs_review`, manual review; không auto attach.
+
+**Nguồn source đã kiểm tra:** `supabase/auth-js` `GoTrueAdminApi.ts`, `lib/types.ts`; `supabase/auth` `internal/api/admin.go`, `internal/api/invite.go`. Source trên nhánh master có thể thay đổi; trước implementation phải pin release/commit tương ứng với project. Chưa sửa DDL 021, chưa tạo RPC/worker, không chạy SQL hoặc thay đổi Supabase.
