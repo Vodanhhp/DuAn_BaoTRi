@@ -4645,3 +4645,21 @@ Tạm dùng làm giả thuyết để kiểm tra, không phải quyết định 
 - Checkpoint §87 đã bổ sung inventory FK/lock Asset; §88 ghi nhận direct DELETE capability và lock inversion.
 - Bước tiếp theo: kiểm tra mọi business table có hard-delete policy/grant tương tự, và rà soát code Local/Cloud delete queue để xác định hành vi thực tế trước khi chốt policy.
 - Chỉ đọc/nghiên cứu. Không SQL write, DDL, RPC, grant, role, Auth/data, secrets, Edge Function deployment hoặc cấu hình Supabase thay đổi.
+
+
+## 89. Inventory DELETE privilege và legacy Local-first queue – 20/11/2026
+
+### Database capability
+Authenticated hiện có DELETE trên 5 bảng: `assets`, `asset_images`, `inventory_items`, `maintenance_plans`, `maintenance_tasks`. RLS yêu cầu lần lượt `assets.delete`, `inventory.delete`, `maintenance.delete`; riêng asset_images dùng `assets.delete`. Authenticated có INSERT trên asset_images/inventory_items/maintenance_plans/maintenance_tasks và UPDATE trên maintenance_plans/maintenance_tasks. Checklist templates/versions và các bảng lịch sử không có DELETE policy.
+ 
+### Runtime caller và Local queue
+- Không tìm thấy Cloud client gọi trực tiếp `.from(table).delete()` cho các business table.
+- UI có xóa Maintenance Plan qua `deleteAndQueue()`, tức xóa Dexie + ghi Local syncQueue trong cùng Local transaction.
+- `cloudSync.ts` dùng upsert tombstone vào `maintenance_records`, nhưng `syncLocalDatabase()` chỉ có định nghĩa, không tìm thấy caller trong App. Đây là legacy generic sync, không phải Cloud business mutation/Receipt và không được bật lại.
+- Database grants/RLS vẫn cho phép một số direct business writes dù code hiện không gọi. Cần phân biệt “khả năng DB” với “luồng runtime đang dùng”.
+
+### Hệ quả và bước tiếp
+- Cloud-first rollout từng vertical phải thu hẹp direct DML hoặc cung cấp RPC/Receipt/audit/lock protocol tương ứng trước khi bật.
+- Asset DELETE có deadlock candidate Lease ↔ Asset đã ghi ở §88. Maintenance Plan/Task direct UPDATE/DELETE cần review FK/history và transaction semantics riêng.
+- Tiếp theo: lập ma trận theo từng vertical (Asset, Inventory, Maintenance, Checklist, Logs/Movements), ghi rõ DML grant, RLS, RPC, Receipt, FK, Local caller và Cloud caller; chỉ sau đó mới chốt phạm vi cutover.
+- Chỉ đọc/nghiên cứu. Không SQL write, DDL, RPC, grant, role, Auth/data, secrets, Edge Function deployment hoặc Supabase config change.
