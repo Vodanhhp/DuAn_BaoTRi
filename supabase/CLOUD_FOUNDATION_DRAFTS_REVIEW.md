@@ -1675,3 +1675,18 @@ Important unresolved trust boundary: Saga stores an HMAC digest while key materi
 Use keyset pagination with bounded page size; no OFFSET/COUNT and no response differences that enumerate arbitrary Auth emails. Realtime is only a wake-up hint; fetch the protected projection again. No physical Inbox table/cache initially.
 
 Status: design proposal only. No DDL/RPC/Edge Function/worker/SQL/Supabase changes. Resolve HMAC trust boundary, acceptance idempotency/receipt contract, expiry/revocation/decline, rate limit and audit retention before implementation.
+
+ 
+## 55. In-app Invitation Inbox — RPC and digest review
+
+The list/accept design requires a recipient lookup digest distinct from the full canonical request fingerprint. Do not attempt to search by `request_fingerprint_digest`, because it represents the complete invite intent rather than the recipient email alone. Candidate fields are a dedicated HMAC-SHA-256 recipient digest, key version and normalization version. Use a separate key/purpose (domain separation) from the request fingerprint; never store key material in Postgres. Define and version one canonical email normalization contract; do not apply provider-specific dot/plus alias folding. Digest is not a deliverable email address.
+
+Client calls a public Edge Function with its access token and no actor UID/email. The function validates the bearer with Auth server-side, obtains authoritative UID/email/verified state, computes the recipient digest with a secret-manager key, and calls a private internal RPC using server credentials. The internal RPC is not Data-API exposed; revoke EXECUTE from PUBLIC/anon/authenticated and grant only to the required server role. Do not place SECURITY DEFINER functions in exposed schemas. The RPC must validate the actor and current Auth email/confirmation state against the values just verified by the Edge Function, with an appropriate lock to address email-change races; feasibility and permissions must be tested before implementation.
+
+Candidate public contracts:
+- List: `list_pending_invitations(cursor?, limit?)`; no email/UID/org/role inputs. Internal query returns only unexpired, unrevoked, valid pending invitations matching the recipient digest and active organization/role. Allowlist remains invitation ID, organization name, safe role label, created/expiry timestamps and derived pending status.
+- Pagination: keyset by stable `(created_at, operation_id)`; default 20, maximum 50; no OFFSET/COUNT. Cursor is continuation data, never an authorization credential, and is validated/bound server-side to the current actor/digest.
+- Accept: `accept_invitation(invitation_id, mutation_id)`; Edge Function revalidates bearer and digest on every call. The transaction rechecks invitation, actor/email verification, expiry/revocation, active organization, role and membership conflict, then commits membership + single role + audit + Shared Receipt + Saga completion atomically.
+- Idempotency must bind invitation + authenticated actor + mutation ID + payload; same-key/different-payload conflicts; replay returns the original receipt; a different actor cannot obtain the result or membership.
+
+Open blockers: final digest columns/normalization/key rotation; hosted permission and row-lock behavior for checking current auth.users email inside the acceptance transaction; activation state transition; expiry/revoke/decline and inviter authority; rate limits/audit retention; exact Shared Receipt key. Design only; no DDL/RPC/Edge Function/SQL/Supabase changes.
