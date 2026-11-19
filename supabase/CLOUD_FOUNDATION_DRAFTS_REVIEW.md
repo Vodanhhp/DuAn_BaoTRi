@@ -1985,3 +1985,21 @@ Chỉ đọc function definitions trong catalog Test và migration source. Khôn
 
 ### Trạng thái
 Read-only review source migrations, FK, triggers và effective privileges trên BAOTRI-Mini-Test. Ma trận là inventory/candidate, chưa phải chứng nhận không deadlock.
+
+
+## 74. Asset hard-delete path và Lease cascade – 20/11/2026
+
+### Quyền xóa hiện tại
+- Migration 006 có policy `assets_delete_permission` cho authenticated với predicate `has_org_permission(organization_id, 'assets.delete')`.
+- Effective privilege Test xác nhận authenticated có DELETE trên `public.assets`, không có UPDATE. Do đó direct PostgREST DELETE có thể thực thi nếu RLS permission policy pass; không cần RPC delete riêng.
+- Static search không tìm thấy caller Cloud `.from('assets').delete()` hoặc `assets.delete` RPC. Đây là capability của database, chưa thấy luồng UI/Cloud hiện hành gọi trực tiếp.
+- Asset Edit Lease FK tham chiếu Asset ON DELETE CASCADE; Asset images, checklist results/templates, inventory movements, maintenance logs/plans/tasks đều RESTRICT. Vì vậy hard-delete chỉ thành công khi các bảng lịch sử/tham chiếu RESTRICT không còn row liên quan; Lease sẽ bị cascade.
+
+### Lock-order conflict cụ thể
+- Update/archive/receipt RPC khóa Lease FOR UPDATE rồi mới UPDATE/lock Asset: Lease → Asset.
+- Direct Asset DELETE khóa Asset row trước; FK cascade cần xóa Lease: Asset → Lease.
+- Hai transaction trên cùng Asset có thể tạo chu trình chờ: T1 giữ Asset chờ Lease; T2 giữ Lease chờ Asset. Đây là deadlock candidate trực tiếp từ hai đường truy cập đang được cấp quyền, dù chưa thấy caller delete trong UI.
+- Cần một trong các quyết định thiết kế trước khi bật Cloud delete: cấm direct DELETE và chuyển sang RPC delete theo thứ tự Lease → Asset; hoặc thay đổi lock protocol của update/delete thống nhất. Không chỉ dựa vào FK RESTRICT vì Lease vẫn cascade.
+
+### Trạng thái
+Chỉ đọc migration 006, ACL/RLS Test, FK catalog và static search caller. Không thực hiện DELETE, không sửa grants/policy/RPC.
