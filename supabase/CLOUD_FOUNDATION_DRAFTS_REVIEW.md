@@ -253,3 +253,39 @@ Draft 018 **chưa đạt để chạy** vì lỗi cú pháp. Ngoài sửa lỗi 
 
 - PostgreSQL 18 — [Numeric Types](https://www.postgresql.org/docs/18/datatype-numeric.html): NaN, Infinity và quy tắc so sánh numeric.
 - PostgreSQL — [Constraints](https://www.postgresql.org/docs/current/ddl-constraints.html): semantics của CHECK constraints.
+
+
+## 10. Đối chiếu sâu draft 018 với schema inventory_movements gốc
+
+Đã fetch và đối chiếu draft 018 với migration nền `20261117000200_business_schema.sql` trên nhánh main. Đây là static review của mã nguồn migration, không xác nhận migration đã chạy trên Supabase.
+
+### 10.1 Schema gốc xác nhận
+
+- `inventory_movements.quantity` là `numeric(18,4) NOT NULL`, `reason` là `text NOT NULL DEFAULT ''`.
+- Movement type được giới hạn ở `Nhập`, `Xuất`, `Điều chỉnh`; quantity hiện có CHECK `quantity > 0`.
+- `inventory_movements` có FK tenant-safe tới `inventory_items` và Asset tùy chọn.
+- Direct client INSERT vào `inventory_movements` hiện đang bị withheld trong migration nền; không được hiểu draft 018 là đã mở đường ghi trực tiếp.
+- Các CHECK hiện có trên `inventory_items.quantity`, `min_quantity`, `unit_price` cũng chỉ kiểm tra không âm. Do semantics numeric NaN của PostgreSQL, các CHECK này không tự loại NaN.
+
+### 10.2 Phát hiện bổ sung về NaN
+
+Phát hiện NaN ở mục 9.3 không chỉ áp dụng cho các cột audit mới. Cột `inventory_movements.quantity` hiện hữu cũng là numeric và được kiểm tra bằng `quantity > 0`; CHECK này không đủ để loại NaN.
+
+Yêu cầu thiết kế:
+1. Mọi movement mới phải từ chối NaN ở `quantity`, `quantity_delta`, `balance_before`, `balance_after`, `counted_quantity`.
+2. RPC phải từ chối NaN ở các numeric đầu vào tồn kho như initial quantity, counted quantity, quantity nhập/xuất, min quantity và unit price.
+3. Không cần thay đổi lịch sử hoặc backfill. Nếu dữ liệu hiện có có NaN, phải phát hiện và xử lý bằng một kế hoạch dữ liệu riêng trước khi thêm constraint; không tự sửa dữ liệu.
+4. Test riêng từng cột và từng RPC; không coi phép so sánh `>= 0`, `> 0`, `<> 0` hoặc phương trình balance là bộ lọc NaN.
+
+### 10.3 Giới hạn của CHECK snapshot
+
+- Constraint hiện tại bảo đảm audit fields gần như đầy đủ khi `quantity_delta` có giá trị; legacy rows vẫn có thể để toàn bộ audit snapshot NULL.
+- Constraint không tự biết một movement mới là opening movement hay movement trên Item đã tồn tại. Bắt buộc expected version là trách nhiệm của RPC theo ngữ cảnh thao tác.
+- Constraint không xác nhận `created_by_user_id = auth.uid()`; giá trị actor phải do server/RPC gán, không nhận từ client.
+- Constraint không xác nhận `mutation_id` đã có Receipt tương ứng. RPC phải tạo Receipt và movement cùng transaction; cần test FK/logic liên kết nếu thiết kế sau này bổ sung khóa ngoại.
+- `performed_by_label` là nhãn hiển thị lịch sử, không thay thế actor Auth; không được dùng nó làm căn cứ phân quyền hay truy vết danh tính.
+
+### 10.4 Kết luận đối chiếu
+
+Không phát hiện xung đột mới giữa schema movement gốc và các quyết định nghiệp vụ đã chốt. Tuy nhiên, phạm vi chặn NaN phải bao gồm cả cột `quantity` hiện hữu và mọi numeric input tồn kho. Draft 018 vẫn chưa hợp lệ do literal `\\\\n`; chưa sửa SQL, chưa chạy parser/DDL và chưa truy cập Supabase.
+
