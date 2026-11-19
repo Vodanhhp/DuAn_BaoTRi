@@ -96,3 +96,40 @@
 - [x] Phân loại sơ bộ dữ liệu mẫu, Checklist auto-create, backup/restore, local settings, Cloud settings, import/restore và export.
 - [ ] Chưa rà soát từng component/modal, các nút delete trên tất cả phân hệ và permission matrix để bảo đảm danh sách write site không bỏ sót.
 - [ ] Chưa thiết kế hay triển khai Cloud-first APIs/RPC; chưa chạy test.
+
+## 9. Rà soát write sites trong AppWorkspace, Checklist, quản lý thành viên và CloudAssetsPanel (19/11/2026)
+
+### 9.1 Write sites trong App.tsx đã đối chiếu
+- `saveAsset()`: Asset linked ghi Local snapshot + AssetMutation trước RPC; Asset chưa linked ghi Local + queue. Chưa Cloud-first.
+- `saveItem()`, `saveTask()`, `saveLog()`: Local put + queue.
+- `saveMaintenancePlans()`: bulkPut Local + queue; `deleteMaintenancePlan()` xóa Local + queue.
+- `completeTask()`: ghi Task completed + Log mới + queue trong một Dexie transaction; cần Cloud RPC atomic.
+- `archiveAsset()`, `restoreAsset()`, `changeAssetStatus()`: linked Asset bị chặn bởi `blockCloudLinkedAssetMutation()` vì chưa có receipt protocol cho các hành động này; Asset chưa linked vẫn putAndQueue Local.
+- `addMovement()`: cập nhật quantity + thêm Movement + queue trong Dexie transaction; cần Cloud transaction atomic/idempotent.
+- `ensureDefaultChecklist()`: tự tạo Template + Version + queue khi mở Checklist nếu chưa có. Đây là side-effect khi xem màn hình; cần loại bỏ auto-commit và chỉ tạo sau hành động chủ động/Cloud-first.
+- `saveTemplate()`: Template put + Version add + queue trong Dexie transaction.
+- `saveResult()`: addAndQueue ChecklistResult.
+- `createRequestFromChecklist()`: chỉ dựng Log draft trong UI, chưa ghi DB cho đến khi người dùng lưu.
+- `createDemoData()` và `createAdditionalDemoAssets()`: Local-only demo data + queue; giữ riêng công cụ test, tuyệt đối không tự đưa dữ liệu demo vào tenant Cloud.
+- Restore backup (`applyRestore()`) thay toàn bộ các bảng Local và syncQueue trong Dexie transaction. Đây là local recovery/import, không được tự chuyển thành business Cloud write; cần preflight/reconciliation riêng.
+- Backup/Excel/print/report là read/export; không cần Cloud write. Có thể cho offline nếu dữ liệu Local có sẵn và ghi rõ đó là snapshot Local.
+
+### 9.2 Quản lý thành viên và hồ sơ
+- Invite, update role, suspend/activate, remove membership, reset password gọi Edge Function `manage-organization-members`; đây là thao tác quản trị Cloud, đã chờ response trước khi cập nhật thông báo và tải lại danh sách. Không ghi Dexie/syncQueue.
+- Cần tiếp tục xác minh permission enforcement phía Edge Function/RPC; UI role check không thay thế backend authorization.
+- `onSaveProfile()` cập nhật Supabase Auth user metadata trực tiếp và await response; đây là hồ sơ Auth cá nhân, không phải dữ liệu bảo trì/tenant. Có thể giữ riêng, không buộc dùng business mutation queue.
+- Theme/compact mode và một số danh mục UI dùng localStorage; phải phân loại rõ personal/device setting với organization-shared setting. Không khóa cài đặt cá nhân khi offline.
+
+### 9.3 CloudAssetsPanel và cấu hình
+- Lưu cấu hình mã Asset ghi `organization_settings` qua insert/update Supabase; đây là organization setting và phải giữ Cloud confirmation trước khi thông báo hoàn tất.
+- Nhận Asset Cloud về Local chỉ đọc Cloud row, preflight UUID/code/mapping/mutation/queue rồi ghi Asset + `assetCloudLinks` trong một Dexie transaction. Đây là import/restore cache Cloud → Local, không phải Cloud business mutation; semantics hiện tại phải được giữ và audit tương thích với Cloud-first.
+- Permission preflight hiện kiểm tra `assets.import` và `settings.manage` qua RPC `has_org_permission`; backend vẫn phải enforce quyền tại write/read endpoint.
+
+### 9.4 Kết luận bổ sung
+- Đã rà soát các write handlers cấp AppWorkspace, Checklist, thao tác thành viên, hồ sơ Auth và CloudAssetsPanel. Không thấy một handler xóa vĩnh viễn Asset/Inventory/Task/Log; thao tác xóa nghiệp vụ cụ thể được tìm thấy là xóa Maintenance Plan qua `deleteAndQueue`. Cần rà tiếp các modal con và các module khác để chắc chắn không bỏ sót thao tác xóa/ghi.
+- Các thao tác local recovery, import Cloud → Local, demo/test, personal settings, organization settings, Auth profile và business writes phải được tách thành các nhóm khác nhau; không áp một Cloud write handler chung một cách máy móc.
+- Đây vẫn là code audit; chưa runtime test, chưa thay đổi code/schema/RPC/dữ liệu.
+- [x] Rà soát các write sites chính trong `src/App.tsx` và các hành động phụ.
+- [x] Đối chiếu quản lý thành viên, Auth profile, `CloudAssetsPanel` và `assetsCloud.ts`.
+- [ ] Chưa hoàn tất permission matrix cho từng role trên mọi component/modal.
+- [ ] Chưa xác minh toàn bộ module phụ/child components và các hành động xóa trên mọi màn hình.
