@@ -1403,3 +1403,63 @@ Chưa viết migration/business RPC cho tới khi:
 ### 30.8 Ranh giới
 
 Chỉ bổ sung kết quả cross-review tài liệu. Không tạo/sửa SQL draft, migration, Edge Function, UI, Dexie hoặc test; không chạy SQL/RPC; không thay đổi Supabase Test/Production, quyền hoặc dữ liệu. Các operation/event names trong mục này là đề xuất chờ chốt, không phải quyết định đã được người dùng duyệt.
+
+
+## 31. Chốt lại Lock Matrix và phạm vi roster sau quyết định sản phẩm (19/11/2026)
+
+Trạng thái: **chuẩn hóa tài liệu thiết kế; chưa phải migration hoặc phê duyệt cutover**. Mục này cập nhật cách áp dụng §§21 và 30 sau khi đối chiếu Member RPC §26. Không xóa các nhận định lịch sử; khi có khác biệt, dùng quy tắc tại §31 cho thiết kế Member RPC mới.
+
+### 31.1 Lock order có hiệu lực cho Member RPC
+
+Các mô tả tại §21.1 và một số dòng §21.2 được viết trước khi chốt thứ tự khóa Membership. Với Member RPC, thứ tự chuẩn là:
+
+1. Organization.
+2. Tất cả actor/target Membership cần thiết, khóa theo UUID tăng dần; actor=target chỉ khóa một lần.
+3. Member role assignments cần thiết, theo khóa ổn định.
+4. Role rows, theo role ID tăng dần.
+5. Role Permission rows, theo (role_id, permission_code) tăng dần.
+6. Auth user row chỉ khi Invite Saga/finalize cần; không gọi Auth Admin API hoặc network khi đang giữ DB locks.
+7. Receipt claim cho mutation mới; Receipt replay lookup read-only là nhánh riêng sau Organization + actor Membership.
+8. Business/target rows theo table-rank và primary key.
+9. Organization Sync Counter và Change events chỉ cho các loại feed đang được bật.
+10. Receipt finalize trong cùng transaction.
+
+Như vậy, với Member RPC, **khóa actor và target Membership trước role assignments/Role/Role Permission**. Quy tắc này thay thế thứ tự cũ tại §21.1 (Role/Permission trước target Membership) và các mô tả khác nhau trong bảng §21.2. Các RPC không cần một lớp có thể bỏ qua lớp đó nhưng không được đảo thứ tự tương đối.
+
+Không suy rộng thứ tự Member RPC sang Asset RPC. Asset Lease/Asset Receipt vẫn là ngoại lệ chuyển tiếp; cần bridge contract riêng để hòa giải thứ tự Receipt → Lease → Asset row trước khi Asset cutover.
+
+### 31.2 Receipt lookup và claim là hai nhánh khác nhau
+
+- Replay lookup: sau Auth + Organization active + actor Membership active, đọc Receipt read-only; nếu Receipt final khớp actor/operation/fingerprint thì replay theo current read permission. Không cần write permission cũ, không claim, không khóa business row, không tạo side effect.
+- Mutation mới: nếu không có Receipt, tiếp tục khóa target/assignment/Role/Permission và kiểm tra write permission trong transaction; sau đó claim unique Receipt key trước business row locks và side effects.
+- Permission-denied recheck: nếu Receipt có thể vừa commit sau lookup ban đầu, đọc lại Receipt trong statement riêng trước khi trả deny; chỉ replay khi Receipt final và fingerprint khớp. Không claim hoặc thực hiện mutation trong nhánh deny.
+- Claim contention: request thua đọc Receipt ở statement tiếp theo theo READ COMMITTED; không dựa vào exception unique violation rồi tiếp tục trong transaction đã abort.
+- Business rows, row_version, Receipt và các event feed có liên quan (nếu có) phải cùng transaction. No_change/conflict không tạo Change Feed event nếu không có record thực sự thay đổi.
+
+Đây là cách áp dụng thống nhất cho Member RPC và Shared Receipt review; không làm thay đổi Asset-specific Receipt hiện hữu.
+
+### 31.3 Roster không thuộc Change Feed hiện tại
+
+Quyết định sản phẩm tại Member design §13 vẫn giữ nguyên: **chưa đưa roster vào Change Feed**.
+
+- §30.4 và các event code membership.* tại Member design §25.4 chỉ là phân tích cho khả năng tương lai; không phải P0 blocker của migration Member RPC hiện tại.
+- Member create/change-role/status/remove/self-activation hiện chỉ cần Shared Receipt + audit quản trị append-only; không insert membership event, không tăng organization sync cursor và không đồng bộ roster.
+- Roster read tiếp tục là RPC riêng có users.view; users.manage không tự suy ra quyền đọc.
+- §30.5 về cache Local của roster chỉ trở thành điều kiện bắt buộc nếu sau này quyết định bật roster sync. Không được vì mục đó mà tự thêm roster payload/control event vào Change Feed hiện tại.
+- Các nguyên tắc revoke/cache Local vẫn bắt buộc đối với những loại dữ liệu thực sự được đồng bộ qua Change Feed; việc chưa sync roster không miễn trừ bảo vệ cache của Asset/Inventory/Task/Log đang thuộc feed tương lai.
+
+### 31.4 Cổng hoàn tất đã điều chỉnh trước executable Member SQL
+
+Trước khi viết SQL Member RPC, cần:
+1. Đồng bộ Member §24–26 với lock order tại §31.1.
+2. Chốt pseudocode Receipt replay, new claim, contention và permission-denied recheck theo §31.2.
+3. Chốt operation code, server-built fingerprint allowlist, Receipt read-permission requirements và audit fields.
+4. Chốt caller JWT RPC ↔ Edge Function ↔ Auth Admin API Invite Saga boundary.
+5. Kiểm thử concurrency cho Membership/Role/Permission/Organization revoke và target suspend/remove; test replay sau revoke và Invite Saga recovery.
+6. Giữ roster Change Feed ngoài scope. Không yêu cầu event schema/tombstone roster để mở Member RPC cutover hiện tại.
+
+Sau khi các contract này nhất quán mới viết migration riêng; migration vẫn phải static review và cần người dùng phê duyệt trước khi chạy trên Supabase Test.
+
+### 31.5 Ranh giới
+
+Chỉ chuẩn hóa tài liệu. Không sửa migration 013/014, draft SQL, Edge Function, client hoặc Dexie; không chạy SQL/RPC và không thay đổi Supabase Test/Production, quyền hay dữ liệu.
