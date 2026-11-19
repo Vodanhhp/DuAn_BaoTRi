@@ -605,3 +605,92 @@ Rà soát tĩnh toàn bộ `src/App.tsx` (242,971 ký tự), `src/db.ts`, `src/C
 ### 15.6 Trạng thái
 
 Đây là bản đồ dựa trên static source scan và các handler đang có trên `main`. Chưa runtime-test toàn bộ UI, chưa xác minh trạng thái migration đã áp dụng ở Supabase, chưa sửa code/SQL, chưa chạy RPC/worker, và không ghi/xóa dữ liệu Local hoặc Cloud.
+
+
+## 16. Hợp đồng nền tảng thống nhất: Shared Receipt + row_version + Change Feed
+
+Mục này hợp nhất các quyết định trong CLOUD_RPC_IDEMPOTENCY_CHANGEFEED_DESIGN.md, draft 015, draft 020, migration plan và các review 8–15. Đây là hợp đồng kiến trúc chuẩn để các vertical RPC sau này tuân theo; chưa phải SQL migration và không thay thế review riêng từng draft.
+
+### 16.1 Ba lớp có trách nhiệm khác nhau
+
+1. **Shared Receipt — mutation identity và recovery**: xác định một logical request đã được commit hay chưa; ngăn chạy lặp; lưu kết quả canonical để cùng actor phục hồi sau timeout/mất response.
+2. **row_version / revision_no — concurrency control**: phát hiện dữ liệu đã thay đổi kể từ lúc client đọc. row_version dành cho mutable master/config row; revision_no dành cho append-only Log revision. Receipt không thay thế version check.
+3. **Change Feed — phân phối thay đổi tới thiết bị khác**: cung cấp event theo cursor commit-order. Change Feed không phải idempotency ledger, không phải outbound queue và không quyết định quyền ghi.
+
+Một transaction business mutation thành công phải commit đồng thời: business rows + version/revision + một Shared Receipt + các change events tương ứng. Bất kỳ lỗi nào trước commit đều rollback tất cả.
+
+### 16.2 Hợp đồng Shared Receipt
+
+- Một Receipt cho một logical mutation, PK (organization_id, mutation_id); có thể có 1..N affected records.
+- Actor chỉ lấy từ auth.uid(). Operation là mã nghiệp vụ ổn định, không phụ thuộc tên hàm SQL.
+- Server dựng canonical fingerprint từ organization, actor scope, operation, tất cả resource IDs, expected version/revision và payload đã chuẩn hóa theo allowlist. Không nhận fingerprint/hash authoritative từ client.
+- Draft 020 dùng JSONB fingerprint, không giả định pgcrypto. Đây là phương án chấp nhận được cho giai đoạn thiết kế; trước khi triển khai phải giới hạn kích thước, loại bỏ trường nhạy cảm không cần thiết và kiểm thử canonicalization/JSONB equality. Chỉ thay bằng digest sau khi xác minh hàm SHA-256 thực tế.
+- Receipt chỉ được claim và finalize trong cùng transaction với business mutation. pending không được commit; kết quả cuối chỉ là applied, no_change, conflict. Permission/Auth/validation rejection trước khi chấp nhận mutation không tạo Receipt.
+- Cùng key + cùng actor + cùng fingerprint: replay kết quả đã commit, không thực hiện business write lần nữa. Khác actor/operation/resource/version/payload: reject key reuse, không side effect.
+- Replay theo chính sách đã được người dùng chấp thuận: Auth hợp lệ + organization active + membership active + đúng actor. Không yêu cầu lại write permission. Full snapshots chỉ trả nếu hiện còn đủ toàn bộ read permissions; nếu thiếu bất kỳ quyền đọc nào thì chỉ trả acknowledgement tối thiểu.
+- Conflict và no_change là kết quả cuối có thể replay; không tạo Change Feed event. Không tự rebase conflict và không sinh mutation ID mới khi outcome request cũ chưa rõ.
+- Asset-specific Receipt/Lease tiếp tục được giữ. Không dual-write hai ledger; khi chuyển Asset phải có adapter đọc/replay receipt cũ trước khi đổi write path.
+
+**Lưu ý về draft 020:** DDL chỉ tạo bảng và trigger bảo vệ vòng đời Receipt; nó chưa xác thực Auth, membership, permission, fingerprint hoặc actor cho một business RPC. Các kiểm tra đó bắt buộc nằm trong từng SECURITY DEFINER RPC. Trigger/deferred guard cần test với owner thực tế, RLS, function grants và cả đường rollback; không xem DDL Receipt là đã hoàn thiện toàn bộ security boundary.
+
+### 16.3 Hợp đồng row_version và revision
+
+- Draft 015 áp dụng cho assets, inventory_items, maintenance_tasks, maintenance_plans, checklist_templates, organization_settings. Đây là danh sách mutable rows hiện được review; thay đổi phạm vi phải có lý do và migration riêng.
+- Version do database quản lý: INSERT bắt đầu 1; UPDATE business fields tăng đúng một; no-op không tăng. Client không được tự quyết định version.
+- Mỗi RPC khóa row, kiểm tra expected version, rồi UPDATE mỗi mutable row tối đa một lần cho một logical mutation. Không để trigger tăng hai lần do RPC cập nhật cùng row nhiều bước.
+- Conflict không thay đổi business row/version và không phát event; Receipt conflict ghi nhận kết quả conflict cùng mutation ID.
+- Append-only: inventory_movements, maintenance_log_revisions, checklist_template_versions, checklist_results không dùng row_version. Log revise dùng expected_revision_no và thêm revision mới.
+- Task completion + Log: Task row_version tăng một; Log root + revision 1 được tạo; một Receipt, một transaction, event riêng cho Task và Log.
+- Inventory movement: Inventory Item row_version tăng một; Movement append-only. Điều chỉnh tồn bằng số đếm thực tế; delta do server tính. Delta 0 là no_change, không tăng version và không có Movement/event.
+- Asset vẫn dùng expected_cloud_updated_at + Edit Lease + Asset Receipt hiện hữu trong giai đoạn chuyển tiếp. Draft 015 có thể bổ sung cột row_version, nhưng không tự động cho phép bỏ Lease hoặc đổi token của Asset RPC.
+
+**Điểm cần sửa trước promotion draft 015:** chạy static syntax/trigger review và test trên bản schema clone; xác minh trigger names không xung đột, bảng/cột thực tế và tất cả đường UPDATE hiện hữu. Việc thêm trigger không tự thu hồi direct UPDATE grants và không tự buộc client gửi expected_version.
+
+### 16.4 Hợp đồng Change Feed — chọn RPC làm event producer duy nhất
+
+**Quyết định kiến trúc:** chỉ business RPC ghi organization_changes và cập nhật counter; không dùng AFTER trigger để tự sinh cùng loại event. Trigger row_version chỉ quản lý version, không phát event. Không được đồng thời có RPC event insert và trigger event insert vì sẽ tạo event trùng.
+
+- Mỗi record thực sự thay đổi có một event; một logical mutation nhiều record có một Receipt nhưng nhiều event. Ví dụ Task + Log = hai events; Inventory Item + Movement = hai events.
+- Conflict/no_change không có event. Delete phải có tombstone; không dựa vào việc row đã bị hard-delete để client suy ra thay đổi.
+- Counter theo organization được khóa bằng row lock và giữ tới commit. Cấp cursor liên tiếp cho tất cả event của transaction. Không dùng PostgreSQL sequence độc lập làm cursor commit-order.
+- Counter phải được khởi tạo an toàn cho mọi organization hiện hữu trong migration; RPC vẫn cần xử lý phòng thủ nếu thiếu row (insert-on-conflict rồi lock lại). Không dùng MAX(cursor)+1 không khóa.
+- Chốt thứ tự khóa dùng chung cho tất cả business RPC: **Organization → Membership → Receipt claim/replay → business rows (sắp xếp ổn định theo table + ID) → organization counter → insert events → finalize Receipt**. Replay Receipt không đi tiếp tới business rows/counter. Các thao tác quản trị thay đổi organization/membership status phải tương thích thứ tự khóa này. Nếu RPC nào cần nhiều business rows, luôn khóa theo cùng thứ tự để tránh deadlock.
+- Event producer ghi payload snapshot tại thời điểm mutation trong cùng transaction; payload chỉ gồm field cần thiết cho đồng bộ và không được vượt quyền đọc. Append-only event giữ identity riêng, không coalesce mất lịch sử.
+- Pull RPC xác thực Auth, organization active, active membership và quyền đọc hiện tại. Không cho client đọc/ghi trực tiếp bảng counter/change feed.
+- Page có thể chứa event bị ẩn bởi permission. Pull phải tiến cursor qua các event đã quét nhưng không trả payload bị cấm; next_cursor là cursor cuối đã quét an toàn, không phải cursor cuối của event visible. Giới hạn page phải tính trên số event đã quét để tránh page vô hạn khi nhiều event bị lọc.
+- Pull trả high_watermark nhất quán với snapshot truy vấn. Cursor chỉ tiến đến event đã được xác định trong page; không nhảy qua event chưa trả/chưa quét. Retry cùng cursor phải cho kết quả nhất quán theo semantics đã định.
+- Client áp dụng toàn bộ page (snapshot + tombstone) trong một Dexie transaction; chỉ cập nhật cursor local sau khi toàn bộ page apply thành công. Không ghi đè Local draft/pending/conflict.
+- Retention/resync: khi cursor quá cũ, trả resync_required kèm snapshot boundary/high-watermark; tải snapshot theo boundary rồi tiếp tục feed từ cursor đó. Chỉ dọn tombstone/event sau khi cursor thiết bị còn hiệu lực đã vượt qua hoặc thiết bị hết hạn/thu hồi theo chính sách. Không âm thầm trả page rỗng.
+
+### 16.5 Luồng chuẩn của một business RPC
+
+1. Xác thực auth.uid(); khóa/đọc Organization active và Membership active theo thứ tự khóa chuẩn.
+2. Chuẩn hóa payload bằng allowlist và dựng fingerprint ở server.
+3. Tra Receipt theo organization + mutation ID. Nếu có, kiểm tra actor/fingerprint rồi replay read-only theo quyền đọc hiện tại.
+4. Nếu chưa có, kiểm tra permission ghi hiện tại; claim Receipt bằng unique key. Khi trùng key đồng thời, dùng INSERT ... ON CONFLICT DO NOTHING RETURNING, sau đó statement riêng SELECT Receipt; không bắt unique violation rồi tiếp tục trong transaction đã lỗi.
+5. Khóa các business rows theo thứ tự ổn định; kiểm tra tồn tại, tenant, expected row_version/revision, lease và điều kiện nghiệp vụ.
+6. Thực hiện business write; mỗi mutable row UPDATE đúng một lần; insert append-only rows nếu cần.
+7. Khóa organization counter; tạo event cho từng record thay đổi, cấp cursor liên tiếp.
+8. Finalize Receipt với status + affected refs + canonical result; commit.
+9. Chỉ sau RPC trả kết quả commit, client mới apply canonical snapshot/mapping vào Dexie. Nếu Local apply lỗi, phục hồi bằng cùng mutation ID/Receipt. Nếu response mất, giữ outcome unknown và replay cùng ID/payload; không tạo mutation mới.
+
+### 16.6 Các vấn đề vẫn phải kiểm chứng trước SQL migration
+
+- DDL draft 020: kiểm tra RLS/owner của trigger deferred, SECURITY DEFINER context, quyền EXECUTE và khả năng trigger đọc Receipt khi transaction finalize.
+- Draft 015: kiểm tra schema thực tế, trigger naming/order, direct grants và mọi UPDATE path cũ; xác nhận Asset compatibility.
+- Change Feed: chưa có DDL; cần thiết kế bảng, FK/retention, tombstone, payload contract, cursor counter initialization, pull RPC và resync snapshot boundary.
+- Lock order: đối chiếu các RPC quản trị membership/organization hiện có để chắc chắn không tạo deadlock ngược thứ tự.
+- Pull permission: xác định permission code cho từng resource, semantics event bị lọc và cursor progression; kiểm thử thu hồi quyền giữa các page.
+- Payload: giới hạn kích thước, dữ liệu nhạy cảm, snapshot event-time, schema version và xử lý event không nhận diện được ở client.
+- Asset: thiết kế legacy Receipt replay/adapter và quy trình giữ Lease trong lúc cutover.
+- Không migration nào được áp dụng chỉ vì draft đã qua static review; cần Test clone, concurrency tests, rollback tests, security/grants review và phê duyệt riêng.
+
+### 16.7 Thứ tự triển khai nền tảng sau khi thiết kế được duyệt
+
+1. Sửa và review draft 015, 020; chưa promotion.
+2. Thiết kế Change Feed DDL + pull contract theo mục 16.4.
+3. Viết migration nền tảng theo lát cắt riêng, chạy trên Test sau phê duyệt; kiểm thử lock order, Receipt concurrency, row_version và cursor commit-order.
+4. Viết một vertical RPC mẫu (ưu tiên Inventory hoặc một nghiệp vụ ít phụ thuộc Asset legacy) để kiểm chứng end-to-end Receipt → version → event → Local apply.
+5. Chỉ sau PASS mới nhân rộng RPC theo từng vertical và cutover client.
+
+**Trạng thái:** đây là hợp đồng kiến trúc thống nhất và danh sách kiểm chứng. Không sửa source code, không sửa SQL draft 015/020, không tạo migration Change Feed, không chạy SQL/RPC, không bật worker và không thay đổi Supabase Test/Production hoặc dữ liệu.
