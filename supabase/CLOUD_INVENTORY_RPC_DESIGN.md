@@ -110,3 +110,38 @@ Trong giai đoạn đầu, RPC movement chỉ nên hỗ trợ Nhập và Xuất.
 ## 7. Kết luận
 
 Rủi ro lớn nhất hiện tại không chỉ là movement RPC chưa có: UI cho sửa trực tiếp quantity khi sửa vật tư. Cần tách metadata khỏi balance ngay trong thiết kế Cloud; trước khi bật worker, phải có RPC tạo vật tư + tồn đầu kỳ, RPC metadata không có quantity, và RPC Nhập/Xuất transaction-safe.
+
+## 8. Quyết định nghiệp vụ đã được người dùng chốt (19/11/2026)
+
+Trạng thái: **ĐÃ CHỐT**. Nội dung mục này thay thế các câu hỏi “chưa chốt” tương ứng ở các mục trước.
+
+### 8.1 Ngữ nghĩa Điều chỉnh
+- Người dùng nhập `counted_quantity`: số tồn thực tế sau kiểm kê, không nhập delta.
+- Cho phép số tồn thực tế bằng 0; không nhận số âm.
+- RPC khóa dòng `inventory_items`, kiểm tra `expected_version`, đọc balance hiện tại rồi tính:
+  `quantity_delta = counted_quantity - balance_before`.
+- Nếu delta = 0: trả `no_change`, không tạo movement, không tăng row_version và không phát change event. Không lưu biên bản kiểm kê không chênh lệch.
+- Nếu delta khác 0: cập nhật balance = counted_quantity; ghi movement loại `Điều chỉnh` trong cùng transaction.
+- Movement mới phải thể hiện rõ `counted_quantity`, `balance_before`, `balance_after`, `quantity_delta` có dấu. Giữ `quantity` cũ dương theo semantics lượng tuyệt đối (`abs(quantity_delta)`) để tương thích CHECK hiện tại; không dùng cột quantity cũ để lưu số âm. Các cột mới cần nullable cho legacy row nếu không thể tái dựng lịch sử đáng tin cậy; không bịa balance trước/sau cho movement cũ.
+- Bắt buộc reason không rỗng; server ghi actor, timestamp, mutation_id và expected version. Balance, movement, receipt và change events commit/rollback cùng nhau.
+- Permission dùng `inventory.adjust` hiện có cho Admin/Technician; không thêm permission riêng.
+
+### 8.2 Tồn đầu kỳ khi tạo vật tư
+- Technician được phép nhập tồn đầu kỳ khi tạo vật tư; Admin cũng được phép.
+- Tồn đầu kỳ là một phần của giao dịch `create_inventory_item`, được cho phép bởi `inventory.create`; không cần một mutation điều chỉnh độc lập.
+- Tạo Item + opening movement loại `Nhập` với reason chuẩn hóa `Tồn đầu kỳ` (khi initial_quantity > 0) + receipt + change events trong một transaction.
+- Nếu initial_quantity = 0: tạo Item nhưng không tạo movement giả có quantity 0.
+- Không cho sửa quantity trực tiếp ở metadata update; điều chỉnh tồn về sau phải qua movement/RPC.
+
+### 8.3 Hợp đồng RPC cập nhật
+- `create_inventory_item`: yêu cầu `inventory.create`; nhận initial_quantity >= 0; giữ ID ổn định do client cung cấp; trả item và opening movement (nếu có).
+- `update_inventory_item_metadata`: yêu cầu `inventory.update`; không nhận quantity.
+- `post_inventory_movement`: Nhập/Xuất, yêu cầu `inventory.adjust`; quantity > 0; server tính balance; Xuất không được làm âm tồn.
+- `adjust_inventory_count`: yêu cầu `inventory.adjust`; nhận counted_quantity >= 0, reason bắt buộc, expected_version, movement_id, mutation_id. Lock row và tính delta server-side. Delta 0 trả no_change, không phát sinh movement.
+- Mỗi RPC sử dụng shared `organization_mutations` receipt/idempotency contract; replay đúng mutation trả kết quả cũ, không lặp side effect. Không tự tạo mutation ID mới khi outcome chưa rõ.
+
+### 8.4 Phần còn phải thiết kế/kiểm thử
+- Chọn tên và kiểu dữ liệu chính xác cho các cột movement bổ sung; thiết kế backfill không giả lập dữ liệu lịch sử.
+- Xác định row_version migration và cách lấy expected_version cho Item.
+- Xác minh unique code hiện tại: schema hiện chưa có unique (organization_id, code); create RPC phải kiểm tra trùng dưới cơ chế chống race và bổ sung constraint phù hợp sau khi xử lý dữ liệu trùng hiện có.
+- Chưa sửa SQL/migration, UI, RPC hoặc dữ liệu; chưa chạy Supabase SQL/runtime test.
