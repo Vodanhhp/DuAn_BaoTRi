@@ -2720,3 +2720,20 @@ Không được tuyên bố mọi writer đã được test cho đến khi hoàn
 - `cloudSync.ts` là legacy path, không có caller runtime được tìm thấy; giữ disabled.
 
 Kết luận: ưu tiên concurrency test đang có ý nghĩa là linked Asset Lease/mutation, Cloud import batch ↔ Counter/Asset, và Settings update ↔ import/create helper. Các module Local-first chỉ được đưa vào test Cloud sau khi có RPC + caller triển khai và được review.
+
+## 73. P0/P1 Cloud concurrency test contract – Asset Lease và Import
+
+### P0 – Lease/Asset
+- Cùng Asset chỉ có một Lease token hợp lệ. Hai acquire đồng thời khi Lease hết hạn: đúng một winner; loser không được nhận token.
+- Mutation, heartbeat và release phải được tuyến tính hóa trên cùng Lease row. Mutation thắng trước release thì Asset update + Receipt commit; release thắng trước thì mutation dùng token cũ phải fail.
+- Hai mutation cùng token không được silent last-write-wins; expected Cloud version và Receipt phải làm rõ winner/conflict.
+- Asset DELETE là đường phá vòng đời Lease qua FK cascade. Phải kiểm tra DELETE ↔ mutation, DELETE ↔ heartbeat, DELETE ↔ acquire. Nếu xuất hiện lock inversion, chặn direct DELETE và chỉ cho delete qua RPC khóa Lease → Asset.
+
+### P1 – Import/Counter
+- Cùng mutation ID + cùng actor/asset/payload: một ledger result, retry trả kết quả cũ.
+- Cùng mutation ID nhưng payload/actor/asset khác: từ chối.
+- Khác mutation ID cùng category: Counter UPSERT serialize sequence reconciliation; unique UUID/code xử lý race ở Asset.
+- Import ↔ allocator: test counter monotonicity, nhưng ghi rõ allocator helper hiện chưa có runtime caller.
+- Settings update ↔ import: kiểm tra snapshot config vì hiện reader không FOR SHARE; proposal nếu yêu cầu config nhất quán là Settings FOR SHARE → Counter → Asset, Settings update giữ UPDATE lock. Chưa sửa SQL.
+
+Không có test nào được chạy ở checkpoint này. Chưa ghi dữ liệu, chưa sửa RPC, DDL, grants hoặc Supabase config.
