@@ -1317,3 +1317,47 @@ Do chưa tìm thấy audit table đã triển khai, contract §27.4 vẫn là đ
 6. Sau static review mới viết migration draft; chưa chạy SQL/RPC và cần phê duyệt riêng trước khi áp dụng Test.
 
 Không sửa migration 005/013/014, không sửa Edge Function/client, không tạo DDL hoặc thay đổi Supabase.
+
+
+## 29. Supabase Test schema inventory — kết quả đọc trực tiếp (19/11/2026)
+
+**Nguồn:** Supabase project `BAOTRI-Mini-Test`, ref `oyzhxgzltpdebpymuicb`, trạng thái ACTIVE_HEALTHY, PostgreSQL 17.12. Các kết quả dưới đây là snapshot tại thời điểm kiểm tra, chỉ dùng truy vấn SELECT/catalog metadata; không DDL, không ghi dữ liệu.
+
+### 29.1 Audit và Invite Saga
+
+- Không tìm thấy bảng nghiệp vụ trong schema được kiểm tra có tên/ý nghĩa audit, invite, member operation, ngoài bảng Auth và các bảng receipt/mutation được liệt kê bên dưới.
+- Có `auth.audit_log_entries`, comment hệ thống: `Auth: Audit trail for user actions`. Đây là audit của Supabase Auth, không phải audit membership/organization của BAOTRI Mini. Không tái sử dụng bảng này làm audit nghiệp vụ.
+- Không tìm thấy `organization_member_invite_operations` hoặc bảng Invite Saga tương đương trong schema Test.
+- Không tìm thấy bảng audit quản trị/member riêng trong Test.
+- Kết luận chỉ áp dụng project Test và snapshot hiện tại; không suy rộng sang Production hoặc database khác.
+
+### 29.2 Receipt/mutation hiện có — không phải audit
+
+| Bảng | RLS | Policy tìm thấy | Grants quan sát được |
+|---|---|---|---|
+| `public.asset_import_mutations` | enabled | Không có policy trong `pg_policies` | postgres, service_role |
+| `public.asset_mutation_receipts` | enabled | Không có policy trong `pg_policies` | postgres, service_role |
+| `auth.audit_log_entries` | enabled | Không có policy phù hợp trong truy vấn | postgres |
+
+Metadata grants không cho thấy anon/authenticated được cấp quyền trực tiếp trên hai bảng mutation/receipt. RLS đang bật nhưng `relforcerowsecurity=false`; service_role và owner/bypass roles không bị RLS giới hạn như client thường. Đây là cấu trúc private phù hợp với vai trò internal ledger hiện tại, nhưng không chứng minh các RPC/Edge Function xung quanh đã được authorize đúng.
+
+Hai bảng asset receipt/mutation có schema khác mục tiêu Member:
+- `asset_import_mutations`: idempotency ledger cho import tài sản.
+- `asset_mutation_receipts`: receipt cho asset mutation được lease bảo vệ.
+
+Không dùng lại hai bảng này làm Shared Receipt Member hoặc audit chung; không đổi semantics asset-specific trong Member cutover.
+
+### 29.3 Hệ quả thiết kế đã chốt
+
+1. Cần thiết kế audit nghiệp vụ riêng hoặc framework audit dùng chung mới sau khi inventory Test; không dùng `auth.audit_log_entries`.
+2. Cần thiết kế Invite Saga operation table mới; không có bảng sẵn để tái sử dụng.
+3. Giữ Saga PII và Receipt/audit tách biệt như §28.
+4. Audit đọc phải có permission riêng được chốt trước; không suy ra từ `users.view`.
+5. Không tạo migration ở bước này. Kết quả schema inventory chỉ xác nhận khoảng trống thiết kế, chưa cấp quyền triển khai DDL.
+6. Test schema đã quan sát không có policy cho hai bảng asset mutation/receipt; grants metadata chỉ hiện postgres/service_role. Không thay đổi RLS/grants các bảng này trong phạm vi Member audit.
+
+### 29.4 Phạm vi và giới hạn
+
+- Đã kiểm tra catalog table/view names, RLS flags, policies liên quan và table grants cho tên audit/invite/member-operation/receipt/mutation/change.
+- Kết quả `list_migrations` qua API trả danh sách rỗng; không dùng kết quả này để kết luận migration chưa chạy vì các bảng nghiệp vụ đang tồn tại. Cần đối chiếu migration history riêng nếu công việc sau phụ thuộc vào nó.
+- Chưa kiểm tra nội dung dữ liệu Auth audit, không đọc email/PII, không kiểm tra Production.
