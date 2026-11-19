@@ -2003,3 +2003,30 @@ Read-only review source migrations, FK, triggers và effective privileges trên 
 
 ### Trạng thái
 Chỉ đọc migration 006, ACL/RLS Test, FK catalog và static search caller. Không thực hiện DELETE, không sửa grants/policy/RPC.
+
+
+## 75. Inventory mọi bảng authenticated có DELETE và legacy Local queue – 20/11/2026
+
+### Effective DML Test
+Catalog Test xác nhận authenticated có DELETE trên 5 bảng:
+- `assets`: DELETE, không UPDATE/INSERT.
+- `asset_images`: INSERT + DELETE, không UPDATE.
+- `inventory_items`: INSERT + DELETE, không UPDATE.
+- `maintenance_plans`: INSERT + UPDATE + DELETE.
+- `maintenance_tasks`: INSERT + UPDATE + DELETE.
+Các DELETE policies tương ứng yêu cầu `assets.delete`, `inventory.delete` hoặc `maintenance.delete`. Không có DELETE policy cho checklist template/version và lịch sử maintenance log/inventory movement.
+
+### Caller / Local queue
+- Static search không tìm thấy Cloud client caller trực tiếp `.from(table).delete()` cho các bảng business trên.
+- UI hiện có `deleteMaintenancePlan()` gọi `deleteAndQueue()`; helper xóa Dexie và ghi syncQueue trong Local transaction.
+- `cloudSync.ts` push queue bằng upsert vào bảng JSON `maintenance_records` với `deleted_at`, và pull tombstone xóa Local row. Static search chỉ tìm thấy định nghĩa `syncLocalDatabase()`, không có caller trong app. Không coi đây là Cloud business delete hoặc worker đang hoạt động.
+- Vì vậy database có direct DML capability rộng hơn luồng Cloud-first hiện hành; việc không thấy caller không đồng nghĩa API bị khóa.
+
+### Hệ quả
+- Trước khi bật Cloud-first cho Inventory/Maintenance/Asset deletion, rà từng bảng: direct DML privilege, RLS policy, FK restrict/cascade, writer, Receipt/audit, và lock path.
+- Các thao tác có quyền direct UPDATE/DELETE hiện chưa có Shared Receipt hoặc RPC serialization trong catalog. Không mở rộng sử dụng direct PostgREST write trong kiến trúc Cloud-first đã chốt.
+- Riêng Asset direct DELETE có Lease cascade lock inversion §74. Maintenance Plan/Task direct writes cũng cần được đưa vào lock/receipt design trước khi bật Cloud worker.
+- Không thay đổi grants, RLS, RPC, Local helper hoặc legacy sync module.
+
+### Trạng thái
+Read-only effective privilege/policy catalog, FK catalog và static GitHub search. Không chạy mutation hoặc sync.
