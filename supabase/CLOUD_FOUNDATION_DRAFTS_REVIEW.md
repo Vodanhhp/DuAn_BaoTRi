@@ -1728,3 +1728,12 @@ Candidate: validate bearer JWT in Edge Function; derive authoritative UID; compu
 The function candidate remains SECURITY DEFINER owned by a verified privileged owner, fixed empty search_path, fully qualified names, strict validation, and one atomic statement transaction for Auth row lock + invitation lock + membership/role/audit/receipt/Saga writes. Do not split lock and mutation across multiple pooled queries. Bind server-verified UID to authorization and idempotency; never trust a client UID.
 
 Open before implementation: dedicated DB login role creation/grant policy; credential storage/rotation; pooler TLS and connection limits; driver support and prepared-statement disablement; exact transaction semantics; actor binding; hosted project pooler settings; end-to-end JWT and concurrency tests. No role, grant, DDL, RPC, Edge Function, secret or Supabase setting was changed.
+
+### Actor identity and callable-surface caveat
+A direct PostgreSQL connection does not automatically carry the end-user JWT context that PostgREST normally establishes. Do not assume auth.uid() identifies the browser user on this connection, accept client-supplied UID, or set request.jwt.claims from untrusted client data.
+
+The Edge Function must validate the bearer token server-side (for example via Auth getUser / verified claims) and derive UID from the verified result. The private DB function receives that UID over the dedicated server-only DB connection and binds it to invitation authorization and idempotency. The trust boundary is Edge Function code + DB credential: a caller possessing that credential could potentially pass another UID unless a separately designed cryptographic assertion is verified in the database.
+
+Use a unique restricted DB login/secret for this acceptance path; never expose it to the browser or share it with unrelated functions. Audit all callable functions available to that role, including EXECUTE inherited from PUBLIC and any SECURITY DEFINER functions in schemas where it has USAGE. A grant on one named function alone does not prove the role has no other callable surface. Any signed actor assertion needs explicit key lifecycle, audience, expiry, replay binding and verification design. Do not trust an ad-hoc GUC/JWT claim without signature verification.
+
+This identity boundary and callable-surface audit are required before creating any role/function.
