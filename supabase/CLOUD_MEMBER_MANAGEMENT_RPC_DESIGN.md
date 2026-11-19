@@ -1215,3 +1215,31 @@ Bất biến:
 Trước SQL phải xác nhận tên/cột thật của Saga operation table, Role code và status enum; chốt chính xác Receipt result payload tối thiểu; rà soát audit table hiện có để tránh tạo bảng trùng; xác định RLS, function owner, grants, retention và khả năng audit trigger/insert cùng transaction. Mục này chưa cho phép tự tạo audit table nếu repository đã có audit contract khác.
 
 Không sửa migration, draft SQL, Edge Function, UI hoặc Dexie; không chạy SQL/RPC và không thay đổi Supabase Test/Production.
+
+
+## 27.7 Sửa nguyên tắc fingerprint để replay sau commit luôn ổn định
+
+Đây là điều chỉnh bắt buộc cho §27.2; nếu có khác biệt, **§27.7 được ưu tiên**.
+
+Không đưa trạng thái mutable được đọc từ DB sau khi mutation vào fingerprint. Ví dụ role/status trước mutation sẽ khác sau commit; nếu retry dựng fingerprint từ live state mới, cùng một logical request có thể bị hiểu nhầm là key reuse. Fingerprint phải được dựng từ request intent ổn định và input đã chuẩn hóa; state hiện tại chỉ là precondition cho nhánh mutation mới.
+
+Bảng fingerprint chuẩn hóa:
+
+| Operation | Fingerprint ổn định |
+|---|---|
+| `member.create` | operation; organization; actor; invite_operation_id; auth_user_id đã được Saga resolve; requested role code; resolved initial status đã được ghi bất biến trong Saga operation; contract version |
+| `member.role.change` | operation; organization; actor; target membership_id; requested target role code; optional expected-current-role precondition nếu client gửi; contract version |
+| `member.status.change` | operation; organization; actor; target membership_id; requested target status; optional expected-current-status precondition nếu client gửi; contract version |
+| `member.remove` | operation; organization; actor; target membership_id; optional expected-state precondition nếu client gửi; contract version |
+| `member.self.activate` | operation; organization; actor auth.uid(); target membership_id; self-activation intent; contract version |
+
+Quy tắc thực thi:
+1. Fingerprint được canonicalize từ cùng một request intent; cùng mutation_id + cùng intent luôn tạo cùng fingerprint trước và sau commit.
+2. Optional expected-current-role/status/state là precondition do client gửi từ snapshot trước đó, không phải sự thật được tin cậy. Server chỉ kiểm tra precondition trong nhánh mutation mới, sau khi lấy đủ locks. Không có expected version thì server vẫn kiểm tra state transition hợp lệ dưới lock.
+3. Khi replay lookup tìm thấy Receipt final, so fingerprint với intent request đã chuẩn hóa; không đọc live role/status để dựng lại fingerprint và không áp dụng precondition lần nữa.
+4. Khi chưa có Receipt, server mới khóa target, đọc state hiện tại và xác nhận transition/precondition. State không khớp thì trả conflict/validation theo contract; không ghi audit transition hoặc business mutation.
+5. `member.create` phải lấy resolved initial status bất biến từ Invite Saga operation record; không suy lại status từ trạng thái email confirmation hiện tại ở mỗi retry.
+6. `member.self.activate` bind intent self-activation và actor/target identity; email-confirmed condition là điều kiện server kiểm tra ở nhánh mutation mới, không bind timestamp có thể làm thay đổi cách nhận diện cùng request.
+7. Không có row_version cho Membership hiện tại; không giả lập expected version bằng cách nhét live status/role vào fingerprint. Nếu cần optimistic concurrency mạnh hơn, phải bổ sung revision contract riêng.
+
+Test bắt buộc bổ sung: cùng mutation_id retry sau role change, sau status change, sau remove và sau self-activation phải tìm đúng Receipt cũ; cùng ID nhưng target hoặc requested target role/status khác phải bị reject key reuse.
