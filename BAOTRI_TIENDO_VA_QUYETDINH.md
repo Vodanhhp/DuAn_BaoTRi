@@ -3600,3 +3600,23 @@ Rà soát bổ sung toàn bộ thao tác UI (nút thêm/sửa/xóa, archive/rest
 
 ### Tiếp tục
 Hoàn tất rà soát component/modal, thao tác xóa và phân quyền để lập inventory đầy đủ; sau đó chốt transaction boundaries và thiết kế Cloud contract. Chưa code.
+
+## 33. Audit bổ sung write sites và thao tác phụ – 19/11/2026
+
+- Đã rà soát các write handlers chính trong src/App.tsx: Asset, Inventory, Task, Maintenance Plan, Maintenance Log/Request, Task completion, Asset archive/restore/status, Inventory Movement và Checklist Template/Version/Result.
+- Xác nhận Asset linked hiện vẫn ghi snapshot Local + AssetMutation trước RPC; Asset chưa linked và phần lớn phân hệ khác ghi Dexie + syncQueue trước. Chưa đáp ứng Cloud-first.
+- Xác nhận ensureDefaultChecklist() tự tạo Template + Version và queue khi mở Checklist nếu chưa có; cần bỏ side-effect auto-commit khi chuyển đổi.
+- Đã rà soát thao tác tạo dữ liệu demo, backup/restore, quản lý thành viên, cập nhật hồ sơ Auth cá nhân, CloudAssetsPanel và cấu hình mã Asset:
+  - Demo/test: Local-only, không tự đưa lên Cloud.
+  - Backup/export/print: read/export.
+  - Restore backup: local recovery thay thế dữ liệu Local, cần preflight/reconciliation riêng.
+  - Nhận Asset Cloud về Local: import/cache có chọn lọc, giữ semantics đọc Cloud rồi ghi Local + mapping.
+  - Quản lý thành viên: Edge Function Cloud, chờ response; cần tiếp tục xác minh backend permission.
+  - Hồ sơ Auth cá nhân: Supabase Auth metadata, tách khỏi business write.
+  - Cấu hình dùng chung của tổ chức: Cloud-first; cấu hình cá nhân/local UI: Local-only.
+- Đã bổ sung mục 9 trong supabase/CLOUD_FIRST_WRITE_AUDIT.md.
+- Chưa hoàn tất permission matrix mọi role/component/modal và chưa rà hết các child modules/điểm xóa; chưa thiết kế API/RPC chi tiết.
+- Chưa sửa code, SQL/migration/RPC, chưa thay đổi dữ liệu Cloud/Local và chưa runtime test.
+
+### Bước tiếp theo
+Hoàn tất inventory quyền theo role và rà các component/modal còn lại; sau đó lập transaction boundary + danh sách Cloud RPC/receipt cho từng vertical slice. Chưa code.
