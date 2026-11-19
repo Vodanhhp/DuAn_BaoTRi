@@ -997,8 +997,7 @@ Người dùng xác nhận đồng ý đưa cả dữ liệu thử nghiệm đan
 - Trước khi chạy: mở đúng project BAOTRI-Mini-Test (ref oyzhxgzltpdebpymuicb), xác nhận Migration 001 đã có trong lịch sử migration, chạy nội dung Migration 002; nếu thành công mới chạy smoke test. Nếu lỗi, dừng, gửi nguyên văn lỗi để rà soát; không chạy tiếp hoặc thử trên production.
 
 
-## 17/11/2026 – Migration 002 và Smoke test đã chạy thành công trên Test
-- Người dùng xác nhận Migration 002 trả về `Success. No rows returned` trên project `BAOTRI-Mini-Test`.
+## 17/11/2026 – Migration 002 và Smoke test đã chạy thành công trên Test- Người dùng xác nhận Migration 002 trả về `Success. No rows returned` trên project `BAOTRI-Mini-Test`.
 - Người dùng chạy Smoke test; ảnh kết quả cho thấy cột `row_security_active` là `true` cho các bảng hiển thị và người dùng xác nhận **cả 11/11 bảng đều true**.
 - Kết luận trong phạm vi bằng chứng hiện có: Migration 002 thực thi không báo lỗi; RLS đang bật trên toàn bộ 11 bảng. Các kiểm tra khác trong Smoke test đã được script chạy nhưng chưa có ảnh/toàn bộ output để lưu từng dòng kết quả. Không diễn giải kết quả này thành kiểm thử RLS runtime dưới các vai trò authenticated/anon hoặc kiểm thử cách ly tenant thực tế.
 - Project Production `BAOTRI-Mini` chưa được thay đổi. Chưa có dữ liệu nghiệp vụ nào được import; chưa có Storage bucket; frontend vẫn chưa đồng bộ dữ liệu cloud.
@@ -1997,8 +1996,7 @@ assets.images hiện là dữ liệu ảnh local; adapter Cloud trả images r�
   1. Asset mapping giữ UUID/trường nghiệp vụ, không đưa ảnh local vào payload.
   2. Mapper từ chối organization_id rỗng.
   3. Inventory baseline có quantity, metadata upsert không có quantity.  4. Task mapping giữ asset foreign key và status.
-  5. Checklist version/result giữ snapshot.
-  6. Maintenance log từ chối dueDate, requestedBy, editHistory khi schema chưa hỗ trợ.
+  5. Checklist version/result giữ snapshot.  6. Maintenance log từ chối dueDate, requestedBy, editHistory khi schema chưa hỗ trợ.
   7. Inventory movement bị chặn ghi trực tiếp.
   8. Kiểm tra thứ tự phụ thuộc và vị trí movement cuối.
 - Thêm script `npm run test:sync-mapping`.
@@ -2997,8 +2995,7 @@ Không dùng `syncQueue` hiện tại làm nguồn mutation Cloud cho Asset. Que
 ### 19.4 Trạng thái và việc chưa làm
 - [x] Đã xác nhận `code` và `category` không thể sửa từ AssetModal hiện tại.
 - [x] Đã xác nhận Local save vẫn ghi IndexedDB + generic `syncQueue`, chưa gọi RPC receipt.
-- [x] Đã xác nhận CloudAssetsPanel vẫn có đường tạo/sửa/lưu kho trực tiếp trên Cloud và chưa dùng Migration 017.
-- [x] Đã rà soát thiết kế queue v7: không cần triển khai queue tổng quát cho lát cắt Asset-only.
+- [x] Đã xác nhận CloudAssetsPanel vẫn có đường tạo/sửa/lưu kho trực tiếp trên Cloud và chưa dùng Migration 017.- [x] Đã rà soát thiết kế queue v7: không cần triển khai queue tổng quát cho lát cắt Asset-only.
 - [x] Đã đề xuất mapping + mutation ledger riêng cho Asset, có chặn sửa lần tiếp theo khi mutation trước chưa được xác nhận.
 - [ ] Chưa sửa mã nguồn, chưa thêm bảng Dexie, chưa gọi RPC Migration 017.
 - [ ] Migration 017 và Test SQL 017 vẫn chờ người dùng chạy trên BAOTRI-Mini-Test và xác nhận kết quả.
@@ -3403,6 +3400,24 @@ Làm rõ Local-first: đối với Asset đã mapping Cloud, Local được ghi 
 
 - [x] Ghi nhận kết quả kiểm thử runtime PC trong phiên 19/11/2026.
 - [x] Đối chiếu lại code Save/retry trên main; không sửa mã nguồn trong phiên kiểm thử này.
-- [ ] Thiết kế và thực hiện phép thử an toàn cho trường hợp Local commit thành công nhưng Cloud RPC chưa xác nhận; phải bảo đảm có thể retry cùng snapshot, cùng mutationId và cùng lease khi token còn hợp lệ.
-- [ ] Xác định cách kiểm thử có kiểm soát mà không gây pending không thể phục hồi sau reload; tuyệt đối không tải lại trang/đóng trình duyệt khi mutation còn pending.
+- [x] Thiết kế và thực hiện phép thử an toàn cho trường hợp Local commit thành công nhưng Cloud RPC chưa xác nhận; đã chặn riêng endpoint `apply_asset_mutation_with_lock` trong Chrome DevTools, để heartbeat/kết nối khác tiếp tục hoạt động.
+- [x] Xác nhận runtime: lần lưu đầu báo `TypeError: Failed to fetch`, Local giữ snapshot và mutation pending; bỏ chặn endpoint rồi nhấn Lưu lại trên chính form đang mở, ứng dụng báo thành công và tự đóng form. Người dùng xác nhận tên thiết bị trên Cloud đã cập nhật đúng.
+- [x] Retry hoàn tất mà không reload/đóng trình duyệt; phép thử dùng cùng form và luồng retry của ứng dụng. Kết quả phù hợp với việc dùng lại mutationId/snapshot theo code đã đối chiếu ở mục 26.2; không tuyên bố đã quan sát trực tiếp mutationId trong Network/IndexedDB.
 - [ ] Chưa kiểm thử PC/Mobile đồng thời và chưa xác nhận toàn bộ luồng Asset Edit Lease + Mutation Receipt đã nghiệm thu.
+
+### 26.4 Kiểm thử Local commit thành công nhưng Cloud RPC chưa xác nhận – 19/11/2026
+
+- Dùng Chrome DevTools Network Request Blocking để chặn riêng request `https://oyzhxgzltpdebpymuicb.supabase.co/rest/v1/rpc/apply_asset_mutation_with_lock`; không chặn toàn bộ Supabase domain.
+- Trên Asset đã mapping Cloud, mở form sửa, thay đổi tên và nhấn Lưu. Ứng dụng báo lỗi `TypeError: Failed to fetch`; theo thông báo UI, Local đã lưu snapshot nhưng Cloud chưa xác nhận. Form vẫn mở.
+- Bỏ chặn riêng RPC khi form còn mở, không reload trang, không đóng form và không tạo thao tác sửa mới; nhấn Lưu lại.
+- Người dùng xác nhận ứng dụng báo lưu thành công, form tự đóng và tên thiết bị trên Cloud đã cập nhật đúng.
+- **Kết luận:** phép thử runtime retry sau lỗi mạng của RPC PASS. Đã chứng minh người dùng có thể khôi phục thao tác ngay trên form còn mở sau khi RPC được thông suốt. Kết quả phù hợp với code retry dùng mutation unresolved cùng payload/mutationId đã đối chiếu ở mục 26.2; không ghi nhận là đã trực tiếp quan sát mutationId trong DevTools.
+- Sau thử nghiệm, mẫu chặn đã được bỏ dấu tích; cần giữ request blocking ở trạng thái tắt hoặc xóa mẫu để tránh chặn nhầm trong lần làm việc sau.
+- Không thay đổi code, SQL/migration, dữ liệu khác hoặc cấu hình Supabase trong phép thử.
+
+### 26.5 Trạng thái sau kiểm thử
+- [x] Local commit trước Cloud RPC và giữ mutation khi RPC thất bại: PASS theo thông báo ứng dụng và kết quả retry.
+- [x] Retry trên form còn mở sau khi bỏ chặn RPC: PASS.
+- [x] Cloud nhận đúng dữ liệu sau retry: PASS theo xác nhận trực tiếp của người dùng.
+- [ ] Chưa kiểm thử PC/Mobile đồng thời, hai nền tảng cùng xin lease, heartbeat failure riêng biệt hoặc takeover sau lease hết hạn.
+- [ ] Chưa nghiệm thu toàn bộ Asset Edit Lease + Mutation Receipt trên nhiều nền tảng; chưa bật đồng bộ nghiệp vụ tổng thể.
