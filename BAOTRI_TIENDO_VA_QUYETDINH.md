@@ -3620,3 +3620,19 @@ Hoàn tất rà soát component/modal, thao tác xóa và phân quyền để l�
 
 ### Bước tiếp theo
 Hoàn tất inventory quyền theo role và rà các component/modal còn lại; sau đó lập transaction boundary + danh sách Cloud RPC/receipt cho từng vertical slice. Chưa code.
+
+
+## 34. Đối chiếu quyền vai trò phục vụ Cloud-first (19/11/2026)
+
+- Đã đọc lại `supabase/CLOUD_PERMISSION_UI_MATRIX.md` và đối chiếu permission catalog migration 005/006 với UI hiện tại.
+- Giữ nguyên chính sách quyền hiện có, không tự cấp thêm quyền cho Technician:
+  - Admin: toàn quyền theo permission catalog.
+  - Technician: được tạo/cập nhật Asset, Inventory, Task/Plan, Log; điều chỉnh kho và thực hiện Checklist/tạo kết quả; không được xóa nghiệp vụ, quản lý Checklist Template/Version hoặc quản trị tổ chức.
+  - Viewer: chỉ xem.
+- Sai lệch cần xử lý khi triển khai: UI đang dùng `isViewer` cho nhiều thao tác thay vì permission từng action; Technician có thể thấy luồng xóa Maintenance Plan và sửa Checklist Template dù catalog không cấp các quyền đó. Việc tự tạo Checklist mặc định khi mở màn hình cũng phải chuyển thành khởi tạo có kiểm soát quyền Admin.
+- Server-side RLS/RPC/Edge Function vẫn là lớp enforce bắt buộc; ẩn/disable UI không thay thế kiểm tra quyền Cloud.
+- Đã bổ sung mục 10 trong `supabase/CLOUD_FIRST_WRITE_AUDIT.md`.
+- Chưa thay đổi permission catalog, UI, code, SQL/migration, database hay dữ liệu. Chưa xác nhận migration đã được áp dụng trên Supabase project.
+
+### Bước tiếp theo
+Rà soát tiếp các child component/modal và xác định transaction boundary + API/RPC cho từng nhóm Asset, Inventory, Maintenance, Checklist. Không triển khai trước khi thiết kế và kiểm thử permission contract.
