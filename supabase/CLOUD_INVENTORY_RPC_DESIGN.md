@@ -187,3 +187,4 @@ Trạng thái: **ĐÃ CHỐT**. Nội dung mục này thay thế các câu hỏi
 - Với Nhập: delta dương; Xuất: delta âm; Điều chỉnh: delta = counted - balance_before.
 - `balance_before`, `balance_after`, `counted_quantity`, `quantity_delta` có thể NULL với dữ liệu legacy không đủ chứng cứ; các RPC mới bắt buộc ghi đầy đủ trường phù hợp.
 - Không tự suy diễn opening balance của dữ liệu cũ từ danh sách movement nếu chưa chứng minh ledger đầy đủ.
+\n\n## 10. Tương thích Local Movement model\n\n- Local `Movement` có `note` và `performedBy`; handler hiện tại gán `note` cùng giá trị với `reason`. Cloud giữ một trường `reason`, không lưu trùng cột note.\n- Để bảo toàn tên người thao tác hiển thị, movement mới có thể lưu `performed_by_label` như snapshot tùy chọn; actor có thẩm quyền vẫn là `created_by_user_id` lấy từ `auth.uid()`. Không dùng nhãn hiển thị làm căn cứ phân quyền.\n
