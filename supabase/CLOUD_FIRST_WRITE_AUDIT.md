@@ -325,3 +325,27 @@ Trạng thái: phương án kỹ thuật/permission đề xuất để người 
 - Đã đối chiếu business schema 002: movement.quantity hiện > 0; movement_type có Nhập/Xuất/Điều chỉnh; inventory_items.quantity không âm; permission catalog có inventory.adjust nhưng chưa có logs.update/revise.
 - Đây là phương án đề xuất, chưa được người dùng phê duyệt.
 - Chưa sửa permission catalog, schema/migration/RPC, UI hoặc dữ liệu; chưa chạy SQL/runtime test.
+
+
+## 15. Quyết định nghiệp vụ Kho và Nhật ký đã được người dùng chốt (19/11/2026)
+
+Người dùng xác nhận:
+1. Điều chỉnh tồn kho = nhập số tồn thực tế sau kiểm kê (`actual`).
+2. Chỉ Admin được sửa nhật ký đã lưu.
+3. Technician được nhập tồn đầu kỳ khi tạo vật tư.
+4. Không lưu biên bản kiểm kê nếu số đếm không chênh lệch.
+
+### 15.1 Hệ quả thiết kế
+- `adjust_inventory_count` nhận `counted_quantity >= 0`; server lock Item, so expected version, tính delta = counted - balance hiện tại. Delta = 0 trả no_change, không tạo movement/version/event. Delta khác 0 ghi balance và movement Điều chỉnh atomic; movement mới lưu counted_quantity, balance_before, balance_after, quantity_delta có dấu, reason bắt buộc. Giữ cột quantity hiện tại dương = abs(delta); không ghi số âm vào cột bị CHECK > 0.
+- `create_inventory_item` cho Admin/Technician qua `inventory.create`; initial_quantity >= 0 là một phần của tạo vật tư. Nếu > 0, tạo opening movement Nhập/Tồn đầu kỳ cùng transaction; nếu = 0, không tạo movement giả.
+- Nhập/Xuất tiếp tục qua `post_inventory_movement` với `inventory.adjust`; metadata update không được nhận quantity.
+- Log sau Cloud commit là append-only revisions. Chỉ Admin có permission riêng `logs.revise`; Technician chỉ `logs.create`. Draft trước submit vẫn sửa được trong form và không ghi business IndexedDB.
+- Task completion + Log revision 1 là một transaction Cloud; sửa Log sau đó là mutation riêng, revision mới + reason bắt buộc.
+- Không hard-delete Log; không lưu kiểm kê không chênh lệch.
+
+### 15.2 Công việc tiếp theo
+1. Hoàn thiện schema movement có signed delta và tương thích legacy; không backfill balance lịch sử bằng suy đoán.
+2. Thiết kế migration permission `logs.revise` Admin-only, giữ nguyên quyền Technician khác.
+3. Hoàn thiện RPC input/output, expected_version/revision, shared Receipt và change events.
+4. Thiết kế UI: tạo vật tư có tồn đầu kỳ; sửa metadata khóa quantity; form Điều chỉnh nhập tồn thực tế; Admin mới có nút sửa Log đã lưu.
+5. Chỉ sau khi review thiết kế mới tạo SQL draft; không apply migration hoặc sửa code khi chưa có lệnh rõ.
