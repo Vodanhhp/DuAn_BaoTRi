@@ -1690,3 +1690,21 @@ Candidate public contracts:
 - Idempotency must bind invitation + authenticated actor + mutation ID + payload; same-key/different-payload conflicts; replay returns the original receipt; a different actor cannot obtain the result or membership.
 
 Open blockers: final digest columns/normalization/key rotation; hosted permission and row-lock behavior for checking current auth.users email inside the acceptance transaction; activation state transition; expiry/revoke/decline and inviter authority; rate limits/audit retention; exact Shared Receipt key. Design only; no DDL/RPC/Edge Function/SQL/Supabase changes.
+
+
+## 56. Hosted Auth user row-lock feasibility — review
+
+Read-only inspection of `BAOTRI-Mini-Test` (PostgreSQL 17.12) found:
+- `auth.users` is owned by `supabase_auth_admin`, RLS enabled, FORCE RLS off, zero explicit policies.
+- `postgres` is non-superuser with BYPASSRLS, auth schema USAGE, and SELECT + UPDATE on `auth.users`.
+- `supabase_auth_admin` also has SELECT + UPDATE; `service_role`, `authenticated`, and `anon` do not.
+- `SELECT ... WHERE false FOR UPDATE` succeeded as postgres, testing privilege feasibility without locking any real row.
+These are Test-project observations, not a guarantee for all customer projects.
+
+PostgreSQL documents that `FOR UPDATE` holds a row lock through transaction end and blocks conflicting writers/lockers. Current GoTrue source `ConfirmEmailChange` updates `auth.users.email` in its transaction. This supports the candidate of locking the exact Auth user row during acceptance to serialize against a confirmed email change. Exact hosted Auth version still needs verification.
+
+Candidate transaction: Edge Function validates bearer via Auth, obtains UID + exact current email + verified state, computes recipient HMAC; server-only function owned by postgres (SECURITY DEFINER, fixed empty search_path) locks `auth.users` by UID FOR UPDATE, compares current DB email with server-verified email and checks email_confirmed_at, then locks invitation Saga row and revalidates all invitation/membership conditions. Consistent lock order: Auth user → invitation/Saga → membership/role/audit/receipt. No network calls while locks are held. If email change committed first, old recipient digest fails; if acceptance locks first, email update waits until acceptance commits.
+
+Do not grant direct auth.users SELECT/UPDATE to service_role, authenticated or clients. Grant only EXECUTE on the narrowly scoped internal function to the trusted server role. A private-schema function is not callable through PostgREST unless the schema is exposed; select either a trusted direct Postgres connection from Edge Function or a tightly restricted server-only RPC wrapper (revoke EXECUTE from PUBLIC/anon/authenticated; grant only to server role). Never expose auth.users through Data API.
+
+Open: repeat read-only privilege preflight per Production project; verify deployed GoTrue version and email-change transaction behavior; test actual concurrent email-confirm-vs-accept, lock timeout, transaction rollback and admin email updates. The current false-predicate query did not test live contention. No DDL/RPC/Edge Function/SQL write or Supabase configuration change.
