@@ -1943,3 +1943,45 @@ Read-only catalog, RLS/grants/policy/trigger/function inventory và static searc
 
 ### Trạng thái
 Chỉ đọc function definitions trong catalog Test và migration source. Không chạy RPC, không sửa SQL/function/lease/receipt, không thay đổi dữ liệu hoặc cấu hình.
+
+
+## 73. Lock matrix liên vertical: Member/Auth/Asset/Receipt – 20/11/2026
+
+### Lock path hiện tại đã xác minh từ source và catalog Test
+
+| Luồng | Thứ tự khóa/ghi quan sát được | Ghi chú |
+|---|---|---|
+| Auth profile trigger | Auth user (UPDATE caller) → Profile upsert → Membership UPDATE invited→active | Trigger vẫn có business side effect; tạo inversion với Member proposed order |
+| Member create legacy | đọc Organization/Role → Auth user FOR UPDATE → Profile read → INSERT Membership → INSERT member_roles | Có Auth-first rõ ràng; không Shared Receipt/Audit |
+| Member role change | đọc Membership/Role không FOR UPDATE → DELETE/INSERT member_roles | Không khóa parent Membership trước; concurrency/race cần xử lý |
+| Member status change | đọc Membership/Role → UPDATE Membership | Row lock chỉ lấy ở UPDATE; không khóa Organization/role chain trước |
+| Member remove | Membership FOR UPDATE → DELETE Membership → FK cascade member_roles | Có parent-first trong nhánh remove |
+| Asset create | đọc Settings/Assets → UPSERT asset_code_counters → INSERT Asset | Counter row serialize cùng org/category; không lock authorization rows |
+| Asset import | advisory xact lock theo org+mutation → đọc ledger → đọc Settings → UPSERT counter → Asset FOR UPDATE (nếu tồn tại) hoặc INSERT → INSERT import ledger | Counter trước Asset; idempotency ledger riêng, không phải Shared Receipt |
+| Lease acquire | kiểm tra permission + đọc Asset → UPSERT asset_edit_locks | Unique conflict serializes cùng asset; không giữ Organization/Membership lock |
+| Lease heartbeat/release | UPDATE hoặc DELETE asset_edit_locks | Không kiểm tra permission khi release; chỉ holder + token |
+| Asset update/archive | Asset Edit Lease FOR UPDATE → UPDATE Asset | Thứ tự Lease → Asset |
+| Asset mutation receipt | lookup Receipt (read) → Lease FOR UPDATE → recheck Receipt → Asset FOR UPDATE → UPDATE Asset → INSERT asset_mutation_receipts | Receipt được ghi sau business row, khác Shared Receipt proposed claim-before-business |
+| Auth user delete (FK path) | Auth user delete → FK CASCADE asset_edit_locks; FK RESTRICT ở Asset receipts/import ledger | Đường này do Auth Admin/Postgres thực hiện, không phải RPC trong repo |
+
+### FK/trigger đã kiểm tra trên Test
+- `asset_edit_locks(holder_user_id)` tham chiếu `auth.users(id) ON DELETE CASCADE`; `asset_edit_locks(organization_id, asset_id)` tham chiếu Asset ON DELETE CASCADE.
+- `asset_mutation_receipts.applied_by_user_id` và `asset_import_mutations.actor_user_id` tham chiếu Auth user ON DELETE RESTRICT.
+- `asset_code_counters.organization_id` và `asset_import_mutations.organization_id` tham chiếu Organization ON DELETE RESTRICT.
+- Trigger nghiệp vụ duy nhất trong nhóm Asset đang kiểm tra là BEFORE UPDATE trên `assets` để cập nhật `updated_at`; không có trigger trên Lease/Receipt/Import ledger/Counter.
+
+### Deadlock/race cần giữ ở trạng thái open
+1. **Auth deletion ↔ Asset mutation (deadlock candidate có cơ sở FK):** transaction A xóa Auth user và CASCADE xóa Lease; transaction B đang giữ Lease rồi ghi Asset Receipt, FK cần xác nhận `applied_by_user_id` còn tồn tại. Có thể tạo chu trình Auth row ↔ Lease row. Cần xác minh bằng concurrency test được kiểm soát trước khi chốt; chưa chạy test.
+2. **Member revoke ↔ Asset write:** Asset RPC chỉ đọc permission helper STABLE, không khóa Membership/assignment/Role/Permission. Revoke có thể commit trong khi Asset mutation đã qua check quyền. Chưa có linearization point chung.
+3. **Asset Lease/Asset ↔ Shared Receipt:** Asset mutation hiện Lease → Asset → Receipt insert; Shared Receipt proposal claim Receipt trước business rows. Cần chọn một thứ tự thống nhất, xử lý cả unique claim/replay và FK.
+4. **Counter ↔ Asset:** create/import đều Counter → Asset; import có thêm advisory lock trước Counter. Giữ nguyên thứ tự này trong mọi import/create path; không thêm path Asset → Counter.
+5. **Role update ↔ Membership status/remove:** role update chưa FOR UPDATE parent Membership; status update chỉ khóa ở UPDATE; remove khóa Membership trước cascade. Cần chuẩn hóa actor/target Membership locks theo UUID tăng dần trước assignment/Role/Permission.
+
+### Candidate protocol để nghiên cứu tiếp (chưa chốt)
+- Business mutation cần bảo đảm revoke serialization: Organization → actor/target Membership theo UUID → member_roles → Role → Role Permission → Auth user (nếu bắt buộc) → operation/Receipt claim → domain lock (Asset Lease/Counter/advisory theo namespace) → Asset/business rows → Receipt finalize.
+- Đây chưa phải lock order đã được chứng minh. Cần xử lý Auth trigger trước; phân loại Auth delete; định nghĩa domain lock order Lease/Counter/Asset; tránh khóa Auth nếu không cần; kiểm tra mọi FK cascade/restrict.
+- Asset Receipt replay hiện chạy permission check trước lookup. Shared Receipt proposal yêu cầu replay branch tách khỏi write permission sau khi Auth/Organization/active membership được xác thực; cần sửa thiết kế trước khi đồng nhất API.
+- Không chạy concurrency test, không sửa SQL, không triển khai thay đổi.
+
+### Trạng thái
+Read-only review source migrations, FK, triggers và effective privileges trên BAOTRI-Mini-Test. Ma trận là inventory/candidate, chưa phải chứng nhận không deadlock.
