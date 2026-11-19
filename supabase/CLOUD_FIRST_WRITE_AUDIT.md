@@ -193,3 +193,57 @@
 - Đây là static code audit trên nhánh `main`; chưa runtime test, chưa xác nhận trạng thái migration trên Supabase Project.
 - Chưa sửa code, SQL/migration/RPC, dữ liệu Local/Cloud hoặc permission catalog.
 - Các việc còn lại: rà mọi child/modal và permission gating; thiết kế xử lý queue/receipt cho restore; chốt transaction contract cho từng vertical; lập test allow/deny và retry/timeout trước khi triển khai.
+
+
+## 12. Bản đồ transaction Cloud-first (bản thiết kế đề xuất, 19/11/2026)
+
+Đây là transaction boundary đề xuất để review, chưa phải hợp đồng đã được phê duyệt và chưa triển khai.
+
+### 12.1 Hợp đồng chung cho một business mutation
+1. UI tạo một `mutation_id` ổn định cho một lần người dùng xác nhận; payload sau khi gửi phải bất biến.
+2. Cloud RPC/Edge Function xác thực Auth, membership active, organization scope, permission theo đúng action, dữ liệu đầu vào và version/lease nếu có.
+3. Cloud áp dụng thay đổi nghiệp vụ và ghi receipt/idempotency record trong cùng database transaction. Receipt cần gắn tối thiểu organization, mutation ID, actor, action/resource, payload fingerprint hoặc payload chuẩn hóa, kết quả canonical và thời điểm commit.
+4. Retry cùng mutation ID + cùng payload trả lại kết quả đã commit; dùng lại ID với payload khác phải bị từ chối. Không cấp ID mới khi kết quả cũ chưa rõ.
+5. Chỉ sau khi nhận kết quả Cloud đã commit (hoặc replay receipt xác nhận commit), Local mới ghi snapshot/mapping bằng một Dexie transaction. Nếu Local commit lỗi sau Cloud commit, phải phục hồi từ receipt/canonical snapshot, không gửi mutation mới.
+6. Timeout/mất kết nối là trạng thái chưa rõ kết quả; truy vấn/replay cùng mutation ID để phân giải. Lỗi validation/permission/conflict có phản hồi rõ ràng là từ chối xác định, Local không đổi.
+7. `navigator.onLine` chỉ hỗ trợ UX; RPC là nơi xác nhận Cloud thực sự sẵn sàng. Offline chỉ xem snapshot Local, không cho business write.
+
+### 12.2 Transaction boundary theo nghiệp vụ
+
+| Nhóm | Một Cloud transaction tối thiểu | Permission / ràng buộc |
+|---|---|---|
+| Asset tạo mới | Tạo Asset + cấp mã theo cấu hình organization + receipt; trả canonical Asset | `assets.create`; ID/mutation ổn định để retry; không Local-first |
+| Asset sửa | Giữ Edit Lease; kiểm tra expected Cloud version; cập nhật Asset + receipt | `assets.update`; giữ lease độc quyền hiện có |
+| Asset lưu kho/khôi phục/đổi trạng thái | Cập nhật trạng thái/archived_at + receipt; không ghi Local trước | `assets.update`; áp dụng lease/version policy thống nhất |
+| Asset import Local → Cloud (nếu có) | Import giữ UUID + code + validate collision + receipt/audit | `assets.import` theo policy riêng; không dùng create allocator để tự đổi code |
+| Inventory item | Tạo/cập nhật metadata; quantity không được tự đổi qua form sửa hồ sơ | `inventory.create/update`; Admin/Technician theo catalog |
+| Inventory movement | Lock item; kiểm tra tồn; ghi movement + cập nhật quantity + receipt atomically | `inventory.adjust`; nhập/xuất/điều chỉnh phải có quy tắc dấu rõ ràng |
+| Task | Tạo/cập nhật Task; xóa là action riêng Admin-only | `maintenance.create/update/delete` tương ứng |
+| Hoàn thành Task | Cập nhật Task hoàn thành + tạo Maintenance Log + receipt trong cùng transaction | Admin/Technician; không thể có Task hoàn thành nhưng thiếu Log |
+| Maintenance Plan | Lưu một kế hoạch hoặc batch kế hoạch như một đơn vị mutation đã xác định; xóa riêng | Create/update Admin/Technician; delete Admin-only |
+| Checklist Template + Version | Tạo/cập nhật Template và thêm Version mới cùng transaction | `checklist.template.manage`, Admin-only |
+| Checklist Result | Insert một kết quả append-only + receipt | `checklist.result.create`, Admin/Technician; không sửa/xóa lịch sử |
+| Maintenance Log | Tạo Log root + revision đầu tiên; chỉnh sửa tạo revision mới, không overwrite lịch sử | `maintenance.create`; Admin/Technician; append-only |
+| Organization setting | Cập nhật cấu hình organization + version/receipt hoặc kết quả xác nhận | `settings.manage`, Admin-only |
+| Thành viên/tài khoản | Giữ Edge Function hiện có; server xác thực quyền và trả kết quả rõ ràng | Admin-only; Auth profile/password là luồng Auth riêng |
+
+### 12.3 Những điểm không được gộp nhầm
+- Asset Edit Lease là khóa độc quyền sửa Asset, không thay thế receipt/idempotency.
+- Receipt hiện có trong `asset_mutation_receipts` được thiết kế riêng cho Asset update có lease; không mặc định đủ cho create, inventory, task, checklist hoặc log. Cần quyết định mở rộng thành receipt tổng quát hay receipt theo vertical.
+- Import Cloud → Local, restore backup, demo/test data, export/print và personal settings không phải business mutation Cloud-first.
+- Không dùng `syncQueue` Local-first làm nơi lưu các lệnh chờ upload sau khi chuyển kiến trúc; phải có kế hoạch phân loại và xử lý dữ liệu queue cũ trước khi bỏ helper/schema.
+- Với Log/Checklist Result/Movement là lịch sử append-only, sửa nghiệp vụ phải tạo revision/event hoặc giao dịch bù có audit; không bật UPDATE/DELETE trực tiếp chỉ để UI dễ sửa.
+
+### 12.4 Các quyết định còn cần chốt trước khi viết migration/RPC
+- Receipt: một bảng tổng quát hay bảng riêng từng vertical; retention và cách tra cứu/replay.
+- Version conflict: Asset đã có expected Cloud timestamp + lease; cần row_version cho Inventory/Task/Plan/Template/Organization settings hay cơ chế khóa tương đương.
+- Inventory: xác định chính xác ý nghĩa “Điều chỉnh”, tồn đầu kỳ, kiểm kê tăng/giảm và giao dịch đảo.
+- Log: duyệt mô hình Log root + append-only revisions; quy tắc sửa phiếu và quyền tạo revision.
+- Batch Maintenance Plan: một batch all-or-nothing hay từng plan là mutation riêng.
+- Local commit recovery: cách khôi phục snapshot khi Cloud đã commit nhưng IndexedDB lỗi; cách xử lý nhiều tab và Local DB version.
+- Queue cũ: quy trình kiểm kê, quarantine, đối chiếu receipt và loại bỏ an toàn, không replay mù.
+
+### 12.5 Trạng thái
+- Đã đối chiếu sơ bộ với business schema migration 002, permission catalog 005/006, Asset lease/receipt migration 018/019, cùng các tài liệu thiết kế Inventory và Log revision.
+- Đây là bản đồ transaction đề xuất để review; chưa phải quyết định cuối cùng.
+- Chưa tạo migration/RPC, chưa sửa code, chưa chạy SQL và chưa kiểm thử runtime.
