@@ -820,3 +820,65 @@ Checklist trước promotion:
 6. Chốt schema_version, giới hạn payload và retention trước production.
 
 **Trạng thái:** chỉ cập nhật review. Không sửa draft 020, không tạo migration, không chạy SQL/RPC, không thay đổi Supabase Test/Production, quyền hoặc dữ liệu.
+
+
+## 19. Review luồng quản lý thành viên và permission hiện hành
+
+Đã đọc migration role/permission, migration quản lý thành viên, migration remove membership và Edge Function manage-organization-members trên main. Static review mã nguồn; chưa xác minh migration đã apply trên Supabase, chưa chạy Edge Function/RPC và không thay đổi dữ liệu.
+
+### 19.1 Cấu trúc permission hiện tại
+
+- Permission hiệu lực được tính qua organization_members → member_roles → roles → role_permissions; role phải is_active, membership và organization phải active.
+- has_org_permission() là SQL STABLE SECURITY DEFINER, search_path rỗng, row_security off. Nó đọc trạng thái membership/organization và role assignment nhưng không khóa các dòng liên quan.
+- Các bảng roles, role_permissions, member_roles bật RLS; client chỉ có SELECT. Quyền ghi được dự kiến qua trusted backend.
+- Edge Function xác thực Bearer token bằng getUser(), sau đó dùng callerClient (JWT người gọi) gọi has_org_permission(users.manage). Các thao tác ghi sau đó dùng service-role client gọi RPC.
+- RPC admin_* yêu cầu auth.role() = service_role và revoke EXECUTE khỏi PUBLIC/anon/authenticated. Đây là lớp bảo vệ chống gọi trực tiếp bằng JWT thường, nhưng RPC không tự xác thực danh tính Admin của actor; nó tin p_actor_user_id do Edge Function truyền. Vì vậy Edge Function là ranh giới authorization bắt buộc, service-role key phải tuyệt đối không lộ.
+
+### 19.2 P0 — permission check và thao tác quản trị không nằm cùng transaction
+
+Edge Function kiểm tra users.manage trước, sau đó mới chạy các truy vấn/RPC bằng service role. Có khoảng thời gian giữa kiểm tra và thay đổi. Nếu Admin bị suspend, bị remove hoặc mất users.manage trong khoảng đó, request vẫn có thể tiếp tục.
+
+Các RPC hiện không nhận/kiểm tra actor JWT của người gọi; chỉ yêu cầu service_role. Do đó backend authorization hiện dựa vào việc Edge Function truyền đúng actor và không có đường gọi service-role khác bỏ qua kiểm tra.
+
+**Yêu cầu trước khi dùng làm nền cho Shared Receipt:**
+- Chuyển authorization + mutation vào một transaction/RPC được gọi bằng caller JWT; hoặc thiết kế trusted RPC có cơ chế xác minh actor/ủy quyền server-side đáng tin cậy và khóa permission state trong cùng transaction.
+- Không coi p_actor_user_id do service role truyền vào là bằng chứng xác thực người thao tác.
+- Nếu vẫn giữ Edge Function, cần có cơ chế chống TOCTOU rõ ràng; kiểm tra quyền lại trong transaction ghi không đủ nếu giữa lần check và commit vẫn không có khóa đồng bộ.
+
+### 19.3 P1 — các thao tác role/status chưa khóa dòng đích
+
+- admin_remove_org_membership dùng FOR UPDATE OF m khi đọc membership trước khi xóa. Đây là thao tác duy nhất trong ba RPC update/remove có khóa membership rõ ràng.
+- admin_update_org_member_role đọc membership + role hiện tại không FOR UPDATE, sau đó DELETE/INSERT member_roles. Có thể race với suspend/remove/đổi role khác.
+- admin_update_org_member_status đọc membership không FOR UPDATE rồi UPDATE status. Có thể race với remove hoặc đổi role.
+- admin_create_org_membership kiểm tra organization active nhưng không khóa organization; kiểm tra role active nhưng không khóa role. Có khóa auth.users để xử lý email confirmation, nhưng không thay thế khóa organization/membership.
+- Role permissions và roles.is_active có thể thay đổi độc lập; has_org_permission không khóa các dòng này. Cần khóa hoặc có version/serialization protocol cho role + role_permissions + member_roles nếu muốn đảm bảo quyền không bị thu hồi giữa mutation và commit.
+
+**Đề xuất:** chuẩn hóa lock order trước khi bổ sung Receipt: Organization → Membership (nếu có) → Role/Role assignment/permission rows cần thiết → Receipt → business rows theo hợp đồng mục 16. Với thao tác tạo membership chưa có membership row, khóa Organization trước rồi mới insert. Với thay role/suspend/remove, khóa Organization trước, sau đó SELECT membership FOR UPDATE; không được có RPC khác khóa Membership rồi quay ngược lấy Organization.
+
+### 19.4 P1 — legacy role và role assignment có thể lệch
+
+- admin_update_org_member_role cập nhật member_roles nhưng không cập nhật organization_members.role (legacy field). has_org_role() vẫn xét legacy role OR role assignment; has_org_permission() chỉ xét role assignment.
+- Các RPC update/status/remove ngăn quản lý Admin bằng cách kiểm tra legacy role hoặc role assignment hiện hành. Nếu dữ liệu legacy và assignment lệch, cần test mọi tổ hợp; không thể giả định một nguồn luôn đúng.
+- Edge Function list/reset/remove đọc assignment và role qua nhiều truy vấn riêng, không phải snapshot transaction; kết quả có thể thay đổi giữa các truy vấn. RPC cuối cần tự xác minh lại mọi invariant dưới lock, không dựa vào preflight của Edge Function.
+- admin_create_org_membership không có xử lý idempotency; invite retry/timeout có thể gặp Auth user đã tạo nhưng membership chưa rõ kết quả. Invite compensation deleteUser cũng cần recheck membership trước khi xóa Auth user nếu RPC trả lỗi không rõ outcome.
+
+### 19.5 P1 — organization status và membership status đồng bộ chưa đầy đủ
+
+- sync_auth_user_profile() khi email được xác nhận sẽ đổi mọi membership invited của user thành active; trigger này không khóa Organization trước khi cập nhật membership. Nếu tổ chức bị disable đồng thời, membership có thể active trở lại nhưng has_org_permission vẫn chặn vì organization inactive. Dù vậy, cần quy định trạng thái membership sau khi organization disable và tránh race khi re-enable.
+- Các RPC update role/status/remove hiện kiểm tra service_role, target membership và một số invariant, nhưng không kiểm tra organization active hoặc khóa organization. Edge Function permission check trước đó có kiểm tra qua has_org_permission; race disable organization vẫn có thể lọt qua nếu status đổi sau check.
+- RPC remove đã khóa membership row, nhưng không khóa Organization trước đó theo lock order mới.
+
+### 19.6 Kết luận và việc cần làm trước promotion
+
+**Kết luận: mô hình role/permission cơ bản có thể dùng làm nền, nhưng chưa đủ concurrency/authorization guarantees để làm nguồn khóa cho Shared Receipt.** Vấn đề chính không phải thiếu bảng permission mà là check authorization tách khỏi transaction mutation và thiếu khóa nhất quán trên Organization, Membership, Role/assignment.
+
+Thứ tự xử lý đề xuất:
+1. Chốt ranh giới tin cậy: actor identity phải được xác thực server-side; không tin riêng p_actor_user_id.
+2. Thiết kế một transaction boundary cho authorization + mutation; xác định cách permission revoke/suspend/remove serialize với business RPC.
+3. Chuẩn hóa lock order Organization → Membership → Role/assignment/permission → Receipt → business rows.
+4. Bổ sung khóa FOR UPDATE cho role/status/remove và khóa Organization cho create/update/remove/sync-confirmation; xử lý role assignment/permission mutation đồng bộ.
+5. Làm rõ nguồn dữ liệu role chính thức; xử lý legacy organization_members.role và member_roles lệch.
+6. Bổ sung idempotency/timeout recovery cho invite và kiểm soát compensation Auth user.
+7. Test concurrency: suspend/remove Admin trong lúc mutation; revoke users.manage/permission trong lúc mutation; đổi role đồng thời; disable organization đồng thời với invite/confirm; hai request quản trị cùng membership.
+
+**Trạng thái:** chỉ cập nhật review. Không sửa migration 005/013/014, Edge Function, không tạo migration mới, không chạy SQL/RPC, không deploy Edge Function và không thay đổi Supabase.
