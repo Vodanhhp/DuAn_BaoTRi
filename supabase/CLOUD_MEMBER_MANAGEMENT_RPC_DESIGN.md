@@ -2046,3 +2046,26 @@ Supabase docs hiện hành mô tả Before User Created Hook chạy ngay trướ
 - Vì hook retry và timeout, receipt endpoint phải idempotent theo attempt_id + Auth user ID, có unique constraint, xác minh signature/timestamp, chống replay và không thực hiện side effect không idempotent. Trả success chỉ sau khi receipt đã commit bền vững. Nếu handler không thể ghi receipt, không giả vờ success; Saga vẫn phải xử lý Auth outcome theo trạng thái unknown và không gọi lại Auth.
 
 **Quyết định kỹ thuật tạm thời:** After Hook là source-level capability nhưng chưa được xác nhận là Supabase Cloud feature; không được coi là triển khai khả thi trên BAOTRI Mini hosted project. Before Hook có documented availability nhưng không phải proof-of-commit. Giữ fail-closed/manual review cho đến khi có một kênh correlation sau commit được Supabase Cloud hỗ trợ chính thức hoặc một provisioning workflow khác được duyệt. Không đổi DDL/RPC/Edge Function, không chạy SQL hoặc thay đổi Supabase.
+
+
+## 47. Alternative Auth provisioning: createUser with server metadata marker
+
+Review of the current Supabase JS Auth Admin API (20/11/2026):
+
+**Confirmed API facts**
+- `admin.createUser(attributes)` is server-only, accepts `app_metadata` in `AdminUserAttributes`, and does not send a confirmation email. The user email is unconfirmed unless explicitly confirmed; BAOTRI must not set `email_confirm: true` without independent proof of email ownership.
+- `admin.inviteUserByEmail(email, options)` sends an invitation and its `options.data` maps to `user_metadata`; it does not expose create-time `app_metadata` in the public SDK method.
+- `admin.generateLink({type:'invite', email})` handles creation of the user and returns a link; its options expose `data` mapped to `user_metadata`, not trusted create-time `app_metadata`.
+- `admin.listUsers()` supports pagination (`page`, `perPage`) only; the public SDK does not expose email or app_metadata filtering. `getUserById()` requires a known Auth UUID.
+
+**Candidate provisioning direction (not approved / not implemented)**
+1. Edge Function creates a unique opaque random correlation marker for this attempt; persist only its digest/key version with the immutable attempt record before Auth dispatch.
+2. Call `admin.createUser()` from trusted server code with `email_confirm:false` and the marker in server-controlled `app_metadata` at creation time. This provides a candidate positive proof because app_metadata is part of the create request, not user_metadata supplied by an end user.
+3. If the response is received, verify returned user ID and exact marker before recording trusted provenance/receipt. If response is lost, reconcile by querying `auth.users` on the server/database side for the exact marker and retrieve the exact Auth UUID; email is only a locator, never proof.
+4. Do not use public `listUsers()` to scan every user as a routine reconciliation mechanism; it is paginated only and does not support filters. A narrowly scoped, server-only database lookup/RPC against `auth.users` would need separate security review, least privilege, strict marker matching, and no exposure to anon/authenticated.
+5. A missing marker result immediately after timeout is not proof that the create request did not commit or is no longer in flight. Keep `outcome_unknown`; no repeat `createUser()` unless a definitive no-dispatch/no-side-effect condition is established.
+
+**Blocking unresolved issue: onboarding email / password setup**
+`createUser()` does not send an invite email. `generateLink({type:'invite'})` creates the user itself and does not offer trusted app_metadata input, so it is not a direct second step for an already-created user. A possible separate email/onboarding flow (e.g. a supported recovery/setup link or custom email) has not been proven to work safely with an unconfirmed user and must be tested against the pinned Supabase Auth/SDK versions before selection. Never auto-confirm email just to bypass this gap.
+
+**Conclusion:** `createUser + app_metadata marker` is a promising way to obtain positive Auth provenance without After User Created Hook, but it is not yet a complete replacement for native invite flow. Keep native `inviteUserByEmail` and fail-closed/manual review as current behavior until onboarding, reconciliation query, security, and timeout/crash tests are validated. No DDL/RPC/Edge Function changes or Supabase writes.
