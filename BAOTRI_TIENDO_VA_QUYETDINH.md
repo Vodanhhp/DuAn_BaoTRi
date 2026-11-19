@@ -3759,3 +3759,12 @@ Hoàn thiện hợp đồng quyền/replay và quyết định điều chỉnh t
 - Asset-specific Receipt/Lease vẫn giữ nguyên trong chuyển tiếp; không dual-write và không xóa receipt cũ.
 - row_version trigger tăng theo mỗi SQL UPDATE; RPC cần update mỗi row đúng một lần. Asset chưa chuyển token từ updated_at/Lease.
 - Chưa tạo shared-ledger SQL draft, chưa sửa draft 015, chưa chạy SQL.
+
+
+## 44. Chốt chính sách replay shared Receipt (19/11/2026)
+
+- Người dùng đồng ý cho cùng actor replay Receipt đã commit bằng cùng mutation ID/fingerprint khi Auth hợp lệ, organization active và membership còn active; không cần permission ghi cũ vì đây là xác nhận read-only, không phải mutation mới.
+- Actor khác/cross-org bị từ chối; membership inactive hoặc organization inactive thì deny.
+- Chỉ trả snapshot nếu actor hiện có read permission tương ứng; nếu không, chỉ trả acknowledgement tối thiểu, không tiết lộ snapshot nhạy cảm.
+- Quyết định này thuộc shared Receipt design; Asset-specific Receipt/Lease và RPC hiện tại chưa thay đổi, cần kế hoạch chuyển đổi riêng.
+- Chưa tạo SQL/RPC, chưa sửa code, chưa apply migration, chưa thay đổi dữ liệu/quyền Cloud hoặc chạy test.
