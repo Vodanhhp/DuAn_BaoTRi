@@ -2644,3 +2644,28 @@ Chỉ đọc GitHub, Edge Function metadata và catalog/dữ liệu Test. Không
 
 ### Trạng thái
 Read-only review function definitions và migrations Test. Không chạy concurrency tests hoặc thay đổi DB/RPC/grants/policies.
+
+## 68. Organization lifecycle và Auth deletion constraints – 20/11/2026
+
+### Organization lifecycle
+- Test catalog chỉ có trigger cập nhật updated_at trên organizations; chưa tìm thấy RPC nghiệp vụ hoặc authenticated DML writer thay đổi Organization status.
+- authenticated không có INSERT/UPDATE/DELETE trên organizations; service_role có DELETE. Server-side capability không đồng nghĩa có runtime caller.
+- Asset/Member permission helpers chỉ đọc Organization status, không khóa Organization row. Nếu triển khai suspend/disable Organization, cần shared Organization row/version serialization với mọi business mutation, trước khi khóa Membership/domain rows.
+
+### Hard-delete constraints
+- FK từ Membership, Role, Settings, Asset, Counter, Import ledger, Checklist, Inventory và Maintenance về Organization đều RESTRICT. Không thể hard-delete tenant khi còn dữ liệu nghiệp vụ/phụ thuộc.
+- Không thiết kế cascade xóa toàn bộ tenant ở giai đoạn này. Ưu tiên state transition + retention/archive có kiểm soát.
+
+### Auth deletion
+- profiles cascade từ auth.users, nhưng Organization.created_by, Membership.user_id/invited_by_user_id, member_roles.assigned_by_user_id, Asset import actor và Asset receipt actor đều RESTRICT.
+- asset_edit_locks holder user cascade từ Auth. Do đó Auth deletion vừa có thể bị RESTRICT bởi lịch sử/provenance, vừa có thể xóa Lease.
+- Remove membership không xóa Auth user/profile. Invite compensation là caller deleteUser duy nhất tìm thấy; cần operation-state check trước compensation.
+
+### Lock-order candidate
+- Auth deletion: Auth user → cascade Lease.
+- Asset mutation: Lease → Asset → Asset Receipt insert (FK Auth user).
+- Có candidate Auth ↔ Lease/Receipt lock inversion; chưa có concurrency test nên chưa kết luận deadlock thực tế.
+- Không thêm Auth deletion vào member remove/suspend. Cần policy retention và quy trình account erasure riêng, cùng test lock order trước khi xây dựng.
+
+### Trạng thái
+Read-only catalog/FK/ACL/trigger và source review trên BAOTRI-Mini-Test/GitHub. Không chạy mutation, không thay đổi DB, Auth, RPC hoặc grants.
