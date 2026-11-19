@@ -717,3 +717,49 @@ Theo xác nhận tiếp tục của người dùng, phiên bản hiện tại á
 ### 21.5 Ranh giới
 
 Đây là audit static và cutover plan. Chưa sửa helper, migration, RLS, Edge Function, App.tsx, test hoặc bootstrap; chưa tạo SQL draft, chưa chạy SQL/RPC và chưa thay đổi Supabase.
+
+
+## 22. Preflight dữ liệu trước khi chuyển member_roles thành nguồn vai trò duy nhất
+
+### 22.1 Phạm vi và giới hạn xác minh
+
+Đây là kế hoạch kiểm tra read-only dựa trên schema/migration trong repository. Hiện không có kết nối truy vấn dữ liệu Supabase thực tế trong bước rà soát này; vì vậy chưa biết số membership/assignment thực tế, chưa thể kết luận dữ liệu Test hay Production sạch.
+
+### 22.2 Các nhóm thống kê bắt buộc
+
+Báo cáo phải có tổng số membership theo organization/status và các nhóm:
+- Membership có 0 assignment.
+- Membership có đúng 1 assignment.
+- Membership có hơn 1 assignment.
+- Assignment trỏ role inactive.
+- Legacy role không thuộc tập giá trị schema cho phép hoặc không khớp mapping mirror dự kiến.
+- Legacy Admin nhưng assignment không phải Admin hoặc không có assignment.
+- Legacy user nhưng assignment là Admin.
+- Assignment role code không thuộc tập role được ứng dụng hỗ trợ (admin/technician/viewer hoặc Custom Role được phê duyệt).
+- Organization/membership/role scope mismatch (FK kép hiện có phải ngăn các trường hợp này; vẫn kiểm tra để phát hiện constraint bị thiếu/NOT VALID hoặc dữ liệu được nạp ngoài đường chuẩn).
+
+### 22.3 Phân loại mismatch, không tự sửa
+
+Mapping mirror dự kiến sau cutover: admin → legacy admin; technician, viewer và Custom Role không có quyền Admin → legacy user. Việc phân loại chỉ là báo cáo; không được tự động biến legacy user thành Technician nếu assignment thiếu, vì có thể đã từng là Viewer hoặc Custom Role. Không được tự chọn một trong nhiều assignment. Mọi trường hợp không giải thích được phải được Admin/operator xác nhận và ghi audit trước khi sửa.
+
+### 22.4 Cổng cho phép cutover
+
+Chỉ được tiếp tục khi:
+1. Không còn membership có nhiều assignment.
+2. Mọi membership cần truy cập tenant có đúng một assignment hợp lệ, role active và thuộc đúng organization.
+3. Mọi mismatch legacy/assignment đã được phân loại, phê duyệt và có kế hoạch mirror đồng bộ.
+4. Không còn role code ngoài chính sách được duyệt.
+5. Có snapshot/backup và báo cáo trước-sau; migration có transaction, kiểm tra hậu điều kiện và phương án forward-fix/rollback phù hợp.
+
+Nếu có bất kỳ dòng mơ hồ nào, dừng cutover; không xóa assignment, không gán mặc định Technician, không thay đổi legacy role tự động.
+
+### 22.5 Thứ tự triển khai dự kiến
+
+1. Chạy truy vấn thống kê read-only trên Test, xuất kết quả tổng hợp và danh sách ngoại lệ có định danh nội bộ.
+2. Đối chiếu các trường hợp ngoại lệ với lịch sử invite/đổi role và xác nhận của Admin.
+3. Chốt dữ liệu chuẩn và mirror; thực hiện sửa dữ liệu có audit trong migration riêng.
+4. Chạy lại preflight; chỉ khi assignment_count=1 và mismatch_count=0 mới thêm unique (organization_id, member_id).
+5. Chuyển mọi writer tạo/đổi role sang cập nhật assignment + legacy mirror trong cùng transaction.
+6. Chuyển authorization helper/RLS/Edge Function sang member_roles-only; kiểm thử rồi mới triển khai Production theo phê duyệt riêng.
+
+Không có truy vấn nào được chạy trên Supabase trong bước này. Đây không phải migration SQL; không sửa code, dữ liệu, RLS hoặc Cloud.
