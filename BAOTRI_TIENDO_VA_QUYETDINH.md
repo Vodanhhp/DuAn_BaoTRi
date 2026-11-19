@@ -4129,3 +4129,19 @@ Các race case bắt buộc:
 Pass: mỗi interleaving tương đương một thứ tự tuần tự; thành công chỉ tạo đúng một membership + một role + audit + Shared Receipt + Saga completion; thất bại/rollback không có business write; replay không tạo side effect; không rò PII/secret. Mục tiêu ban đầu: tối thiểu 20 interleaving ngẫu nhiên cho mỗi race class cộng barrier test xác định cả hai thứ tự khóa. Đây là mục tiêu kiểm thử, không tự nó chứng minh tính đúng.
 
 Dùng test-only barrier, không thêm sleep/debug endpoint/test hook vào RPC production. SQL update có kiểm soát chỉ chứng minh cơ chế row lock của PostgreSQL, không chứng minh GoTrue confirmation route thực tế. Chưa tạo fixture, chưa chạy test, không SQL write, DDL, RPC, Edge Function, grant hay đổi cấu hình.
+
+## 70. Hướng gọi hàm nội bộ từ Edge Function qua PostgreSQL
+
+Đã xác minh tài liệu Supabase hiện hành cho phép Edge Function kết nối PostgreSQL bằng driver Postgres trực tiếp. Với workload Edge/serverless, tài liệu khuyến nghị Shared Pooler transaction mode (port 6543); driver phải tắt prepared statements. Hướng này cho phép gọi hàm trong schema private mà không phải expose schema qua PostgREST/Data API.
+
+Luồng candidate:
+1. Edge Function tự xác thực bearer JWT, lấy Auth UID có thẩm quyền; không tin UID/email/org/role do client gửi.
+2. Edge Function tự tính recipient HMAC bằng secret phía server.
+3. Kết nối PostgreSQL qua TLS và transaction pooler bằng một DB login role chuyên dụng, quyền tối thiểu.
+4. Role này chỉ có USAGE trên schema cần thiết và EXECUTE đúng một private acceptance function; không có SELECT/UPDATE trực tiếp trên auth.users, Saga, attempts, membership, role, audit hay receipt.
+5. Hàm private dự kiến SECURITY DEFINER, owner được xác minh có quyền cần thiết, search_path rỗng cố định, tên object fully-qualified; khóa Auth user + invitation và thực hiện toàn bộ acceptance trong cùng một transaction.
+6. Edge Function chỉ trả projection tối thiểu; không trả email, Auth UUID, digest, trạng thái Saga nội bộ, lỗi SQL chi tiết hay secret.
+
+Điều kiện kỹ thuật: không dùng postgres/service_role làm DB identity chung; không tách thao tác khóa row và ghi nghiệp vụ thành nhiều query/connection; transaction pooler không đảm bảo connection affinity, không dựa vào session state, temporary table hoặc advisory session lock; tắt prepared statements. UID phải gắn với phiên đã được Edge Function xác thực, không lấy từ client payload.
+
+Còn phải thiết kế role/grant matrix, quản lý và xoay vòng DB credential, TLS, giới hạn kết nối, kiểm tra driver/pooler, xác minh cách bind UID, và chạy kiểm thử concurrency riêng. Đây mới là candidate kiến trúc, chưa phải phê duyệt triển khai. Không SQL write, role, grant, DDL, RPC, Edge Function, secret hay cấu hình Supabase nào được thay đổi.
