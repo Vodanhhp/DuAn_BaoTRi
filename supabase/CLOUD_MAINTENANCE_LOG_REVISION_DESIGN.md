@@ -47,7 +47,7 @@ Tạo bảng `maintenance_log_revisions` append-only:
 - revision_no (1, 2, 3…)
 - due_date, log_date, kind, description, parts, readings
 - requested_by, result, completed_at, performed_by
-- edited_by_user_id (UUID auth user; có thể null cho import legacy có audit nguồn riêng)
+- actor_user_id (UUID auth user; có thể null cho import legacy có audit nguồn riêng)
 - edited_by_label (tên hiển thị tại thời điểm thao tác)
 - edit_action (created / updated / completion_reverted / imported)
 - mutation_id
@@ -142,7 +142,7 @@ Trạng thái: **ĐÃ CHỐT**. Nội dung mục này thay thế câu hỏi perm
 ## 9. Hợp đồng RPC và response chi tiết (thiết kế)
 
 ### 9.1 Quy tắc chung
-- Actor lấy từ `auth.uid()`; không nhận `created_by_user_id`, `edited_by_user_id` hoặc role do client tự khai.
+- Actor lấy từ `auth.uid()`; không nhận `created_by_user_id`, `actor_user_id` hoặc role do client tự khai.
 - Mọi request có organization scope, mutation_id ổn định và payload đầy đủ. Server kiểm tra active membership + permission.
 - Revision là snapshot đầy đủ, không patch thiếu trường có thể khiến dữ liệu cũ bị xóa ngoài ý muốn. Nếu hỗ trợ patch, server phải merge trên snapshot hiện tại và trả snapshot canonical; cần chốt allowlist trước migration.
 - Mọi revision sau revision 1 bắt buộc có reason không rỗng.
