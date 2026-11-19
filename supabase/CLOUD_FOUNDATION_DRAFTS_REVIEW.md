@@ -2127,3 +2127,25 @@ Chỉ đọc function definitions trên BAOTRI-Mini-Test và migration/source Gi
 
 ### Trạng thái
 Đây là test design, không phải test result. Chưa chạy SQL transaction có ghi dữ liệu, chưa tạo fixture, chưa tạo function/migration và chưa thay đổi Supabase.
+
+## 79. Coverage audit – các writer ngoài bốn concurrency pair – 20/11/2026
+
+### Đường ghi đã nhận diện từ migration trên main
+- Asset create: create_asset_with_code khóa/UPSERT asset_code_counters rồi INSERT Asset; thứ tự Counter → Asset.
+- Asset import: import_asset_preserving_identity dùng advisory mutation lock, tra import ledger, đọc settings, có thể UPSERT Counter, rồi Asset FOR UPDATE/INSERT và INSERT import ledger. Cần kiểm tra Import ↔ Create cùng mã/category và Import replay ↔ Asset update.
+- Lease lifecycle: acquire INSERT/UPSERT Lease; heartbeat UPDATE Lease; release DELETE Lease; edit/archive/mutation khóa Lease rồi Asset.
+- Receipt mutation: khóa Lease, kiểm tra Receipt, khóa Asset, UPDATE Asset, INSERT Asset Receipt. Replay/retry cần kiểm tra cùng mutation ID/payload.
+- Membership: Auth profile-sync trigger tự UPDATE invited → active; admin create INSERT Membership + member_roles; role update DELETE/INSERT member_roles; status update UPDATE Membership; remove DELETE Membership và cascade role assignment.
+- Organization settings: RLS cho phép INSERT/UPDATE theo permission; Asset create/import đọc settings. Settings update ↔ Asset create/import là cặp consistency cần rà.
+- Inventory: RLS cho phép INSERT/UPDATE/DELETE inventory_items; INSERT inventory_movements. Item update/delete ↔ movement cần test FK/quantity contract.
+- Maintenance: RLS cho phép INSERT/UPDATE/DELETE maintenance_tasks và maintenance_plans; INSERT maintenance_logs. Plan/task delete ↔ task/log insert hoặc update là cặp cần rà.
+- Checklist: template INSERT/UPDATE, version INSERT, result INSERT theo permission. Template update/version creation ↔ result submission cần kiểm tra version pinning và snapshot semantics.
+- Asset images: INSERT/DELETE; Asset/metadata lifecycle và image deletion cần giữ FK/history đúng.
+- Direct DELETE Asset vẫn có capability qua privilege + RLS; không có caller Cloud delete tìm thấy trước đó không đồng nghĩa database đã chặn.
+
+### Kết luận về coverage
+Bốn cặp §78 là lõi lock-order/authz, nhưng chưa đủ để chứng minh coverage toàn bộ writers. Bổ sung nhóm test ưu tiên: (1) Counter ↔ Create/Import; (2) Settings update ↔ Create/Import; (3) Lease acquire/heartbeat/release ↔ mutation/delete; (4) Inventory item ↔ movement; (5) Maintenance plan/task ↔ log; (6) Checklist template/version ↔ result; (7) Auth confirmation trigger ↔ invitation acceptance/revoke.
+RLS predicates và helper permission chỉ đọc không tự tạo shared serialization lock. Cần tách test DB concurrency khỏi kiểm tra logic UI/offline queue. Mọi cặp phải dựa trên FK và function body cụ thể, không suy diễn chỉ từ tên bảng.
+
+### Trạng thái
+Static inventory từ migration/main, chưa phải runtime call graph đầy đủ. Chưa chạy test, chưa ghi DB và chưa sửa Supabase.
