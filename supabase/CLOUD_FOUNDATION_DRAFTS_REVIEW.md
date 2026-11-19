@@ -1022,3 +1022,99 @@ Không đồng nhất ba giá trị. Client chỉ advance applied_cursor cùng t
 - Không chạy SQL, không gọi RPC, không ghi dữ liệu hoặc quyền Cloud.
 - Trước khi viết SQL draft, cần cập nhật hợp đồng Change Feed để chốt scan cursor, permission filtering, snapshot model, device cursor/retention; đồng thời lập lock matrix cho mọi RPC nghiệp vụ và RPC quản trị thành viên/role/permission.
 
+## 21. Lock Matrix thống nhất cho RPC nghiệp vụ và quản trị – 19/11/2026
+
+Phạm vi: đối chiếu migrations 005, 012, 013, 014, 017 và các thiết kế Shared Receipt, Change Feed. Static review repository main; không xác nhận migration đã được áp dụng lên Supabase. Không thay đổi SQL hoặc dữ liệu.
+
+### 21.1 Kết luận kiến trúc
+
+Chốt một protocol lock thống nhất cho các RPC mới:
+
+**Organization → Actor Membership → Actor Role Assignments → Roles → Role Permissions → Target Membership (nếu quản trị thành viên khác) → Receipt → Business rows theo thứ tự ID → Asset Lease (nếu có, theo quy ước cần thống nhất) → Organization Sync Counter → Change events → Receipt finalize.**
+
+Có một điểm cần điều chỉnh trước khi viết SQL: Asset Lease hiện được lấy trước Asset row và Asset-specific Receipt được tra trước Lease. Khi chuyển Asset sang Shared Receipt, phải thống nhất một thứ tự duy nhất cho Receipt/Lease/Asset rows và mọi RPC Asset cùng tuân thủ; không được giữ hai lock order chồng chéo. Khuyến nghị giữ lock order chung: authorization locks → Receipt claim/replay → Lease row → Asset row → counter → events → finalize. Receipt replay chỉ đọc không được lấy Lease hoặc Business row không cần thiết.
+
+Lock matrix không có nghĩa mọi RPC phải khóa mọi loại row. RPC chỉ khóa các lớp cần cho operation nhưng không được đảo thứ tự tương đối giữa các lớp mà nó cùng sử dụng.
+
+### 21.2 Lock matrix theo nhóm RPC
+
+| Nhóm RPC | Actor authorization | Target / role locks | Receipt | Business rows | Counter / event |
+|---|---|---|---|---|---|
+| Asset create/import/update/archive/restore/status | Organization + actor Membership + permission tương ứng | Role/Permission rows | Shared Receipt; Asset-specific Receipt/Lease phải có kế hoạch chuyển tiếp | Asset Lease rồi Asset row; code counter nếu allocator | Counter + event cho Asset |
+| Inventory create/opening stock/In/Out/Adjustment | Organization + Membership + inventory.create hoặc inventory.adjust | Role/Permission rows | Shared Receipt | Inventory item row FOR UPDATE; movement ID uniqueness | Counter + Item/Movement events |
+| Task create/update/delete/complete | Organization + Membership + maintenance.create/update/delete | Role/Permission rows | Shared Receipt | Task row; complete còn tạo Log root/revision trong cùng transaction | Counter + từng event thực sự thay đổi |
+| Maintenance Plan create/update/delete | Organization + Membership + maintenance.create/update/delete | Role/Permission rows | Shared Receipt | Plan rows, nhiều row theo thứ tự ID cố định | Counter + Plan events |
+| Checklist Template/Version | Organization + Membership + checklist.template.manage | Role/Permission rows | Shared Receipt | Template row; version append-only | Counter + Template/Version events |
+| Checklist Result | Organization + Membership + checklist.result.create | Role/Permission rows | Shared Receipt | Template/version chỉ đọc để xác thực; Result append-only | Counter + Result event |
+| Maintenance Log create/revise | Organization + Membership + logs.create hoặc logs.revise | Role/Permission rows | Shared Receipt | Log root; revision mới append-only; complete Task phải khóa Task trước Log theo thứ tự định nghĩa | Counter + Log/Revision events |
+| Organization Settings | Organization + Membership + settings.manage | Role/Permission rows | Shared Receipt | Settings row | Counter + Settings event |
+| Member invite/create membership | Organization + actor Membership + users.manage | Role target; Membership uniqueness; Auth user lock nếu cần | Receipt/idempotency riêng cho invite workflow | Organization Membership + member_roles | Change event quản trị nếu member roster thuộc feed |
+| Member role change | Organization + actor Membership + users.manage/roles.manage theo policy chốt | Target Membership → target member_roles → Role → Role Permission | Receipt quản trị | Xóa/gán member_roles trong cùng transaction | Event membership/role nếu client sync roster |
+| Member suspend/activate | Organization + actor Membership + users.manage | Target Membership | Receipt quản trị | Update membership status | Event membership status |
+| Member remove | Organization + actor Membership + users.manage | Target Membership FOR UPDATE; member_roles cascade | Receipt quản trị | Delete membership, giữ Auth/Profile | Tombstone membership event nếu roster sync |
+| Role/Permission catalog management | Organization + actor Membership + roles.manage | Role → Role Permission rows theo ID/code cố định | Receipt quản trị | Role/role_permissions | Events nếu role catalog được đồng bộ |
+
+### 21.3 Quy tắc khóa và tránh deadlock
+
+1. Luôn khóa Organization trước Membership; kiểm tra trạng thái active sau khi lấy lock.
+2. Actor Membership luôn trước target Membership. Nếu actor và target là cùng một row, chỉ khóa một lần. Khi một RPC cần khóa nhiều Membership, sort theo UUID trước khi khóa.
+3. Role rows và role_permissions phải được khóa theo thứ tự ổn định (role_id, permission_code); không query join rồi dựa vào thứ tự planner để suy ra thứ tự khóa.
+4. Mọi business rows nhiều bản ghi phải khóa theo (table rank, primary key) đã quy định. Task + Log và các mutation batch phải dùng cùng thứ tự trong mọi RPC.
+5. Chỉ lấy counter sau khi đã khóa/validate các business rows cần thay đổi; counter được giữ đến COMMIT để bảo đảm commit-order cursor.
+6. Không gọi mạng, Edge Function, Auth Admin API hoặc thao tác ngoài PostgreSQL trong lúc đang giữ transaction locks.
+7. Có thể deadlock do FK/cascade/trigger tự lấy lock khác thứ tự; phải chạy concurrency test với đúng schema và PostgreSQL version, không chỉ dựa trên bảng matrix.
+8. Không dùng advisory lock thay thế row locks nếu chưa chứng minh key space, tenant isolation và thứ tự tương tác với FK/row locks.
+
+### 21.4 P0 – Hiện trạng migration 013/014 chưa đáp ứng matrix
+
+Static review cho thấy:
+- admin_create_org_membership kiểm tra Organization active nhưng không khóa Organization; chọn Role không khóa Role; khóa auth.users nhưng không khóa/serialize trạng thái Organization theo protocol.
+- admin_update_org_member_role đọc target Membership và Role mà không FOR UPDATE; sau đó DELETE/INSERT member_roles.
+- admin_update_org_member_status đọc target Membership nhưng chỉ khóa ngầm tại câu UPDATE cuối; không có khóa Organization/actor authorization trong cùng RPC.
+- admin_remove_org_membership có FOR UPDATE target Membership, nhưng chưa khóa Organization và actor Membership trước đó.
+- Các RPC trên yêu cầu service_role và nhận p_actor_user_id từ caller; actor authorization hiện nằm ở Edge Function trước khi gọi RPC. Điều này tạo khoảng TOCTOU giữa kiểm tra users.manage và thay đổi Membership.
+- sync_auth_user_profile() trigger kích hoạt khi xác nhận email và cập nhật invited Membership nhưng không đi qua cùng Organization lock protocol. Đây là luồng hệ thống riêng cần đưa vào matrix, không được bỏ qua.
+- has_org_permission() ở migration 005 là helper STABLE không khóa các row permission; tiếp tục dùng cho RLS/read, không coi là authorization lock cho mutation.
+
+**Hướng sửa đề xuất:** chuyển xác thực actor và kiểm tra users.manage vào cùng transaction DB với thao tác quản trị. Ưu tiên RPC quản trị được gọi bằng JWT của actor, lấy auth.uid() bên trong, SECURITY DEFINER với search_path rỗng và grant EXECUTE phù hợp; Edge Function tiếp tục làm Auth Admin invite/reset-password nhưng không được là nơi duy nhất kiểm tra quyền cho mutation membership. Nếu bắt buộc dùng service_role RPC, phải có cơ chế actor assertion tin cậy không thể giả mạo từ client và vẫn kiểm tra/khóa permission trong transaction; tham số p_actor_user_id đơn thuần không đủ.
+
+### 21.5 P0 – Asset hiện tại là ngoại lệ chuyển tiếp
+
+Migration 017 apply_asset_mutation_with_lock hiện:
+- Kiểm tra assets.update trước khi tra Asset Receipt; retry sau khi quyền bị thu hồi có thể bị chặn dù mutation đã commit.
+- Tra Receipt trước khi lấy Lease, sau đó khóa Lease rồi Asset.
+- Dùng Asset-specific Receipt và expected_cloud_updated_at, không dùng Shared Receipt/row_version.
+- Chưa khóa Organization/Membership/Role/Permission theo protocol chung.
+- Chưa phát Change Feed event.
+
+Không thay đổi Asset Lease hoặc Asset Receipt trong bước review này. Khi chuyển đổi phải có migration/bridge rõ ràng để không tạo hai nguồn idempotency và không làm mất khả năng replay mutation cũ. Không cho phép một RPC khóa Asset trước Receipt trong khi RPC khác khóa Receipt trước Asset.
+
+### 21.6 P1 – Phân biệt business mutation và quản trị membership
+
+Membership/Role là dữ liệu quản trị tenant, không phải Asset/Inventory/Task. Nếu muốn đồng bộ roster qua Change Feed, phải định nghĩa permission xem roster riêng (users.view/roles.view), payload allowlist và tombstone riêng. Không tự đưa email/Auth metadata vào Change Feed.
+
+Invite có hai hệ thống transaction không thể gộp nguyên tử: Supabase Auth Admin API và PostgreSQL membership. Cần saga có operation ID/Receipt:
+- Tạo Auth user thành công nhưng membership chưa tạo: retry phải tìm/đối chiếu Auth identity trước khi tạo trùng.
+- Membership RPC timeout: phải query trạng thái bằng cùng operation ID trước khi bù trừ hoặc xóa Auth user.
+- Chỉ được xóa Auth user vừa tạo khi chứng minh membership chưa commit và user chưa được gắn với workflow khác.
+- Email confirmation trigger đổi invited → active phải idempotent và có thứ tự khóa tương thích.
+
+### 21.7 Các quyết định cần giữ
+
+- Authorization được xác định tại thời điểm RPC lấy đủ authorization locks và kiểm tra quyền. Revoke bắt đầu sau thời điểm đó phải chờ transaction đã authorize; không hồi tố.
+- Replay Receipt đã commit: Auth + Organization active + actor Membership active; không yêu cầu write permission cũ. Snapshot chỉ trả nếu current read permissions cho phép; nếu không chỉ acknowledgement tối thiểu.
+- Actor khác hoặc cross-org không được dò Receipt.
+- Business RPC và admin RPC không nhận actor identity hoặc permission list do client tự khai để làm căn cứ thẩm quyền.
+- Mọi RPC ghi business data phải tạo Receipt + business rows + Change Feed events trong cùng transaction sau khi nền tảng sẵn sàng.
+- Không cho phép direct PostgREST write bypass RPC sau vertical cutover.
+
+### 21.8 Trình tự tiếp theo
+
+1. Chốt lock matrix và lock order ở mục 21; kiểm tra riêng Asset Lease order và Task+Log multi-row order.
+2. Sửa tài liệu Shared Receipt/Change Feed để phản ánh Role/Permission locks và scan cursor.
+3. Thiết kế lại member-management RPC contract (actor từ JWT, không tin p_actor_user_id từ service role), đồng thời thiết kế invite saga/operation receipt.
+4. Hoàn tất row_version + Shared Receipt + counter/change feed schema drafts; review DDL/trigger/grants/RLS.
+5. Chỉ sau khi người dùng duyệt mới tạo migration executable draft; chưa chạy trên Test hoặc Production nếu chưa có lệnh rõ ràng.
+
+Không sửa migration 013/014/017, không sửa Edge Function, không tạo SQL, không chạy SQL, không gọi RPC, không thay đổi Supabase trong lượt review này.
+
