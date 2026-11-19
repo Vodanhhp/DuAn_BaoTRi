@@ -3636,3 +3636,17 @@ Hoàn tất inventory quyền theo role và rà các component/modal còn lại;
 
 ### Bước tiếp theo
 Rà soát tiếp các child component/modal và xác định transaction boundary + API/RPC cho từng nhóm Asset, Inventory, Maintenance, Checklist. Không triển khai trước khi thiết kế và kiểm thử permission contract.
+
+
+## 35. Rà soát bổ sung Cloud-first: demo, restore queue, Checklist và cấu hình (19/11/2026)
+
+- Phát hiện `createDemoData()` và `createAdditionalDemoAssets()` ghi dữ liệu mẫu Local nhưng vẫn thêm entry vào business `syncQueue`. Cần tách demo/test dataset hoặc bỏ enqueue; tuyệt đối không upload demo vào tenant Cloud. Phải phân loại queue demo cũ trước khi chuyển đổi.
+- Backup export cả `syncQueue`; Restore thay thế queue bằng dữ liệu trong backup. Dù đã có preflight bảo vệ Asset Cloud-linked và Asset mutation unresolved, chưa thấy bảo vệ tương đương cho mọi pending queue/mutation khác. Restore tiếp tục là local recovery riêng; không tự replay queue từ backup, không xóa queue hiện tại khi chưa reconciliation receipt/trạng thái giao dịch.
+- `AssetChecklist` tự gọi `ensureDefaultChecklist()` khi mở màn hình nếu `allowActions`; điều kiện chỉ loại Viewer nên Technician có thể kích hoạt tạo Template/Version dù catalog chỉ cho Admin quản lý Template. Cần chuyển thành draft/preview; chỉ Admin chủ động lưu sau Cloud confirmation mới tạo chính thức.
+- `saveCloudAssetCodeConfig()` ghi organization setting qua PostgREST và chờ response; giữ Cloud-first + server-side `settings.manage`. `onSaveProfile()`/đặt mật khẩu là Auth cá nhân; theme/compact/device ID là Local cá nhân, không nhập vào business write queue.
+- Cloud Asset import vẫn là Cloud read → Local restore/cache chọn lọc; phân biệt với business mutation.
+- Đã bổ sung mục 11 trong `supabase/CLOUD_FIRST_WRITE_AUDIT.md`.
+- Chưa sửa code/SQL/RPC, chưa thay đổi dữ liệu hay permission; chưa runtime test. Đây là static audit trên main.
+
+### Bước tiếp theo
+Rà nốt các child/modal và permission gating; sau đó chốt transaction contract, mutation receipt/idempotency và kế hoạch xử lý queue/restore cho từng vertical. Không triển khai code trước khi thiết kế được thống nhất.
