@@ -349,3 +349,15 @@ Người dùng xác nhận:
 3. Hoàn thiện RPC input/output, expected_version/revision, shared Receipt và change events.
 4. Thiết kế UI: tạo vật tư có tồn đầu kỳ; sửa metadata khóa quantity; form Điều chỉnh nhập tồn thực tế; Admin mới có nút sửa Log đã lưu.
 5. Chỉ sau khi review thiết kế mới tạo SQL draft; không apply migration hoặc sửa code khi chưa có lệnh rõ.
+
+
+## 16. Kế hoạch schema migration sau khi chốt quy tắc Kho/Log (19/11/2026)
+
+- Đã đối chiếu business schema 002, permission seed 005, RLS/grants 006, Asset Receipt migration, row_version draft 015 và Local `Log` type.
+- Inventory movement schema đề xuất thêm signed `quantity_delta`, balance_before/after, counted_quantity, actor, mutation_id, expected_item_version; các trường mới NULL với legacy rows. Giữ quantity hiện tại dương = abs(delta) cho movement mới; không backfill balance lịch sử.
+- Log giữ root identity/FK hiện tại; thêm created_by_user_id nullable; tạo append-only maintenance_log_revisions với snapshot đầy đủ. Backfill revision 1 từ root; due_date/requested_by không có trong schema cũ nên NULL; không dựng lại actor/edit history.
+- Permission `logs.revise` được seed riêng và chỉ gán Admin. Revisions chỉ SELECT theo logs.view; không direct writes. Thu hồi direct INSERT root Log chỉ trong cutover có create RPC sẵn sàng.
+- Inventory RPC cutover thu hồi direct insert/update grants tương ứng khi RPC đã sẵn sàng; không làm mất khả năng nghiệp vụ trong giai đoạn triển khai.
+- Migration phải tách foundation/Receipt, Inventory, Log, Change feed và client cutover; row_version draft 015 chưa được coi là applied.
+- Kế hoạch chi tiết: `supabase/CLOUD_FIRST_SCHEMA_MIGRATION_PLAN.md`.
+- Chưa tạo SQL migration executable, chưa sửa code, chưa apply SQL hoặc thay đổi dữ liệu/permissions.
