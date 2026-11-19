@@ -459,3 +459,80 @@ Lý do: event không chỉ là dấu vết SQL row. Nó phải thể hiện đú
 Thiết kế hiện tại đã có nền tảng đúng về commit-order cursor, tombstone, multi-record event và atomic apply Local. Tuy nhiên chưa đủ điều kiện viết migration triển khai hoặc bật worker. Cần chốt cơ chế event producer (RPC hay trigger, không trùng lặp), snapshot semantics, permission-aware cursor, counter initialization/lock order, retention và resync boundary.
 
 Không tạo SQL draft, không sửa code, không gọi RPC, không chạy SQL và không thay đổi Supabase trong lượt review này.
+
+
+## 14. Rà soát Dexie syncQueue và chuyển đổi Local → Cloud
+
+Đã đọc trực tiếp `src/db.ts`, `src/lib/cloudSync.ts`, `supabase/CLOUD_SYNC_QUEUE_V7_DESIGN.md`, `supabase/CLOUD_FIRST_WRITE_AUDIT.md` và tìm toàn repository các tham chiếu `syncLocalDatabase`, `queueChange`, `syncQueue`.
+
+### 14.1 Trạng thái Dexie thực tế
+
+- Ứng dụng đang ở Dexie version 8. Version 8 chỉ thêm `assetCloudLinks` và `assetMutations`; không thay đổi cấu trúc `syncQueue` từ version 6.
+- `syncQueue` vẫn có primary key `id` và unique compound index `[tableName+recordId]`. Vì vậy một record chỉ có tối đa một queue row.
+- `queueChange()` dùng ID `tableName:recordId`, ghi `put()`, tạo `mutationId` mới và reset status/attempts về pending. Thay đổi mới có thể ghi đè mutation cũ cùng record.
+- `putAndQueue`, `addAndQueue`, `deleteAndQueue` ghi Local + queue trong cùng Dexie transaction. Đây là helper Local-first, không đáp ứng hợp đồng Cloud-first.
+- Queue không giữ payload snapshot bất biến hoặc baseVersion. Do đó không thể tái tạo chính xác request lịch sử chỉ từ queue row; worker cũ đọc bản ghi Local hiện tại tại thời điểm push.
+
+### 14.2 Protocol JSON cũ không được bật lại
+
+`src/lib/cloudSync.ts` có hàm `syncLocalDatabase()`, nhưng tìm kiếm toàn repository chỉ thấy định nghĩa trong module, không thấy caller từ UI/app. Không có bằng chứng đây là worker đang hoạt động.
+
+Các vấn đề kỹ thuật nếu tái sử dụng:
+- Push ghi vào bảng JSON tổng quát `maintenance_records` bằng upsert, không gọi các RPC nghiệp vụ Cloud-first.
+- `mutationId` của queue không được gửi vào Cloud Receipt; không có idempotency/replay theo mutation ID.
+- Hàm gộp queue theo record rồi đọc payload mới nhất từ Dexie; không gửi snapshot của mutation đã tạo queue.
+- Sau upsert, hàm xóa queue theo các key đã xử lý; nếu queue row bị thay thế trong lúc request đang chạy, có nguy cơ xóa mutation mới.
+- Pull đọc toàn bộ record JSON và áp dụng từng row bằng put/delete riêng lẻ, không có change cursor, tombstone protocol chuẩn hoặc atomic page + cursor.
+- Khi Cloud rỗng, hàm seed toàn bộ Local records lên Cloud. Đây là hành vi không phù hợp kiến trúc Cloud-first đã chốt.
+
+Kết luận: giữ module cũ ở trạng thái không được gọi; không nối lại vào UI, không dùng làm worker tạm và không dùng để “dọn queue”.
+
+### 14.3 Phân loại queue cũ và nguồn phát sinh
+
+Queue cũ có thể gồm:
+- Business mutations từ Asset, Inventory, Task, Maintenance Plan, Log, Movement, Checklist Template/Version/Result.
+- Demo/test data: các luồng tạo dữ liệu mẫu từng gọi `queueChange()`; không được upload sang tenant Cloud.
+- Queue được khôi phục từ backup vì backup hiện chứa cả `syncQueue`.
+- Queue được rekey khi chuyển draft ID sang official ID; thao tác rekey có thể tạo mutation ID mới, nên không thể mặc định đó là một business action mới đã được người dùng xác nhận.
+- Các queue row cũ có thể còn dù bản ghi Local đã bị xóa hoặc đã được nhập Cloud theo một luồng khác.
+
+Không thể xác định loại từng queue row chỉ từ `tableName`, `recordId`, `operation`, `queuedAt` và `mutationId`. Queue không có nguồn tạo, tenant, immutable payload, Cloud receipt status hoặc classification flag. Không được tự động replay hoặc xóa hàng loạt.
+
+### 14.4 Quy trình chuyển tiếp an toàn đề xuất
+
+**Giai đoạn 0 — Freeze legacy path**
+- Không bật `syncLocalDatabase()` và không tạo worker đọc `syncQueue`.
+- Không cho helper Local-first tiếp tục được dùng bởi các business write đã chuyển sang Cloud-first; việc thay helper phải theo từng vertical slice đã có RPC/test, không thay toàn bộ một lần.
+- Giữ nguyên queue và dữ liệu Local cho tới khi có báo cáo kiểm kê.
+
+**Giai đoạn 1 — Snapshot và kiểm kê chỉ đọc**
+- Lấy số lượng queue theo tableName/status/operation, thời gian cũ nhất/mới nhất, số lượng trùng/thiếu record Local.
+- Phân loại demo dựa trên bằng chứng nguồn tạo/dấu hiệu dataset, không chỉ dựa vào tên hoặc nội dung giống dữ liệu mẫu.
+- Đối chiếu Asset với `assetCloudLinks` + `assetMutations` + Asset Receipt Cloud; các bảng khác đối chiếu Cloud bằng luồng read-only phù hợp.
+- Ghi nhận backup/restore provenance nếu có; không suy đoán tenant hoặc actor từ queue.
+- Không sửa hoặc xóa queue trong bước kiểm kê.
+
+**Giai đoạn 2 — Quarantine**
+- Các entry chưa đủ bằng chứng được đánh dấu/quản lý trong báo cáo quarantine riêng; không chuyển sang worker.
+- Demo queue, orphan queue, queue có record đã linked/imported và queue có outcome không rõ phải được xử lý theo từng nhóm có bằng chứng.
+- Không tái sử dụng mutation ID cũ cho request mới nếu payload/operation không thể chứng minh giống hệt. Không tạo request mới để thay thế một mutation có outcome chưa rõ trước khi đối soát Cloud.
+
+**Giai đoạn 3 — Chuyển từng vertical**
+- Mỗi vertical có RPC Cloud-first, Shared Receipt, version/permission, test rollback/retry/timeout và Local apply sau Cloud commit.
+- Chỉ sau khi vertical chạy ổn định mới xác định dữ liệu Local cũ là legacy baseline, Cloud-linked hay conflict; không coi queue cũ là danh sách lệnh cần upload.
+- Với Asset, giữ Asset Edit Lease và Asset-specific Receipt trong giai đoạn chuyển tiếp; reconcile pending/processing/conflict trước khi xử lý mutation mới trên cùng Asset.
+- Với Inventory/Task/Log/Checklist, không replay queue cũ vì không có snapshot mutation đáng tin cậy và nhiều thao tác cần transaction nhiều bảng.
+
+**Giai đoạn 4 — Ngừng queue cũ**
+- Chỉ xóa helper, schema index/table hoặc dữ liệu queue sau khi từng vertical đã cutover, queue đã được phân loại và có backup/đối soát được phê duyệt.
+- Dexie migration phải có test nâng cấp từ v8 thực tế và rollback/recovery plan; không xóa bảng queue ngay trong migration đầu tiên.
+- Thiết kế queue v7 trước đây có thể dùng làm tài liệu tham khảo cho retry/claim, nhưng kiến trúc Cloud-first mới không nên tạo local outbound business queue khi offline business writes bị cấm. Nếu cần lưu trạng thái recovery sau Cloud request, đó phải là mutation journal của request đã gửi, với immutable payload/ID và semantics riêng; không phải queue để tự upload khi mạng về.
+
+### 14.5 Kết luận
+
+- Dexie v8 hiện vẫn mang syncQueue Local-first v6; chưa có Dexie queue v7 triển khai và chưa có worker tổng quát được gọi từ app.
+- Protocol JSON cũ có rủi ro seed/upsert/pull và không đáp ứng Receipt/change feed; không được bật lại.
+- Queue cũ là dữ liệu cần kiểm kê/quarantine, không phải danh sách mutation an toàn để replay.
+- Cloud-first không cần một outbound queue cho business writes offline. Chỉ giữ Local draft trong UI; sau Cloud commit mới ghi business snapshot Local. Nếu Cloud commit thành công nhưng Local write thất bại, phục hồi bằng cùng Receipt/mutation ID.
+
+Không sửa code, không sửa Dexie schema, không chạy worker, không ghi/xóa dữ liệu Local hoặc Cloud trong lượt này. Chỉ cập nhật tài liệu review.
