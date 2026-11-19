@@ -1,6 +1,6 @@
 # BAOTRI – Tiến độ và các quyết định đã chốt
 
-Cập nhật: 19/11/2026 (audit kiến trúc ghi dữ liệu Cloud-first)
+Cập nhật: 19/11/2026 (audit bổ sung phân loại thao tác ghi và tiện ích)
 
 Tài liệu này ghi lại các quyết định kiến trúc và tiến độ thực tế để tiếp tục dự án ở những cuộc làm việc sau. Khi thay đổi quyết định hoặc hoàn thành chức năng, phải cập nhật tài liệu này.
 
@@ -3586,3 +3586,17 @@ Làm rõ Local-first: đối với Asset đã mapping Cloud, Local được ghi 
 
 ### Bước tiếp theo
 Rà soát bổ sung toàn bộ thao tác UI (nút thêm/sửa/xóa, archive/restore, import/backup, cấu hình, các hành động tự tạo dữ liệu), phân loại rõ business write / local setting / read / export / restore, rồi chốt danh sách transaction/API/RPC trước khi thiết kế chuyển đổi. Không bắt đầu sửa code cho đến khi audit và phạm vi triển khai được thống nhất.
+
+## 32. Audit bổ sung các thao tác phụ và tiện ích – 19/11/2026
+
+- Đã rà soát thêm tạo dữ liệu mẫu Local, Checklist auto-create khi mở màn hình, backup/restore, cấu hình localStorage, CloudAssetsPanel settings/import và các thao tác export.
+- Phân loại tạm: business writes phải Cloud-first; theme/tùy chọn cá nhân Local-only; organization settings Cloud-first; export/backup là read; restore/import là quy trình riêng có preflight; demo/test utility Local-only và phải tách khỏi tenant dữ liệu thật.
+- Phát hiện Checklist mặc định hiện tự tạo Template + Version Local/queue khi mở Checklist nếu chưa có; cần xử lý để không tự commit nghiệp vụ chỉ do mở màn hình.
+- Backup restore hiện thay toàn bộ dữ liệu Local trong transaction và có preflight bảo vệ Asset linked/mutation unresolved; cần đánh giá riêng, không tự coi là Cloud upload.
+- Đã cập nhật audit chi tiết tại `supabase/CLOUD_FIRST_WRITE_AUDIT.md` (mục 7–8).
+- [x] Phân loại sơ bộ utilities/settings/import/export/restore.
+- [ ] Chưa audit từng component/modal và toàn bộ delete/permission matrix; cần hoàn tất trước khi chốt API/RPC.
+- [ ] Chưa sửa code, chưa chạy test và chưa triển khai Cloud-first.
+
+### Tiếp tục
+Hoàn tất rà soát component/modal, thao tác xóa và phân quyền để lập inventory đầy đủ; sau đó chốt transaction boundaries và thiết kế Cloud contract. Chưa code.
