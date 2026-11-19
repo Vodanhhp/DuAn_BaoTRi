@@ -3739,3 +3739,12 @@ Hoàn thiện hợp đồng quyền/replay và quyết định điều chỉnh t
 - Chia rollout thành foundation/Receipt + row_version, Inventory, Log, change feed, client cutover. Mỗi giai đoạn Test trước, không áp Production.
 - Chi tiết tại `supabase/CLOUD_FIRST_SCHEMA_MIGRATION_PLAN.md`.
 - Chưa tạo SQL migration executable, chưa sửa code, chưa apply SQL hoặc thay đổi dữ liệu/quyền.
+
+
+## 41. Tạo SQL schema drafts cho Kho và Nhật ký (19/11/2026)
+
+- Tạo hai draft: `supabase/drafts/018_inventory_movement_audit_fields_DRAFT.sql` và `supabase/drafts/019_maintenance_log_revisions_DRAFT.sql`.
+- Draft 018 bổ sung audit fields cho Movement, giữ quantity dương, không suy đoán lịch sử tồn.
+- Draft 019 thêm created_by_user_id, revision table append-only, backfill legacy baseline, permission logs.revise Admin-only.
+- Đây chưa phải migration áp dụng. Chưa chạy SQL, chưa thay DB, grants, UI hoặc dữ liệu.
+- Bước tiếp: review logic và dependency, đặc biệt shared Receipt, row_version 015, direct grants cutover, legacy migration và kiểm thử trên Test.
