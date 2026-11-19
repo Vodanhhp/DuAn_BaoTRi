@@ -1566,3 +1566,8 @@ Người dùng đã đồng ý mô hình hai bảng `organization_member_invite_
 ## 43. Quyết định đã chốt: fail-closed retry policy cho Auth (20/11/2026)
 
 Người dùng đã chốt: ban đầu để trống allowlist provider error codes có thể retry. Chỉ local preflight có bằng chứng chắc chắn chưa dispatch mới là `definitive_no_side_effect`; mọi lỗi sau dispatch hoặc không rõ dispatch state mặc định `outcome_unknown`, phải reconciliation, không gọi Auth lại. Chỉ mở allowlist khi review đúng endpoint/provider/version và có test evidence no-side-effect. Không dùng HTTP status, duplicate email, Retry-After, timeout hay lease expiry làm bằng chứng no-side-effect. Chưa sửa DDL, không chạy SQL/Supabase.
+
+
+## 44. Proposal: reconciliation evidence cho Auth user creation (20/11/2026)
+
+Đề xuất tại Member design §41: email match không phải provenance. Khảo sát opaque random marker server-generated (digest lưu trong attempt record trước dispatch) gắn nguyên tử ngay tại Auth create-time trong metadata server-managed; chỉ dùng nếu đúng Admin endpoint/SDK version xác nhận hỗ trợ atomic create-time write. Tài liệu Auth `admin.createUser` đã tra cứu chưa đủ xác nhận `app_metadata` create-time, do đó không giả định khả thi. Nếu dùng được: recovery chỉ tìm candidate bằng email locator, sau đó xác minh marker chính xác, project và attempt; đúng một match mới có thể ghi `created_by_operation`. Không có candidate không chứng minh no-side-effect; mismatch/multiple candidate => needs_review/conflict. Nếu không có atomic marker/correlation, không thể đóng crash window bằng update metadata sau create; giữ needs_review/manual recovery. Chưa sửa DDL, không chạy SQL/Supabase.
