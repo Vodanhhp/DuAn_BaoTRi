@@ -3899,3 +3899,15 @@ Người dùng đồng ý chốt: giai đoạn đầu để trống allowlist pr
 - `generateLink(type:'invite')` chưa xác minh có hỗ trợ app_metadata.
 
 Kết luận: không được áp dụng createUser marker cho Invite Saga native invite flow. Cần nghiên cứu hook/correlation server-trusted hoặc giữ outcome_unknown/needs_review/manual review; thay đổi quy trình provisioning cần được duyệt riêng. Nguồn: supabase/auth-js `GoTrueAdminApi.ts`, `lib/types.ts`; supabase/auth `internal/api/admin.go`, `internal/api/invite.go` trên master. Chưa pin version dự án, chưa sửa DDL/RPC/worker, không chạy SQL/Supabase.
+
+
+## 58. Proposal Before User Created Hook correlation receipt cho Invite Saga (20/11/2026)
+
+Nghiên cứu source/docs hiện hành cho thấy native invite route gọi Before User Created Hook chỉ khi Auth user chưa tồn tại; user UUID được Auth sinh server-side trước hook. Proposal Member design §43:
+- Edge Function tạo token ngẫu nhiên >=256-bit cho operation+attempt, lưu digest trước Auth dispatch, truyền token qua reserved `user_metadata` key như transport. Metadata không được tin và không dùng authorization.
+- HTTP hook verify Standard Webhooks signature, xác minh token digest + attempt state + project + email fingerprint; ghi durable append-only receipt qua internal server-only RPC gồm webhook ID/request UUID, operation/attempt và Auth-generated user ID; chỉ allow sau khi receipt commit.
+- Reconciliation cần cả receipt lẫn Auth Admin lookup xác nhận user tồn tại bằng đúng ID. Receipt đơn lẻ là pre-create observation, không chứng minh Auth transaction đã commit. Orphan receipt => unresolved, không attach.
+- Existing unconfirmed Auth user đi nhánh existing nên hook không chạy; vẫn cần independent verification hoặc needs_review.
+- External hook receipt và Auth insert không cùng transaction; phải test replay/timeout/rollback/consistency, pin Auth/SDK version và xác minh hook plan/availability.
+
+Proposal chưa duyệt. Chưa sửa DDL 021, chưa tạo RPC/Edge Function, không chạy SQL/Supabase.
