@@ -3463,3 +3463,15 @@ Làm rõ Local-first: đối với Asset đã mapping Cloud, Local được ghi 
 - Ghi Asset + mapping trong một Dexie transaction; không tạo syncQueue hoặc AssetMutation; giữ nguyên UUID/code/timestamps từ Cloud, ảnh Local không được phục hồi (images=[]).
 - Không sửa App.tsx, assetEditLocks, các phân hệ khác, SQL/migration hoặc dữ liệu Cloud.
 - Sau commit, kiểm tra GitHub Actions/build; chỉ khi CI PASS mới hướng dẫn user kiểm thử trên Mobile với đúng một Asset. Runtime chưa được đánh dấu PASS trước khi user xác nhận.
+
+
+### 27.6 Triển khai chức năng nhận một Asset Cloud về Local – code trên main (19/11/2026)
+- Commit `3aeec7a6f237d4233a3927301dcf9377c1cd3a7a`: thêm `getCloudAssetById()` trong `src/lib/assetsCloud.ts`, đọc đúng một Asset theo đồng thời organization_id + UUID; chỉ đọc, không ghi Cloud.
+- Commit `d1b1fde4d6e3a77c6ffc400d314fcd6f494aab02`: thêm thao tác “Nhận về Local” cho từng Asset đang quản lý hoặc đã lưu kho trong `src/CloudAssetsPanel.tsx`; dùng quyền `assets.import` hiện có, không thêm quyền/RPC/migration.
+- Trước khi ghi, ứng dụng đọc lại Asset Cloud theo UUID; kiểm tra Local không có cùng UUID, không có mã trùng, không có mapping treo, mutation pending/processing/conflict hoặc hàng đợi Asset chưa xử lý.
+- Asset và mapping `assetCloudLinks` được thêm trong cùng Dexie transaction; giữ UUID, code, payload và timestamps từ Cloud; đánh dấu identityStatus synced; images=[] vì ảnh chưa được lưu trên Cloud. Không tạo syncQueue/AssetMutation, không overwrite dữ liệu Local.
+- Nếu Local đã có cùng UUID hoặc mã, hoặc có mapping/mutation/queue liên quan, thao tác dừng và báo lỗi; không tự ghép hoặc ghi đè.
+- Commit `30b6b8ae7987f66a74e1046a01e9a8c8a66d7ca1`: chỉnh chú thích cuối Cloud panel để phân biệt nhận Asset về Local với thao tác khôi phục trạng thái lưu kho.
+- Đã fetch lại các file trên main và xác nhận handler, truy vấn tenant-scoped, transaction và nút nhận ở cả danh sách đang quản lý/lưu kho. Không sửa App.tsx, assetEditLocks, SQL/migration, RPC, RLS, syncQueue worker hoặc dữ liệu Cloud.
+- Kiểm tra GitHub workflow runs cho commit code: không có workflow run được trả về; commit combined status không có status check. Vì vậy chưa xác nhận build/TypeScript PASS từ CI. Chưa có kiểm thử runtime; không đánh dấu chức năng PASS.
+- Bước tiếp theo: cần chạy build/TypeScript qua môi trường dự án hoặc thiết lập CI hiện có; chỉ sau đó mới hướng dẫn nhận đúng một Asset Cloud về Local trên Mobile và kiểm tra UUID/code/mapping. Không thử trên Local PC có 60 Asset và không reset dữ liệu.
