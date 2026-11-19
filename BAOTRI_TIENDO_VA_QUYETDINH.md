@@ -3871,3 +3871,10 @@ Còn mở: provider evidence/correlation, definitive failure classification, lea
 - Retry chỉ khi có evidence allowlist, request cũ không còn khả năng chạy, operation còn hợp lệ và quyền/policy cho phép.
 
 Đây là proposal, chưa được người dùng chốt. Chưa sửa DDL 021, chưa tạo RPC/worker, không chạy SQL hoặc thay đổi Supabase.
+
+
+## 55. Chốt fail-closed retry policy cho Invite Saga (20/11/2026)
+
+Người dùng đồng ý chốt: giai đoạn đầu để trống allowlist provider error codes được phép retry. Chỉ local preflight có bằng chứng chắc chắn request chưa dispatch mới được coi là `definitive_no_side_effect`. Mọi lỗi sau dispatch hoặc không rõ dispatch state mặc định `outcome_unknown`, phải reconciliation và không gọi Auth lại. Chỉ mở allowlist sau khi review contract đúng endpoint/provider/version và có test evidence chứng minh no-side-effect. HTTP status, duplicate email, Retry-After, timeout và lease expiry không phải bằng chứng no-side-effect.
+
+Đã chốt policy; chưa sửa DDL 021, chưa tạo RPC/worker, không chạy SQL hoặc thay đổi Supabase.
