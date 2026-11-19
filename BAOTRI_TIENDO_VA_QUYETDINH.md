@@ -3727,3 +3727,15 @@ Hoàn thiện hợp đồng quyền/replay và quyết định điều chỉnh t
 ### Trạng thái triển khai
 - Đã cập nhật thiết kế tại `CLOUD_INVENTORY_RPC_DESIGN.md`, `CLOUD_MAINTENANCE_LOG_REVISION_DESIGN.md`, audit mục 15.
 - Chưa sửa code, migration, RLS/grants, RPC hay dữ liệu; chưa chạy SQL/runtime test; chưa bật Cloud worker.
+
+
+## 40. Kế hoạch migration schema Cloud-first (19/11/2026)
+
+- Đã đối chiếu schema, permission seed, RLS/grants, Asset receipt migration, row_version draft và Local Log model.
+- Định hướng Inventory: bổ sung signed delta + before/after/count fields + actor/mutation/version; giữ quantity cũ dương, legacy audit fields NULL; không suy đoán tồn lịch sử.
+- Định hướng Log: root giữ ID/FK; thêm created_by_user_id nullable; revisions append-only chứa snapshot đầy đủ; legacy rows tạo baseline revision 1, không bịa dueDate/requestedBy/actor/history.
+- Permission mới logs.revise chỉ Admin; Technician không có quyền revise. Revision read theo logs.view, write qua SECURITY DEFINER RPC.
+- Thu hồi direct table grants phải đi cùng RPC cutover, không thu hồi trước khi endpoint thay thế sẵn sàng.
+- Chia rollout thành foundation/Receipt + row_version, Inventory, Log, change feed, client cutover. Mỗi giai đoạn Test trước, không áp Production.
+- Chi tiết tại `supabase/CLOUD_FIRST_SCHEMA_MIGRATION_PLAN.md`.
+- Chưa tạo SQL migration executable, chưa sửa code, chưa apply SQL hoặc thay đổi dữ liệu/quyền.
