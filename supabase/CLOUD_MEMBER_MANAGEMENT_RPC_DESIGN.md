@@ -2700,3 +2700,12 @@ Chỉ thiết kế test matrix. Chưa chạy concurrency test, không tạo fixt
 - RLS permission policies là điều kiện cho phép DML, không thay thế row lock protocol. Nếu thao tác cần serialize với revoke, writer phải khóa cùng Organization/Membership và xác minh permission trong transaction.
 
 Không được tuyên bố mọi writer đã được test cho đến khi hoàn thành runtime caller inventory, lock-order graph và test cho các nhóm này.
+
+## 71. Lock-order và writer coverage bổ sung – Settings, Counter, Maintenance, Checklist
+
+- Asset create/import chia sẻ `asset_code_counters` theo organization/category. Create đọc config + MAX code rồi UPSERT counter; import dùng advisory lock theo mutation ID riêng, đọc config rồi reconcile counter trước Asset. Counter là điểm serialize thực tế giữa create/import; advisory lock chỉ chống replay cùng mutation ID.
+- Settings hiện được đọc không khóa trong create/import. Target nếu cần cấu hình ổn định: Settings `FOR SHARE` → Counter → Asset; Settings update lấy UPDATE lock. Chốt winner semantics rõ: operation giữ shared lock dùng cấu hình cũ và commit trước update; operation đến sau update đọc config mới.
+- Inventory movement INSERT chưa được cấp policy authenticated; migration ghi rõ chờ atomic stock RPC. Chưa có concurrency writer để test. RPC tương lai phải khóa Item `FOR UPDATE` → cập nhật quantity → insert movement cùng transaction.
+- Maintenance log là append-only, FK RESTRICT tới Asset/Task/Checklist Result. Cặp thực tế cần test là Task delete ↔ Log insert (không phải Plan ↔ Log theo FK hiện tại). Target khóa Task trước khi tạo log; FK RESTRICT giữ lịch sử.
+- Checklist publish phải khóa Template, tạo Version và cập nhật current_version nguyên tử. Result submit tham chiếu Template + đúng Version; chọn rõ semantics: cho phép hoàn tất version đã bắt đầu bằng version ID cố định, hoặc chỉ cho current version và khóa Template `FOR SHARE` khi submit.
+- Các thứ tự trên là proposal để thiết kế test, chưa phải lock protocol đã triển khai. Cần rà caller thực tế, DML privileges, FK timing và transaction isolation trước khi thực thi.
