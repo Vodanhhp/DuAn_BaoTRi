@@ -108,3 +108,15 @@ Bảng hiện tại `inventory_movements` có `quantity > 0`, type Nhập/Xuất
 - `supabase/drafts/018_inventory_movement_audit_fields_DRAFT.sql`: chỉ bổ sung audit fields/constraints/index cho Movement; legacy fields NULL; không backfill balance; không thay grants; không chứa RPC.
 - `supabase/drafts/019_maintenance_log_revisions_DRAFT.sql`: thêm root creator, tạo revision table, backfill baseline revision 1, seed `logs.revise` cho Admin roles và RLS read-only. Không thu hồi direct root INSERT trước khi RPC create cutover.
 - Cả hai file là DRAFT ONLY; chưa chạy SQL. Cần review thêm transaction/permission behavior và đồng bộ với shared Receipt + row_version trước khi promotion.
+
+
+## 10. Shared Receipt và row_version — kết quả review tiếp theo (19/11/2026)
+
+- Shared Receipt phải đại diện một logical mutation và 1..N affected records; không dùng record_id đơn vì Task completion tạo cả Task + Log.
+- Fingerprint do server dựng từ payload chuẩn hóa; không giả định pgcrypto. So sánh canonical JSONB là phương án ban đầu để review; chỉ dùng digest sau khi xác minh SHA-256 extension/hàm thực tế.
+- Unique claim (organization_id, mutation_id) phải serialize request đồng thời; business rows + Receipt + row_version + events cùng transaction.
+- Đã phát hiện Asset RPC hiện kiểm tra assets.update trước receipt replay; cần thiết kế replay riêng để khôi phục commit sau khi permission write bị thu hồi. Đề xuất replay yêu cầu active membership + cùng actor, không yêu cầu lại write permission; snapshot chỉ trả nếu còn read permission. Chính sách đang chờ xác nhận.
+- Asset-specific Receipt/Lease tiếp tục tồn tại trong chuyển tiếp; không dual-write hai ledger và không xóa receipt cũ trước khi có đường replay legacy.
+- Draft 015 tăng version theo từng SQL UPDATE, không theo logical transaction; mỗi RPC phải UPDATE mỗi mutable row đúng một lần. Asset hiện vẫn dùng expected_cloud_updated_at + Lease; chưa chuyển sang row_version.
+- Chi tiết: mục 8–12 của CLOUD_RPC_IDEMPOTENCY_CHANGEFEED_DESIGN.md.
+- Chưa tạo shared Receipt SQL draft hoặc sửa draft 015; chưa chạy SQL.
