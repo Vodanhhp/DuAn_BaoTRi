@@ -3878,3 +3878,14 @@ Còn mở: provider evidence/correlation, definitive failure classification, lea
 Người dùng đồng ý chốt: giai đoạn đầu để trống allowlist provider error codes được phép retry. Chỉ local preflight có bằng chứng chắc chắn request chưa dispatch mới được coi là `definitive_no_side_effect`. Mọi lỗi sau dispatch hoặc không rõ dispatch state mặc định `outcome_unknown`, phải reconciliation và không gọi Auth lại. Chỉ mở allowlist sau khi review contract đúng endpoint/provider/version và có test evidence chứng minh no-side-effect. HTTP status, duplicate email, Retry-After, timeout và lease expiry không phải bằng chứng no-side-effect.
 
 Đã chốt policy; chưa sửa DDL 021, chưa tạo RPC/worker, không chạy SQL hoặc thay đổi Supabase.
+
+
+## 56. Proposal bằng chứng reconciliation cho Invite Saga (20/11/2026)
+
+Đề xuất tại Member design §41 và Foundation review §44:
+- Email match, thời gian tạo gần nhau, tên/điện thoại, user_metadata hoặc một lần search rỗng không chứng minh Auth user được tạo bởi operation.
+- Khảo sát opaque random marker server-generated, lưu digest trong attempt trước dispatch và gắn nguyên tử trong server-managed metadata ở cùng lệnh Auth create. Chỉ áp dụng nếu xác minh đúng endpoint/SDK version hỗ trợ; tài liệu hiện tra cứu chưa đủ xác nhận `app_metadata` create-time.
+- Reconciliation phải kiểm tra marker khớp chính xác operation+attempt+project. Không có candidate chưa đủ kết luận no-side-effect. Mismatch/nhiều candidate => needs_review/conflict.
+- Nếu không hỗ trợ atomic create-time correlation, giữ needs_review/manual recovery; không chữa bằng update metadata sau create vì vẫn có crash window.
+
+Đây là proposal chưa chốt. Chưa sửa DDL 021, chưa tạo RPC/worker, không chạy SQL hoặc thay đổi Supabase.
