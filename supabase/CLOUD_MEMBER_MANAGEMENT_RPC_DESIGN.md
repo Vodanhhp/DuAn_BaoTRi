@@ -1837,3 +1837,18 @@ Khuyến nghị chọn **immutable attempt header + append-only attempt events**
 **Chưa chốt:** provider-specific evidence/correlation nào có thể chứng minh “không có side effect”; danh sách error code nào là definitive failure; thời hạn lease và quyền Admin takeover reconciliation. Nếu không có bằng chứng definitive, default là unknown/needs_review, không retry.
 
 **Phạm vi:** chỉ thiết kế; chưa sửa DDL 021, chưa tạo RPC/worker, chưa chạy SQL, không thay đổi Supabase Test/Production.
+
+
+### 38. Quyết định đã chốt: Attempt History và lease recovery (20/11/2026)
+
+Người dùng đã đồng ý chốt mô hình hai bảng và nguyên tắc lease:
+
+1. Dùng `organization_member_invite_attempts` làm immutable attempt header, một record cho mỗi lần gọi Auth đã claim.
+2. Dùng `organization_member_invite_attempt_events` làm append-only event history; kết quả, reconciliation, mismatch và recovery được ghi thêm event, không ghi đè lịch sử.
+3. Attempt phải được claim/commit trước Auth network call; không giữ DB transaction/row lock trong lúc gọi Auth.
+4. Lease expiry chỉ cho phép takeover quyền reconciliation bằng CAS/version; không cho phép tự động gọi Auth lại.
+5. `outcome_unknown` không phải definitive failure. Chỉ retry sau khi có bằng chứng đáng tin cậy rằng attempt trước không tạo side effect; nếu không chứng minh được thì giữ unresolved/`needs_review`.
+
+**Còn mở để thiết kế tiếp:** provider-specific evidence/correlation chứng minh no-side-effect; phân loại definitive failure; lease duration; quyền và quy trình Admin takeover reconciliation. Default fail-closed khi bằng chứng không đủ.
+
+**Phạm vi:** quyết định schema/flow đã chốt; chưa sửa DDL 021, chưa tạo RPC/worker, chưa chạy SQL, không thay đổi Supabase Test/Production.
