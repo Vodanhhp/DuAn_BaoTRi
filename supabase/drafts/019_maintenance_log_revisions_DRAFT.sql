@@ -115,7 +115,7 @@ values (
   'logs.revise',
   'logs',
   'revise',
-  'Sửa nhật ký đã lưu bằng phiên bản mới (Admin בלבד)'
+  'Sửa nhật ký đã lưu bằng phiên bản mới (Admin)'
 )
 on conflict (code) do update
 set module = excluded.module,
