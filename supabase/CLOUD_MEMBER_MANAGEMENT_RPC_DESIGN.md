@@ -2355,3 +2355,13 @@ Read-only investigation supports a viable candidate: a tightly restricted `SECUR
 - This avoids exposing the private schema and avoids granting Auth/Saga table reads to browser roles.
 - This is an architecture candidate, not implementation approval. Need explicit role/function privilege matrix, connection secret plan, JWT-to-DB actor binding review, and isolated concurrency tests before any DDL, grant, secret or deployment.
 - No SQL writes, roles, grants, DDL, RPC, Edge Function, secret, pooler or Supabase configuration were changed during this research.
+
+### Actor identity boundary — additional security finding
+A direct PostgreSQL connection does not automatically carry the end-user JWT context that PostgREST normally establishes. Therefore, do not assume auth.uid() will identify the browser user on this connection. Do not accept arbitrary client-supplied UID or set request.jwt.claims from untrusted client data.
+- Edge Function must validate the bearer token server-side (e.g. Auth getUser / verified claims flow) and derive UID from the verified result.
+- The private DB function receives that UID only over the dedicated server-only DB connection and binds it to the invitation, actor authorization and idempotency record. The trust boundary is the Edge Function code + its DB credential.
+- A database caller holding that credential could potentially pass a different UID; the DB cannot independently prove the end-user JWT unless a separately designed cryptographic assertion/JWT verification mechanism is added. This residual trust must be explicit in the threat model.
+- Use a unique restricted DB login/secret for this acceptance function, not a credential shared by unrelated Edge Functions. Ensure the browser never receives it. Review how credentials are rotated and how compromise is contained.
+- Audit all functions executable by the dedicated role, including functions inheriting EXECUTE from PUBLIC in schemas with USAGE. A grant limited to one named function does not by itself prove the role has no other callable SECURITY DEFINER surface.
+- Consider a signed short-lived actor assertion only if its key lifecycle, audience, expiry, replay binding and verification location are designed and tested. Do not invent an ad-hoc GUC/JWT claim that the DB trusts without signature verification.
+This is a required design review item before creating the role or function.
