@@ -1700,3 +1700,18 @@ Fingerprint chứng minh **yêu cầu ban đầu không đổi**; provenance ch�
 5. Chỉ sau khi DDL được review và parser/clone tests đạt mới thiết kế RPC SQL.
 
 **Trạng thái:** đề xuất để thảo luận; chưa được coi là policy đã duyệt. Không chỉnh DDL 021, không chạy SQL, không thay đổi Supabase Test/Production.
+
+
+### 35. Quyết định đã chốt: Auth provenance và request fingerprint (20/11/2026)
+
+Người dùng đã xác nhận chốt các nguyên tắc sau; từ thời điểm này đây là quyết định kiến trúc, không còn là đề xuất:
+
+1. **Auth provenance:** dùng đúng bốn trạng thái `created_by_operation`, `preexisting_verified`, `unknown`, `conflict`. Chỉ `created_by_operation` khi Auth provider trả về đúng user ID mới được tạo bởi attempt thuộc operation hiện tại và có thể đối chiếu. `preexisting_verified` chỉ được dùng khi có quy trình xác minh/claim độc lập chứng minh đúng chủ tài khoản. Không suy luận quyền sở hữu từ email trùng, metadata do client cung cấp hoặc kết quả tra cứu không đủ kiểm chứng.
+2. **Fail closed:** `unknown` và `conflict` không được finalize membership; chuyển `needs_review`. Không tự xóa Auth user hoặc tự gắn user vào membership trong các trường hợp này.
+3. **Fingerprint:** dùng canonical intent digest bằng HMAC-SHA-256. Secret/key material phải nằm ngoài Database trong secret manager; Database chỉ lưu digest và metadata phiên bản, không lưu key.
+4. **Idempotency:** cùng operation ID + cùng digest + cùng actor gốc thì tiếp tục/replay operation; cùng operation ID nhưng digest khác thì reject conflict, không ghi đè intent. Khi replay operation cũ phải dùng đúng fingerprint/key version đã lưu.
+5. **Adoption:** adoption không thay đổi actor gốc, canonical intent hoặc fingerprint digest.
+
+**Hệ quả triển khai:** DDL 021 cần biểu diễn provenance, evidence/attempt linkage và fingerprint version/key version/digest; RPC phải kiểm tra các bất biến trên trong transaction. Trước khi triển khai thực tế vẫn phải chốt thời hạn giữ key cũ để replay, quy trình xác minh `preexisting_verified`, cùng phương án bảo vệ/retention dữ liệu email. Các chi tiết vận hành này không làm thay đổi năm nguyên tắc đã chốt.
+
+**Phạm vi thay đổi lần này:** chỉ ghi nhận quyết định thiết kế. Chưa sửa DDL 021, chưa tạo migration/RPC/Edge Function, chưa chạy SQL, không thay đổi Supabase Test/Production.
