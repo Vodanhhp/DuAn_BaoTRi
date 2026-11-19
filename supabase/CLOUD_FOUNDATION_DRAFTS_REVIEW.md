@@ -2030,3 +2030,27 @@ Các DELETE policies tương ứng yêu cầu `assets.delete`, `inventory.delete
 
 ### Trạng thái
 Read-only effective privilege/policy catalog, FK catalog và static GitHub search. Không chạy mutation hoặc sync.
+
+
+## 76. Asset RPC lock path và permission TOCTOU – 20/11/2026
+
+### Lock sequence đã xác minh từ function definition Test
+- `apply_asset_mutation_with_lock`: Auth + `has_org_permission(assets.update)` (read-only helper) → fast lookup Asset Receipt → Lease `FOR UPDATE` → recheck Receipt → validate token/expiry → Asset `FOR UPDATE` → UPDATE Asset → INSERT Asset Receipt.
+- `update_asset_with_lock` và `set_asset_archived_with_lock`: Auth + permission precheck → Lease `FOR UPDATE` → UPDATE Asset. Hai hàm không khóa Membership/Role/Role Permission trước khi kiểm tra quyền.
+- `acquire_asset_edit_lock`: permission precheck → đọc Asset không khóa → INSERT/UPSERT Lease; heartbeat: permission precheck → UPDATE Lease. Đây là lock lease lifecycle, không phải authorization serialization.
+- `create_asset_with_code`: permission precheck → đọc organization settings/Asset aggregate → UPSERT Asset counter → INSERT Asset. Domain order là Counter → Asset.
+- `import_asset_preserving_identity`: permission precheck → advisory transaction lock theo organization + mutation → Receipt lookup → settings → Counter UPSERT (khi nhận diện code) → Asset FOR UPDATE/INSERT → import ledger INSERT.
+
+### Hệ quả
+- `has_org_permission` chỉ đọc Membership, Organization, member_roles, Role và Role Permission; không lấy row lock. Việc kiểm tra quyền ở đầu RPC không tuần tự hóa với transaction Admin đổi status/role hoặc xóa membership.
+- Do đó có TOCTOU: một Asset write có thể qua permission check rồi tiếp tục khóa Lease/Asset trong lúc Admin thu hồi quyền. Đây là race candidate từ function definitions; chưa chạy concurrency test và chưa xác nhận runtime outcome theo isolation/statement timing.
+- Lease → Asset là domain lock order hiện hành cho update/archive/mutation. Counter → Asset là thứ tự của create/import. Mọi delete/cleanup phải được đối chiếu với các thứ tự này và FK cascade.
+- Asset Receipt hiện có fast replay trước khi xác minh Lease, nhưng vẫn chạy write permission check trước replay. Điều này khác Shared Receipt draft: replay cần xác thực Auth + organization + active membership, sau đó xử lý quyền đọc kết quả; không nhất thiết yêu cầu write permission cũ. Chưa tự động chuyển Asset sang Shared Receipt.
+
+### Đề xuất để review tiếp
+- Xác định một permission-serialization row protocol: business RPC khóa membership actor (và trạng thái organization nếu cần) trước domain locks; Admin role/status/remove phải khóa cùng membership row. Chỉ khi cả hai phía tuân thủ mới có điểm tuyến tính hóa rõ ràng cho thu hồi quyền.
+- Sau membership lock, khóa domain rows theo thứ tự cố định (Lease → Asset; Counter → Asset; advisory/mutation key theo một vị trí thống nhất), sau đó finalize receipt. Không được áp dụng thứ tự trên như kết luận cuối khi chưa rà hết writer/FK.
+- Xem riêng trường hợp organization suspension/deactivation; chỉ khóa membership không đủ nếu trạng thái organization thay đổi độc lập.
+
+### Trạng thái
+Chỉ đọc function definitions trên BAOTRI-Mini-Test và migration/source GitHub. Không chạy concurrency test, không thay đổi SQL, grants, RLS, RPC, Auth hoặc dữ liệu.
