@@ -1,6 +1,6 @@
 # BAOTRI – Tiến độ và các quyết định đã chốt
 
-Cập nhật: 19/11/2026 (chốt nguyên tắc ghi nghiệp vụ Cloud-first)
+Cập nhật: 19/11/2026 (audit kiến trúc ghi dữ liệu Cloud-first)
 
 Tài liệu này ghi lại các quyết định kiến trúc và tiến độ thực tế để tiếp tục dự án ở những cuộc làm việc sau. Khi thay đổi quyết định hoặc hoàn thành chức năng, phải cập nhật tài liệu này.
 
@@ -3570,3 +3570,19 @@ Làm rõ Local-first: đối với Asset đã mapping Cloud, Local được ghi 
 - [x] Giữ Edit Lease PC/Mobile và Mutation Receipt/idempotency.
 - [ ] Chưa audit toàn bộ code và các phân hệ để lập kế hoạch chuyển đổi.
 - [ ] Chưa sửa code, SQL/migration, RPC, cấu hình hoặc dữ liệu; chưa triển khai cơ chế mới.
+
+## 31. Audit ban đầu kiến trúc ghi dữ liệu Cloud-first – 19/11/2026
+
+- Đã đọc các handlers ghi chính trong `src/App.tsx`, `src/db.ts`, `src/lib/cloudSync.ts`, `src/lib/assetsCloud.ts`, `src/lib/assetEditLocks.ts`, `src/CloudAssetsPanel.tsx` và tài liệu audit/draft hiện có trên `main`.
+- Kết luận: code hiện tại **chưa theo Cloud-first**. Asset linked đang commit snapshot Local + mutation trước RPC; Asset Local chưa linked, Inventory, Task, Maintenance Plan, Log, Movement và Checklist vẫn ghi Dexie + `syncQueue` trước. Một số thao tác ghi ghép nhiều record cần backend transaction nguyên tử.
+- `syncLocalDatabase()` trong `src/lib/cloudSync.ts` là protocol JSON cũ; search hiện chỉ thấy định nghĩa, chưa thấy caller trong app. Không coi queue đang được đồng bộ nền.
+- Chưa có gate Cloud readiness thống nhất; `navigator.onLine` chỉ dùng ở một số luồng. Gate UI không thay thế xác nhận backend/RPC.
+- Giữ Edit Lease và Mutation Receipt. Các mutation pending/processing/conflict và dữ liệu Local-only phải reconcile trước rollout; không xóa queue hoặc reset dữ liệu để chuyển đổi.
+- Đã lập audit chi tiết và lộ trình từng vertical slice tại `supabase/CLOUD_FIRST_WRITE_AUDIT.md`.
+- [x] Audit ban đầu các write handler và cơ chế Local queue.
+- [x] Ghi nhận các transaction cần thiết (Movement + Inventory, Task + Log, Checklist Template + Version, v.v.) và các rủi ro idempotency/recovery.
+- [ ] Chưa audit hết mọi action UI/setting/restore; tiếp tục rà soát trước khi code.
+- [ ] Chưa sửa code, SQL/migration/RPC hoặc dữ liệu; chưa runtime test; chưa triển khai Cloud-first.
+
+### Bước tiếp theo
+Rà soát bổ sung toàn bộ thao tác UI (nút thêm/sửa/xóa, archive/restore, import/backup, cấu hình, các hành động tự tạo dữ liệu), phân loại rõ business write / local setting / read / export / restore, rồi chốt danh sách transaction/API/RPC trước khi thiết kế chuyển đổi. Không bắt đầu sửa code cho đến khi audit và phạm vi triển khai được thống nhất.
