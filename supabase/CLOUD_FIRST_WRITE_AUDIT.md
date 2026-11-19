@@ -379,3 +379,12 @@ Người dùng xác nhận:
 - Phát hiện Asset RPC kiểm tra permission ghi trước Receipt replay; cần sửa thiết kế replay. Đề xuất active membership + same actor, không yêu cầu write permission cho replay; snapshots phải theo read permission hiện tại. Chờ người dùng xác nhận.
 - Draft row_version 015 trigger tăng theo từng SQL UPDATE; mỗi RPC phải update mỗi row đúng một lần. Asset chưa chuyển từ expected_cloud_updated_at/Lease.
 - Chi tiết tại mục 8–12 của CLOUD_RPC_IDEMPOTENCY_CHANGEFEED_DESIGN.md. Chưa tạo shared-ledger SQL, chưa sửa draft 015, chưa chạy SQL.
+
+
+## 20. Chốt chính sách replay shared Receipt (19/11/2026)
+
+- Người dùng đã đồng ý: cùng actor có Auth hợp lệ + active membership + organization active được replay Receipt đã commit bằng cùng mutation ID/fingerprint mà không cần permission ghi cũ.
+- Replay chỉ là xác nhận kết quả đã commit, không phải business write mới. Actor khác/cross-org bị deny; inactive membership hoặc organization inactive bị deny.
+- Snapshot chỉ trả theo read permission hiện tại; nếu thiếu quyền đọc, trả acknowledgement tối thiểu, không lộ dữ liệu record.
+- Chính sách này áp dụng cho thiết kế shared Receipt. Asset-specific Receipt/Lease và RPC hiện tại chưa bị thay đổi; cần migration riêng, không dual-write.
+- Chưa sửa code/SQL/RPC, chưa thay đổi permission, dữ liệu Cloud/Local hoặc chạy test.
