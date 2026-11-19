@@ -2324,3 +2324,34 @@ Read-only investigation supports a viable candidate: a tightly restricted `SECUR
 - Use test-only barriers; do not add production sleeps, debug endpoints, or test hooks to business RPCs.
 - A controlled SQL update can validate Postgres lock mechanics, but does not prove the real GoTrue confirmation route. Test that route separately end-to-end.
 - This is a proposed plan, not PASS evidence. No fixtures/users/invitations were created, no SQL writes were run, and no DDL/RPC/Edge Function/grants/configuration were changed.
+
+## 55. Private RPC invocation from Edge Function — direct PostgreSQL connection candidate (20/11/2026)
+
+### Official platform capability verified
+- Current Supabase documentation explicitly supports connecting to Postgres from Edge Functions with a native Postgres client, in addition to supabase-js/Data API.
+- Supabase connection guidance recommends Shared Pooler (Supavisor) transaction mode for transient/serverless/edge traffic. Transaction mode uses port 6543 and does not support prepared statements; the selected driver must disable them.
+- This provides a supported invocation path for a function in a non-exposed/private schema without exposing that schema through PostgREST/Data API.
+
+### Candidate call path
+1. Edge Function validates the caller's bearer token server-side and obtains authoritative Auth UID. Client-supplied UID/email/org/role are not trusted.
+2. Edge Function computes recipient lookup digest using the server-held, purpose-separated HMAC key and versioned normalization contract.
+3. Edge Function opens a TLS-protected PostgreSQL connection through the transaction pooler. Credentials are held only in server-side Edge Function secrets.
+4. Use a dedicated database login role for this Edge Function. Do not connect as postgres, supabase_auth_admin, service_role, anon or authenticated.
+5. Grant that role only minimum schema USAGE and EXECUTE on the exact private acceptance function. Do not grant table SELECT/UPDATE on auth.users, Saga, attempts, membership, roles, audit or receipt tables.
+6. The narrowly scoped function is owned by a verified privileged owner (candidate: postgres), uses SECURITY DEFINER, fixed empty search_path, fully qualified object names, strict input validation, and binds actor identity to the server-authenticated contract. It locks auth.users and invitation state and performs all acceptance writes in one DB transaction.
+7. Edge Function returns only minimal public result/receipt projection. No SQL error details, Auth UUID, email, digest, internal Saga state or privileged credentials are returned.
+
+### Critical caveats to resolve before implementation
+- Current Test project's postgres role permissions were inspected, but no dedicated login role or function exists. Do not assume a custom login role can be created/granted without a reviewed privilege plan.
+- Verify how Edge Function obtains DB connection secret, secret rotation, connection limits, TLS validation and cold-start behavior.
+- Transaction pooling is compatible only if the entire lock + validation + business mutation occurs in one SQL statement/function transaction. Do not split row lock and subsequent writes across separate Edge Function queries/connections.
+- Transaction mode does not support prepared statements. Avoid session-scoped state, temporary tables, advisory session locks, or relying on connection affinity.
+- The database function must not trust a caller-supplied UID merely because the caller reached the Edge Function. Bind authenticated UID from server-side JWT verification to acceptance idempotency and authorization checks.
+- If a server-only RPC wrapper through PostgREST is considered instead, verify schema exposure, role execution grants and function behavior separately. Do not expose auth.users or grant broad Data API privileges.
+- Verify actual hosted project's pooler configuration and IPv4/IPv6 behavior.
+
+### Security posture and decision
+- Preferred candidate for further prototyping: Edge Function → TLS PostgreSQL transaction-pooler connection as a dedicated restricted DB role → one private SECURITY DEFINER acceptance function.
+- This avoids exposing the private schema and avoids granting Auth/Saga table reads to browser roles.
+- This is an architecture candidate, not implementation approval. Need explicit role/function privilege matrix, connection secret plan, JWT-to-DB actor binding review, and isolated concurrency tests before any DDL, grant, secret or deployment.
+- No SQL writes, roles, grants, DDL, RPC, Edge Function, secret, pooler or Supabase configuration were changed during this research.
