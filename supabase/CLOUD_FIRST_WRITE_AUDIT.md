@@ -247,3 +247,43 @@
 - Đã đối chiếu sơ bộ với business schema migration 002, permission catalog 005/006, Asset lease/receipt migration 018/019, cùng các tài liệu thiết kế Inventory và Log revision.
 - Đây là bản đồ transaction đề xuất để review; chưa phải quyết định cuối cùng.
 - Chưa tạo migration/RPC, chưa sửa code, chưa chạy SQL và chưa kiểm thử runtime.
+
+
+## 13. Chuẩn hóa Receipt và xử lý replay khi quyền thay đổi (19/11/2026)
+
+### 13.1 Đối chiếu thiết kế đã có
+Repository đã có tài liệu `CLOUD_RPC_IDEMPOTENCY_CHANGEFEED_DESIGN.md` đề xuất ledger chung `organization_mutations` với khóa `(organization_id, mutation_id)`, actor, operation, record, payload_hash, result_status/result_payload và thời điểm; ledger được ghi cùng transaction nghiệp vụ. Đồng thời có migration riêng `asset_mutation_receipts` cho Asset update có Edit Lease, lưu request_payload và result_snapshot.
+- Không nên tạo thêm một receipt table mới cho từng vertical mà không có lý do rõ ràng; sẽ làm tăng số cơ chế replay và khó xử lý một mutation tác động nhiều record.
+- Hướng thiết kế đề xuất: chuẩn hóa một hợp đồng idempotency dùng chung theo ledger `organization_mutations`; các RPC theo nghiệp vụ vẫn riêng, không tạo RPC ghi bảng tùy ý.
+- Asset receipt hiện tại là triển khai chuyên biệt đã có migration/test; chưa được tự xóa hoặc bỏ. Trước khi bật Cloud-first toàn hệ thống, cần chọn một phương án migration có kiểm soát: (A) chuyển dữ liệu/contract sang ledger chung và cập nhật Asset RPC/test trong cùng phase; hoặc (B) giữ Asset receipt như adapter tạm thời, còn các vertical mới dùng ledger chung, với kế hoạch hợp nhất rõ ràng. Không dual-write hai receipt độc lập nếu không có transaction invariant và quy tắc recovery.
+- Ledger chung phải hỗ trợ một mutation tác động nhiều record: ví dụ complete Task + insert Log. Một receipt phải trả được snapshot/kết quả của tất cả record đã commit, còn change feed phát event riêng cho từng record.
+
+### 13.2 Payload fingerprint và dữ liệu lưu
+- Fingerprint phải được tính ở server trên request đã chuẩn hóa, bao gồm organization, operation, resource IDs, expected version(s), và payload nghiệp vụ; không tin hash do client gửi.
+- Repository chưa khai báo pgcrypto và chưa xác minh extension runtime. Không viết migration phụ thuộc `digest()` cho đến khi xác minh Test.
+- Trong giai đoạn chưa xác minh hash, có thể giữ canonical request JSON có giới hạn kích thước và so sánh chính xác khi replay; phải tránh lưu trường nhạy cảm không cần thiết. Đây là phương án cần review bảo mật/retention trước khi chốt.
+- Receipt result cần giữ canonical response đủ để Local phục hồi sau Cloud commit; với multi-record mutation, response phải chứa toàn bộ snapshot/version liên quan. Không chỉ lưu boolean applied.
+- Key reuse với actor/operation/resource/version/payload khác phải bị từ chối; cùng key và cùng request phải trả đúng kết quả đã commit, không chạy lại business effect.
+
+### 13.3 Điểm cần sửa trong Asset receipt hiện tại
+Static review migration `20261118000300_asset_mutation_receipts.sql` cho thấy `apply_asset_mutation_with_lock` kiểm tra `assets.update` trước khi tra receipt replay.
+- Tình huống: mutation đã commit, response bị mất; sau đó quyền update bị thu hồi; retry cùng mutation ID sẽ bị permission check chặn trước khi server xác nhận receipt.
+- Cần phân biệt đường **replay/read-only receipt** với đường **thực thi mutation mới**. Replay không được thực hiện write lần hai, nhưng cũng không được bỏ qua kiểm tra Auth và ranh giới tổ chức.
+- Thiết kế cần chốt: nếu cùng actor vẫn là thành viên active và chỉ permission update bị thu hồi, có thể cho phép tra trạng thái/kết quả đã commit mà không cấp quyền mutation mới; nếu membership bị thu hồi hoặc tổ chức không còn quyền truy cập, chỉ trả trạng thái tối thiểu không tiết lộ snapshot, hoặc yêu cầu Admin/actor có quyền đọc xác minh qua luồng an toàn. Không tự chọn một chính sách bỏ qua mọi authorization.
+- Kiểm thử bắt buộc: commit → giả lập mất response → thu hồi permission → replay cùng ID; đồng thời kiểm thử actor khác, organization khác, membership inactive và key/payload mismatch.
+- Đây là phát hiện thiết kế từ static code review; chưa chứng minh có lỗi runtime trên database.
+
+### 13.4 Row version và transaction identity
+- Draft `015_row_version_foundation_DRAFT.sql` đã bao phủ các bảng mutable: assets, inventory_items, maintenance_tasks, maintenance_plans, checklist_templates và organization_settings. Bảng append-only không cần row_version update.
+- Draft row_version vẫn chưa được đưa vào migrations và chưa có bằng chứng đã áp dụng. Không lấy timestamp `updated_at` làm version chung cho các vertical mới.
+- Asset hiện dùng expected `updated_at` cùng Edit Lease; cần thiết kế chuyển tiếp sang row_version mà không làm hỏng receipt/lease hiện hữu.
+- Với Inventory movement, expected_version là version của item trước giao dịch; movement append-only có mutation ID riêng, balance + movement + receipt + change events cùng transaction.
+- Với complete Task + Log, kiểm tra expected task version; một mutation ID duy nhất phải bao phủ cả task và log, và receipt phải trả cả hai kết quả.
+- Checklist Result và Maintenance Log Revision là append-only; kiểm soát duplicate bằng UUID + mutation ledger/unique constraints, không thêm row_version để sửa lịch sử.
+
+### 13.5 Kết luận đề xuất và trạng thái
+- Đề xuất dùng một idempotency contract/ledger chung làm chuẩn toàn hệ thống, không thiết kế các receipt độc lập theo từng bảng; RPC vẫn tách theo nghiệp vụ.
+- Asset receipt hiện hữu cần kế hoạch chuyển tiếp/hợp nhất, không xóa ngay.
+- Replay phải là read-only confirmation có authorization phù hợp; không được mặc định permission hiện tại giống thời điểm commit.
+- Đã đối chiếu `CLOUD_RPC_IDEMPOTENCY_CHANGEFEED_DESIGN.md`, `015_row_version_foundation_DRAFT.sql`, `CLOUD_SYNC_SCHEMA_PROTOCOL_DESIGN.md`, `CLOUD_INVENTORY_RPC_DESIGN.md`, `CLOUD_MAINTENANCE_LOG_REVISION_DESIGN.md` và migration Asset receipt.
+- Chưa sửa SQL/RPC, chưa tạo migration, chưa chạy SQL hoặc runtime test; chưa xác minh pgcrypto hay migration state trên Supabase.
