@@ -1472,9 +1472,10 @@ Mỗi transition phải CAS theo (organization_id, operation_id, expected status
 | RPC | Ai được gọi | Tác dụng / transaction boundary |
 |---|---|---|
 | begin_member_invite | authenticated actor JWT | Derive auth.uid(); lock Organization → actor Membership → Role/Permission; check users.manage; canonicalize intent/fingerprint; insert requested; replay cùng key/fingerprint; audit |
-| claim_member_invite_auth_attempt | server identity בלבד | Atomic claim; tạo attempt ID/token + lease từ DB; CAS requested hoặc retry đủ điều kiện → auth_calling; không giữ transaction qua Auth API |
-| record_member_invite_auth_result | server identity בלבד | Check operation + attempt token; ghi auth_user_id/provenance + resolved_initial_status; idempotent cùng kết quả, reject kết quả xung đột |
-| mark_member_invite_outcome_unknown | server identity בלבד | Check attempt token; auth_calling → auth_outcome_unknown; không kết luận absence |
+| cancel_member_invite | authenticated actor JWT ban đầu | Chỉ hủy khi status=requested và chưa có Auth attempt; CAS + audit; không xóa Auth user |
+| claim_member_invite_auth_attempt | server identity | Atomic claim; tạo attempt ID/token + lease từ DB; CAS requested hoặc retry đủ điều kiện → auth_calling; không giữ transaction qua Auth API |
+| record_member_invite_auth_result | server identity | Check operation + attempt token; ghi auth_user_id/provenance + resolved_initial_status; idempotent cùng kết quả, reject kết quả xung đột |
+| mark_member_invite_outcome_unknown | server identity | Check attempt token; auth_calling → auth_outcome_unknown; không kết luận absence |
 | finalize_member_invite | authenticated actor JWT | Recheck actor/org/membership/users.manage; kiểm tra operation + role + target; claim/replay Shared Receipt; tạo membership + role assignment + audit + finalize Receipt + Saga completed atomic |
 | adopt_member_invite_operation | authenticated Admin khác | Recheck active membership + users.manage; reason bắt buộc; khóa operation; chỉ unresolved/nonterminal và không có ownership dispute; append adoption audit; giữ nguyên actor gốc/fingerprint; không tự finalize |
 | activate_my_confirmed_membership (lifecycle RPC riêng) | chính authenticated user | Chỉ kích hoạt membership của auth.uid() khi email đã confirmed; lock Organization → own Membership; invited → active idempotent. Audit/Receipt semantics cần chốt riêng trước khi đưa vào implementation |
@@ -1491,12 +1492,14 @@ Ghi chú: server-only RPC không cấp EXECUTE cho anon/authenticated; actor JWT
 5. cùng operation_id + khác org/actor/email/role/fingerprint → reject, không lộ dữ liệu PII.
 6. email normalize (trim/lowercase) nhất quán; response không chứa normalized_email.
 
-**B. Claim Auth attempt**
-1. anon/authenticated trực tiếp → permission denied; chỉ server identity được execute.
-2. hai worker đồng thời claim → chỉ một attempt token/lease thắng.
-3. stale version/token hoặc lease chưa hết → reject/no-op an toàn.
-4. hết lease → worker mới chỉ được reconcile; không tự gọi Auth API trước khi chứng minh retry an toàn.
-5. operation terminal → không claim.
+**B. Cancel + Claim Auth attempt**
+1. Cancel chỉ bởi actor ban đầu, operation còn requested và chưa từng claim Auth; cancellation đồng thời với claim chỉ một CAS thắng.
+2. Cancel sau auth_calling/auth_outcome_unknown hoặc sau khi có Auth user → reject; phải reconcile.
+3. anon/authenticated trực tiếp → permission denied; chỉ server identity được execute.
+4. hai worker đồng thời claim → chỉ một attempt token/lease thắng.
+5. stale version/token hoặc lease chưa hết → reject/no-op an toàn.
+6. hết lease → worker mới chỉ được reconcile; không tự gọi Auth API trước khi chứng minh retry an toàn.
+7. operation terminal → không claim.
 
 **C. Record Auth result**
 1. đúng attempt + kết quả mới → ghi auth_user_id/provenance.
