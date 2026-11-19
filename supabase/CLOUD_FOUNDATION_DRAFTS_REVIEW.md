@@ -2176,3 +2176,26 @@ Static inventory từ migration/main, chưa phải runtime call graph đầy đ�
 - Inventory movement concurrency chưa khả thi cho authenticated cho đến khi có stock RPC; đây là design gate, không phải test thiếu.
 - Ưu tiên bổ sung test: Settings update ↔ Asset create/import; Counter create ↔ import cùng category; Task delete ↔ Log insert; Checklist publish ↔ Result submit; Asset delete ↔ các child inserts (ảnh/task/plan/template/result/log/movement).
 - Chưa có bằng chứng runtime caller đầy đủ cho các module; static RLS/schema không chứng minh UI đang gọi Cloud. Chưa chạy test và chưa thay đổi Supabase.
+
+## 81. Runtime caller audit – phân biệt Cloud writers và Local queue – 20/11/2026
+
+### Cloud writer/caller thực tế tìm thấy
+- `src/App.tsx::saveAsset`: Asset chưa linked ghi Dexie `assets` + `syncQueue` trong transaction; Asset linked mới gọi `applyAssetMutationWithEditLock` sau khi đã có Lease. Đây là Cloud mutation runtime chính đã được nối vào handler.
+- `src/App.tsx` mở editor linked Asset gọi `acquireAssetEditLock`; đóng/lưu gọi `releaseAssetEditLock`; các thao tác Lease RPC được nối thực tế.
+- `src/CloudAssetsPanel.tsx` gọi `importCloudAssetPreservingIdentity` theo batch `rowsToLink`; đây là thao tác người dùng chủ động đưa hồ sơ Local lên Cloud, không phải background sync hay luồng saveAsset thông thường.
+- `src/CloudAssetsPanel.tsx` gọi `saveCloudAssetCodeConfig`, ghi trực tiếp `organization_settings` qua PostgREST INSERT/UPDATE sau khi người dùng lưu cấu hình. RLS settings.manage bảo vệ server-side; đây là writer runtime trực tiếp cần được thay bằng RPC/serialization trước khi mở rộng.
+- `createCloudAsset` trong `src/lib/assetsCloud.ts` gọi `create_asset_with_code`, nhưng code search không thấy caller ngoài định nghĩa/helper. Không coi là runtime path đang dùng.
+
+### Những module chưa có Cloud business writer runtime
+- `saveItem` ghi `db.inventory` Local + queue; quantity được giữ nguyên. `addMovement` ghi quantity + movement + queue trong Dexie transaction. Không tìm thấy Supabase insert/update RPC/table writer cho inventory movement; policy INSERT hiện cũng chưa cấp.
+- `saveTask`, `saveLog`, `saveMaintenancePlans`, `deleteMaintenancePlan` ghi Local + queue. Không tìm thấy Cloud caller/RPC writer tương ứng trong App runtime.
+- Checklist Template/Version/Result có policy/RLS schema, nhưng static search trong App runtime không tìm thấy Cloud RPC/table writer đang gọi. Cần giữ trạng thái chưa triển khai Cloud, không thiết kế concurrency execution như luồng đang hoạt động.
+- `cloudSync.ts` là đường sync JSON cũ; không có bằng chứng caller đang chạy. Không được bật lại để tạo coverage giả.
+
+### Hệ quả đối với ma trận concurrency
+1. **Đang chạy Cloud:** linked Asset mutation ↔ Lease; Cloud Asset import batch ↔ Asset create/import/counter; settings save ↔ Asset create/import; Asset delete capability ↔ Lease/update cần test ở DB dù không có UI caller.
+2. **Chưa chạy Cloud:** Inventory movement, Maintenance log/task/plan và Checklist Template/Version/Result. Chỉ thiết kế test contract cho tương lai; trước tiên phải có Cloud RPC và caller được duyệt.
+3. **Local concurrency khác DB concurrency:** Dexie transaction bảo vệ các thao tác Local trong cùng browser DB; không chứng minh multi-device Cloud atomicity.
+
+### Trạng thái
+Static code search + đọc `src/App.tsx`, `src/lib/assetsCloud.ts`, `src/CloudAssetsPanel.tsx`, RLS migration. Chưa thực thi test và chưa thay đổi code/Supabase. Search theo mẫu không thay thế exhaustive call graph; cần review thêm dynamic imports/indirect wrappers trước khi kết luận tuyệt đối.
