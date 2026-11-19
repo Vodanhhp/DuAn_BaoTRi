@@ -3911,3 +3911,14 @@ Nghiên cứu source/docs hiện hành cho thấy native invite route gọi Befo
 - External hook receipt và Auth insert không cùng transaction; phải test replay/timeout/rollback/consistency, pin Auth/SDK version và xác minh hook plan/availability.
 
 Proposal chưa duyệt. Chưa sửa DDL 021, chưa tạo RPC/Edge Function, không chạy SQL/Supabase.
+
+
+## 59. Kiểm chứng Before User Created Hook với native Invite Saga (20/11/2026)
+
+Đã kiểm tra source Supabase Auth hiện hành: endpoint `/invite` khi user chưa tồn tại (`isCreate == true`) tạo user model từ `SignupParams` có `Data: params.Data`, gọi `triggerBeforeUserCreated` trước transaction insert Auth user. `Data` được đưa vào `user_metadata`; Hook nhận user object gồm `user_metadata` và UUID do Auth sinh trước Hook. Như vậy native `inviteUserByEmail({ data })` có thể mang reserved correlation token tới Before User Created Hook trong nhánh tạo user mới.
+
+Proposal: Edge Function tạo token ngẫu nhiên >=256-bit cho đúng operation+attempt, lưu digest/key version trước dispatch; token chỉ là transport trong reserved `user_metadata` key. HTTP Hook verify Standard Webhooks signature, xác minh digest/state/project/email fingerprint, ghi durable append-only receipt qua internal server-only RPC với Auth-generated user ID, rồi mới allow. Reconciliation bắt buộc xác nhận Auth user tồn tại bằng exact ID. Receipt có nhưng Auth user không tồn tại là orphan pre-create observation, không được attach/finalize. Không dùng user_metadata đọc lại sau này làm provenance/authorization; không log raw token. Existing account (`isCreate == false`) không chạy Hook, nên chưa giải quyết ownership của preexisting/unconfirmed user.
+
+Kết quả: source-level supports feasibility cho native invite nhánh tạo mới, nhưng chưa phải triển khai. Cần pin Auth/GoTrue + SDK version, xác minh Hook plan/configuration và test end-to-end crash, timeout, replay, rollback, orphan receipt, exact-ID lookup consistency. Proposal chưa được duyệt; không thay đổi DDL 021, RPC, Edge Function, không chạy SQL hoặc thay đổi Supabase.
+
+Nguồn kiểm tra: Supabase Auth `internal/api/invite.go`, `internal/api/signup.go`; Supabase Docs Before User Created Hook và Auth Users.
