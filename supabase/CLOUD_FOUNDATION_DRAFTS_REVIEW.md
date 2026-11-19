@@ -1737,3 +1737,21 @@ The Edge Function must validate the bearer token server-side (for example via Au
 Use a unique restricted DB login/secret for this acceptance path; never expose it to the browser or share it with unrelated functions. Audit all callable functions available to that role, including EXECUTE inherited from PUBLIC and any SECURITY DEFINER functions in schemas where it has USAGE. A grant on one named function alone does not prove the role has no other callable surface. Any signed actor assertion needs explicit key lifecycle, audience, expiry, replay binding and verification design. Do not trust an ad-hoc GUC/JWT claim without signature verification.
 
 This identity boundary and callable-surface audit are required before creating any role/function.
+
+## 59. Least-privilege role/function matrix — findings and proposed grants
+
+Read-only catalog inspection of BAOTRI-Mini-Test (PostgreSQL 17.12) found: public schema USAGE for anon/authenticated/service_role; multiple SECURITY DEFINER functions in public with EXECUTE granted to authenticated or service_role; function default ACLs differ by owner/schema and include API-role EXECUTE grants for inspected postgres/supabase_admin ownership contexts. Auth table direct SELECT/UPDATE remains restricted as documented earlier. No Edge-specific login or private acceptance function exists.
+
+Proposed, unapplied matrix:
+- Browser anon/authenticated: no direct DB credential, no private schema USAGE, no acceptance EXECUTE, no direct Auth/Saga/attempt/membership/role/audit/receipt table access.
+- service_role: not used as the direct DB login and receives no acceptance function grant.
+- Dedicated Edge DB login: LOGIN only; NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOREPLICATION, NOBYPASSRLS; no privileged role memberships/SET ROLE; TLS; connection limit; server-side rotated secret. CONNECT to target DB if narrowed by policy; USAGE on one private schema; EXECUTE on one exact function signature; no direct table DML/SELECT.
+- Candidate function owner: verified privileged owner (postgres is only a candidate pending Production review); SECURITY DEFINER, fixed empty search_path, fully qualified names, strict validation, minimal result. Owner privilege is the explicit elevated boundary.
+- Explicitly revoke function EXECUTE from PUBLIC, anon, authenticated and service_role; grant only the dedicated Edge login. Verify effective privileges using has_function_privilege and inspect ACLs after migration.
+- Default privileges are owner- and schema-specific. Revoke default EXECUTE for PUBLIC/API roles for the exact owner/schema before future functions; inspect pg_default_acl rather than assuming one owner setting applies to another.
+- Keep private schema out of Data API exposed schemas and do not grant the Edge login USAGE on public/auth/storage/vault/extensions unless a reviewed dependency requires it. Audit all callable functions in every schema it can use, including PUBLIC-inherited EXECUTE and SECURITY DEFINER functions.
+- No table privileges to Edge login; the SECURITY DEFINER function performs the one atomic transaction. No dynamic SQL unless identifiers are safely handled.
+
+Blocking identity issue: direct Postgres does not set PostgREST JWT context, so auth.uid()/auth.jwt() cannot be trusted as caller identity. If Edge Function validates JWT then passes UID, DB trusts that code and credential; credential compromise could spoof UID. Before implementation choose explicitly between accepting Edge Function as the trusted boundary with strong controls, or designing a signed short-lived actor assertion verified by DB (signature, audience, expiry, replay). No ad-hoc GUC/client UID is sufficient.
+
+This is design/read-only evidence only. No role, grant, schema, function, secret or migration was created or changed.
