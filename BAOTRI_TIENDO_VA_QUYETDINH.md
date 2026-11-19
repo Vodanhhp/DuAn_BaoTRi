@@ -4202,3 +4202,28 @@ Catalog chỉ đọc trên BAOTRI-Mini-Test cho thấy:
 Tài liệu Supabase Postgres Roles khuyến nghị tạo database user riêng cho từng dịch vụ bên ngoài thay vì chia sẻ mật khẩu postgres.
 
 Với Edge DB login sau này, ưu tiên không có role membership nào, không chỉ đặt NOINHERIT. NOINHERIT ngăn kế thừa tự động nhưng membership vẫn có thể cho phép SET ROLE tùy membership options/version. Phải xác minh không có đường membership, SET ROLE và kiểm tra quyền hiệu lực. Đây vẫn là đề xuất, chưa áp dụng.
+
+## 72. Kiểm tra crypto/Vault trên PostgreSQL 17 và phương án RPC xác thực
+
+### Kết quả chỉ đọc trên BAOTRI-Mini-Test
+- PostgreSQL 17.12 có `pgcrypto` 1.3 trong schema `extensions`.
+- Không có `pgjwt`. Tài liệu Supabase hiện hành đánh dấu pgjwt deprecated trên PostgreSQL 17; không dùng extension này cho xác minh JWT mới.
+- Có schema `vault` với objects `secrets` và `decrypted_secrets`, nhưng schema vault không xuất hiện như extension đã cài trong `pg_extension` ở lần kiểm tra này. Cần xác minh trạng thái/cơ chế quản lý thực tế.
+- ACL catalog cho thấy `service_role` có SELECT trên `vault.secrets`, `vault.decrypted_secrets` và USAGE schema. Không dùng service_role làm danh tính đọc secret chung; không expose schema vault qua Data API. Chưa kiểm tra danh sách schema đang expose.
+- Không truy vấn giá trị secret; không ghi dữ liệu hoặc đổi quyền.
+
+### Hệ quả crypto
+- pgcrypto có thể cung cấp HMAC để tính recipient email digest trong DB nếu key được đọc qua ranh giới secret đã duyệt và không lộ cho caller.
+- HMAC không đồng nghĩa với bộ xác minh JWT/JWS đầy đủ; không dùng pgcrypto HMAC để kết luận JWT ES256/RS256 của Supabase hợp lệ.
+- Supabase mô tả asymmetric signing/JWKS; JavaScript getClaims() có thể xác minh JWT qua JWKS. Điều đó phù hợp ở Edge/server nhưng không tự tạo JWT context cho kết nối PostgreSQL trực tiếp.
+- Vault là nơi lưu secret theo tài liệu, nhưng trạng thái extension, cơ chế cài đặt/quản lý, quyền đọc key và grant service_role cần được rà soát riêng. Không expose decrypted_secrets cho browser roles.
+
+### Phương án thay thế cần đánh giá trước khi chốt direct DB login
+Một authenticated PostgREST RPC wrapper hẹp có thể bỏ được Edge DB credential và ranh giới UID spoofing:
+1. Client gọi invitation RPC bằng Supabase session đã đăng nhập; PostgREST xác minh JWT rồi chuyển sang database role authenticated.
+2. Wrapper lấy actor từ auth.uid(), tuyệt đối không nhận UID qua tham số; kiểm tra email hiện tại và trạng thái xác minh từ Auth.
+3. Wrapper gọi private SECURITY DEFINER function để khóa Auth row + invitation và ghi membership/role/audit/receipt/Saga nguyên tử.
+4. Wrapper là endpoint duy nhất được chủ đích cho authenticated gọi; revoke EXECUTE từ PUBLIC và anon, chỉ grant authenticated; validate nghiêm ngặt, trả dữ liệu tối thiểu.
+5. Recipient HMAC có thể tính trong DB bằng pgcrypto nếu secret được function owner đọc an toàn mà không cấp quyền đọc decrypted secret cho browser/service_role. Nếu chưa giải quyết được secret isolation thì phương án này chưa hoàn chỉnh.
+
+RPC được authenticated gọi trực tiếp không tự động là lỗ hổng nếu actor lấy từ JWT PostgREST đã xác minh và mọi invariant được kiểm tra phía server. Tuy nhiên phải kiểm tra chính xác JWT context trong SECURITY DEFINER, exposed-schema, ACL wrapper/inner function, cô lập Vault và concurrency test. Chưa chốt kiến trúc, không triển khai.
