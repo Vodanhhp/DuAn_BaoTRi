@@ -1499,6 +1499,7 @@ File: supabase/drafts/021_member_audit_and_invite_saga_DRAFT.sql. Đối chiếu
 - Hai bảng mới giữ tách biệt Saga workflow nhiều transaction/Auth API và audit append-only; không tái sử dụng asset-specific receipt/mutation.
 - Target membership ID là scalar không FK/cascade. Audit → Saga operation dùng composite FK RESTRICT. Organization/Profile/Auth references RESTRICT có thể ảnh hưởng lifecycle deletion, phải review retention/archive.
 - RLS bật, không tạo policy; direct table privileges bị revoke cả service_role. Chỉ purpose-specific SECURITY DEFINER RPC đã review mới được thao tác.
+- Audit before_state/after_state bị giới hạn bằng CHECK allowlist key và enum; reason vẫn cần kiểm soát PII tại RPC.
 - Audit trigger từ chối UPDATE/DELETE nhưng không tự ngăn owner/superuser hoặc TRUNCATE. Cần giới hạn quyền vận hành và kiểm thử role context.
 - DDL chưa triển khai RPC/state machine CAS, immutability guard cho fingerprint/actor/resolved initial status, worker/attempt history, audit read RPC hoặc retention job.
 - Các quyết định còn mở: audit scope, permission đọc audit, retention/backup, PII encryption/key management, adoption approval, worker/manual recovery và actor_kind system.
