@@ -493,3 +493,66 @@ Không được giải quyết bằng cách thêm lock tùy tiện hoặc giữ 
 - Cần test race: confirmation commit trước Finalize, Finalize commit trước confirmation, confirmation đồng thời với Finalize, user login sau confirmation, user chưa confirmation.
 - Đây là đề xuất thiết kế, chưa sửa migration 013 và chưa kiểm chứng runtime. Cần review trigger ownership, Auth transaction behavior, grants và lock graph trên Supabase Test.
 
+
+
+## 18. Quyền xem danh sách thành viên và phân tách dữ liệu nhạy cảm
+
+### 18.1 Hiện trạng đã kiểm tra
+
+- Permission catalog có `users.view` và `users.manage`.
+- Migration 005 cấp toàn bộ permission cho Admin; Technician không có users.view; Viewer được cấp mọi permission có `action='view'`, vì vậy hiện Viewer sẽ nhận `users.view`.
+- Edge Function `manage-organization-members` hiện kiểm tra `users.manage` một lần trước khi xử lý mọi action, bao gồm `list`.
+- Action `list` dùng service_role đọc membership, Profile email/display_name, role assignment và role; trả email cho client.
+- UI `OrganizationMembersPanel` hiện vừa tải roster vừa hiển thị invite, đổi vai trò, reset mật khẩu, suspend/activate và remove; chưa tách read-only roster khỏi quyền quản trị.
+- Migration 013 giới hạn cột Profile mà authenticated có thể SELECT; email chỉ được trusted Edge Function đọc qua service_role. Đây là hướng bảo vệ đúng, nhưng Edge Function hiện cấp email cho bất kỳ caller qua được users.manage.
+
+### 18.2 Quyền đề xuất
+
+Tách hai capability độc lập:
+- `users.view`: đọc roster của tổ chức.
+- `users.manage`: invite, đổi vai trò, reset password, suspend/activate, remove và các thao tác quản trị khác.
+
+Mặc định đề xuất:
+- Admin: cả users.view và users.manage.
+- Technician: không có cả hai.
+- Viewer: không có users.view mặc định, dù đây là permission có action view; phải loại trừ rõ khi seed Viewer. Có thể cấp riêng sau này cho role tùy chỉnh nếu doanh nghiệp chủ động muốn công khai danh bạ.
+- Không dùng `users.manage` làm điều kiện đọc roster; không suy ra users.view từ users.manage ở client. Backend có thể cho Admin manage đồng thời view qua permission catalog, không hardcode bypass.
+
+### 18.3 Phân lớp dữ liệu trả về
+
+Roster cơ bản (chỉ users.view):
+- membership_id, display_name nếu có, role_code/role_name, membership_status, created_at.
+- Không trả email, phone, Auth user metadata, Auth user ID nếu UI không cần, reset token, invite URL hoặc thông tin Auth nhạy cảm.
+- Với display_name rỗng, dùng nhãn trung tính như “Chưa cập nhật tên”; không fallback sang email.
+
+Email và thao tác quản trị:
+- Chỉ trả email khi caller có users.manage; email là dữ liệu cá nhân cần giới hạn.
+- Các thao tác invite/update_role/update_status/remove_member/reset_password luôn yêu cầu users.manage ở server.
+- Không coi việc ẩn nút trên UI là authorization.
+
+### 18.4 Luồng Edge Function đề xuất
+
+- Xác thực JWT bằng caller client, lấy actor từ auth.uid()/getUser; không nhận actor ID từ body.
+- Parse action trước, sau đó kiểm tra capability đúng với action: list → users.view; các action mutation → users.manage.
+- Kiểm tra tổ chức active + actor membership active trong cùng transaction/RPC khi thực hiện thao tác; pre-check Edge Function chỉ để UX, không phải authorization cuối cùng.
+- Action list gọi RPC read-only SECURITY DEFINER (hoặc backend query đã được bảo vệ tương đương) để kiểm tra users.view và organization scope; không để service_role tự quyết định chỉ dựa trên organizationId từ request.
+- RPC roster chỉ SELECT, không lock lâu hoặc mutate; truy vấn giới hạn theo organization_id và chỉ lấy membership status được phép hiển thị. Không trả membership của tenant khác.
+- Nếu trả email theo users.manage, dùng cùng authorization check phía server và allowlist cột rõ ràng; tuyệt đối không SELECT *.
+- Phân trang ổn định (created_at + id), giới hạn page size, tổng số thành viên không bắt buộc phải tiết lộ nếu không cần.
+- UI tách chế độ read-only và quản trị: users.view chỉ thấy roster + làm mới; users.manage mới thấy form invite và action controls. Khi thiếu users.view thì không tải roster; khi có users.manage nhưng không có users.view, backend không tự suy diễn quyền đọc.
+
+### 18.5 Kiểm thử
+
+- Admin có cả hai quyền: roster đầy đủ theo policy; thao tác quản trị hoạt động.
+- Caller chỉ users.view: đọc roster cơ bản được; email và mọi mutation bị từ chối/ẩn.
+- Caller chỉ users.manage: mutation được phép theo từng action; list vẫn bị từ chối nếu không có users.view (nguyên tắc tách quyền).
+- Technician mặc định: không đọc roster, không quản trị.
+- Viewer mặc định: không đọc roster; xác minh migration seed không tự cấp users.view.
+- Custom role được cấp users.view: chỉ nhận roster cơ bản.
+- Tự sửa body organizationId sang tenant khác, inactive organization/membership, revoke quyền đồng thời: không rò dữ liệu.
+- Kiểm tra pagination, empty roster, missing profile, missing role assignment, suspended/invited memberships.
+- Email không xuất hiện trong log, telemetry, Change Feed hoặc lỗi; không truy cập trực tiếp Profile.email từ client authenticated.
+
+### 18.6 Ranh giới
+
+Đây là policy/design đề xuất theo nguyên tắc least privilege, chưa thay đổi permission seed, Edge Function, UI, SQL hay Supabase. Cần xác nhận chính sách sản phẩm về việc Viewer có được xem danh bạ thành viên hay không trước khi triển khai. Khuyến nghị mặc định: KHÔNG.
