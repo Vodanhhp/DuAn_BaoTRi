@@ -151,3 +151,15 @@ Receipt DDL hiện tại chưa tự áp đặt operation-specific disclosure pol
 - Test cùng mutation_id sau commit cho role change, status change, remove và self-activation; đồng thời test cùng ID khác requested target phải bị reject.
 
 Điều này không thay đổi fingerprint server-built, actor từ auth.uid(), hoặc nguyên tắc không tin client-supplied fingerprint.
+
+
+## 8. Member audit/Saga DDL boundary (19/11/2026)
+
+DDL draft 021 tạo riêng organization_member_invite_operations và organization_member_audit_events. Không dùng hai bảng này thay Shared Receipt:
+- Saga operation giữ Auth Admin workflow nhiều pha, PII và unresolved state.
+- Shared Receipt chỉ ghi nhận transaction membership finalize đã commit, dùng operation code/fingerprint đã chốt tại Member design §27.
+- Audit append-only ghi state transition trong cùng transaction với mutation + Receipt; audit không lưu email/phone/Auth metadata/token và không phát Change Feed.
+- membership_receipt_mutation_id trong Saga là liên kết scalar; không biến Saga operation thành Receipt.
+- Asset-specific Receipt/Lease tiếp tục là ngoại lệ riêng, không dual-write hoặc thay schema trong Member cutover.
+
+DDL 021 chưa có RPC để insert audit + Receipt atomic; yêu cầu này vẫn bắt buộc cho business RPC. Chưa chạy SQL hoặc thay đổi database.
