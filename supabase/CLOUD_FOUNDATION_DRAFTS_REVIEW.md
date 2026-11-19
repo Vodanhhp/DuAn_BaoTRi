@@ -328,3 +328,55 @@ Giữ FK actor `ON DELETE RESTRICT` trong draft 018 và 019 là phù hợp với
 
 Chưa sửa SQL, chưa gọi Edge Function, chưa chạy SQL và chưa thay đổi Supabase.
 
+
+
+## 12. Rà soát Edge Function quản lý thành viên
+
+Đã đọc trực tiếp Edge Function `supabase/functions/manage-organization-members/index.ts`, migration 013/014 và test 014 trên nhánh main.
+
+### 12.1 Remove membership — phù hợp chính sách
+
+- Action `remove_member` gọi RPC `admin_remove_org_membership`.
+- Migration 014 chỉ DELETE dòng `organization_members`; FK cascade xóa role assignments.
+- Comment và implementation nêu rõ Auth identity và Profile được giữ nguyên.
+- Test 014 kiểm tra membership/role assignment bị xóa nhưng Profile và `auth.users` vẫn tồn tại.
+- RPC khóa membership row `FOR UPDATE`, từ chối tự xóa và từ chối xóa Admin.
+
+Kết luận: Remove member hiện tại là remove khỏi một Organization, không phải hard-delete Auth user. Phù hợp với chính sách giữ actor audit.
+
+### 12.2 Suspend / Activate — phù hợp chính sách
+
+- Edge Function chỉ gọi `admin_update_org_member_status`.
+- Migration 013 chỉ cập nhật `organization_members.status` thành `suspended` hoặc `active`.
+- Không gọi Auth delete, không xóa Profile và không xóa lịch sử.
+- Test suspended membership đã có kiểm tra tenant isolation.
+
+Kết luận: Suspend/Activate chỉ tác động membership của tổ chức, không xóa tài khoản Auth. Đây là hành vi đúng.
+
+### 12.3 Hard-delete Auth duy nhất tìm thấy
+
+Trong Edge Function có một lời gọi:
+`admin.auth.admin.deleteUser(targetUserId)`
+
+Nó chỉ nằm trong nhánh Invite: khi Edge Function vừa tạo Auth user mới bằng `inviteUserByEmail`, nhưng RPC tạo membership thất bại, code gọi deleteUser để dọn tài khoản vừa tạo. Không có lời gọi deleteUser trong Remove, Suspend, Activate, Update role hoặc Reset password.
+
+Đây là compensation cho tài khoản vừa được tạo trong chính request hiện tại, không phải xóa người dùng đã có lịch sử. Tuy nhiên:
+- Kết quả deleteUser hiện không được kiểm tra; nếu cleanup thất bại có thể để lại Auth user/profile mồ côi.
+- Nên kiểm tra lỗi cleanup và ghi log có kiểm soát; không trả thông tin nhạy cảm ra client.
+- Không được tái sử dụng nhánh cleanup này cho tài khoản Auth đã tồn tại trước request.
+- Nếu membership RPC báo lỗi không xác định sau khi transaction thực tế đã commit nhưng response bị mất, cần đối soát membership trước khi xóa Auth user mới tạo. Không được xóa một user đã có membership được tạo thành công.
+
+### 12.4 Giới hạn và rủi ro còn cần kiểm thử
+
+- Test 014 là SQL test file có trong repo; việc file tồn tại không chứng minh đã chạy trên Supabase Test.
+- Cần test Edge Function thực tế với 4 trường hợp: Remove member, Suspend, Activate, Invite thất bại khi tạo membership.
+- Cần xác nhận cleanup chỉ xóa Auth user do đúng request vừa tạo; trường hợp timeout/response unknown phải đối soát trước.
+- Cần kiểm tra Edge Function có kiểm soát trạng thái Organization và membership/permission đủ chặt ở thời điểm thao tác; không chỉ dựa vào UI.
+- Tài khoản bị suspend membership vẫn có thể là thành viên của Organization khác; không được ban Auth toàn cục chỉ vì một tổ chức suspend họ.
+
+### 12.5 Kết luận
+
+**Không phát hiện hard-delete Auth user trong luồng Remove/Suspend/Activate.** Các luồng này phù hợp với chính sách audit đã chốt. Lời gọi deleteUser duy nhất là cleanup Auth account vừa được tạo trong Invite nếu tạo membership thất bại; cần tăng độ an toàn khi cleanup và xử lý kết quả RPC không chắc chắn.
+
+Không sửa Edge Function, SQL, test hoặc dữ liệu trong lượt này. Chỉ cập nhật tài liệu review; chưa gọi Edge Function và chưa chạy test trên Supabase.
+
