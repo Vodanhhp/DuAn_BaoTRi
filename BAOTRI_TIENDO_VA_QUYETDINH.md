@@ -3789,3 +3789,14 @@ Hoàn thiện hợp đồng quyền/replay và quyết định điều chỉnh t
 - Cập nhật CLOUD_MEMBER_MANAGEMENT_RPC_DESIGN.md §30, CLOUD_FOUNDATION_DRAFTS_REVIEW.md §34, CLOUD_SHARED_RECEIPT_DRAFT_REVIEW.md §8.
 - Các cập nhật GitHub đã fetch lại và xác minh SHA/nội dung. Chưa chạy DDL, chưa tạo migration, chưa thay đổi Supabase Test/Production, code, RLS/grants đang áp dụng hoặc dữ liệu.
 - Cổng tiếp theo: review tĩnh DDL 021, chốt các quyết định còn mở, viết RPC/transaction tests; chỉ tạo migration và áp dụng Test sau khi có phê duyệt riêng.
+
+
+## 47. Static review vòng 1 DDL 021 — Member Audit/Invite Saga (19/11/2026)
+
+- Rà soát tĩnh DDL 021 và siết CHECK constraints: reason nonblank; adoption phải do user khác actor gốc tiếp quản; auth_user_created_by_operation chỉ được set khi auth_user_id có giá trị.
+- Audit actor_kind=system chỉ dành cho member.invite.state.change; các membership lifecycle events bắt buộc target_membership_id + mutation_id; create/adopt/invite-state-change bắt buộc invite_operation_id.
+- JSONB before/after allowlist enum dùng COALESCE để JSON null không vượt CHECK.
+- Ghi nhận các việc còn thuộc RPC/runtime: transition CAS/state graph, bảo vệ bất biến Saga identity/fingerprint/PII, updated_at/version, attempt history, reason PII filtering, owner/TRUNCATE boundary, FK retention lifecycle, atomic Audit + Shared Receipt.
+- Cập nhật Member design §31, Foundation review §35, Shared Receipt review §9.
+- GitHub files đã fetch lại xác minh SHA/nội dung. Chưa chạy SQL/parser, chưa tạo migration, chưa thay đổi Supabase Test/Production, RPC, code hoặc dữ liệu.
+- Bước kế tiếp: tiếp tục review transition/authorization/lock-order contract và lập bảng test cho các RPC trước khi có thể promote DDL.
