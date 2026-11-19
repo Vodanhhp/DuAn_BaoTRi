@@ -196,3 +196,33 @@ Chưa chạy SQL hoặc thay đổi database.
 
 ### Trạng thái
 Chỉ đối chiếu tài liệu và catalog read-only. Không sửa draft 020/021, không tạo migration/RPC, không thay đổi Supabase.
+
+
+## 11. Asset/Member lock matrix và FK deletion interaction – 20/11/2026
+
+### Các đường khóa thực tế
+- Asset create: đọc Settings/Assets → upsert Counter → insert Asset.
+- Asset import: advisory xact lock theo org+mutation → đọc Import ledger → upsert Counter → khóa Asset FOR UPDATE nếu đã tồn tại (hoặc insert) → ghi Import ledger.
+- Lease acquire: check permission + đọc Asset → upsert Lease. Heartbeat/release lần lượt UPDATE/DELETE Lease.
+- Asset update/archive: Lease FOR UPDATE → UPDATE Asset.
+- Asset mutation có Receipt: lookup Receipt → Lease FOR UPDATE → recheck Receipt → Asset FOR UPDATE → UPDATE Asset → INSERT Asset Receipt.
+- Member create legacy: Auth user FOR UPDATE → Profile read → insert Membership → insert member_roles. Auth profile trigger: Auth user update → Profile upsert → Membership update invited→active.
+- Member role change: đọc Membership/Role không FOR UPDATE → delete/insert member_roles. Member status change: đọc Membership rồi UPDATE Membership. Member remove: Membership FOR UPDATE → delete Membership → FK cascade member_roles.
+
+### FK và deadlock candidate
+- Asset Lease holder tham chiếu Auth user ON DELETE CASCADE; Lease cũng tham chiếu Asset ON DELETE CASCADE.
+- Asset Receipt và Import ledger tham chiếu Auth user ON DELETE RESTRICT.
+- Có candidate deadlock khi Auth user deletion giữ Auth row và chờ CASCADE xóa Lease, trong khi Asset mutation giữ Lease rồi INSERT Receipt cần FK xác nhận Auth user. Chưa chạy concurrency test; cần test có kiểm soát trước khi kết luận thực tế.
+- Asset Receipt hiện được INSERT sau Asset row, trong khi Shared Receipt proposal claim Receipt trước business rows. Hai lock order chưa thống nhất.
+- Create/import đều Counter → Asset; import thêm advisory lock trước Counter. Mọi path mới cần giữ cùng thứ tự để tránh đảo Counter/Asset.
+- Asset RPC không khóa Membership/role chain; revoke có thể cạnh tranh với business write đã qua permission helper. Cần định nghĩa điểm có hiệu lực revoke.
+- Member role update chưa khóa Membership parent; status update chỉ lấy row lock ở UPDATE; remove khóa Membership trước cascade assignment.
+
+### Hệ quả thiết kế
+- Không thể chốt lock matrix chỉ từ Member §25.1. Cần bổ sung domain lock Lease/Counter/Asset, Auth deletion và FK effects.
+- Candidate protocol để tiếp tục nghiên cứu: Organization → Memberships → assignments → Role/Permission → Auth nếu cần → Receipt claim → domain locks → business rows → Receipt finalize. Đây chưa được chứng minh và chưa chốt.
+- Auth trigger phải được tách side effect membership trước khi dùng Member canonical order. Cần thiết kế đường Auth deletion riêng.
+- Asset Receipt replay cần tách khỏi permission check write; hiện source kiểm tra write permission trước receipt lookup, chưa khớp Shared Receipt replay contract.
+
+### Trạng thái
+Chỉ đọc source migrations/catalog Test. Không chạy concurrency test, không thay đổi SQL, RPC, grants, roles, Auth hoặc dữ liệu.
