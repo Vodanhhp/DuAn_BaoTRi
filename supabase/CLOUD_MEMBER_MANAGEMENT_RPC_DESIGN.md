@@ -1243,3 +1243,77 @@ Quy tắc thực thi:
 7. Không có row_version cho Membership hiện tại; không giả lập expected version bằng cách nhét live status/role vào fingerprint. Nếu cần optimistic concurrency mạnh hơn, phải bổ sung revision contract riêng.
 
 Test bắt buộc bổ sung: cùng mutation_id retry sau role change, sau status change, sau remove và sau self-activation phải tìm đúng Receipt cũ; cùng ID nhưng target hoặc requested target role/status khác phải bị reject key reuse.
+
+
+## 28. Static inventory audit schema và Invite Saga persistence (19/11/2026)
+
+Trạng thái: **đã đối chiếu repository hiện tại; chỉ ghi nhận phát hiện và yêu cầu thiết kế, chưa tạo DDL**.
+
+### 28.1 Kết quả tìm kiếm audit hiện có
+
+Đã tìm trong repository các dấu hiệu `audit_id`, `audit_log`, `audit_events`, `activity_log` và đọc các migration liên quan Member/Role:
+- `20261117000500_roles_and_permissions.sql`
+- `20261117001300_member_management.sql`
+- `20261117001400_remove_org_member.sql`
+
+Kết quả hiện tại: **chưa tìm thấy bảng audit quản trị dùng chung hoặc bảng audit membership đã được triển khai trong migration/repository**. Các đề cập audit trong tài liệu là yêu cầu/đề xuất thiết kế, chưa phải schema đang chạy. Đây là kết luận static theo repository đã rà soát, không phải khẳng định database Supabase không có bảng ngoài repo.
+
+Do chưa có schema audit hiện hữu được chứng minh, không được tuyên bố Member RPC có thể ghi vào audit table hiện tại. Cần thiết kế một bảng audit chuyên biệt hoặc một audit framework dùng chung sau khi inventory toàn bộ schema Test xác nhận không có đối tượng tương đương.
+
+### 28.2 Hiện trạng Invite Saga
+
+`organization_member_invite_operations` mới được đề xuất trong §§15.1–15.8; chưa thấy migration/DDL triển khai. Các field thiết kế đã nhắc tới gồm organization/operation identity, actor gốc, normalized email, requested role, state, auth_user_id khi resolve, attempts/lease/recovery và timestamps.
+
+Tách đúng hai lớp:
+- Saga operation: theo dõi workflow nhiều transaction + Auth Admin API, bao gồm trạng thái chưa rõ, retry, adoption và manual recovery.
+- Shared Receipt: chỉ ghi nhận kết quả cuối của transaction PostgreSQL finalize membership đã commit.
+
+Không gộp Saga operation vào Receipt; không coi Auth invite thành một phần atomic của transaction DB.
+
+### 28.3 Phân loại dữ liệu và giới hạn truy cập Saga
+
+| Dữ liệu | Phân loại | Quy tắc |
+|---|---|---|
+| organization_id, operation_id | Tenant/operation identity | Dùng composite key và tenant boundary |
+| actor_user_id gốc | Security/audit identity | Bất biến; không đổi khi adoption |
+| adopted_by, reason | Security/audit | Ghi actor adopter và reason bắt buộc |
+| normalized_email | PII | Chỉ RPC/service nội bộ; không trả client, Receipt, Change Feed, audit payload hoặc error |
+| auth_user_id | Internal identity | Chỉ lưu khi Auth identity được Saga resolve; không trả roster/feed |
+| requested role/status, state | Business workflow | Validate enum/transition phía server |
+| fingerprint | Integrity/security metadata | Server-built; không chứa email/token/PII không cần thiết |
+| attempts, lease, retry_after, timestamps | Operational metadata | Không cho client ghi trực tiếp; không log bí mật |
+
+Bắt buộc: RLS bật; revoke trực tiếp SELECT/INSERT/UPDATE/DELETE khỏi PUBLIC/anon/authenticated; mọi đọc/ghi qua RPC được kiểm soát hoặc service-only Edge Function. Không cấp quyền rộng cho toàn bộ authenticated chỉ vì UI Admin cần thao tác. RPC phải xác thực actor hiện tại và quyền users.manage cho create/adoption/recovery theo state; operation gốc không bị đổi actor.
+
+Email có thể cần lưu để xử lý Auth invite, nhưng phải xác định retention, xóa/ẩn danh sau khi Saga terminal và hết cửa sổ retry/recovery, backup retention, quyền service operator và quy trình export. Không xóa unresolved operation. Không ghi email vào audit before/after, Shared Receipt, Change Feed, client error hoặc telemetry.
+
+### 28.4 Audit schema cần thiết kế — không tạo trùng và không cascade mất lịch sử
+
+Do chưa tìm thấy audit table đã triển khai, contract §27.4 vẫn là đề xuất. Trước khi tạo DDL cần:
+1. Inventory schema thực tế của Supabase Test và mọi migration/extension liên quan audit để xác nhận không có bảng tương đương ngoài repository.
+2. Chọn rõ phạm vi: audit membership riêng hay audit organization-wide dùng chung. Nếu dùng chung, cần schema version và action namespace; không tạo bảng riêng trùng chức năng.
+3. Lưu audit append-only trong cùng transaction với state transition và Receipt; audit insert failure phải rollback mutation.
+4. Giữ target membership ID dưới dạng scalar không FK cascade; không để DELETE membership xóa audit. Organization retention/deletion phải có policy riêng, không cascade âm thầm.
+5. Không lưu email/phone/Auth metadata/token/invite URL; before/after chỉ allowlist role code/status. Adoption reason bắt buộc và phải có giới hạn độ dài/PII policy.
+6. Không audit no_change như một state transition. Permission denial/validation failure thuộc security telemetry riêng nếu cần.
+7. RLS/grants: không client SELECT trực tiếp. Cần thiết kế Admin read-audit RPC có permission riêng (đề xuất `users.view` không mặc nhiên cho phép xem audit; cần quyết định permission code `users.audit.view` hoặc `audit.view`). Không cấp quyền đọc audit cho Viewer/Technician mặc định.
+8. Retention/archive có kiểm soát; không UPDATE/DELETE bởi business RPC; operator access phải được audit.
+
+### 28.5 Các vấn đề schema hiện hữu ảnh hưởng cutover
+
+- Migration 005 hiện khai báo PK `(organization_id, member_id, role_id)` cho `member_roles`, chưa có unique constraint `(organization_id, member_id)`; do đó schema hiện tại vẫn cho phép nhiều role assignment/membership. Unique một role chỉ được thêm sau preflight và migration riêng fail-closed.
+- Migration 013 `admin_create_org_membership` tạo membership + assignment atomic nhưng chưa ghi Shared Receipt/audit, chưa khóa Organization/Role theo contract mới, và khóa `auth.users` sau khi kiểm tra Organization/Role. Trigger `sync_auth_user_profile` còn tự active invited memberships khi email confirmation.
+- Migration 013 role/status RPC và migration 014 remove RPC hiện service_role-only, nhận actor ID từ tham số, chưa transaction-authorize actor bằng caller JWT. Remove cascade assignment; audit target không được FK cascade theo membership.
+- Migration 013/014 hiện chưa ghi audit. Không được coi các writer cũ đã tuân audit contract mới; phải thay/cutover writer đồng bộ trước khi bật audit bắt buộc.
+- `profiles.email` được đồng bộ từ `auth.users`; đây là PII. Không sao chép sang Saga log rộng, audit, Receipt hoặc Change Feed.
+
+### 28.6 Cổng tiếp theo
+
+1. Kiểm tra schema Supabase Test read-only để inventory audit object và RLS/grants thực tế; không chạy DDL.
+2. Chốt permission đọc audit riêng, scope Admin-only và disclosure fields.
+3. Chốt retention PII của Saga, unresolved retention, completed terminal retention và backup window.
+4. Thiết kế schema DDL draft cho audit + Saga operation trong cùng review nhưng giữ hai bảng/identity riêng.
+5. Cross-review lock order: Organization → actor/target Membership → operation/audit rows theo thứ tự ổn định; không tạo lock cycle với Auth trigger. Audit insert là cuối transaction sau khi state transition đã được xác thực, nhưng vẫn cùng transaction.
+6. Sau static review mới viết migration draft; chưa chạy SQL/RPC và cần phê duyệt riêng trước khi áp dụng Test.
+
+Không sửa migration 005/013/014, không sửa Edge Function/client, không tạo DDL hoặc thay đổi Supabase.
