@@ -361,3 +361,12 @@ Người dùng xác nhận:
 - Migration phải tách foundation/Receipt, Inventory, Log, Change feed và client cutover; row_version draft 015 chưa được coi là applied.
 - Kế hoạch chi tiết: `supabase/CLOUD_FIRST_SCHEMA_MIGRATION_PLAN.md`.
 - Chưa tạo SQL migration executable, chưa sửa code, chưa apply SQL hoặc thay đổi dữ liệu/permissions.
+
+
+## 17. SQL schema drafts đã tạo (19/11/2026)
+
+- Đã tạo `supabase/drafts/018_inventory_movement_audit_fields_DRAFT.sql` và `supabase/drafts/019_maintenance_log_revisions_DRAFT.sql`.
+- Draft 018 giữ nguyên `quantity > 0`, bổ sung signed delta/balance/count/actor/mutation/version; legacy data không backfill.
+- Draft 019 giữ root Log ID/FK, tạo append-only revisions, backfill revision 1 dạng legacy_baseline, thêm permission logs.revise cho Admin role, RLS SELECT theo logs.view.
+- Đã xác định RPC revise phải kiểm tra đồng thời has_org_role(org,'admin') và has_org_permission(org,'logs.revise') để custom role không thể tự được cấp quyền Admin-only.
+- Hai draft chưa phải migration áp dụng; chưa chạy SQL, chưa thay đổi DB, grants trực tiếp hoặc UI.
