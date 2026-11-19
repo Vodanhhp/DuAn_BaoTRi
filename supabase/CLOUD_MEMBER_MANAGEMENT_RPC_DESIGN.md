@@ -2001,3 +2001,19 @@ Supabase docs hiện hành mô tả Before User Created Hook chạy ngay trướ
 - Không log token, email raw, webhook secret, service key hoặc invite URL.
 
 **Trạng thái:** proposal nghiên cứu; chưa được người dùng phê duyệt. Supabase source/docs trên bản hiện hành; cần pin phiên bản dự án trước implementation. Chưa sửa DDL 021, chưa viết RPC/Edge Function, không chạy SQL hoặc thay đổi Supabase.
+
+
+## 44. Technical verification: Before User Created Hook có thể nhận correlation marker trong native invite (20/11/2026)
+
+Đã kiểm tra Supabase Auth source hiện hành trên `master` và tài liệu Hook:
+
+- `internal/api/invite.go`: khi email chưa có Auth user (`isCreate == true`), `/invite` tạo `SignupParams` với `Data: params.Data`, gọi `ToUserModel(false)`, rồi gọi `triggerBeforeUserCreated(...)` **trước** `db.Transaction(...)` tạo Auth user. Vì vậy native `inviteUserByEmail({ data })` có đường đi vào Before User Created Hook khi tạo user mới; không chỉ là signup thông thường.
+- `SignupParams.Data` được đưa vào `user_metadata` của user model; Hook nhận payload `user` theo shape Auth user, có `user_metadata`. UUID user đã được tạo ở bước `ToUserModel` trước khi Hook chạy.
+- Do đó có thể dùng một reserved key trong `data` làm **transport cho correlation token ngẫu nhiên**, không phải dùng metadata làm bằng chứng tự thân. Edge Function phải tạo token >=256-bit, lưu digest + key version vào attempt trước dispatch; Hook xác minh signed webhook và token digest với đúng operation/attempt/project/state/email fingerprint, sau đó ghi durable receipt append-only qua internal server-only RPC, chứa Auth-generated user ID. Không log hoặc lưu raw token.
+- Hook phải commit receipt thành công rồi mới trả allow. Sau đó reconciliation phải xác nhận Auth user tồn tại bằng đúng ID qua Admin lookup. Receipt tồn tại nhưng user không tồn tại là orphan pre-create observation, không được finalize/attach; giữ unresolved. Nếu receipt không ghi được, Hook fail closed.
+- `user_metadata` vẫn là dữ liệu user-editable sau khi tạo; không dùng marker hiện tại cho authorization/RLS/JWT. Bằng chứng provenance là sự kiện Hook có chữ ký được xác minh + receipt bền vững tại thời điểm pre-create + Auth user ID chính xác được xác nhận tồn tại, không phải giá trị metadata đọc lại sau này.
+- Nhánh email đã có Auth user (`isCreate == false`, gồm existing unconfirmed account) không gọi Before User Created Hook. Vì vậy phương án chỉ giải quyết crash window của nhánh tạo user mới; không chứng minh ownership cho tài khoản có sẵn.
+
+**Kết luận kỹ thuật:** proposal correlation receipt qua Before User Created Hook có cơ sở source-level cho native `inviteUserByEmail` ở nhánh tạo mới. Chưa phải implementation-ready: cần pin GoTrue/Auth + SDK version thực tế, kiểm tra cấu hình/plan Hook, và test end-to-end các cửa sổ crash, timeout, replay, orphan receipt, rollback và exact-ID lookup consistency. Không thay đổi policy fail-closed; không tự động retry khi outcome unknown.
+
+**Trạng thái:** technical verification, proposal chưa được người dùng phê duyệt. Chưa sửa DDL 021, chưa tạo RPC/Edge Function, không chạy SQL hoặc thay đổi Supabase.
