@@ -3664,3 +3664,18 @@ Rà nốt các child/modal và permission gating; sau đó chốt transaction co
 
 ### Bước tiếp theo
 Review transaction boundary và chốt các quyết định còn mở trước khi viết hợp đồng RPC chi tiết. Không triển khai code/SQL khi các quy tắc nghiệp vụ còn chưa rõ.
+
+
+## 37. Chuẩn hóa Receipt và replay (19/11/2026)
+
+- Đối chiếu các thiết kế đã có: `CLOUD_RPC_IDEMPOTENCY_CHANGEFEED_DESIGN.md` đề xuất ledger chung `organization_mutations`; migration Asset hiện có bảng `asset_mutation_receipts` chuyên cho Asset update có lease.
+- Đề xuất dùng một hợp đồng idempotency/ledger chung cho các vertical; RPC vẫn riêng theo nghiệp vụ. Một receipt phải chứa kết quả đủ phục hồi mọi record trong mutation nhiều bản ghi (ví dụ complete Task + tạo Log). Không tạo thêm receipt table riêng cho từng bảng nếu không có lý do.
+- Asset receipt hiện hữu không được xóa ngay; phải có phase chuyển đổi/hợp nhất hoặc adapter tạm thời được kiểm soát. Tránh dual-write hai ledger độc lập.
+- Fingerprint do server chuẩn hóa/tính; repository chưa xác minh pgcrypto nên chưa được viết migration phụ thuộc digest. Canonical request JSON có giới hạn là phương án cần review nếu chưa có hash extension.
+- Phát hiện trong Asset RPC: kiểm tra `assets.update` xảy ra trước khi tra receipt. Nếu Cloud đã commit, response mất, rồi quyền update bị thu hồi, retry cùng mutation ID có thể không xác nhận được kết quả cũ. Cần tách replay read-only khỏi mutation mới; vẫn kiểm tra Auth và tổ chức, không để actor khác/membership inactive truy cập snapshot. Chốt chính sách khi chỉ permission bị thu hồi và test commit → lost response → revoke permission → replay.
+- Draft row_version 015 đã bao phủ master mutable nhưng chưa phải migration đã áp dụng. Asset cần kế hoạch chuyển từ expected updated_at sang row_version; Inventory movement dùng expected item version; complete Task + Log dùng một mutation ID/receipt chung; append-only history không cần row_version.
+- Đã bổ sung mục 13 trong `supabase/CLOUD_FIRST_WRITE_AUDIT.md`.
+- Chưa sửa code/SQL/RPC, chưa chạy SQL/runtime test, chưa xác minh pgcrypto hoặc trạng thái migration trên Supabase.
+
+### Bước tiếp theo
+Hoàn thiện hợp đồng quyền/replay và quyết định điều chỉnh tồn kho; sau đó mới viết các RPC draft. Không triển khai khi chưa thống nhất các quy tắc này.
