@@ -2520,3 +2520,19 @@ Read-only Test catalog inspection of non-internal triggers on `organizations`, `
 The inspected tables have no other non-internal triggers. In particular, no trigger automatically creates member_roles, writes invitation audit, or updates Saga/Shared Receipt. Acceptance must explicitly write all required business/audit/receipt/Saga rows in the same transaction. Do not rely on a trigger to complete a partial acceptance.
 
 This is Test-only evidence. Future migrations may add triggers; deployment preflight must re-inspect trigger inventory and function definitions before applying the acceptance migration. No trigger or table was changed.
+
+
+## 62. Vault ACL grantor correction and HMAC digest helper candidate (20/11/2026)
+
+### Official Supabase guidance
+Supabase KB updated 04 Nov 2026 clarifies that Vault objects are owned by `supabase_admin`; grants made by that owner cannot be revoked by `postgres`. The documented pattern for giving a dedicated role access to one secret is a `SECURITY DEFINER` function in a non-exposed schema, with EXECUTE granted only to that role. The caller does not receive direct Vault schema/table access. Functions created by postgres execute with postgres privileges. Sources: Supabase KB (https://supabase.com/kb/troubleshooting/revoking-privileges-on-storage-pg_cron-vault-and-extension-objects-has-no-effect-916576), Database Functions docs (https://supabase.com/docs/guides/database/functions), Vault docs (https://supabase.com/docs/guides/database/vault).
+
+### Verified read-only on BAOTRI-Mini-Test
+- `vault` schema owner and both `vault.secrets` / `vault.decrypted_secrets` object owners are `supabase_admin`.
+- ACL grantor is `supabase_admin`; postgres has SELECT with grant option; service_role has SELECT without grant option. This explains why a postgres REVOKE cannot remove service_role's Supabase-managed grant.
+- No secret values were queried. No grants or objects changed.
+
+### Candidate for invitation HMAC
+A private helper may be created under a Vault-capable owner (postgres is the documented pattern) to read one fixed-name secret, compute HMAC-SHA-256 inside the function, and return only the digest. Revoke EXECUTE from PUBLIC, anon, authenticated and service_role; grant it only to the internal acceptance-function owner. The helper schema must not be exposed. The helper must not accept a client-controlled email or become a callable HMAC oracle; the acceptance function supplies only the current verified email read/locked from auth.users after deriving actor from auth.uid().
+
+This improves secret isolation but does not decide the acceptance function owner. A postgres-owned acceptance function remains a high-privilege/BYPASSRLS boundary requiring explicit business checks. Compare a single privileged function against a split owner design; verify effective ACL, schema USAGE, owner chain, membership/SET ROLE, default ACL, all callable SECURITY DEFINER functions and caller reachability before prototype. No implementation or architecture approval.
