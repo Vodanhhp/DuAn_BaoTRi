@@ -1852,3 +1852,37 @@ Người dùng đã đồng ý chốt mô hình hai bảng và nguyên tắc lea
 **Còn mở để thiết kế tiếp:** provider-specific evidence/correlation chứng minh no-side-effect; phân loại definitive failure; lease duration; quyền và quy trình Admin takeover reconciliation. Default fail-closed khi bằng chứng không đủ.
 
 **Phạm vi:** quyết định schema/flow đã chốt; chưa sửa DDL 021, chưa tạo RPC/worker, chưa chạy SQL, không thay đổi Supabase Test/Production.
+
+
+### 39. Phân loại lỗi Auth và điều kiện retry (20/11/2026)
+
+Đây là policy proposal để review; không whitelist theo HTTP status chung chung.
+
+#### 39.1 Ba nhóm kết quả
+
+1. **`definitive_no_side_effect`**: chỉ dùng khi có bằng chứng kỹ thuật rằng request chưa được dispatch tới Auth (ví dụ local preflight validation thất bại trước network call, có execution trace chứng minh chưa dispatch), hoặc provider có tài liệu/contract cụ thể xác nhận mã lỗi đó bị reject trước mọi side effect. Khi đó attempt được kết luận không tạo user/không gửi invite; retry có thể được cân nhắc sau khi sửa nguyên nhân và qua policy.
+2. **`outcome_unknown`**: mọi trường hợp request có thể đã tới Auth nhưng không có kết quả cuối đáng tin cậy: timeout, connection reset, DNS/TLS/proxy interruption sau khi dispatch không xác định, response body không đọc được, gateway/proxy 5xx, Auth 5xx/5xx-like, Edge Function/server crash sau dispatch, client disconnect, process restart, hoặc bất kỳ lỗi không có contract no-side-effect rõ ràng. Không retry Auth; bắt buộc reconciliation.
+3. **`needs_review` / `conflict`**: email đã tồn tại/duplicate, Auth ID không khớp, nhiều candidate, provider response mâu thuẫn với event log, hoặc không thể chứng minh ownership/provenance. Không gắn membership; không tự xóa Auth user; yêu cầu Admin review hoặc quy trình claim độc lập.
+
+#### 39.2 Không suy luận từ HTTP status
+
+- Không quy tắc `4xx = definitive failure` hoặc `5xx = retry`. Status code chỉ là một thuộc tính response, không tự chứng minh Auth chưa có side effect.
+- `429`/rate limit, email send limit, invalid email, email not authorized, duplicate user và các lỗi provider-specific chỉ được xếp `definitive_no_side_effect` nếu contract hiện hành của đúng endpoint/phiên bản xác nhận không có user creation/invite side effect trước khi trả lỗi. Nếu không chứng minh được, mặc định `outcome_unknown` hoặc `needs_review` tùy dữ kiện.
+- Duplicate/existing account không được coi là `created_by_operation`; email trùng không phải provenance. Chỉ đi `preexisting_verified` khi quy trình claim/ownership độc lập đạt.
+- Không dùng `retryAfter` hoặc hết thời gian rate limit làm bằng chứng attempt trước không có side effect. Retry-After chỉ điều khiển thời điểm thử lại sau khi attempt cũ đã được chứng minh không có side effect.
+
+#### 39.3 Event/evidence bắt buộc
+
+- Mỗi kết luận no-side-effect phải ghi `evidence_code`, nguồn/contract version, thời điểm, actor/system và liên kết attempt. Không lưu raw response, token, email hoặc secret.
+- `local_preflight_not_dispatched` chỉ hợp lệ nếu orchestration có thể chứng minh chưa gửi request; nếu không có bằng chứng dispatch state thì không được dùng code này.
+- `provider_rejection_no_side_effect` phải map tới allowlist endpoint + provider error code + contract version được review; không cho Admin tự nhập error code để ép retry.
+- Error code không nhận diện, response không đầy đủ hoặc contract thay đổi: mặc định `outcome_unknown`.
+- Reconciliation tìm thấy Auth user không đủ để kết luận attempt đã tạo user. Phải có correlation/evidence đáng tin cậy gắn đúng Auth ID với operation + attempt.
+
+#### 39.4 Quy tắc retry
+
+Chỉ cho phép attempt mới nếu tất cả điều kiện đều đúng: (a) attempt trước có kết luận `definitive_no_side_effect` với evidence allowlist; (b) không còn request cũ có thể đang chạy theo contract; (c) operation vẫn hợp lệ, chưa cancelled/completed/needs_review; (d) actor/system có quyền và retry policy cho phép; (e) attempt mới có ID/number mới và được commit trước network call. Nếu thiếu bất kỳ điều kiện nào, không retry.
+
+**Khuyến nghị:** ở giai đoạn đầu, allowlist `provider_rejection_no_side_effect` để trống cho tới khi kiểm tra được contract của đúng Supabase Auth endpoint đang dùng. Chỉ các lỗi local preflight chứng minh chưa dispatch mới được coi là definitive. Tất cả lỗi sau dispatch mặc định unknown, trừ khi sau này có bằng chứng endpoint-specific đủ mạnh.
+
+**Phạm vi:** proposal; chưa sửa DDL 021, chưa viết RPC/worker, không chạy SQL, không thay đổi Supabase Test/Production.
