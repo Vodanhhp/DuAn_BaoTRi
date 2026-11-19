@@ -315,3 +315,139 @@ C. **Finalize membership** — RPC bằng JWT actor:
 4. Có cần users.view cho Admin/Technician/Viewer theo catalog hiện hành hay chỉ Admin? Catalog hiện seed users.view cho Viewer do action='view'; cần xác nhận chính sách hiển thị roster riêng trước khi bật.
 
 Không sửa Edge Function/migrations, không chạy SQL/RPC, không thay đổi Supabase.
+
+
+## 15. Thiết kế bảng Invite Saga và phục hồi
+
+### 15.1 Tách Operation Saga khỏi Shared Receipt
+
+Chốt hướng thiết kế: dùng bảng riêng `organization_member_invite_operations`; không mở rộng `organization_mutations` để lưu trạng thái nhiều pha.
+
+Lý do:
+- Shared Receipt chỉ ghi nhận kết quả cuối của một transaction PostgreSQL đã commit.
+- Invite Saga phải tồn tại qua nhiều transaction và một Auth Admin API call nằm ngoài PostgreSQL.
+- Saga có trạng thái trung gian, lỗi có thể phục hồi, và lịch sử tiếp quản; ép vào Receipt sẽ làm mờ ý nghĩa "một mutation đã commit".
+- Khi membership transaction hoàn tất, finalize RPC tạo Shared Receipt riêng cho mutation membership. Saga liên kết đến Receipt/membership ID đó.
+
+### 15.2 Cấu trúc dữ liệu đề xuất
+
+Bảng riêng, private, RLS bật và revoke SELECT/INSERT/UPDATE/DELETE trực tiếp từ PUBLIC/anon/authenticated. Mọi thao tác qua RPC được kiểm soát.
+
+Các trường đề xuất:
+
+| Trường | Kiểu dự kiến | Mục đích |
+|---|---|---|
+| organization_id | uuid | Tenant sở hữu invite |
+| operation_id | uuid | Idempotency key do client tạo, duy nhất trong organization |
+| actor_user_id | uuid | Actor ban đầu, lấy từ auth.uid(), bất biến |
+| normalized_email | text | Email chuẩn hóa; PII, chỉ RPC/service nội bộ được đọc |
+| role_code | text | Chỉ technician/viewer |
+| request_fingerprint | jsonb | Canonical server-built envelope, không nhận hash client |
+| status | text | Trạng thái saga ở mục 15.3 |
+| auth_user_id | uuid nullable | Auth user được liên kết sau khi xác minh |
+| auth_user_created_by_operation | boolean nullable | Chỉ true khi có bằng chứng đáng tin cậy từ Auth provisioning |
+| membership_id | uuid nullable | Membership sau finalize |
+| membership_receipt_mutation_id | uuid nullable | Liên kết Shared Receipt đã commit |
+| auth_attempt_started_at | timestamptz nullable | Mốc bắt đầu gọi Auth API |
+| auth_result_observed_at | timestamptz nullable | Mốc đã ghi nhận phản hồi Auth |
+| last_error_code | text nullable | Mã lỗi đã chuẩn hóa; không lưu raw response |
+| retry_after | timestamptz nullable | Backoff do server điều khiển |
+| adopted_by_user_id | uuid nullable | Admin tiếp quản, nếu chính sách cho phép |
+| adoption_reason | text nullable | Lý do bắt buộc khi tiếp quản |
+| version | bigint | Optimistic concurrency cho chuyển trạng thái saga |
+| created_at / updated_at | timestamptz | Audit timestamps |
+| completed_at | timestamptz nullable | Thời điểm hoàn tất |
+
+Khóa chính đề xuất `(organization_id, operation_id)`; FK organization `ON DELETE RESTRICT`, actor/auth user `ON DELETE RESTRICT`. Không cascade xóa operation/audit. Có index theo (organization_id,status,retry_after) cho worker/recovery và theo auth_user_id khi có giá trị.
+
+Email là dữ liệu cá nhân. Không đưa email, Auth metadata, invite URL, recovery URL, token, password hoặc raw Auth error vào Shared Receipt, Change Feed hay log ứng dụng. Không giả định pgcrypto đã cài. Nếu cần mã hóa email at-rest, phải có thiết kế key management riêng; không tự tạo cơ chế mã hóa yếu trong SQL.
+
+### 15.3 State machine
+
+Trạng thái đề xuất:
+
+- `requested`: intent đã được Begin RPC commit; chưa có Auth call được xác nhận bắt đầu.
+- `auth_calling`: worker/Edge Function đã claim attempt và bắt đầu Auth API.
+- `auth_outcome_unknown`: timeout/crash/response không rõ; bắt buộc reconcile, không gọi invite mới mù quáng.
+- `auth_user_resolved`: Auth user ID đã được xác định và ghi nhận; chưa tạo membership.
+- `finalize_pending`: sẵn sàng gọi Finalize RPC.
+- `completed`: membership + role assignment + Shared Receipt đã commit.
+- `needs_review`: không thể chứng minh quyền sở hữu Auth user hoặc có xung đột; cần Admin xử lý rõ ràng.
+- `failed_terminal`: lỗi xác định không thể retry theo cùng request; giữ audit, không tự xóa Auth user.
+- `cancelled`: chỉ được hủy trước khi Auth provisioning bắt đầu; sau khi Auth call đã bắt đầu phải reconcile.
+
+Không dùng trạng thái chung chung `failed` cho timeout. Timeout luôn là `auth_outcome_unknown` hoặc trạng thái tương đương unresolved.
+
+Mọi transition phải là compare-and-set theo operation_id + expected status/version; transition bất hợp lệ bị từ chối. State change và audit record phải cùng transaction. Không cho client cập nhật status trực tiếp.
+
+### 15.4 Phân chia RPC và quyền gọi
+
+1. `begin_member_invite`: authenticated actor JWT; derive auth.uid(); lock Organization → Actor Membership → Role/Permission; yêu cầu users.manage; claim operation ID và fingerprint. Cùng key/fingerprint trả trạng thái operation hiện tại; cùng key khác fingerprint bị từ chối.
+2. `claim_member_invite_auth_attempt`: chỉ server worker/Edge Function service identity; claim requested/retryable operation với lease/attempt token do DB sinh. Không cho actor client gọi.
+3. `record_member_invite_auth_result`: chỉ server identity; ghi auth_user_id và provenance sau Auth API. RPC phải kiểm tra operation state/attempt token; idempotent với cùng kết quả, từ chối kết quả xung đột. Không nhận actor_user_id làm authorization.
+4. `mark_member_invite_outcome_unknown`: chỉ server identity; chuyển attempt đang chạy sang unresolved khi timeout/crash được phát hiện. Không được tự kết luận Auth user không tồn tại.
+5. `finalize_member_invite`: authenticated actor JWT; recheck actor hiện tại, Organization, Membership, users.manage và role. Tạo membership + member_roles + Shared Receipt trong một transaction; liên kết Saga completed.
+6. `adopt_member_invite_operation`: chỉ bổ sung nếu sản phẩm chấp thuận Admin khác tiếp quản. Actor mới phải active và có users.manage tại thời điểm adoption; khóa Organization/actor membership/operation; bắt buộc reason; ghi append-only adoption audit. Không sửa actor_user_id hoặc fingerprint gốc. Adoption không tự động hoàn tất membership và không xóa Auth user.
+
+Service identity chỉ được thực hiện các bước orchestration Auth cần thiết. Các RPC server-only phải có EXECUTE grants hẹp, không cấp cho authenticated/anon; kiểm tra function owner, SECURITY DEFINER, search_path rỗng và schema qualification. Không dùng service_role để thay actor Admin trong Finalize RPC.
+
+### 15.5 Auth provisioning và crash window
+
+Có crash window không thể loại bỏ bằng transaction PostgreSQL: Auth API có thể tạo user thành công nhưng Edge Function chết trước khi lưu auth_user_id vào Saga.
+
+Vì vậy:
+- Claim attempt trước Auth API; lưu attempt ID và trạng thái auth_calling.
+- Nếu response thành công, ghi auth_user_id ngay bằng server-only RPC.
+- Nếu timeout/crash, chuyển auth_outcome_unknown; recovery dùng Auth Admin API để tìm user theo email đã chuẩn hóa và kiểm tra metadata/provenance có thể xác minh.
+- Không coi việc tìm thấy email trùng là bằng chứng user được tạo bởi operation này.
+- Nếu không có bằng chứng chắc chắn, chuyển needs_review; không tự động gắn user và không xóa user.
+- Không dựa vào user_metadata do người dùng có thể sửa làm bằng chứng ownership. Nếu muốn gắn operation marker, phải đánh giá khả năng ghi app_metadata sau create và crash window giữa create/marker. Marker chưa được ghi không chứng minh user không do operation tạo.
+- Nếu Auth user tồn tại trước invite, có thể liên kết theo chính sách invite hiện hành chỉ sau xác minh phù hợp; tuyệt đối không đánh dấu auth_user_created_by_operation=true.
+- Một lần Auth API trả lỗi rõ ràng vẫn cần phân loại theo mã lỗi; chỉ retry lỗi transient sau khi đã xác minh không có user được tạo.
+
+### 15.6 Lease, retry và worker
+
+- Lease/attempt token được DB tạo; worker phải claim operation bằng atomic UPDATE/RETURNING hoặc RPC tương đương.
+- Hết lease chỉ cho phép worker khác reconcile trạng thái, không tự động gọi invite API lần nữa.
+- Mỗi lần retry có attempt record riêng; operation_id không đổi.
+- Retry backoff do server quyết định; giới hạn số lần gọi Auth API và có trạng thái needs_review khi vượt ngưỡng.
+- Không giữ transaction hoặc row lock trong lúc gọi mạng/Auth API.
+- Không dùng đồng hồ client để quyết định lease hết hạn; dùng clock_timestamp() phía DB.
+- Nếu không có worker chạy nền ở giai đoạn đầu, Admin có thể mở màn hình trạng thái và kích hoạt recovery có kiểm soát; không biến thao tác refresh thành lệnh gửi invite mới.
+
+### 15.7 Adoption và quyền phục hồi
+
+Đề xuất cho phép Admin khác tiếp quản operation unresolved bằng RPC adoption riêng, nhưng đây là quyết định sản phẩm cần xác nhận trước SQL:
+- Admin mới phải có Auth hợp lệ, Organization active, membership active và users.manage tại thời điểm adoption.
+- Không thay đổi actor gốc; ghi adopted_by, reason, timestamp trong audit append-only.
+- Admin tiếp quản có thể reconcile, xác minh Auth user, hoặc finalize theo policy; không được bỏ qua fingerprint, role allowlist hoặc target checks.
+- Không cho adoption khi operation completed/cancelled hoặc Auth ownership đang tranh chấp.
+- Nếu actor gốc bị suspend/revoke, operation không tự được finalize dưới danh tính actor cũ. Admin khác chỉ tiếp tục sau adoption được audit.
+- Việc adoption không cấp quyền xóa Auth user. Compensation vẫn theo policy chứng minh ownership và recheck state.
+
+### 15.8 Compensation
+
+Mặc định an toàn: không tự động delete Auth user trong Saga recovery. Chỉ thiết kế compensation tự động sau khi có bằng chứng Auth user được operation tạo, chưa có membership commit, chưa xác nhận email/được dùng ở nơi khác, và trạng thái được recheck ngay trước xóa. Nếu bất kỳ điều kiện nào không chứng minh được, giữ Auth user và chuyển needs_review.
+
+### 15.9 Kiểm thử bắt buộc
+
+- Crash trước Auth call; crash trong Auth call; Auth tạo user nhưng response mất; crash sau khi lưu auth_user_id; crash sau finalize commit nhưng response mất.
+- Hai worker cùng claim một operation; lease hết hạn trong khi Auth call còn chạy.
+- Cùng operation ID/fingerprint replay; cùng ID khác email/role/org bị từ chối.
+- Email đã có Auth user; Auth invite trả duplicate; user xác nhận email trước finalize.
+- Actor bị suspend, mất users.manage hoặc Organization bị suspend giữa Begin và Finalize.
+- Admin khác adoption đồng thời với actor gốc finalize; chỉ một transition thắng theo version/lock.
+- Auth user ownership không rõ: không gắn tự động, không xóa.
+- Membership commit thành công nhưng Saga response bị mất: replay kiểm tra Shared Receipt, không tạo membership lần hai.
+- RPC server-only không gọi được từ anon/authenticated; Edge Function không thể giả mạo actor của Finalize.
+- PII không xuất hiện trong Receipt, Change Feed, client error, logs hoặc telemetry.
+- Retention: operation/audit không bị cascade delete; quy trình archive/cleanup phải có phê duyệt và không xóa operation unresolved.
+
+### 15.10 Quyết định còn mở
+
+1. Có cho Admin khác adoption Invite unresolved không? Đây là đề xuất kỹ thuật, chưa mặc định là quyết định đã được người dùng phê duyệt.
+2. Giai đoạn đầu có worker nền hay chỉ recovery thủ công từ giao diện Admin?
+3. Chính sách liên kết Auth user đã tồn tại/chưa xác nhận email có tiếp tục như hiện tại không, hay mọi invite phải đi qua email invitation mới?
+4. Có chấp nhận giữ Auth user mồ côi ở trạng thái needs_review thay vì tự động xóa trong các tình huống không chứng minh được ownership không? Khuyến nghị CÓ.
+
+Chưa tạo SQL draft, chưa sửa Edge Function/migration, không chạy SQL/RPC, không thay đổi Supabase.
