@@ -2709,3 +2709,14 @@ Không được tuyên bố mọi writer đã được test cho đến khi hoàn
 - Maintenance log là append-only, FK RESTRICT tới Asset/Task/Checklist Result. Cặp thực tế cần test là Task delete ↔ Log insert (không phải Plan ↔ Log theo FK hiện tại). Target khóa Task trước khi tạo log; FK RESTRICT giữ lịch sử.
 - Checklist publish phải khóa Template, tạo Version và cập nhật current_version nguyên tử. Result submit tham chiếu Template + đúng Version; chọn rõ semantics: cho phép hoàn tất version đã bắt đầu bằng version ID cố định, hoặc chỉ cho current version và khóa Template `FOR SHARE` khi submit.
 - Các thứ tự trên là proposal để thiết kế test, chưa phải lock protocol đã triển khai. Cần rà caller thực tế, DML privileges, FK timing và transaction isolation trước khi thực thi.
+
+## 72. Runtime writer status – Cloud và Local-first modules
+
+- Linked Asset edit trong `App.tsx` thực sự gọi Lease acquire/release và `applyAssetMutationWithEditLock`; đây là đường Cloud business write đang được dùng.
+- CloudAssetsPanel gọi `importCloudAssetPreservingIdentity` theo thao tác batch có chủ đích; import giữ Local UUID/code và dùng RPC riêng. Cần concurrency test giữa batch import với create/import khác cùng Counter và cùng Asset ID/code.
+- CloudAssetsPanel gọi `saveCloudAssetCodeConfig` để PostgREST INSERT/UPDATE `organization_settings`; đây là Cloud writer trực tiếp đang hoạt động, RLS settings.manage có hiệu lực nhưng không tạo serialization với create/import đang đọc config.
+- `createCloudAsset`/`create_asset_with_code` hiện chỉ thấy helper, không thấy caller runtime. Không gán nó là đường tạo Asset thông thường; handler `saveAsset` vẫn Local-first.
+- Inventory, Maintenance và Checklist handlers hiện ghi Dexie + syncQueue. Không tìm thấy Cloud writer runtime; inventory movement INSERT policy chưa được cấp. Chưa chạy DB concurrency test cho các module này.
+- `cloudSync.ts` là legacy path, không có caller runtime được tìm thấy; giữ disabled.
+
+Kết luận: ưu tiên concurrency test đang có ý nghĩa là linked Asset Lease/mutation, Cloud import batch ↔ Counter/Asset, và Settings update ↔ import/create helper. Các module Local-first chỉ được đưa vào test Cloud sau khi có RPC + caller triển khai và được review.
