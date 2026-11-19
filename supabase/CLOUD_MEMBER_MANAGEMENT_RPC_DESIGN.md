@@ -1565,3 +1565,62 @@ Ghi chú: server-only RPC không cấp EXECUTE cho anon/authenticated; actor JWT
 6. Các transition CHECK trong DDL chỉ giới hạn enum; transition graph/CAS/version phải nằm trong RPC.
 
 **Kết luận:** Ma trận trên là baseline để review implementation. Không có SQL, RPC hoặc worker nào được tạo/chạy trong bước này.
+
+
+## 33. Static schema adequacy review DDL 021 so với Invite Saga §32 (19/11/2026)
+
+**Kết luận:** DDL 021 hiện đủ làm khung lưu operation + append-only audit, nhưng chưa đủ điều kiện triển khai toàn bộ transition/RPC contract §32. Không chỉnh DDL ở vòng này; dưới đây là gap analysis để tránh thêm cột/bảng khi chưa chốt semantics.
+
+### 33.1 Gap bắt buộc trước implementation
+
+| Hạng mục | DDL hiện có | Khoảng trống / rủi ro | Hướng xử lý |
+|---|---|---|---|
+| Attempt history | auth_attempt_count, current_attempt_id, started_at, result_observed_at, lease_expires_at, retry_after | Chỉ giữ attempt hiện tại; mất lịch sử từng lần gọi, outcome, lỗi phân loại, lease và reconciliation | Manual recovery có thể tạm chấp nhận nếu không cần forensic retry; khuyến nghị bảng attempt append-only trước worker hoặc nếu cần audit từng lần gọi |
+| Auth provenance | auth_user_id + auth_user_created_by_operation boolean nullable | Boolean không giải thích bằng chứng, thời điểm, attempt hoặc nguồn xác minh; không đủ phân biệt created, pre-existing, unknown/conflict | Định nghĩa provenance enum + evidence reference/verified_at/verified_by; không lưu token/PII thừa; không cho finalize nếu provenance chưa đạt policy |
+| Status/attempt consistency | CHECK enum status và một số CHECK cho resolved/completed | Có thể lưu auth_calling nhưng thiếu current_attempt_id/lease; unknown không có attempt; cancelled dù đã có Auth user; completed thiếu attempt/result timestamps | Thêm CHECK theo trạng thái sau khi chốt semantics; RPC vẫn enforce CAS/version/transition graph |
+| Immutable intent | organization_id, operation_id, actor_user_id, normalized_email, role_code, request_fingerprint | DDL không ngăn update các cột intent; RPC SECURITY DEFINER có thể vô tình overwrite | RPC chỉ update allowlist cột; cân nhắc trigger bảo vệ immutable fields; fingerprint phải canonical/stable |
+| Fingerprint representation | request_fingerprint jsonb object | Không có canonicalization/hash contract; chưa chỉ rõ có chứa email PII hay không | Đặc tả canonical JSON/hash hoặc structured fields; không đưa plaintext email vào Receipt/log; cùng operation ID khác intent phải reject |
+| Adoption | adopted_by_user_id/reason/at | Chỉ biểu diễn một lần adoption; chưa có lịch sử tiếp quản nhiều lần | Nếu chỉ cho một adopter duy nhất thì giữ; nếu cho phép chuyển tiếp nhiều lần, dùng adoption event history append-only |
+| Audit idempotency/order | audit_id + occurred_at; invite_operation_id | Không có transition version/sequence hoặc unique key; retry RPC có thể tạo audit duplicate nếu RPC không chống | Gắn transition version/sequence hoặc event ID duy nhất; unique constraint theo operation + version/event key; audit insert cùng transaction CAS |
+| Audit event shape | CHECK actor, action, target, mutation, JSON keys | Chưa bắt buộc before/after saga_status cho state.change; chưa buộc role/status action có đúng key tương ứng | Bổ sung shape CHECK sau khi chốt action semantics; RPC xác thực giá trị trước/sau |
+| Membership linkage | membership_id scalar; membership_receipt_mutation_id scalar | Không có FK/unique relationship tới membership/receipt; có thể lưu ID sai nếu RPC lỗi | Giữ scalar để bảo toàn lịch sử nhưng RPC xác minh membership/receipt đúng org/operation; cân nhắc unique constraint |
+| PII at rest | normalized_email plaintext | RLS/revoke không mã hóa dữ liệu; DB dump/backup/owner vẫn có thể đọc | Chốt threat model, encryption/key management, backup/restore và lookup; không để key cạnh ciphertext trong DB |
+| Retention | Không có cleanup | FK RESTRICT và PII có thể tồn tại vô thời hạn; unresolved operation không thể xóa tùy tiện | Policy riêng cho completed/terminal/unresolved/audit/backup; archive/anonymize không phá replay, legal hold và audit |
+| Actor/adopter authorization | FK Profile only | FK không chứng minh actor/adopter active trong đúng organization hoặc có users.manage tại thời điểm thao tác | RPC khóa org + membership + role/permission và xác minh tại thời điểm mutation |
+| Error/recovery data | last_error_code regex | Không có phân loại retryability, Auth response class hoặc recovery evidence; tránh lưu raw Auth response | Error code allowlist + sanitized classification; không lưu raw response/token/email |
+
+### 33.2 Ma trận trạng thái — yêu cầu nhất quán dữ liệu tối thiểu
+
+Các CHECK dưới đây là hướng thiết kế cần chốt trước khi chỉnh DDL, không phải SQL đã được áp dụng:
+
+- requested: chưa có Auth attempt; current_attempt_id/lease/auth_user_id/completed_at phải null; count bằng 0.
+- auth_calling: current_attempt_id và auth_attempt_started_at phải có; lease phải có; attempt count > 0; chưa completed.
+- auth_outcome_unknown: giữ current_attempt_id của attempt unresolved; lease cũ được ghi nhận hoặc hết hạn theo protocol; không xóa dấu vết attempt.
+- auth_user_resolved/finalize_pending: auth_user_id + provenance đủ tin cậy + resolved_initial_status phải có; không còn Auth call đang chạy.
+- needs_review: phải có reason/error classification hoặc review event; không tự retry và không tự finalize nếu chưa có quyết định/evidence.
+- failed_terminal: chỉ khi lỗi definitive, Auth outcome được chứng minh và không còn Auth user cần xử lý; timeout không được vào trạng thái này.
+- cancelled: chỉ khi Auth provisioning chưa bắt đầu; không có auth_user_id và không có attempt từng được claim.
+- completed: auth_user_id, provenance, resolved_initial_status, membership_id, membership_receipt_mutation_id, completed_at và receipt liên quan phải được xác minh cùng transaction.
+
+Lưu ý: auth_outcome_unknown có thể tồn tại lâu; không đặt CHECK buộc lease còn hiệu lực. lease_expires_at là thời điểm hết hạn, không phải bằng chứng Auth request đã dừng.
+
+### 33.3 Quyết định đề xuất để khóa schema
+
+1. **Attempt history:** chưa có worker nền. Tuy vậy, trước khi triển khai RPC manual recovery cần tối thiểu có attempt ID không tái sử dụng, started/finished time, outcome classification và audit transition. Nếu cần lịch sử chi tiết từng Auth call, tạo bảng append-only organization_member_invite_attempts trước RPC; không đợi đến khi có worker.
+2. **Provenance:** dùng các trạng thái rõ nghĩa như created_by_operation, preexisting, verified_existing, unknown, conflict; chỉ trạng thái đã được policy cho phép mới được finalize. Không coi email match là provenance.
+3. **Fingerprint:** lưu digest canonical của intent, không lưu object chứa plaintext email; fingerprint bind organization, actor gốc, operation type, normalized-email digest, role và immutable options. Expected-current-state nếu có chỉ là precondition kiểm tra sau lock, không lấy live DB state làm fingerprint.
+4. **Adoption:** quyết định hiện tại cho phép Admin khác tiếp quản unresolved operation. Nếu chỉ cần một lần adoption thì cột hiện tại đủ biểu diễn adopter hiện hành; audit event phải ghi từng lần. Nếu cần chuyển adopter nhiều lần, thêm history table trước implementation.
+5. **Audit sequence:** mỗi Saga transition có version tăng đơn điệu; audit event lưu version/transition ID để retry không ghi trùng và có thể tái dựng thứ tự.
+6. **PII:** chưa promote khi chưa có quyết định key management, backup và retention. Hash email phải dùng keyed HMAC nếu cần chống dò từ điển; hash không khóa không đủ bảo vệ email.
+7. **Status CHECK:** chỉ thêm sau khi xác nhận state invariants, để không vô tình chặn trạng thái recovery hợp lệ.
+
+### 33.4 Thứ tự công việc tiếp theo
+
+1. Chốt provenance model và fingerprint format.
+2. Chốt có cần attempt history table ngay ở giai đoạn manual recovery không.
+3. Chốt một lần hay nhiều lần adoption; audit sequence.
+4. Chốt PII encryption/key management và retention.
+5. Sau đó mới sửa DDL 021, chạy parser/clone tests, rồi mới thiết kế RPC SQL.
+6. Không chạy trên Supabase Test/Production cho đến khi có phê duyệt riêng.
+
+**Kết luận cuối:** Không promote DDL 021 ở trạng thái hiện tại. Không có thay đổi DDL, migration, RPC, Edge Function hoặc Supabase trong vòng review này.
