@@ -3475,3 +3475,39 @@ Làm rõ Local-first: đối với Asset đã mapping Cloud, Local được ghi 
 - Đã fetch lại các file trên main và xác nhận handler, truy vấn tenant-scoped, transaction và nút nhận ở cả danh sách đang quản lý/lưu kho. Không sửa App.tsx, assetEditLocks, SQL/migration, RPC, RLS, syncQueue worker hoặc dữ liệu Cloud.
 - Kiểm tra GitHub workflow runs cho commit code: không có workflow run được trả về; commit combined status không có status check. Vì vậy chưa xác nhận build/TypeScript PASS từ CI. Chưa có kiểm thử runtime; không đánh dấu chức năng PASS.
 - Bước tiếp theo: cần chạy build/TypeScript qua môi trường dự án hoặc thiết lập CI hiện có; chỉ sau đó mới hướng dẫn nhận đúng một Asset Cloud về Local trên Mobile và kiểm tra UUID/code/mapping. Không thử trên Local PC có 60 Asset và không reset dữ liệu.
+
+
+## 28. Kiểm thử runtime Cloud → Local và Asset Edit Lease PC–Mobile (19/11/2026)
+
+### 28.1 Nhận một Asset Cloud về Local trên Mobile
+- Build local do người dùng chạy: `npm.cmd run build` hoàn tất `tsc -b && vite build`; Vite build thành công.
+- Thử truy cập Vite qua IP LAN ban đầu không vào được do dev server chưa lắng nghe đúng interface. Sau khi khởi động lại bằng `npm.cmd run dev -- --host 0.0.0.0`, điện thoại truy cập được `http://192.168.0.2:5173/`.
+- Trên origin IP LAN, Cloud hiển thị đúng 1 Asset; người dùng nhấn “Nhận về Local”, sau đó xác nhận Local có đúng 1 Asset.
+- Người dùng đối chiếu UUID của Asset Local trên Mobile với UUID Cloud và xác nhận giống hệt.
+- Khi quay lại domain HTTPS, Local trên domain ban đầu chưa có Asset do IndexedDB được phân vùng theo origin. Người dùng nhận lại đúng Asset duy nhất từ Cloud trên domain HTTPS; xác nhận Local có 1 Asset và UUID trùng Cloud.
+- Không nhận hàng loạt, không reset Local PC, không bật đồng bộ tổng thể. Không khôi phục ảnh, checklist, nhật ký, vật tư hoặc các bảng nghiệp vụ khác.
+- Lỗi `crypto is not a function` xuất hiện khi thử mở form sửa trên origin HTTP IP LAN. Không tiếp tục kiểm thử trên origin này; quay lại domain HTTPS. Không ghi nhận đây là lỗi Edit Lease vì chưa xác minh nguyên nhân ở mã nguồn.
+
+### 28.2 Kiểm thử Edit Lease giữa PC và Mobile
+- Dùng cùng một Asset đã được nhận về Local trên domain HTTPS; người dùng xác nhận UUID trên PC và Mobile giống hệt nhau.
+- Cùng một tài khoản:
+  - PC mở form Sửa và giữ lease; Mobile thử mở Sửa cùng Asset thì bị chặn, UI hiển thị thiết bị đang bị khóa bởi tài khoản đang giữ lease: PASS.
+  - Sau khi PC thoát form không lưu, tiếp tục kiểm tra chiều ngược lại: Mobile giữ lease thì PC bị chặn: PASS.
+  - Mobile thoát form không lưu; PC mở lại được quyền Sửa sau khi lease được giải phóng/hết hiệu lực: PASS theo quan sát người dùng.
+- Hai tài khoản khác nhau:
+  - PC đăng nhập tài khoản A, Mobile đăng nhập tài khoản B.
+  - PC giữ lease thì Mobile bị chặn; Mobile giữ lease thì PC bị chặn: PASS theo xác nhận người dùng.
+- Các lần thử chỉ mở form và kiểm tra quyền khóa; không thay đổi hoặc lưu dữ liệu Asset trong phép thử hai chiều này.
+
+### 28.3 Kết luận và giới hạn
+- [x] Build production local: PASS theo output người dùng cung cấp.
+- [x] Nhận chọn lọc một Asset Cloud về Local trên Mobile; UUID khớp Cloud: PASS theo xác nhận người dùng.
+- [x] Đối chiếu cùng UUID trên PC và Mobile: PASS theo xác nhận người dùng.
+- [x] Edit Lease cùng một tài khoản, PC giữ khóa → Mobile bị chặn: PASS.
+- [x] Edit Lease cùng một tài khoản, Mobile giữ khóa → PC bị chặn: PASS.
+- [x] Thoát form trên Mobile, PC mở lại được quyền Sửa: PASS.
+- [x] Edit Lease với hai tài khoản khác nhau, kiểm tra cả hai chiều PC/Mobile: PASS theo xác nhận người dùng.
+- Chưa xác minh hai tài khoản thuộc cùng organization hay khác organization trong phép thử này; không dùng kết quả khóa để kết luận về cách ly tenant hoặc phân quyền cross-organization.
+- Chưa kiểm thử lưu thay đổi đồng thời, heartbeat failure riêng biệt, takeover khi lease hết hạn trong lúc đang sửa, hoặc phục hồi mutation pending sau reload.
+- Chưa nghiệm thu toàn bộ Asset Edit Lease + Mutation Receipt; phạm vi PASS hiện tại chỉ là các tình huống acquire/block/release đã nêu.
+- Không bật đồng bộ nghiệp vụ tổng thể; không thay đổi code, SQL/migration hoặc dữ liệu Cloud trong phiên kiểm thử này.
