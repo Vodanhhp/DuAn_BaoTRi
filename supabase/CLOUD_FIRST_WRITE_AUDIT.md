@@ -370,3 +370,4 @@ Người dùng xác nhận:
 - Draft 019 giữ root Log ID/FK, tạo append-only revisions, backfill revision 1 dạng legacy_baseline, thêm permission logs.revise cho Admin role, RLS SELECT theo logs.view.
 - Đã xác định RPC revise phải kiểm tra đồng thời has_org_role(org,'admin') và has_org_permission(org,'logs.revise') để custom role không thể tự được cấp quyền Admin-only.
 - Hai draft chưa phải migration áp dụng; chưa chạy SQL, chưa thay đổi DB, grants trực tiếp hoặc UI.
+\n\n## 18. Đối chiếu Local Movement fields với Cloud schema (19/11/2026)\n\n- Local Movement có `note` và `performedBy`; handler hiện gán `note` trùng `reason`, vì vậy Cloud không cần cột note trùng lặp.\n- Bổ sung đề xuất `performed_by_label` để giữ tên hiển thị snapshot; `created_by_user_id` mới là actor xác thực.\n- Chưa sửa UI/mapping; draft schema được cập nhật để có field label tùy chọn.\n
