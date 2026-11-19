@@ -536,3 +536,72 @@ Không thể xác định loại từng queue row chỉ từ `tableName`, `recor
 - Cloud-first không cần một outbound queue cho business writes offline. Chỉ giữ Local draft trong UI; sau Cloud commit mới ghi business snapshot Local. Nếu Cloud commit thành công nhưng Local write thất bại, phục hồi bằng cùng Receipt/mutation ID.
 
 Không sửa code, không sửa Dexie schema, không chạy worker, không ghi/xóa dữ liệu Local hoặc Cloud trong lượt này. Chỉ cập nhật tài liệu review.
+
+
+## 15. Bản đồ đầy đủ các điểm ghi Local và thứ tự cutover
+
+Rà soát tĩnh toàn bộ `src/App.tsx` (242,971 ký tự), `src/db.ts`, `src/CloudAssetsPanel.tsx`, `src/lib/assetsCloud.ts`, `src/lib/assetEditLocks.ts`; quét các lời gọi Dexie mutator và helper queue trong App.
+
+### 15.1 Danh sách business write sites còn Local-first/hybrid
+
+| Thứ tự ưu tiên | Handler / luồng | Local write hiện tại | Cloud-first cần thay |
+|---|---|---|---|
+| P0 | `saveAsset()` tạo Asset mới/chưa linked | Asset + queue; tự cấp code Local | RPC create/import có Receipt, ID ổn định, code uniqueness; Local chỉ sau commit |
+| P0 | `saveAsset()` sửa Asset đã linked | Ghi candidate vào `db.assets` + `assetMutations` trước RPC; giữ pending khi lỗi | Đây là ngoại lệ Local-first còn tồn tại. Cần chuyển thành UI draft → RPC + Receipt → Local snapshot/link/mutation ledger sau commit; giữ Edit Lease |
+| P0 | `addMovement()` | Cập nhật Inventory quantity + thêm Movement + 2 queue entries trong Dexie transaction | Một RPC atomic cho Nhập/Xuất, balance check, row_version, Receipt; Adjustment theo quyết định kiểm kê đã chốt |
+| P0 | `completeTask()` | Cập nhật Task completed + tạo Log + 2 queue entries | Một RPC atomic Task + Log root + revision 1 + Receipt + change events |
+| P1 | `saveItem()` | `putAndQueue` Inventory metadata | RPC create/update metadata; tạo mới có thể kèm opening stock theo quyết định Admin/Technician; metadata update không nhận quantity |
+| P1 | `saveTask()` | `putAndQueue` Task | RPC create/update, permission và expected row_version |
+| P1 | `saveMaintenancePlans()` | bulkPut nhiều Plan + queue từng record | Chốt batch là một mutation all-or-nothing hay mỗi Plan là mutation riêng; sau đó RPC/Receipt tương ứng |
+| P1 | `deleteMaintenancePlan()` | delete Local + queue delete | RPC delete Admin-only + Receipt/tombstone |
+| P1 | `saveLog()` | `putAndQueue` Log; hiện cho phép sửa cùng record theo helper chung | Tạo mới RPC Log + revision 1; sửa Log đã Cloud lưu phải dùng `logs.revise` Admin-only, append-only revision; không UPDATE root |
+| P1 | `archiveAsset()`, `restoreAsset()`, `changeAssetStatus()` | `putAndQueue` cho Asset chưa linked; linked hiện bị gate chặn | RPC status/archive/restore + Receipt/version; policy linked và unlinked phải thống nhất |
+| P1 | `ensureDefaultChecklist()` | Tự tạo Template + Version + queue khi mở lịch sử Checklist | Bỏ side-effect lúc xem; tạo draft/preview; Admin chủ động lưu qua RPC Template + Version atomic |
+| P1 | `saveTemplate()` | Template put + Version add + queue | RPC atomic Template + Version + Receipt |
+| P1 | `saveResult()` | `addAndQueue` Checklist Result | RPC append-only result + Receipt; Admin/Technician |
+| P2 | `saveCloudAssetCodeConfig()` | Ghi trực tiếp PostgREST `organization_settings` (update/insert) | Chuyển sang RPC Cloud-first + settings.manage + version/Receipt; không dùng direct table write |
+| P2 | Asset ảnh | Hiện ảnh Local trong IndexedDB; Cloud mapper trả images rỗng | Storage private + metadata/policy riêng; chưa được upload base64 vào Postgres |
+
+### 15.2 Các Local write đặc biệt — không đưa vào business RPC
+
+- **Cloud Asset import → Local** (`CloudAssetsPanel.tsx`): đọc lại Asset từ Cloud, kiểm tra collision, rồi ghi Asset + Cloud Link trong một Dexie transaction. Đây là import/cache có chủ đích, không phải business write ngược Cloud. Giữ luồng riêng và bảo đảm không ghi đè Asset Local.
+- **Backup restore**: thay thế nhiều bảng Local và hiện restore cả `syncQueue`. Đây là Local recovery, không phải Cloud business mutation. Cần preflight tất cả unresolved mutations/receipts; không tự replay queue từ file backup và không xóa pending chưa đối soát.
+- **Demo data**: tạo 30 Asset + 30 Inventory; tạo thêm 15 Asset. Hiện các luồng này vẫn ghi queue nghiệp vụ. Phải tách demo/test dataset hoặc bỏ queue; chặn upload demo tuyệt đối.
+- **Draft rekey** (`rekeyAssetDraftId`, `rekeyInventoryDraftId` trong `src/db.ts`): thay UUID và cập nhật các foreign key/queue Local trong Dexie transaction. Đây là migration danh tính Local, không phải business update Cloud. Trước cutover phải xử lý draft còn tham chiếu và queue rekey; không tự biến rekey thành mutation Cloud mới.
+- **Auth profile/password**: thuộc Supabase Auth, không phải business table/queue. Giữ luồng Auth riêng, kiểm tra kết quả Auth trước khi báo thành công.
+- **Theme, compact mode, device ID, danh mục vị trí vật tư, bật/tắt location**: localStorage/personal hoặc cấu hình thiết bị. Không cần Cloud business RPC. Riêng danh mục/cấu hình có phạm vi doanh nghiệp cần chốt rõ Local-only hay chuyển sang organization settings; không tự đồng bộ.
+- **Export/print/report và thao tác đọc**: không phải business write; không đưa vào mutation queue.
+
+### 15.3 Rủi ro xuyên suốt cần xử lý trong thiết kế client
+
+1. ID của nhiều entity được tạo ngay khi mở form hoặc tạo draft; cần phân biệt draft ID và official ID, không gửi mutation chỉ vì người dùng mở form.
+2. Một số handler dùng `blockViewer`/role flag, không phải capability riêng. Khi chuyển Cloud-first phải khóa nút theo permission catalog và server vẫn là nơi quyết định cuối.
+3. Asset linked hiện ghi Local candidate trước Cloud; đây là điểm phải chuyển sớm để đạt nguyên tắc Cloud commit trước Local.
+4. Batch Plan cần xác định mutation boundary; không thể tự suy diễn một lần Save nhiều Plan là nhiều request độc lập.
+5. Sau Cloud commit, Local Dexie apply có thể lỗi. Client cần phục hồi canonical snapshot bằng cùng mutation ID/Receipt; không tạo mutation mới.
+6. Không thay mọi `putAndQueue` bằng RPC chung. Mỗi nghiệp vụ cần RPC có schema allowlist, permission, version, transaction boundary và test riêng.
+
+### 15.4 Thứ tự cutover đề xuất
+
+1. **Nền tảng chung**: hoàn tất Receipt, row_version, change feed, transaction/lock order, permission checks, client mutation journal và cơ chế apply canonical snapshot sau commit. Sửa các SQL draft đã phát hiện lỗi tĩnh trước khi viết migration thực thi.
+2. **Asset**: linked edit (loại Local candidate trước RPC), create/import-preserving-identity, status/archive/restore; giữ Edit Lease và Asset Receipt trong chuyển tiếp. Reconcile Local-only/linked/pending/conflict trước khi bật từng luồng.
+3. **Inventory**: create + opening stock, metadata update, Nhập/Xuất, kiểm kê Adjustment; một giao dịch Cloud cho balance + movement.
+4. **Maintenance Log + Task**: Log create/revision; Task create/update/delete; complete Task + Log trong một RPC.
+5. **Maintenance Plan**: quyết định batch boundary rồi mới làm create/update/delete.
+6. **Checklist**: loại bỏ auto-create khi view; Template + Version; Result append-only.
+7. **Organization settings**: chuyển cấu hình mã Asset sang RPC.
+8. **Cleanup**: chỉ sau khi mọi vertical đã cutover và queue cũ đã kiểm kê/quarantine/reconcile mới tính đến việc bỏ helper/schema queue.
+
+### 15.5 Tiêu chí hoàn tất mỗi vertical
+
+- Không có business write nào ghi IndexedDB trước khi Cloud xác nhận commit.
+- Mỗi mutation có ID ổn định, payload chuẩn hóa bất biến và Shared Receipt; retry/replay không nhân đôi.
+- Conflict/permission/validation rejection giữ Local business snapshot nguyên trạng.
+- Timeout/lost response giữ trạng thái unknown; chỉ reconcile bằng cùng mutation ID.
+- Local apply sau Cloud commit có thể retry từ Receipt/canonical result.
+- Server kiểm tra Auth, organization, active membership, permission, row_version/lease và dữ liệu đầu vào.
+- Có test cho success, deny, stale version, duplicate, payload mismatch, rollback, timeout-after-commit, Local apply failure, concurrent clients và tenant isolation.
+
+### 15.6 Trạng thái
+
+Đây là bản đồ dựa trên static source scan và các handler đang có trên `main`. Chưa runtime-test toàn bộ UI, chưa xác minh trạng thái migration đã áp dụng ở Supabase, chưa sửa code/SQL, chưa chạy RPC/worker, và không ghi/xóa dữ liệu Local hoặc Cloud.
