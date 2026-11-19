@@ -1923,3 +1923,23 @@ Chỉ đọc tài liệu và catalog. Không SQL write, DDL, RPC, grants, role, 
 
 ### Trạng thái
 Read-only catalog, RLS/grants/policy/trigger/function inventory và static search. Không thay đổi schema, grants, role, data, RPC hoặc Supabase config.
+
+
+## 72. Cross-vertical Asset RPC và Member lock-order review – 20/11/2026
+
+### Asset RPC lock paths đã đọc
+- `create_asset_with_code`: gọi `has_org_permission(assets.create)`, sau đó đọc Organization Settings/Assets, upsert Asset Code Counter và INSERT Asset. Không khóa Organization, actor Membership, member_roles, Role hoặc Role Permission.
+- `import_asset_preserving_identity`: kiểm tra `has_org_permission(assets.import)`, sau đó xử lý import ledger/counter/Asset; không khóa các row authorization Organization/Membership/Role/Permission trước mutation.
+- `apply_asset_mutation_with_lock`: kiểm tra `has_org_permission(assets.update)`, tra Asset-specific Receipt, sau đó khóa Asset Edit Lease FOR UPDATE, khóa Asset FOR UPDATE, cập nhật Asset và ghi Asset Receipt. Không khóa Organization/Membership/role assignments/Role/Role Permission.
+- `update_asset_with_lock` và `set_asset_archived_with_lock`: kiểm tra permission trước, khóa Lease rồi cập nhật Asset; không khóa các row authorization.
+- `acquire_asset_edit_lock`/ `heartbeat_asset_edit_lock`: kiểm tra permission rồi ghi Lease; không khóa Membership/Role/Permission. `release_asset_edit_lock` là đường giải phóng Lease theo holder/token.
+- `has_org_permission`, `has_org_role`, `is_org_member` đều STABLE SECURITY DEFINER read helpers; không tự lấy row lock và không thể thay thế authorization locks.
+
+### Hệ quả concurrency
+- Hiện Asset RPCs và Member status/role RPCs không dùng chung lock chain. Ví dụ Asset mutation có thể đọc permission=true, sau đó một transaction khác suspend membership hoặc đổi role, nhưng Asset transaction không giữ lock trên Membership/assignment để serialize với thay đổi đó. Mutation có thể tiếp tục sau khi revoke đã commit tùy timing.
+- Đây là race về thời điểm hiệu lực revoke, không tự động chứng minh có thể vượt tenant boundary; nhưng nếu yêu cầu “revoke commit xong thì không có business write mới dựa trên quyền cũ”, các RPC cần một protocol chung.
+- Proposed Member order §25.1 chưa được áp dụng trong Asset RPC hiện tại. Khi Shared Receipt/Member cutover, phải quyết định có nâng các Asset RPC lên cùng Organization → Membership → assignment → Role → Permission lock order hay định nghĩa rõ semantics cho in-flight mutations. Không được thêm lock tùy tiện trước khi phân tích Lease/Asset/Receipt order.
+- Asset-specific Receipt path hiện kiểm tra write permission trước lookup Receipt; điều này đã được ghi nhận riêng là chưa khớp replay policy Shared Receipt khi permission bị thu hồi. Không sửa Asset RPC trong review này.
+
+### Trạng thái
+Chỉ đọc function definitions trong catalog Test và migration source. Không chạy RPC, không sửa SQL/function/lease/receipt, không thay đổi dữ liệu hoặc cấu hình.
