@@ -124,3 +124,17 @@ Mọi writer/revoker Organization, Membership, Role và Role Permission phải d
 ### 6.4 Ranh giới
 
 Mục này chỉ chuẩn hóa review. Chưa sửa supabase/drafts/020_organization_mutations_receipt_DRAFT.sql, chưa tạo migration, chưa sửa business RPC, chưa chạy SQL/RPC và chưa thay đổi Supabase Test/Production.
+
+
+## 7. Member Receipt operation/read policy và audit boundary
+
+Contract áp dụng cho Member RPC theo CLOUD_MEMBER_MANAGEMENT_RPC_DESIGN.md §27:
+
+- Operation codes: `member.create`, `member.role.change`, `member.status.change`, `member.remove`, `member.self.activate`.
+- Fingerprint server-built bind organization, actor, operation, target identity và toàn bộ input/state server-derived làm thay đổi kết quả. Không nhận actor, fingerprint, read permission list, affected refs hoặc result payload authoritative từ client.
+- Write permission quản trị: `users.manage`; self-activation là self-scoped, yêu cầu auth.uid() đúng chủ membership và email confirmation server-verified.
+- Full replay snapshot cho create/role/status chỉ khi hiện còn `users.view`; nếu thiếu chỉ acknowledgement tối thiểu. Remove chỉ acknowledgement tối thiểu; self-activation chỉ acknowledgement self-scoped. Không có roster Change Feed.
+- Receipt vẫn chỉ được claim/finalize cùng transaction với mutation. Audit append-only là record riêng, insert cùng transaction cho state transition; không thay thế Receipt.
+- Invite Saga operation ID là identity riêng của quy trình Auth external; `member.create` Receipt chỉ bao phủ bước finalize membership và bind Saga operation ID đã được xác minh. Không gộp Auth API side effect vào giả định PostgreSQL atomicity.
+
+Receipt DDL hiện tại chưa tự áp đặt operation-specific disclosure policy. Các Member RPC phải tự enforce policy trong SECURITY DEFINER transaction trước khi trả result. Không sửa draft 020 hoặc tạo migration trong bước review này.
