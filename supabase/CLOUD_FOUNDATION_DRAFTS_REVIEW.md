@@ -1477,3 +1477,17 @@ Cross-reference Member design §28:
 - Migration 013/014 là writer cũ chưa có Receipt/audit, service_role-only và nhận actor ID input; Auth trigger còn ghi membership status. Chưa được xem là tương thích contract mới.
 
 Cổng trước executable Member SQL: Test schema inventory read-only; chốt audit read permission + retention; chốt Saga PII lifecycle; thiết kế riêng audit/Saga DDL; thay/cutover toàn bộ membership writers và Auth trigger theo lock order; concurrency/RLS/grants tests. Chưa chạy SQL, chưa sửa code và chưa thay đổi Supabase.
+
+
+## 33. Kết quả live schema inventory trên BAOTRI-Mini-Test (19/11/2026)
+
+Đối chiếu Member design §29. Đã đọc metadata trực tiếp từ project `BAOTRI-Mini-Test` (PostgreSQL 17.12), không chạy DDL hoặc ghi dữ liệu.
+
+- `auth.audit_log_entries` tồn tại nhưng chỉ là Supabase Auth audit; không dùng làm business/member audit.
+- Không có audit nghiệp vụ/member riêng và không có Invite Saga operation table trong schema Test được truy vấn.
+- Hai bảng `public.asset_import_mutations` và `public.asset_mutation_receipts` là asset-specific idempotency/receipt, RLS enabled; truy vấn policy không thấy policy, grants quan sát được chỉ postgres/service_role. Không tái sử dụng cho Member audit/Saga.
+- Hai bảng trên có `relforcerowsecurity=false`; cần giữ nguyên semantics và quyền service-only hiện tại, không suy diễn rằng RLS giới hạn owner/service_role.
+- Audit nghiệp vụ và Invite Saga do đó vẫn cần thiết kế schema riêng, retention/PII policy, permission đọc audit riêng; không lấy `users.view` làm quyền đọc audit mặc định.
+- Kết quả chỉ là snapshot Test, không suy rộng Production. API list_migrations trả rỗng dù các bảng hiện hữu; không dùng nó làm bằng chứng migration chưa chạy.
+
+Không tạo migration, không sửa RLS/grants, không đọc PII, không thay đổi database.
