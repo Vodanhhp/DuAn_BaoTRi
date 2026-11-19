@@ -3699,3 +3699,31 @@ Hoàn thiện hợp đồng quyền/replay và quyết định điều chỉnh t
 3. Technician có được tạo vật tư kèm tồn đầu kỳ?
 4. Có cần lưu biên bản kiểm kê khi không chênh lệch?
 - Đã ghi phương án tại mục 14 của CLOUD_FIRST_WRITE_AUDIT.md. Đây chưa phải quyết định đã chốt; chưa sửa code/SQL/permission hoặc dữ liệu.
+
+
+## 39. Đã chốt quy tắc Kho và Nhật ký; cập nhật thiết kế Cloud-first (19/11/2026)
+
+### Quyết định đã chốt
+- Điều chỉnh tồn kho: nhập số tồn thực tế sau kiểm kê; server tự tính chênh lệch. Nếu không chênh lệch thì không tạo movement/biên bản.
+- Nhật ký đã lưu: chỉ Admin được sửa; sửa bằng revision mới append-only, có lý do; Technician chỉ được tạo Log.
+- Tồn đầu kỳ: Technician và Admin đều được nhập khi tạo vật tư; tồn đầu kỳ là một phần của `create_inventory_item` theo `inventory.create`.
+- Không hard-delete Log; draft trước Cloud submit được sửa trong form nhưng chưa ghi dữ liệu nghiệp vụ Local.
+
+### Hợp đồng Kho
+- `create_inventory_item`: `inventory.create`, initial_quantity >= 0; nếu > 0 thì tạo movement Nhập/Tồn đầu kỳ atomic; nếu 0 thì không movement.
+- `update_inventory_item_metadata`: `inventory.update`, tuyệt đối không nhận quantity.
+- `post_inventory_movement`: Nhập/Xuất, `inventory.adjust`, lượng dương; server lock và tính balance.
+- `adjust_inventory_count`: `inventory.adjust`, nhận counted_quantity >= 0 + reason bắt buộc + expected_version. Server tính delta có dấu. Delta 0 → no_change, không movement/version/event; khác 0 → cập nhật balance và ghi movement Điều chỉnh atomic.
+- Movement mới lưu balance_before, balance_after, counted_quantity, quantity_delta có dấu; cột quantity hiện tại vẫn là lượng tuyệt đối dương. Legacy values không được suy đoán để backfill.
+
+### Hợp đồng Nhật ký
+- Thêm permission `logs.revise` Admin-only; Technician giữ `logs.create`, không có quyền revise.
+- Root Log giữ ID ổn định + created_by_user_id; revision table append-only lưu đầy đủ snapshot, reason, actor, action, revision_no.
+- `revise_maintenance_log` yêu cầu `logs.revise`, expected_revision_no, reason; insert revision mới cùng shared receipt/change event.
+- `complete_maintenance_task` cập nhật Task + tạo Log revision 1 trong một transaction với `maintenance.update` + `logs.create`.
+- Client không được UPDATE/DELETE trực tiếp root/revision hoặc INSERT revision; đường ghi qua RPC kiểm tra quyền.
+- Task, Log, movement, receipt, change event phải commit/rollback đúng transaction boundary.
+
+### Trạng thái triển khai
+- Đã cập nhật thiết kế tại `CLOUD_INVENTORY_RPC_DESIGN.md`, `CLOUD_MAINTENANCE_LOG_REVISION_DESIGN.md`, audit mục 15.
+- Chưa sửa code, migration, RLS/grants, RPC hay dữ liệu; chưa chạy SQL/runtime test; chưa bật Cloud worker.
