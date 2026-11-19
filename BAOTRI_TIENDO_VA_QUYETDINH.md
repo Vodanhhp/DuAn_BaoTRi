@@ -3975,3 +3975,31 @@ Ngày 20/11/2026:
 Kết luận: onboarding gap của hướng createUser + app_metadata marker vẫn chưa được giải quyết. Trước khi chọn, cần test cô lập trên phiên bản Auth/SDK pin của BAOTRI: tạo recovery link cho user chưa xác nhận, kết quả verify và email_confirmed_at, đặt password, expiry/replay, custom email delivery, và liên kết an toàn với Saga attempt. Chưa triển khai. Giữ native inviteUserByEmail + fail-closed/manual review.
 
 Không sửa DDL/RPC/Edge Function, không chạy SQL, không thay đổi Supabase.
+
+
+## 64. Quy trình tài khoản Auth đã tồn tại: người nhận tự đăng nhập và chấp nhận lời mời (proposal, 20/11/2026)
+
+**Nguyên tắc:** email trùng, kể cả email đã xác minh, không cho phép Admin/người mời tự gắn Auth UUID vào membership. Người sở hữu tài khoản phải đăng nhập đúng tài khoản đó và chủ động chấp nhận lời mời.
+
+### Luồng đề xuất
+
+1. Admin có quyền tạo invitation intent bất biến: organization, email fingerprint đã chuẩn hóa, role, original actor, expiry và request fingerprint. Không gọi Auth provisioning (inviteUserByEmail, createUser) và chưa tạo membership/role.
+2. Giữ lời mời ở trạng thái chờ. Đề xuất state mới awaiting_existing_account_acceptance nhưng đây mới là proposal, chưa được thêm vào DDL 021.
+3. Người nhận đăng nhập vào tài khoản Auth hiện có. RPC giới hạn chỉ trả lời mời đang chờ khớp với email xác minh hiện tại của chính Auth user; danh tính lấy từ auth.uid() và dữ liệu Auth authoritative phía server, không nhận UID/email do client tự khai.
+4. Người nhận bấm chấp nhận. Transaction cuối phải kiểm tra lại: auth.uid(); Auth email có email_confirmed_at IS NOT NULL; email chuẩn hóa khớp fingerprint; lời mời còn pending/chưa hết hạn/chưa bị revoke; organization active; role hợp lệ; quyền của inviter hoặc cơ chế Admin reapproval; không có membership xung đột.
+5. Chỉ sau đó mới atomic commit membership + một role assignment + audit + Shared Receipt + Saga completion. Ghi nhận Auth UID của người chấp nhận. Trước thời điểm này không có membership, role hay tenant access.
+
+### Các nhánh cần xử lý
+
+- Existing account + verified email: chỉ đủ điều kiện sau khi chính tài khoản đó đăng nhập và explicit accept. preexisting_verified chỉ được ghi sau khi server xác minh UID + verified email và commit acceptance; email match đơn thuần không đủ.
+- Existing account + unverified email: chưa được accept; không auto-confirm, không reset password và không mặc định inviteUserByEmail gửi được email kích hoạt. Người dùng phải hoàn tất luồng xác minh Auth bình thường trước.
+- Email thay đổi, nhiều candidate, dữ liệu không nhất quán hoặc không xác minh được: needs_review hoặc yêu cầu lời mời mới; không tự gắn, không tự xóa Auth user.
+- Không có Auth account: tiếp tục nhánh provisioning user mới với policy provenance/timeout đã chốt.
+
+Pending-invite discovery phải tối thiểu dữ liệu, không lộ roster/Auth UUID/phone/token hoặc sự tồn tại tùy ý của email. RPC acceptance phải recheck mọi điều kiện trong transaction; danh sách lời mời trước đó chỉ là snapshot, không phải authorization. Accept lặp cùng operation/actor phải idempotent; cạnh tranh hoặc mismatch bị reject không có partial write.
+
+### Các điểm còn mở
+
+Cách thông báo lời mời cho tài khoản có sẵn (in-app hay email riêng); expiry/resend; decline/revoke; email thay đổi; nhiều lời mời; quyền inviter còn hiệu lực hay Admin khác reapprove; rate limit/audit retention; response shape và chống enumeration. Cần xác minh API/Auth version pin trước khi chọn delivery mechanism.
+
+**Trạng thái:** proposal để review, chưa phải quyết định schema đã duyệt. Chưa thêm state vào DDL 021, chưa tạo RPC/Edge Function, không chạy SQL, không thay đổi Supabase. Hiện tại vẫn giữ native inviteUserByEmail + fail-closed/manual review.
