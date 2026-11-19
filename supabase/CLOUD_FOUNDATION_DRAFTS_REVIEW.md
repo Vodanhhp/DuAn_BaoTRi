@@ -1556,3 +1556,8 @@ Các chi tiết còn mở: provider-specific correlation/evidence chứng minh k
 ## 41. Quyết định đã chốt về Attempt History và lease recovery (20/11/2026)
 
 Người dùng đã đồng ý mô hình hai bảng `organization_member_invite_attempts` (immutable header) và `organization_member_invite_attempt_events` (append-only history). Attempt được claim trước Auth call; không giữ DB transaction trong network call. Lease expiry chỉ cho phép takeover reconciliation, không cho phép gọi Auth lần nữa. `outcome_unknown` không phải definitive failure; chỉ retry khi có bằng chứng đáng tin cậy không có side effect, nếu không thì fail closed. Các chi tiết provider evidence, error classification, lease duration và quyền Admin takeover còn phải thiết kế. Chưa sửa DDL 021, không chạy SQL/Supabase.
+
+
+## 42. Phân loại lỗi Auth và điều kiện retry (20/11/2026)
+
+Đã lập policy proposal tại Member design §39: ba nhóm `definitive_no_side_effect`, `outcome_unknown`, `needs_review/conflict`. Không phân loại bằng HTTP status chung chung; 4xx/429/5xx đều không tự chứng minh không có side effect. Timeout, mất kết nối, crash hoặc response không đầy đủ sau dispatch mặc định unknown. Duplicate/existing email không phải `created_by_operation`, cần claim/ownership verification độc lập. Chỉ retry khi có evidence allowlist chứng minh request chưa dispatch hoặc endpoint contract cụ thể bảo đảm không side effect; allowlist provider rejection để trống cho tới khi kiểm chứng endpoint/version thực tế. Không sửa DDL, không chạy SQL/Supabase.
