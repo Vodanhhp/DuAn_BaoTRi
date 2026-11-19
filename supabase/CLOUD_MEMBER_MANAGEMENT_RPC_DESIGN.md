@@ -666,3 +666,54 @@ Theo xác nhận tiếp tục của người dùng, phiên bản hiện tại á
 ### Ranh giới
 
 Đã chốt policy một role hiện hành/membership cho phiên bản hiện tại. Chưa tạo migration SQL, chưa thay đổi migration 005/013, RPC, Edge Function, UI hoặc Supabase. Trước khi triển khai phải preflight dữ liệu thực tế trên Test và xác định cách chuyển tiếp legacy role.
+
+
+## 21. Audit toàn bộ consumer của legacy organization_members.role
+
+### 21.1 Kết quả static search
+
+Đã rà soát migrations 001/002/005/013/014, Edge Function quản lý thành viên, App.tsx, bootstrap script và các test liên quan. Những consumer quan trọng:
+
+| Consumer | Cách dùng hiện tại | Rủi ro / hướng xử lý |
+|---|---|---|
+| Migration 001 `has_org_role()` | So sánh trực tiếp `organization_members.role` | Migration 005 thay function để xét legacy OR member_roles; cần chuyển sang member_roles-only sau reconciliation |
+| Migration 005 `has_org_role()` | Admin/role true nếu legacy role OR assignment | Hai nguồn quyền có thể mâu thuẫn; legacy Admin không có assignment vẫn có quyền |
+| RLS migration 002 | DELETE Assets, Inventory, Tasks, Plans, Checklist Templates, Logs? dùng `has_org_role(...,'admin')` | Mọi policy phụ thuộc helper; helper đổi sai có thể mở hoặc khóa quyền xóa hàng loạt |
+| Draft 019 | Admin-only `logs.revise` yêu cầu `has_org_role(...,'admin')` | Cũng phụ thuộc nguồn role thống nhất |
+| Migration 013 | Role/status RPC đọc cả `m.role` và assigned role; chặn target nếu một trong hai là Admin | Khi hai nguồn lệch có thể từ chối sai hoặc che lỗi dữ liệu; thay bằng role assignment authoritative sau preflight |
+| Migration 014 | Remove RPC đọc cả legacy và assignment, sau đó yêu cầu current role technician/viewer | Legacy Admin không assignment bị chặn do current_role null; dữ liệu lệch tạo behavior không nhất quán |
+| Edge Function list | Fallback Admin nếu `row.role='admin'`; thiếu assignment khác trả unknown | Có thể hiển thị Admin dựa vào legacy trong khi permission helper đọc assignment; bỏ fallback sau migration |
+| App.tsx organization context | Đọc cột role nhưng không dùng trực tiếp; gọi has_org_role 3 lần để suy role | Có thể thay bằng một RPC context/permission response sau; không dùng legacy role ở client |
+| Bootstrap/test scripts | Một số báo cáo và test đọc legacy role trực tiếp | Giữ legacy chỉ trong diagnostics/backfill; đổi test nghiệp vụ sang member_roles |
+
+### 21.2 Nguyên tắc nguồn sự thật
+
+- `member_roles` là nguồn duy nhất quyết định vai trò và quyền sau khi migration cutover hoàn tất.
+- `organization_members.role` chỉ là compatibility mirror theo constraint cũ ('admin'/'user'), không được dùng để authorize, không được dùng fallback hiển thị.
+- Mapping mirror: role_code='admin' → legacy role='admin'; role_code='technician' hoặc 'viewer' → legacy role='user'. Mirror chỉ phục vụ code/diagnostics legacy trong giai đoạn chuyển tiếp.
+- Tất cả đường tạo membership, đổi role, bootstrap, invite finalize phải cập nhật assignment và mirror trong cùng transaction. Không có dual-write ngoài transaction.
+- Không bỏ cột legacy ngay. Chỉ loại bỏ sau khi search toàn repo và xác nhận không còn code, RLS, function, trigger, script hoặc integration đọc nó.
+
+### 21.3 Thứ tự cutover an toàn
+
+1. Read-only preflight toàn bộ membership: số membership active/invited/suspended; số assignment 0/1/>1; assignment trỏ role inactive; assignment organization mismatch; legacy admin không assignment; legacy admin lệch assignment; legacy user có assignment Admin; role không tồn tại/inactive.
+2. Xuất báo cáo định danh nội bộ cho Admin operator; không tự chọn/xóa assignment. Bất kỳ duplicate hoặc role conflict nào phải dừng cutover và xử lý có audit.
+3. Bổ sung unique `(organization_id, member_id)` chỉ sau khi duplicate count=0.
+4. Đảm bảo mọi membership có đúng một assignment hợp lệ. Không tự suy role cho các dòng không rõ; mapping legacy admin/user chỉ được dùng khi preflight chứng minh dữ liệu và chính sách mapping an toàn.
+5. Cập nhật create/invite/change-role/remove và bootstrap để assignment + mirror cùng transaction. Remove cascade assignment.
+6. Chuyển `has_org_role()` thành member_roles-only; đây là thay đổi ảnh hưởng toàn bộ RLS admin DELETE và Admin-only RPC, phải kiểm thử đầy đủ từng policy.
+7. Chuyển 013/014 Admin-target guard và Edge Function roster bỏ legacy fallback; App context đọc role assignment duy nhất.
+8. Chạy test Admin/Technician/Viewer/custom role, RLS DELETE matrix, member management, legacy mismatch, no assignment, inactive role.
+9. Sau khi quan sát ổn định mới xem xét bỏ cột legacy trong migration riêng; không gộp vào cutover.
+
+### 21.4 Phát hiện bổ sung cần giải quyết
+
+- `has_org_role()` hiện trả true nếu legacy Admin dù không có assignment; điều này trái với định hướng member_roles là authoritative.
+- Migration 013 đổi role assignment nhưng không cập nhật legacy role. Đây không phải lỗi nếu legacy field chỉ là mirror 'admin/user' và role mới technician↔viewer cùng ánh xạ 'user'; nhưng nếu chuyển Admin qua flow khác thì mirror cần cập nhật đồng bộ.
+- RLS DELETE policies trong migration 002 gọi has_org_role. Không thể chỉ thay helper mà bỏ qua test; phải xác minh tất cả module Admin-only.
+- Edge Function list có fallback Admin từ legacy role, còn permission helper `has_org_permission` chỉ xét assignment. UI có thể hiển thị role không tương ứng permission thực tế.
+- Organization_members.role được select trong App.tsx nhưng hiện không được dùng để xác định role; có thể bỏ khỏi select khi refactor.
+
+### 21.5 Ranh giới
+
+Đây là audit static và cutover plan. Chưa sửa helper, migration, RLS, Edge Function, App.tsx, test hoặc bootstrap; chưa tạo SQL draft, chưa chạy SQL/RPC và chưa thay đổi Supabase.
