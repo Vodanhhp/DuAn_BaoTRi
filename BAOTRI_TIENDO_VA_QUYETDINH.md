@@ -4577,3 +4577,24 @@ Tiếp tục audit toàn bộ caller và các writer khác liên quan Auth/Profi
 - Hoàn tất inventory writer/revoker hiện có ở mức catalog Test và static repo search.
 - Bước kế tiếp: rà soát cụ thể các RPC Asset đang dùng `has_org_permission` và thứ tự lock Asset Lease/business row để xác định có tương tác với Member lock order hay không; tiếp tục read-only.
 - Không SQL write, DDL, RPC, grant, role, Auth/data, secrets, Edge Function deployment hoặc Supabase config change.
+
+
+## 86. Cross-vertical Asset RPC và Member lock order – 20/11/2026
+
+### Đã kiểm tra lock path Asset
+- `create_asset_with_code`: kiểm tra `has_org_permission(assets.create)`, đọc settings/asset hiện có, upsert counter rồi tạo Asset; không khóa Organization/Membership/Role/Permission.
+- `import_asset_preserving_identity`: kiểm tra `assets.import`, rồi xử lý import ledger/counter/Asset; không khóa authorization rows.
+- `apply_asset_mutation_with_lock`: kiểm tra `assets.update`, tra Asset Receipt, khóa Lease FOR UPDATE, khóa Asset FOR UPDATE, cập nhật Asset và ghi Receipt.
+- `update_asset_with_lock` và `set_asset_archived_with_lock`: kiểm tra permission, khóa Lease, rồi cập nhật Asset.
+- `acquire_asset_edit_lock`/ `heartbeat_asset_edit_lock`: kiểm tra permission rồi ghi Lease; không khóa Membership/Role/Permission. `release_asset_edit_lock` giải phóng Lease theo holder/token.
+- Các helper `has_org_permission`, `has_org_role`, `is_org_member` là STABLE SECURITY DEFINER read helpers, không tự khóa row authorization.
+
+### Phát hiện cần xử lý
+- Asset RPC hiện không cùng lock chain với Member status/role RPC. Một Asset transaction có thể đọc permission=true rồi tiếp tục trong khi transaction khác suspend Membership/đổi role, vì Asset RPC không giữ lock trên Membership/assignment để serialize. Cần chốt rõ hiệu lực revoke đối với mutation đang chạy.
+- Proposed Member order §25.1 chưa được áp dụng cho Asset. Trước khi có Shared Receipt/Member cutover, phải quyết định nâng Asset RPC vào chung lock order hay xác định semantics khác cho in-flight mutation; cần tính cả thứ tự Lease → Asset → Asset Receipt để tránh tạo deadlock.
+- Asset-specific Receipt hiện kiểm tra write permission trước lookup Receipt; chưa khớp hoàn toàn replay policy Shared Receipt sau khi permission bị thu hồi. Vấn đề này đã có trong review idempotency, chưa sửa.
+
+### Trạng thái và bước tiếp
+- Rà soát lock paths Asset ở mức static function definitions đã hoàn thành; chưa chạy concurrency test.
+- Bước kế tiếp: xây ma trận lock liên vertical gồm Organization/Membership/Role/Permission/Auth/Receipt/Asset Lease/Asset rows; xác định điểm linearization của revoke và replay; chỉ đề xuất, không triển khai.
+- Không SQL write, DDL, RPC, grant, role, Auth/data, secrets, Edge Function deployment hoặc Supabase config change.
