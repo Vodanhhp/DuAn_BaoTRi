@@ -380,3 +380,82 @@ Nó chỉ nằm trong nhánh Invite: khi Edge Function vừa tạo Auth user m�
 
 Không sửa Edge Function, SQL, test hoặc dữ liệu trong lượt này. Chỉ cập nhật tài liệu review; chưa gọi Edge Function và chưa chạy test trên Supabase.
 
+
+
+## 13. Rà soát Change Feed và cursor đồng bộ
+
+Đã đối chiếu hai tài liệu thiết kế change feed hiện có:
+- `supabase/CLOUD_RPC_IDEMPOTENCY_CHANGEFEED_DESIGN.md`
+- `supabase/CLOUD_SYNC_SCHEMA_PROTOCOL_DESIGN.md`
+
+Đồng thời tìm trong mã nguồn/migration theo các tên `organization_sync_counters`, `organization_changes`, `pull_organization_changes`, `sync_cursor`. Kết quả hiện chỉ thấy các tài liệu thiết kế; chưa tìm thấy migration/bảng/RPC change feed được triển khai trong repository. Đây là kết luận theo nội dung repo main đã rà soát, không phải xác nhận trực tiếp trạng thái database Supabase.
+
+### 13.1 Các nguyên tắc đã đúng và cần giữ
+
+- Change event, business rows, row_version và Shared Receipt phải cùng một transaction PostgreSQL. Rollback thì không có event hoặc Receipt thành công.
+- Một logical mutation tác động nhiều record phải có một Receipt nhưng một event cho mỗi record thực sự thay đổi.
+- Conflict và no_change không phát change event.
+- Delete phải tạo tombstone; không phụ thuộc FK tới record đã bị xóa.
+- Cursor phải phản ánh commit order trong từng organization. Không dùng PostgreSQL sequence độc lập làm cursor vì thứ tự cấp sequence có thể khác thứ tự commit.
+- Pull trả event theo cursor tăng dần; Local chỉ commit cursor sau khi áp dụng thành công toàn bộ page trong một Dexie transaction.
+- Cursor riêng theo từng thiết bị/cài đặt; PC và Mobile không dùng chung cursor.
+- Không cho pull ghi đè Local record đang có mutation pending/processing/conflict.
+
+### 13.2 Điểm cần thống nhất giữa hai tài liệu
+
+Tài liệu `CLOUD_SYNC_SCHEMA_PROTOCOL_DESIGN.md` mô tả trigger AFTER INSERT/UPDATE/DELETE tự ghi event. Tài liệu `CLOUD_RPC_IDEMPOTENCY_CHANGEFEED_DESIGN.md` nhấn mạnh RPC nghiệp vụ phải ghi event trong cùng transaction.
+
+Khuyến nghị chốt một cơ chế ghi event duy nhất:
+- Ưu tiên RPC nghiệp vụ chủ động phát event cho đúng các record thuộc logical mutation.
+- Không đồng thời để trigger tự phát event trên cùng bảng nếu RPC cũng insert event, tránh duplicate event.
+- Trigger chỉ nên dùng cho nhiệm vụ kỹ thuật đã định nghĩa rõ; nếu chọn trigger làm event producer thì RPC không được phát event lần nữa và phải chứng minh được permission/payload filtering.
+- Với RPC nhiều record như complete Task + tạo Log, RPC phải phát cả hai event cùng Receipt.
+
+Lý do: event không chỉ là dấu vết SQL row. Nó phải thể hiện đúng ngữ nghĩa nghiệp vụ, quyền đọc, revision và kết quả của một mutation.
+
+### 13.3 Cursor và counter — các điều kiện còn thiếu trước SQL
+
+- Phải tạo counter row cho organization mới theo cách an toàn đồng thời (ví dụ insert-if-absent rồi lock row); không giả định counter đã tồn tại.
+- Mọi writer của một organization phải lấy cùng counter lock trước khi cấp cursor và giữ lock đến commit. Bất kỳ đường ghi nào bỏ qua quy tắc này đều có thể làm sai commit order.
+- Cần quy định rõ thứ tự khóa giữa Organization, Membership, business row, Receipt và sync counter; các RPC phải dùng thứ tự nhất quán để tránh deadlock.
+- Pull cần đọc high-water mark và page trong một snapshot nhất quán. Không được trả next_cursor vượt qua event chưa được page trả về.
+- Giới hạn page size phía server; xác thực cursor không âm và không vượt high-water mark hợp lệ.
+- Cursor không được tiến qua event bị lọc do permission. Nếu event stream có nhiều loại dữ liệu với quyền xem khác nhau, pull phải trả một cursor tiến triển an toàn kèm cơ chế skip/redact có định nghĩa; không để client kẹt vĩnh viễn ở một event không có quyền đọc.
+- Phải quyết định payload là immutable snapshot tại thời điểm event hay chỉ là record reference. Khuyến nghị snapshot có allowlist trường theo quyền đọc; nếu chỉ lưu ref thì phải chứng minh pull có thể tái tạo trạng thái đúng khi record bị sửa/xóa nhiều lần trước khi client kéo.
+- Không đưa dữ liệu nhạy cảm hoặc snapshot của bảng người dùng không có quyền đọc vào event payload chung.
+
+### 13.4 Retention, thiết bị và resync
+
+- Cần bảng/device cursor hoặc cơ chế last_seen theo từng organization + installation; không xóa event chỉ vì đã qua một khoảng thời gian cố định nếu thiết bị hợp lệ còn có thể quay lại.
+- Phải định nghĩa thiết bị bị thu hồi, mất máy, cài lại, hoặc quá lâu không đồng bộ; đây là điều kiện để bỏ cursor cũ và yêu cầu full resync.
+- `resync_required` phải có snapshot boundary/high-water mark rõ ràng. Client tải snapshot theo boundary, sau đó mới tiếp tục feed từ cursor tương ứng; không ghi đè Local pending/conflict.
+- Tombstone chỉ được dọn khi mọi cursor còn hiệu lực đã vượt qua nó hoặc đã hết hạn theo chính sách thiết bị đã chốt.
+
+### 13.5 Phân quyền và cách ly tenant
+
+- Không cấp client quyền SELECT/INSERT/UPDATE/DELETE trực tiếp trên counter/change tables nếu pull RPC là cửa duy nhất.
+- Pull phải xác thực Auth, organization active, active membership và quyền đọc theo từng loại resource.
+- Organization ID trong request chỉ là tham số định tuyến; không phải bằng chứng quyền.
+- Với một page có nhiều loại record, phải lọc/redact theo quyền hiện tại mà vẫn bảo toàn cursor. Không để receipt replay hoặc change feed trở thành đường vòng vượt quyền đọc.
+- SECURITY DEFINER cần owner/quyền tối thiểu, `search_path = ''`, schema-qualified objects, EXECUTE grants chính xác; không mặc định `row_security = off` là đủ an toàn.
+
+### 13.6 Kiểm thử bắt buộc bổ sung
+
+1. Hai mutation cùng organization phát event đồng thời: cursor theo đúng commit order, không bỏ sót.
+2. Hai organization khác nhau không khóa counter của nhau.
+3. Counter chưa tồn tại: hai RPC khởi tạo đồng thời không tạo hai counter hoặc mất cursor.
+4. Business write lỗi sau khi cấp cursor: counter increment và event cùng rollback.
+5. Một mutation Task + Log: một Receipt, đúng hai event; lỗi ở bước Log thì Task, Receipt, cursor và events đều rollback.
+6. Delete: tombstone được kéo qua nhiều page và không bị FK cascade xóa.
+7. Pull page lỗi khi apply Local: IndexedDB rollback và cursor Local giữ nguyên.
+8. Event bị ẩn do permission: cursor vẫn tiến an toàn nhưng payload không lộ.
+9. Permission bị thu hồi giữa các page; membership/org bị suspend; cross-tenant cursor.
+10. Cursor hết retention, thiết bị bị thu hồi, resync snapshot boundary và tiếp tục pull.
+11. Record bị sửa nhiều lần trước pull: xác nhận semantics snapshot/event không làm Local áp dụng sai thứ tự.
+12. Event payload lớn hoặc malformed: giới hạn kích thước, lỗi page không làm cursor tiến.
+
+### 13.7 Kết luận và trạng thái
+
+Thiết kế hiện tại đã có nền tảng đúng về commit-order cursor, tombstone, multi-record event và atomic apply Local. Tuy nhiên chưa đủ điều kiện viết migration triển khai hoặc bật worker. Cần chốt cơ chế event producer (RPC hay trigger, không trùng lặp), snapshot semantics, permission-aware cursor, counter initialization/lock order, retention và resync boundary.
+
+Không tạo SQL draft, không sửa code, không gọi RPC, không chạy SQL và không thay đổi Supabase trong lượt review này.
