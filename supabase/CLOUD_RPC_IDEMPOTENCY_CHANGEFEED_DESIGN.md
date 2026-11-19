@@ -263,3 +263,17 @@ Draft 015 hiện thêm row_version cho: assets, inventory_items, maintenance_tas
 - Chính sách replay sau khi quyền ghi/đọc bị thu hồi tại mục 8.4 là đề xuất, chờ người dùng xác nhận.
 - Chưa tạo shared-ledger SQL draft mới; chưa sửa draft 015; chưa thay đổi Asset receipt migration.
 - Chưa chạy SQL, chưa gọi RPC, chưa thay đổi Test/Production, chưa bật worker.
+
+
+## 13. Chính sách replay Receipt đã được người dùng chấp thuận (19/11/2026)
+
+Người dùng đồng ý với chính sách replay read-only sau khi quyền ghi bị thu hồi:
+- Bắt buộc Auth hợp lệ, organization còn active và actor còn active membership.
+- Chỉ đúng actor_user_id đã tạo Receipt mới được replay; actor khác hoặc organization khác bị từ chối, không tiết lộ Receipt.
+- Khi Receipt đã commit, replay cùng mutation ID + fingerprint không phải business write mới; không yêu cầu actor còn permission ghi của operation đó.
+- Chỉ trả snapshot đầy đủ nếu actor hiện còn quyền đọc tương ứng đối với các record trong kết quả. Nếu thiếu quyền đọc một phần/toàn bộ, chỉ trả acknowledgement tối thiểu, không trả snapshot nhạy cảm; việc đọc dữ liệu tiếp theo tuân theo quyền hiện tại.
+- Nếu membership bị vô hiệu hoặc organization inactive, từ chối replay hoàn toàn.
+
+Phạm vi chấp thuận là chính sách thiết kế cho shared Receipt; không tự động thay đổi hành vi Asset RPC hiện hữu. Asset-specific Receipt/Lease tiếp tục giữ nguyên cho đến migration/harmonization riêng. Cần đưa các ca replay sau revoke write/read, inactive membership và inactive organization vào kiểm thử bắt buộc.
+
+Chưa tạo SQL/RPC, chưa sửa code, chưa apply migration hoặc thay đổi dữ liệu/quyền Cloud.
