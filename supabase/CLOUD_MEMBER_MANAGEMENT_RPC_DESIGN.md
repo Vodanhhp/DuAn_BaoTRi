@@ -451,3 +451,45 @@ Mặc định an toàn: không tự động delete Auth user trong Saga recovery
 4. Có chấp nhận giữ Auth user mồ côi ở trạng thái needs_review thay vì tự động xóa trong các tình huống không chứng minh được ownership không? Khuyến nghị CÓ.
 
 Chưa tạo SQL draft, chưa sửa Edge Function/migration, không chạy SQL/RPC, không thay đổi Supabase.
+
+
+## 16. Quyết định sản phẩm đã xác nhận về Invite Saga
+
+Người dùng đồng ý cả ba đề xuất:
+1. **Adoption:** Admin khác được phép tiếp quản Invite unresolved qua RPC riêng, có authorization hiện tại, reason bắt buộc và audit append-only. Không đổi actor gốc, fingerprint hoặc Receipt gốc.
+2. **Vận hành giai đoạn đầu:** chưa triển khai worker nền. Recovery được kích hoạt có kiểm soát từ giao diện Admin/Edge Function; mọi thao tác vẫn dùng operation_id cũ và state transition CAS. Không tự động gửi lại invite khi trạng thái Auth chưa rõ.
+3. **Auth user không xác minh được ownership:** giữ Auth user, chuyển `needs_review`; không tự động xóa hoặc gắn vào membership. Đây là mặc định an toàn.
+
+Các quyết định này không đồng nghĩa cho phép adoption khi operation đã completed/cancelled hoặc ownership đang tranh chấp. Adoption chỉ cho phép Admin khác tiếp tục reconcile/finalize theo policy; không cấp quyền compensation.
+
+## 17. Phân tích trigger xác nhận email và phương án tránh deadlock
+
+Đã đọc trực tiếp migration 013. Trigger `sync_auth_user_profile()` chạy AFTER UPDATE trên `auth.users`; ngoài đồng bộ Profile, nó UPDATE `organization_members` từ invited sang active. Đây là một writer membership chạy bên trong transaction Auth.
+
+### 17.1 Deadlock cycle có thể xảy ra
+
+- Transaction xác nhận email giữ row lock trên `auth.users`, sau đó trigger chờ row lock/lock liên quan `organization_members`.
+- Transaction Finalize Invite theo lock matrix mới có thể khóa Organization/Actor Membership trước, rồi đọc/khóa Auth user hoặc insert/update target Membership.
+- Nếu Finalize chờ Auth user trong khi Auth trigger chờ membership, có thể tạo chu trình chờ. Thứ tự hiện tại trong migration 013 (khóa auth.users rồi tạo membership) cũng không tương thích với lock order Organization → Membership → ... nếu được giữ nguyên khi chuyển sang RPC actor JWT.
+
+Không được giải quyết bằng cách thêm lock tùy tiện hoặc giữ transaction mở khi gọi Auth API.
+
+### 17.2 Đề xuất cắt vòng khóa
+
+Đề xuất **không để trigger Auth cập nhật organization_members trực tiếp**.
+
+- Giữ trigger đồng bộ Profile nếu cần, nhưng bỏ phần UPDATE membership.
+- Finalize Invite đọc trạng thái email confirmation theo cách không tạo lock ngược; nếu email đã xác nhận tại thời điểm kiểm tra thì tạo membership active, nếu chưa thì invited.
+- Nếu email confirmation xảy ra đồng thời và Finalize vẫn tạo invited, trạng thái được sửa bởi một RPC riêng do chính user đã đăng nhập gọi: `activate_my_confirmed_membership(organization_id)`.
+- RPC chỉ cho `auth.uid()` kích hoạt membership của chính mình; xác nhận `auth.users.email_confirmed_at IS NOT NULL`; khóa Organization rồi Membership theo lock matrix; chỉ chuyển invited → active, idempotent. Không cho client kích hoạt user khác.
+- Ứng dụng gọi RPC này sau khi có Auth session hợp lệ và trước khi tải dữ liệu tenant. Nếu người dùng chưa xác nhận email, RPC từ chối. Nếu user chưa từng đăng nhập sau xác nhận, membership có thể giữ invited — đây là trạng thái đúng, chưa cấp quyền truy cập.
+- Trigger Auth không còn ghi vào organization_members nên không tranh chấp lock với Admin membership RPC. Profile sync phải được kiểm tra riêng về lock interaction; không thêm thao tác tenant vào trigger.
+
+### 17.3 Điều kiện và giới hạn
+
+- Không khóa `auth.users` trong Finalize theo thứ tự sau khi đã khóa Organization/Membership nếu điều đó có thể tạo cycle với Auth transaction.
+- Kiểm tra email confirmation là dữ liệu Auth nhạy cảm; chỉ RPC SECURITY DEFINER đọc cột cần thiết, không trả email hoặc Auth metadata cho client.
+- `activate_my_confirmed_membership` là lifecycle transition riêng, không phải Admin invite mutation. Cần quyết định audit/Receipt semantics: đề xuất audit append-only tối thiểu; không đưa email vào Receipt/Change Feed; idempotent no-op nếu đã active.
+- Cần test race: confirmation commit trước Finalize, Finalize commit trước confirmation, confirmation đồng thời với Finalize, user login sau confirmation, user chưa confirmation.
+- Đây là đề xuất thiết kế, chưa sửa migration 013 và chưa kiểm chứng runtime. Cần review trigger ownership, Auth transaction behavior, grants và lock graph trên Supabase Test.
+
