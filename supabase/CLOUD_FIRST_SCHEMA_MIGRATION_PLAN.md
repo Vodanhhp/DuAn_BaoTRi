@@ -25,7 +25,7 @@ Bảng hiện tại `inventory_movements` có `quantity > 0`, type Nhập/Xuất
 - `counted_quantity numeric(18,4)`: chỉ có ở Điều chỉnh kiểm kê actual.
 - `created_by_user_id uuid references auth.users(id)`: actor Cloud; nullable cho legacy.
 - `mutation_id uuid`: truy vết mutation; nullable cho legacy.
-- `expected_item_version bigint`: version client đã đọc khi thay đổi item; nullable với opening movement và legacy.
+- `expected_item_version bigint`: version client đã đọc khi thay đổi item; nullable với opening movement và legacy.\n- `performed_by_label text`: tên hiển thị snapshot tương thích Local `Movement.performedBy`; không dùng để xác thực actor. Local `note` hiện trùng nội dung `reason`, nên không thêm cột note thứ hai.
 
 ### Constraints cho movement mới
 - Legacy rows giữ các field mới NULL; không suy đoán số dư cũ từ movement history.
