@@ -1651,3 +1651,27 @@ Recommended channel order:
 5. **Outbox and privacy.** If enabled, commit a minimal notification outbox row atomically with invitation intent and send only after commit. Idempotent notification ID, bounded retries, rate limits, audit, no raw provider response/email in logs. A fingerprint is not a deliverable address; any recipient PII persistence requires encrypted restricted storage, key and retention policy. Provider acceptance is not proof of inbox receipt or invitation acceptance. Delivery failure never changes membership or Auth provenance.
 
 Do not reveal whether an arbitrary email has an Auth account in Admin/API responses. Current manual-recovery/no-worker rule remains: email is not implemented until provider, encrypted PII, outbox, worker, secrets, retention and monitoring are approved. Recommended sequence is in-app inbox first, optional email second, Realtime as optimization. No DDL/RPC/Edge Function/worker/SQL/Supabase changes.
+
+
+## 54. In-app Invitation Inbox — data exposure and permission review
+
+Recommended design: no separate Inbox table initially. The authoritative state remains `organization_member_invite_operations`; expose a narrow read projection. Attempts and attempt events remain server-private. This avoids duplicate state and synchronization drift.
+
+Response allowlist only: opaque invitation/operation UUID, organization display name, safe role label, created/expiry timestamps, and derived `pending` status. Initially omit inviter label. Never expose target email, Auth UUID, member ID, HMAC digest/key version, token/URL, receipt ID, attempt identifiers/events, provider responses, internal Saga states, or private recovery details.
+
+Access rules:
+- anon/unauthenticated: no access.
+- authenticated account with no verified authoritative Auth email: no access.
+- signed-in account with verified Auth email: only matching pending invitations for that account's current authoritative verified email.
+- inviter/Admin does not gain access to recipient Inbox merely by creating the invitation.
+- no arbitrary-email lookup endpoint; no direct client SELECT on Saga/attempt tables.
+- deny client access to internal tables; use server-only access and defense-in-depth RLS.
+- never authorize from user_metadata or client-supplied email/UID.
+
+List is a read-only snapshot and grants no membership, tenant access, reservation, or acceptance. Accept revalidates identity, verified email, pending/unexpired/not-revoked state, active organization, role validity, and membership conflict inside the transaction. Membership + one role + audit + Shared Receipt + Saga completion commit atomically. Client supplies only invitation ID and stable mutation/idempotency key; actor UID/email/org/role are not trusted client inputs. Same invitation+same actor replay is idempotent; different actor is rejected. Final acceptance receipt/idempotency contract must be reconciled with Shared Receipt design.
+
+Important unresolved trust boundary: Saga stores an HMAC digest while key material is external to Database. PostgreSQL cannot recompute the HMAC without a trusted key-access mechanism. Candidate design is a server Edge Function that validates the bearer with Auth, obtains authoritative user and verified-email state, computes HMAC using secret manager, then calls a server-only internal RPC with actor UID and digest. The internal RPC must not be executable by anon/authenticated and must perform the final transaction atomically. This Edge Function boundary needs a separate threat-model review; do not substitute client email or unverified matching.
+
+Use keyset pagination with bounded page size; no OFFSET/COUNT and no response differences that enumerate arbitrary Auth emails. Realtime is only a wake-up hint; fetch the protected projection again. No physical Inbox table/cache initially.
+
+Status: design proposal only. No DDL/RPC/Edge Function/worker/SQL/Supabase changes. Resolve HMAC trust boundary, acceptance idempotency/receipt contract, expiry/revocation/decline, rate limit and audit retention before implementation.
