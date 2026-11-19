@@ -1822,3 +1822,27 @@ Candidate split design:
 - A separate NOLOGIN membership RPC owner owns the narrow exposed wrapper; candidate privileges include BYPASSRLS but only exact table grants required for membership/role/invitation/receipt/audit operations, schema USAGE, and EXECUTE on the private helper. It receives no Auth/Vault access and no login credential. Its SECURITY DEFINER wrapper accepts opaque invitation ID + mutation ID and performs explicit authorization checks plus atomic writes.
 
 BYPASSRLS remains a strong privilege even on a NOLOGIN role; exact grants, role membership/SET ROLE, default ACL, function ownership, foreign-key/trigger effects and lock order must be verified. Nested SECURITY DEFINER preservation of PostgREST JWT context must be tested through the real API before implementation. This is a candidate only; no DDL/role/grant/RPC or API test.
+
+
+## 67. Auth-trigger membership activation và quyền mặc định – 20/11/2026
+
+### Trigger side effect mới được xác minh
+- Trên BAOTRI-Mini-Test, public.sync_auth_user_profile() là SECURITY DEFINER owner postgres, fixed empty search_path. Trigger Auth UPDATE trên email/raw_user_meta_data/email_confirmed_at gọi function này.
+- Function đồng bộ profiles, rồi nếu email đã confirmed thì tự UPDATE mọi organization_members của user từ invited sang active. Điều kiện không kiểm tra recipient digest, invitation ID, expiry/revocation, tenant status, role, inviter authority hay mutation/receipt.
+- Trigger không tạo member_roles, audit, Shared Receipt hoặc Saga completion. Có nguy cơ trạng thái active bị tạo ngoài acceptance transaction và thiếu các bản ghi liên quan.
+- Kiến nghị thiết kế: trigger Auth chỉ làm profile sync; membership activation phải nằm trong một acceptance transaction duy nhất. Chỉ là kiến nghị; cần review tương thích legacy và migration riêng trước khi áp dụng.
+
+### FK/trigger và lock ordering
+- Trigger Auth có đường khóa ngầm: auth.users -> profiles -> organization_members. Acceptance không được khóa membership trước rồi mới chạm Auth user. Candidate order phải bắt đầu Auth actor, sau đó Profile nếu cần, rồi Organization/Saga/Membership/Role, cuối cùng audit/receipt; thứ tự Organization vs Saga cần audit mọi writer trước khi chốt.
+- member_roles có FK cascade khi membership hoặc role bị xóa; organization_members tham chiếu Organization/Profile bằng RESTRICT; role cũng tham chiếu Organization bằng RESTRICT. Các FK parent lock cần được tính vào phân tích concurrency. Không có trigger nghiệp vụ trên member_roles/roles/role_permissions trong inventory hiện tại.
+- Draft 021_member_audit_and_invite_saga_DRAFT.sql chưa được áp dụng; bảng Saga/Audit trong draft không tồn tại trong catalog hiện tại.
+
+### Default ACL và role membership
+- pg_default_acl trên Test cho thấy khi postgres tạo function trong public, default EXECUTE được cấp cho anon, authenticated và service_role; default table privileges trong public cũng rộng. Vì vậy việc tạo SECURITY DEFINER/RPC function bằng postgres phải có revoke/GRANT chính xác trong cùng transaction tạo object và phải kiểm tra effective privileges sau đó; không được giả định function mới tự private.
+- Catalog role membership cho thấy postgres có membership mạnh vào service_role (admin/inherit/set option); authenticator có SET membership vào anon/authenticated/service_role phục vụ PostgREST. Chưa có member_rpc_owner hoặc custom acceptance role. Role owner tương lai không được có membership/SET ROLE path tới postgres, service_role hay role đặc quyền; kiểm tra cả role graph và effective privileges.
+- Nếu function được tạo bằng SET ROLE sang custom owner, phải đọc default ACL của đúng effective creator/schema; không suy luận từ default ACL postgres. Exact function signature, PUBLIC/API grants, schema USAGE, overloads và callable SECURITY DEFINER surface đều phải audit.
+
+### Nguồn kỹ thuật
+- PostgreSQL 17 Explicit Locking: https://www.postgresql.org/docs/17/explicit-locking.html (deadlocks có thể phát sinh từ row-level locks; phòng ngừa bằng thứ tự khóa nhất quán).
+- Supabase Database Functions: https://supabase.com/docs/guides/database/functions (SECURITY DEFINER, search_path và EXECUTE grants cần được kiểm soát rõ).
+- Không có thay đổi database trong lần rà soát này.
