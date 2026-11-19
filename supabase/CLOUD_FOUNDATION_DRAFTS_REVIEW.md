@@ -1530,3 +1530,10 @@ Chưa viết RPC SQL, chưa chạy test database, chưa thay đổi Supabase. Se
 Đối chiếu DDL 021 với Member design §32–33: draft hiện là khung operation/audit, chưa đủ triển khai RPC an toàn. Các gap chính: không có attempt history; Auth provenance chỉ là boolean nullable, thiếu evidence; status CHECK chưa ràng buộc attempt/lease/result; immutable intent chưa được bảo vệ; request_fingerprint chưa có canonical/hash contract; audit thiếu transition sequence/idempotency; audit state-change chưa bắt buộc đủ before/after; normalized_email plaintext; retention chưa định nghĩa.
 
 Đã ghi chi tiết ma trận gap và hướng xử lý tại Member design §33. Không sửa DDL, không tạo migration/RPC, không chạy SQL hoặc thay đổi Supabase.
+
+
+## 38. Quyết định kiến trúc Invite Saga đã chốt (20/11/2026)
+
+Người dùng chốt năm nguyên tắc Auth provenance và request fingerprint tại Member design §35: (1) provenance có bốn trạng thái `created_by_operation`, `preexisting_verified`, `unknown`, `conflict`; (2) không đủ bằng chứng hoặc có xung đột thì fail closed sang `needs_review`, không tự gắn/xóa Auth user; (3) canonical request fingerprint dùng HMAC-SHA-256, secret nằm ngoài Database, chỉ lưu digest và version metadata; (4) cùng operation ID nhưng digest khác phải reject, replay dùng đúng version/key version cũ; (5) adoption không thay actor gốc hoặc fingerprint.
+
+Đây là policy kiến trúc đã được người dùng xác nhận. Các chi tiết vận hành như quy trình chứng minh `preexisting_verified`, key retention/rotation và bảo vệ/retention email vẫn cần thiết kế trước DDL implementation. Lần cập nhật này chỉ ghi nhận quyết định; không sửa DDL 021, không tạo migration/RPC, không chạy SQL và không thay đổi Supabase Test/Production.
