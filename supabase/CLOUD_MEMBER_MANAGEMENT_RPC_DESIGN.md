@@ -1404,3 +1404,29 @@ Tạo file nháp: supabase/drafts/021_member_audit_and_invite_saga_DRAFT.sql.
 - Cần review kỹ SQL, test syntax/constraints trên PostgreSQL clone, concurrency, RLS, function owner, lock order, transaction rollback và PII leakage trước khi tạo migration thật.
 
 Không áp dụng SQL. Không có thay đổi database.
+
+
+## 31. Static review DDL 021 — vòng 1 (19/11/2026)
+
+Đã rà soát file `supabase/drafts/021_member_audit_and_invite_saga_DRAFT.sql` và chỉnh các ràng buộc ngay trong draft:
+
+- Adoption phải có adopter khác actor gốc, reason không rỗng sau trim và timestamp; Auth-created flag không được khai báo khi chưa có auth_user_id.
+- Audit reason nếu có phải không rỗng sau trim; adoption bắt buộc user actor + reason hợp lệ.
+- `actor_kind=system` chỉ dành cho `member.invite.state.change`; actor user luôn cần actor_user_id.
+- Các membership lifecycle actions (create/role/status/remove/self.activate) bắt buộc target_membership_id và mutation_id.
+- Các audit create/adopt/invite-state-change bắt buộc invite_operation_id.
+- JSONB before/after key allowlist đã được làm null-safe bằng COALESCE; key có JSON null không thể vượt CHECK enum.
+- Giữ nguyên tách Saga/Receipt/Audit, RLS private và không tạo policy client.
+
+### 31.1 Những điểm vẫn phải xử lý ở RPC/runtime
+
+1. SQL CHECK không thể bảo đảm state machine hợp lệ theo thứ tự; RPC phải dùng row lock hoặc compare-and-set version, kiểm tra transition graph và cập nhật updated_at/version nhất quán.
+2. Bảo vệ bất biến actor gốc, request_fingerprint, organization_id, operation_id, normalized_email và resolved_initial_status sau khi tạo. Chỉ cho phép các cột state/attempt/adoption được thay đổi theo RPC cụ thể.
+3. reason là text tự do; RPC phải chặn email, token, secret và PII; không thể dựa vào CHECK độ dài.
+4. Không có attempt-history table: current_attempt_id/attempt_count chỉ là trạng thái hiện tại. Nếu cần forensic retry history, thiết kế bảng append-only riêng.
+5. Audit trigger chặn UPDATE/DELETE nhưng không phải cơ chế chống owner/superuser/TRUNCATE. Giới hạn owner, grants và vận hành phải được review.
+6. Trigger updated_at chưa có; RPC phải set updated_at rõ ràng. Không cho client update trực tiếp.
+7. FK RESTRICT tới profiles/auth.users/organizations có thể cản trở xóa identity/tenant; cần retention/archive lifecycle.
+8. Chưa kiểm chứng cú pháp bằng PostgreSQL parser hoặc chạy thử; file vẫn là static draft.
+
+**Kết luận vòng 1:** các điểm ràng buộc SQL nhìn thấy được đã được gia cố; chưa đủ điều kiện promote thành migration. Cần tiếp tục review RPC authorization, transition matrix, lock order, atomic audit + Shared Receipt, PII handling và retention.
