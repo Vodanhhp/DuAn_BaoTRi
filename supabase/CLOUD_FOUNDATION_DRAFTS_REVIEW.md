@@ -1206,3 +1206,32 @@ Trigger `sync_auth_user_profile()` AFTER UPDATE trên `auth.users` đồng bộ 
 ### Ranh giới
 
 Đây là thiết kế, không phải kết luận runtime đã chứng minh. Chưa sửa migration 013, chưa tạo SQL draft, chưa chạy SQL/RPC, chưa thay đổi Supabase. Cần chốt audit semantics của self-activation (đề xuất append-only audit tối thiểu, không Receipt/Change Feed payload chứa PII).
+
+
+## §25 — Static review quyền roster và dữ liệu thành viên
+
+### Phát hiện hiện trạng
+
+- Permission catalog đã có users.view/users.manage.
+- Admin nhận toàn bộ; Technician không có users.view; Viewer được seed mọi permission action=view nên hiện nhận users.view.
+- Edge Function `manage-organization-members` đang kiểm tra users.manage ở đầu handler cho cả action list.
+- List query qua service_role đọc Profile email và trả email cùng display name, role, status, created_at.
+- UI OrganizationMembersPanel trộn đọc roster và thao tác quản trị trong cùng panel; chưa phân lớp theo users.view/users.manage.
+- Migration 013 hạn chế SELECT Profile.email với authenticated; Edge Function service_role là đường đọc email hiện tại.
+
+### Thiết kế đề xuất
+
+- Tách users.view (đọc roster) khỏi users.manage (thay đổi membership).
+- Admin mặc định có cả hai; Technician không có; Viewer không được cấp users.view mặc định dù permission có action=view. Custom role có thể được cấp riêng.
+- users.view chỉ nhận membership_id, display_name, role, status, created_at; không nhận email/Auth metadata/phone/user ID nếu không cần.
+- Chỉ users.manage mới nhận email và các chức năng quản trị.
+- Edge Function dispatch permission theo action; list dùng read-only RPC kiểm tra actor + tenant ở server, không tin organizationId do client gửi. Các mutation tiếp tục cần users.manage và authorization cuối cùng nằm trong transaction/RPC.
+- UI tách roster read-only với controls quản trị; ẩn control chỉ là UX, backend vẫn bắt buộc kiểm tra quyền.
+
+### Kiểm thử bắt buộc
+
+Admin, users.view-only, users.manage-only, Technician, Viewer, custom role; tenant spoofing; organization/membership inactive; permission revoke race; pagination; missing Profile/role; không rò email qua API/log/feed.
+
+### Khuyến nghị chờ xác nhận
+
+Mặc định không cho Viewer xem roster. Đây là quyết định privacy/hiển thị nhân sự, không nên tự suy ra chỉ vì Viewer là read-only. Chưa sửa migration 005, Edge Function, UI hoặc Cloud; chưa tạo SQL draft và chưa chạy SQL/RPC.
