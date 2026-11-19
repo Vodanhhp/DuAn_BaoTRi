@@ -556,3 +556,74 @@ Email và thao tác quản trị:
 ### 18.6 Ranh giới
 
 Đây là policy/design đề xuất theo nguyên tắc least privilege, chưa thay đổi permission seed, Edge Function, UI, SQL hay Supabase. Cần xác nhận chính sách sản phẩm về việc Viewer có được xem danh bạ thành viên hay không trước khi triển khai. Khuyến nghị mặc định: KHÔNG.
+
+
+## 19. Chốt policy roster và thiết kế RPC đọc
+
+### 19.1 Quyết định sản phẩm
+
+- Viewer mặc định **không** được xem roster.
+- Admin có `users.view` và `users.manage`.
+- Technician không có hai quyền này.
+- Viewer không có `users.view`; không được suy quyền này từ action='view'. Nếu doanh nghiệp muốn danh bạ nội bộ, có thể cấp riêng cho Custom Role.
+- `users.manage` không tự động thay thế `users.view`. Admin seed được cấp cả hai; caller chỉ có manage mà thiếu view không được gọi list.
+
+### 19.2 RPC đề xuất
+
+Tên: `list_organization_members` (read-only, SECURITY DEFINER, SET search_path=''; row_security=off).
+
+Tham số:
+- `p_organization_id uuid`
+- `p_after_created_at timestamptz DEFAULT NULL`
+- `p_after_member_id uuid DEFAULT NULL`
+- `p_limit integer DEFAULT 50`, server clamp/reject ngoài 1..100.
+
+Kết quả tối thiểu:
+- `membership_id uuid`
+- `display_name text` (NULL/blank được UI hiển thị “Chưa cập nhật tên”)
+- `role_code text`
+- `role_name text`
+- `membership_status text`
+- `created_at timestamptz`
+
+Không trả email, phone, Auth user ID, Auth metadata, token, invite URL hoặc toàn bộ Profile row. Không trả tổng số roster nếu không có nhu cầu sản phẩm. Roster có thể gồm invited, active, suspended; không gồm membership đã remove.
+
+### 19.3 Authorization và SQL semantics
+
+- Chỉ execute cho authenticated; revoke PUBLIC/anon/service_role nếu không cần server job. Không cho anon.
+- Actor luôn lấy từ `auth.uid()`, không nhận actor ID từ client.
+- Trong cùng một SQL statement/RPC transaction, xác minh organization active, membership của actor active và effective `users.view` thông qua role assignment active. Không tin organizationId của request nếu thiếu kiểm tra scope.
+- Read-only không cần khóa hàng dài; một statement snapshot đảm bảo dữ liệu và quyền được đánh giá nhất quán tại thời điểm statement. Revoke đồng thời có thể commit sau snapshot; request đã bắt đầu được xem là đọc trước thời điểm revoke. Các mutation vẫn phải có authorization lock trong transaction riêng.
+- Query mọi hàng đều lọc `organization_id = p_organization_id`; join Profile theo user ID chỉ để lấy display_name; không select email.
+- Role code/name lấy từ role assignment hiện tại; xử lý nhiều role theo quy tắc đã chốt cho ứng dụng (khuyến nghị trả các role codes đã sort, hoặc đảm bảo một membership chỉ có một role system hiện tại). Không dùng tùy tiện `LIMIT 1` nếu schema cho phép nhiều role.
+- Keyset pagination theo cặp `(created_at, id)`, order tăng dần. Cursor phải có cả hai thành phần hoặc cả hai NULL; predicate lexicographic `(created_at,id) > (...)`. Page size tối đa 100. Không dùng OFFSET.
+- RPC trả `has_more`/next cursor rõ ràng hoặc dùng page-size + 1 để xác định trang kế tiếp; không dùng tổng COUNT.
+- Không log dữ liệu Profile; lỗi trả mã tổng quát, không email/UUID Auth hoặc SQL text.
+
+### 19.4 Edge Function và UI
+
+- Khuyến nghị action list gọi RPC bằng caller JWT (callerClient.rpc), không dùng service_role để đọc roster.
+- Nếu giữ Edge Function làm transport, dispatch list trước nhánh users.manage; backend RPC vẫn kiểm tra users.view. Không pre-check `has_org_permission` rồi mới service_role SELECT vì tạo khoảng trống giữa kiểm tra và đọc.
+- Các mutation invite/role/status/remove/reset password tiếp tục dùng users.manage và RPC transaction bảo vệ. Không thay đổi các action này trong phạm vi thiết kế roster.
+- UI chỉ gọi list khi đã có users.view; panel read-only chỉ hiện roster. Các control invite/manage chỉ hiện khi có users.manage. Backend là ranh giới bảo mật cuối cùng.
+- Bỏ email khỏi OrganizationMemberView nếu roster chỉ users.view; phần quản trị email nên là response riêng chỉ dành cho users.manage. Không fallback display name sang email.
+
+### 19.5 Migration/seed cần xử lý khi triển khai
+
+Migration 005 hiện seed Viewer bằng `p.action = 'view'`, do đó Viewer đang nhận users.view và roles.view. Khi triển khai phải đổi seed thành allowlist rõ ràng hoặc loại trừ `users.view` khỏi Viewer; chỉ sửa một permission code sau seed là chưa đủ cho tổ chức đã tồn tại nếu không có migration thu hồi role_permissions cũ.
+
+### 19.6 Test bắt buộc
+
+- Admin: list thành công; email không có trong payload.
+- users.view-only Custom Role: list thành công, không có email.
+- users.manage-only: list bị từ chối.
+- Technician và Viewer mặc định: list bị từ chối.
+- Organization/member inactive, tenant ID giả, no membership, role inactive, permission revoke.
+- Pagination đồng thời có created_at trùng nhau; cursor rỗng/thiếu một nửa/giả mạo; page size 0, 101, âm.
+- Missing Profile/display_name, missing role assignment, multi-role membership, invited/suspended rows.
+- Authenticated không thể SELECT Profile.email; anon không gọi RPC; service_role không được dùng như đường bypass trong Edge Function.
+- Response/log không chứa email, phone, Auth metadata hoặc token.
+
+### 19.7 Ranh giới
+
+Đây là thiết kế đã chốt policy mặc định Viewer không xem roster. Chưa tạo SQL migration/draft, chưa sửa migration 005/013, Edge Function hoặc UI, chưa chạy RPC/SQL và chưa thay đổi Supabase. Trước khi viết SQL cần quyết định schema có cho phép nhiều role trên một membership và nếu có thì API biểu diễn danh sách role như thế nào.
