@@ -3421,3 +3421,35 @@ Làm rõ Local-first: đối với Asset đã mapping Cloud, Local được ghi 
 - [x] Cloud nhận đúng dữ liệu sau retry: PASS theo xác nhận trực tiếp của người dùng.
 - [ ] Chưa kiểm thử PC/Mobile đồng thời, hai nền tảng cùng xin lease, heartbeat failure riêng biệt hoặc takeover sau lease hết hạn.
 - [ ] Chưa nghiệm thu toàn bộ Asset Edit Lease + Mutation Receipt trên nhiều nền tảng; chưa bật đồng bộ nghiệp vụ tổng thể.
+
+
+## 27. Thiết kế Cloud → Local: nhận từng Asset về Local (19/11/2026)
+
+### 27.1 Audit hiện trạng trên main
+- `src/lib/assetsCloud.ts:listCloudAssets()` đọc danh sách Asset từ Supabase và map sang kiểu Asset; không ghi Dexie.
+- `src/CloudAssetsPanel.tsx` chỉ hiển thị Cloud Asset và đang có luồng import Local → Cloud. Chưa có chức năng đưa Asset Cloud xuống Local.
+- Dexie v8 đã có `assetCloudLinks` với các trường organizationId, assetId, cloudCode, cloudUpdatedAt, lastSyncedLocalUpdatedAt, status, linkedAt, lastVerifiedAt.
+- Cloud Asset hiện được map với `images: []`; ảnh Local chưa có Cloud Storage nên không thể phục hồi từ Cloud.
+- `src/lib/cloudSync.ts` là giao thức JSON cũ, chưa bật worker; không sử dụng để triển khai chiều Cloud → Local.
+
+### 27.2 Phạm vi đề xuất – phiên đầu
+- Bổ sung thao tác nhận **một Asset Cloud được người dùng chọn** về Local, phục vụ phục hồi dữ liệu và kiểm thử PC–Mobile.
+- Đọc lại row Cloud theo đúng organization + Asset UUID ngay trước khi áp dụng; không dựa duy nhất vào dữ liệu list đã tải trước.
+- Giữ nguyên Cloud UUID, code, dữ liệu nghiệp vụ và timestamps. Không tự sinh ID/mã mới.
+- Preflight: nếu Local đã có cùng UUID thì không ghi đè; nếu UUID hoặc code xung đột với Asset Local khác, hoặc có mutation/queue chưa xử lý liên quan, dừng và báo rõ.
+- Khi Asset chưa có trên Local và không xung đột, lưu Asset cùng mapping `assetCloudLinks` trong một Dexie transaction; không tạo generic syncQueue hoặc AssetMutation.
+- Mapping sau import ghi status `linked`, Cloud code/version và timestamps phù hợp snapshot đã nhận; không tự xác lập mapping khi chưa ghi Local thành công.
+- Import Cloud không sửa Cloud, không tải toàn bộ Asset, không nhập Task/Plan/Log/Checklist/Inventory/Movement hoặc ảnh. Không overwrite hồ sơ Local hiện hữu.
+- Nếu cùng UUID đã có Local và dữ liệu trùng hoàn toàn, phiên đầu có thể báo “đã có trên Local” và không ghi; nếu khác payload, báo conflict, không tự chọn bên thắng.
+
+### 27.3 Kiểm thử dự kiến
+- Import đúng một Asset Cloud vào Local Mobile đang trống; xác nhận Asset ID/code/payload và mapping được giữ đúng.
+- Kiểm tra Local PC và Cloud không bị thay đổi.
+- Test collision UUID/code và Asset đã tồn tại Local; mọi trường hợp phải fail/no-op an toàn, không overwrite.
+- Sau khi có cùng Asset ID trên PC và Mobile, kiểm thử PC giữ lease thì Mobile không mở được form sửa; kiểm thử chiều ngược lại sau khi release/expiry lease.
+- Không dùng Local PC có nhiều dữ liệu để reset hoặc làm thử; không khởi chạy LAN dev server để phục vụ test này.
+
+### 27.4 Giới hạn và trạng thái
+- Đây là import/restore có chọn lọc Cloud → Local, chưa phải pull/change-feed hoặc đồng bộ hai chiều tổng thể.
+- Chưa sửa code, chưa thêm migration, chưa chạy SQL/RPC, chưa ghi hoặc thay đổi dữ liệu Cloud/Local.
+- Thiết kế cần review trước khi triển khai. Các bảng lịch sử, xung đột, tombstone, phân trang và đồng bộ nền thuộc giai đoạn sau.
