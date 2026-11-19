@@ -236,22 +236,22 @@ create table public.organization_member_audit_events (
     check (after_state - 'role_code' - 'membership_status' - 'saga_status' = '{}'::jsonb),
 
   constraint organization_member_audit_before_role_code
-    check (not (before_state ? 'role_code') or before_state->>'role_code' in ('admin', 'technician', 'viewer')),
+    check (not (before_state ? 'role_code') or coalesce(before_state->>'role_code' in ('admin', 'technician', 'viewer'), false)),
   constraint organization_member_audit_after_role_code
-    check (not (after_state ? 'role_code') or after_state->>'role_code' in ('admin', 'technician', 'viewer')),
+    check (not (after_state ? 'role_code') or coalesce(after_state->>'role_code' in ('admin', 'technician', 'viewer'), false)),
 
   constraint organization_member_audit_before_membership_status
-    check (not (before_state ? 'membership_status') or before_state->>'membership_status' in ('invited', 'active', 'suspended', 'removed')),
+    check (not (before_state ? 'membership_status') or coalesce(before_state->>'membership_status' in ('invited', 'active', 'suspended', 'removed'), false)),
   constraint organization_member_audit_after_membership_status
-    check (not (after_state ? 'membership_status') or after_state->>'membership_status' in ('invited', 'active', 'suspended', 'removed')),
+    check (not (after_state ? 'membership_status') or coalesce(after_state->>'membership_status' in ('invited', 'active', 'suspended', 'removed'), false)),
 
   constraint organization_member_audit_before_saga_status
-    check (not (before_state ? 'saga_status') or before_state->>'saga_status' in (
+    check (not (before_state ? 'saga_status') or coalesce(before_state->>'saga_status' in (
       'requested', 'auth_calling', 'auth_outcome_unknown', 'auth_user_resolved',
       'finalize_pending', 'completed', 'needs_review', 'failed_terminal', 'cancelled'
-    )),
+    ), false)),
   constraint organization_member_audit_after_saga_status
-    check (not (after_state ? 'saga_status') or after_state->>'saga_status' in (
+    check (not (after_state ? 'saga_status') or coalesce(after_state->>'saga_status' in (
       'requested', 'auth_calling', 'auth_outcome_unknown', 'auth_user_resolved',
       'finalize_pending', 'completed', 'needs_review', 'failed_terminal', 'cancelled'
     ))
