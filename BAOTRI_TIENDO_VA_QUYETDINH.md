@@ -3810,3 +3810,14 @@ Hoàn thiện hợp đồng quyền/replay và quyết định điều chỉnh t
 - Giữ quyết định đã duyệt: manual recovery giai đoạn đầu; Admin khác có thể adoption có audit; không tự xóa/attach Auth user khi ownership không rõ.
 - GitHub Member design đã fetch lại xác minh sau commit. Chưa tạo RPC/SQL, chưa chạy Supabase, chưa sửa migration hoặc code.
 - Còn mở: Auth provenance evidence, attempt-history requirement, self-activation audit/Receipt semantics, PII encryption/key management và retention.
+
+
+## 49. Static schema adequacy review DDL 021 (19/11/2026)
+
+- Đối chiếu DDL 021 với transition/RPC/test matrix §32.
+- Kết luận: đủ làm khung operation + append-only audit, chưa đủ điều kiện promote/implementation.
+- Gaps: attempt history; Auth provenance evidence; status/attempt/lease consistency; immutable intent; canonical fingerprint; adoption history semantics; audit transition sequence/idempotency; audit event shape; membership/receipt linkage validation; PII encryption/key management; retention; actor/adopter authorization và error classification.
+- Ghi chi tiết yêu cầu status invariants và thứ tự công việc tại Member design §33.
+- GitHub Member design, Foundation review và Progress file được cập nhật, fetch lại xác minh.
+- Không sửa DDL 021; không tạo migration/RPC/Edge Function; không chạy SQL; không thay đổi Supabase Test/Production.
+- Bước tiếp theo: chốt schema decisions (provenance, fingerprint, attempt history, adoption cardinality, audit sequence, PII/retention), sau đó mới chỉnh draft.
