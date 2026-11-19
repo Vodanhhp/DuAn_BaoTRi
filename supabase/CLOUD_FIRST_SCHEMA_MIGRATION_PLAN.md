@@ -57,7 +57,7 @@ Bảng hiện tại `inventory_movements` có `quantity > 0`, type Nhập/Xuất
 ### `maintenance_log_revisions` đề xuất
 - Identity: `id`, `organization_id`, `log_id`, `revision_no`.
 - Snapshot đầy đủ: `log_date`, `due_date`, `kind`, `description`, `parts`, `readings`, `requested_by`, `result`, `completed_at`, `performed_by`.
-- Audit: `action` (created / edited / legacy_baseline), `reason`, `edited_by_user_id`, `mutation_id`, `created_at`.
+- Audit: `action` (created / edited / legacy_baseline), `reason`, `actor_user_id`, `mutation_id`, `created_at`.
 - Unique (organization_id, log_id, revision_no); FK (organization_id, log_id) → root.
 - Legacy backfill: revision 1 lấy đúng dữ liệu hiện có trong root; due_date/requested_by NULL vì schema cũ không lưu; action = legacy_baseline; actor/reason/mutation_id NULL. Không bịa lịch sử.
 - Revision mới: actor lấy auth.uid(); revision 1 do create RPC; revision >=2 do Admin-only revise RPC và reason bắt buộc.
