@@ -3922,3 +3922,15 @@ Proposal: Edge Function tạo token ngẫu nhiên >=256-bit cho đúng operation
 Kết quả: source-level supports feasibility cho native invite nhánh tạo mới, nhưng chưa phải triển khai. Cần pin Auth/GoTrue + SDK version, xác minh Hook plan/configuration và test end-to-end crash, timeout, replay, rollback, orphan receipt, exact-ID lookup consistency. Proposal chưa được duyệt; không thay đổi DDL 021, RPC, Edge Function, không chạy SQL hoặc thay đổi Supabase.
 
 Nguồn kiểm tra: Supabase Auth `internal/api/invite.go`, `internal/api/signup.go`; Supabase Docs Before User Created Hook và Auth Users.
+
+
+## 60. Phát hiện After User Created Hook — receipt sau Auth commit
+
+Đã kiểm tra source Supabase Auth tại commit `10ef10789d1ee4fb422b448047e67e3e264c0482`:
+- Trong `Invite()`, Auth chạy transaction tạo user/identity/audit/invite; sau khi transaction thành công mới gọi `triggerAfterUserCreated`. Hook kiểm tra không còn transaction trước khi invoke. Vì vậy After User Created Hook là điểm tiềm năng ghi correlation receipt sau Auth user commit, tốt hơn Before Hook (chạy trước insert và có thể tạo orphan receipt).
+- Source hiện gọi After Hook sau transaction trên đường Invite mà không gate theo `isCreate`; handler bắt buộc xác minh reserved correlation token + attempt, event không có marker/không khớp không được tạo receipt.
+- Hook metadata UUID được tạo mới mỗi invocation, không được coi là idempotency key ổn định. Idempotency dựa trên attempt_id + Auth user ID; cùng cặp replay idempotent, cùng attempt với ID khác => conflict.
+- Hook/receipt có thể lỗi sau khi Auth đã commit; `/invite` có thể trả lỗi dù user tồn tại. Saga giữ `outcome_unknown`, tuyệt đối không gọi Auth lại. Chỉ receipt hợp lệ đã commit mới xác lập provenance; thiếu receipt thì manual review.
+- Correlation token trong user_metadata chỉ là transport, không dùng giá trị metadata đọc lại để phân quyền/provenance. Digest được lưu trước dispatch; Hook xác minh signed payload + digest + project + attempt state + email fingerprint; ghi receipt qua server-only RPC; không log raw token.
+
+Kết luận: ưu tiên After User Created Hook làm receipt point; Before Hook không phải bằng chứng commit. Đây mới là source-level feasibility; chưa xác minh hook availability trên Supabase Cloud/plan, retry/delivery semantics hoặc version thực tế. Cần pin Auth/SDK, test post-commit hook failure, replay, timeout, exact-ID lookup. Chưa duyệt implementation; không sửa DDL/RPC/Edge Function, không chạy SQL/Supabase.
