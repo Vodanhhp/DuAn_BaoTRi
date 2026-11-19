@@ -4108,3 +4108,24 @@ Không cấp trực tiếp SELECT/UPDATE trên `auth.users` cho service_role/aut
 **Còn mở:** preflight read-only trên từng Production tenant project; xác minh GoTrue version; kiểm thử thực tế concurrent email-confirm-vs-accept, admin email update, lock timeout và rollback. Test hiện tại dùng WHERE false, chưa kiểm thử tranh chấp row lock thật.
 
 **Kết luận:** khả thi về quyền trên BAOTRI-Mini-Test, là candidate thiết kế chứ chưa phải phê duyệt triển khai. Không tạo DDL/RPC/Edge Function, không chạy SQL ghi, không grant quyền, không migration và không thay đổi Supabase.
+
+## 69. Kịch bản kiểm thử đồng thời: chấp nhận lời mời và đổi email Auth
+
+Đây là kế hoạch kiểm thử, chưa chạy. Chỉ dùng Auth user giả lập và invitation dùng một lần trên BAOTRI-Mini-Test; hai session/transaction độc lập, có barrier để điều khiển thứ tự. Ghi lại project ref, PostgreSQL/Auth/SDK version, owner và quyền function, transaction ID, lock wait, SQLSTATE và snapshot trước/sau. Không ghi email thô, token hay secret vào log.
+
+Các race case bắt buộc:
+1. Acceptance khóa Auth user trước; thao tác xác nhận đổi email phải đợi acceptance commit. Acceptance hợp lệ tại thời điểm serialization khi email cũ vẫn là email đã xác minh.
+2. Đổi email commit trước; acceptance đọc lại Auth row đã khóa, thấy email mới, digest cũ không khớp và từ chối; không ghi membership/role/audit/receipt thành công.
+3. Hai bên bắt đầu đồng thời; kết quả phải tương đương đúng một trong hai thứ tự trên, không deadlock, không trạng thái nửa chừng.
+4. Email đổi sang địa chỉ của fixture khác; không được chuyển lời mời hoặc chấp nhận chéo.
+5. Email chưa xác minh hoặc email_confirmed_at null; từ chối.
+6. Lời mời hết hạn/revoke, organization inactive, role không hợp lệ, membership đã tồn tại, hai acceptance đồng thời.
+7. Lock timeout/deadlock/serialization failure; transaction rollback toàn bộ, retry cùng mutation ID.
+8. Commit thành công nhưng mất HTTP response; replay cùng invitation + actor + mutation ID trả receipt gốc, không ghi lặp.
+9. Cùng mutation ID nhưng payload khác hoặc actor khác; conflict/deny, không lộ receipt.
+10. Gọi function từ anon/authenticated hoặc truy cập Saga/Auth trực tiếp qua Data API; phải bị từ chối.
+11. Kiểm tra đường Admin cập nhật email và mọi chế độ đổi email được hỗ trợ trên GoTrue version đang chạy.
+
+Pass: mỗi interleaving tương đương một thứ tự tuần tự; thành công chỉ tạo đúng một membership + một role + audit + Shared Receipt + Saga completion; thất bại/rollback không có business write; replay không tạo side effect; không rò PII/secret. Mục tiêu ban đầu: tối thiểu 20 interleaving ngẫu nhiên cho mỗi race class cộng barrier test xác định cả hai thứ tự khóa. Đây là mục tiêu kiểm thử, không tự nó chứng minh tính đúng.
+
+Dùng test-only barrier, không thêm sleep/debug endpoint/test hook vào RPC production. SQL update có kiểm soát chỉ chứng minh cơ chế row lock của PostgreSQL, không chứng minh GoTrue confirmation route thực tế. Chưa tạo fixture, chưa chạy test, không SQL write, DDL, RPC, Edge Function, grant hay đổi cấu hình.
