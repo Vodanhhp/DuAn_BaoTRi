@@ -245,3 +245,75 @@ Rollback không được xóa Auth users hoặc memberships đã tạo hợp l�
 3. Roster có cần đồng bộ tới PC/Mobile trong Change Feed không? Thiết kế hiện giả định CHƯA, cho đến khi users.view và dữ liệu được phép lộ được chốt.
 
 Không có SQL executable trong tài liệu này. Không sửa migrations 013/014, Edge Function hoặc client; không chạy SQL, không gọi RPC, không thay đổi Supabase.
+
+
+## 13. Quyết định sản phẩm đã xác nhận
+
+Người dùng đồng ý giữ cả ba mặc định:
+1. Chỉ Admin quản lý thành viên; không tự đổi role, tự suspend hoặc tự remove.
+2. Suspend/remove chặn quyền truy cập tenant qua Membership; không xóa Auth session toàn cục. Mỗi request/RPC vẫn phải kiểm tra membership active. Nếu sau này cần thu hồi phiên tức thời, đó là tính năng riêng với session strategy rõ ràng.
+3. Chưa đưa roster vào Change Feed. Danh sách thành viên chỉ được đọc qua luồng có authorization riêng; không mặc định dùng users.manage làm quyền đọc.
+
+## 14. Đối chiếu Edge Function hiện tại và điều chỉnh Invite Saga
+
+Đã rà soát tĩnh `supabase/functions/manage-organization-members/index.ts` (13.5 KB), migrations 001/005/013/014 và draft Shared Receipt 020.
+
+### 14.1 Các điểm hiện tại cần thay đổi khi cutover
+
+- Edge Function hiện kiểm tra `has_org_permission(..., 'users.manage')` trước mọi action, rồi dùng service_role để đọc/ghi. Kiểm tra này nằm ngoài transaction mutation, nên không khóa được permission/membership trước thay đổi.
+- Các RPC 013/014 yêu cầu `auth.role() = service_role` và nhận `p_actor_user_id`; đó là actor assertion do Edge Function truyền vào, không phải actor được DB xác thực.
+- `invite` tạo hoặc tìm Auth user trước, sau đó mới gọi membership RPC. Nếu RPC lỗi, code gọi `deleteUser` cho user vừa invite mà không kiểm tra kết quả; timeout/response không rõ có thể dẫn đến xóa nhầm user đã được tạo membership hoặc đã được dùng.
+- `update_role`, `update_status`, `remove_member` hiện thực hiện một số đọc target/role ở Edge Function rồi mới gọi RPC; những lần đọc trước RPC không phải căn cứ bảo mật. RPC phải tự khóa và kiểm tra target Admin/self/role trong cùng transaction.
+- `list` hiện dùng users.manage như quyền đọc roster. Khi chuyển sang policy đã chốt, cần tách quyền đọc roster (users.view) khỏi quyền quản trị (users.manage), hoặc tạm thời không hiển thị roster cho vai trò không có users.view.
+- `reset_password` là thao tác Auth riêng, không phải business mutation Receipt và không phát Change Feed. Tuy nhiên, xác thực actor và quyền users.manage phải được thực hiện server-side; target phải được xác minh là thành viên trong organization và không phải Admin. Không đưa email/token/recovery URL vào Receipt hoặc Change Feed.
+- Migration 013 trigger `sync_auth_user_profile()` chuyển invited → active khi email được xác nhận; trigger hiện update membership mà chưa tham gia Organization → Membership lock protocol.
+
+### 14.2 Invite Saga — điều chỉnh quan trọng
+
+Không thể dùng một transaction PostgreSQL bao trùm Auth Admin API. Tách thành ba pha bền vững:
+
+A. **Begin intent** — RPC bằng JWT actor:
+- Derive actor bằng auth.uid(); kiểm tra Organization active, actor Membership active và users.manage dưới lock protocol.
+- Claim operation_id + canonical fingerprint; lưu trạng thái requested và actor/organization/email chuẩn hóa/role.
+- Retry cùng operation_id + fingerprint trả lại trạng thái hiện tại; fingerprint khác bị từ chối.
+
+B. **Auth provisioning** — Edge Function:
+- Chỉ dùng service_role cho Auth Admin API; không dùng service_role để giả danh actor trong database RPC.
+- Trước khi gọi Auth, xác minh operation đã được begin và đang ở trạng thái phù hợp.
+- Sau timeout, tìm/đối chiếu Auth user và operation hiện hữu trước khi thử lại; không gọi invite lần nữa một cách mù quáng.
+- Ghi nhận auth_user_id và việc Auth user do operation tạo ra. Không suy ra quyền sở hữu user chỉ từ email trùng.
+
+C. **Finalize membership** — RPC bằng JWT actor:
+- Kiểm tra lại Auth, Organization, actor Membership và users.manage; không dựa vào lần kiểm tra ở pha A.
+- Claim/replay Receipt theo operation ID, khóa target/role, tạo membership + member_roles atomic, ghi trạng thái completed.
+- Nếu actor bị suspend/revoke quyền giữa A và C, finalize phải deny. Operation vẫn unresolved; không tự xóa Auth user. Một Admin đang active khác chỉ được tiếp quản qua một RPC adoption riêng, có authorization hiện thời và audit rõ; không được âm thầm đổi actor của Receipt.
+- Timeout sau finalize: query operation/Receipt bằng cùng operation_id trước khi retry hoặc compensation.
+
+### 14.3 Compensation policy
+
+- Chỉ cân nhắc delete Auth user nếu operation chứng minh user được tạo mới bởi chính operation, chưa có membership commit, chưa được xác nhận email/được sử dụng ở nơi khác, và trạng thái được kiểm tra lại ngay trước compensation.
+- Nếu Auth create hoặc finalize có kết quả không rõ, trạng thái là unresolved, không phải failed.
+- Nếu user đã tồn tại trước invite, tuyệt đối không xóa Auth user khi membership creation thất bại.
+- Compensation failure phải để trạng thái cần xử lý/retry; không bỏ qua lỗi deleteUser như code hiện tại.
+- Không dùng một Receipt business thông thường để lưu secret hoặc token Auth; operation saga chỉ giữ dữ liệu tối thiểu cần phục hồi.
+
+### 14.4 Các action và Receipt/Change Feed
+
+| Action | DB authorization | Shared Receipt | Change Feed |
+|---|---|---|---|
+| Invite/create membership | RPC actor JWT | Operation ID + Receipt/final state | Chưa bật roster feed |
+| Change role | RPC actor JWT | Có | Chưa bật |
+| Suspend/Activate | RPC actor JWT | Có | Chưa bật |
+| Remove membership | RPC actor JWT | Có | Chưa bật |
+| List roster | users.view riêng | Không | Không |
+| Reset password email | Server-side actor + target checks | Không lưu Auth action vào business Receipt | Không |
+| Email confirmation | Trigger/worker theo lock protocol, idempotent | Không dùng Receipt của actor invite; liên kết operation nếu cần | Chưa bật |
+
+### 14.5 Câu hỏi kỹ thuật còn phải giải quyết trước SQL
+
+1. Operation saga table tách khỏi organization_mutations hay mở rộng Receipt? Khuyến nghị tách: Auth provisioning có trạng thái nhiều pha, trong khi Shared Receipt chỉ đại diện kết quả transaction DB đã commit.
+2. Quyền đọc/tiếp quản operation unresolved: chỉ actor ban đầu hay Admin khác có thể adopt bằng RPC riêng? Khuyến nghị hỗ trợ Admin khác adopt có audit, không đổi actor của Receipt gốc.
+3. Trigger email confirmation có thể tuân lock order mà không deadlock với Auth Admin transaction hay không? Cần test concurrency; nếu không, chuyển activation sang worker idempotent.
+4. Có cần users.view cho Admin/Technician/Viewer theo catalog hiện hành hay chỉ Admin? Catalog hiện seed users.view cho Viewer do action='view'; cần xác nhận chính sách hiển thị roster riêng trước khi bật.
+
+Không sửa Edge Function/migrations, không chạy SQL/RPC, không thay đổi Supabase.
