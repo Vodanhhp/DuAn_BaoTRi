@@ -2017,3 +2017,19 @@ Supabase docs hiện hành mô tả Before User Created Hook chạy ngay trướ
 **Kết luận kỹ thuật:** proposal correlation receipt qua Before User Created Hook có cơ sở source-level cho native `inviteUserByEmail` ở nhánh tạo mới. Chưa phải implementation-ready: cần pin GoTrue/Auth + SDK version thực tế, kiểm tra cấu hình/plan Hook, và test end-to-end các cửa sổ crash, timeout, replay, orphan receipt, rollback và exact-ID lookup consistency. Không thay đổi policy fail-closed; không tự động retry khi outcome unknown.
 
 **Trạng thái:** technical verification, proposal chưa được người dùng phê duyệt. Chưa sửa DDL 021, chưa tạo RPC/Edge Function, không chạy SQL hoặc thay đổi Supabase.
+
+
+## 45. Technical verification: After User Created Hook và vị trí receipt an toàn hơn
+
+Đọc source Supabase Auth tại commit `10ef10789d1ee4fb422b448047e67e3e264c0482`:
+
+- `Invite()` thực hiện `db.Transaction(...)` để tạo Auth user, identity, audit log và gửi invite. Sau khi transaction trả về thành công, code gọi `triggerAfterUserCreated(r, db, user)`; `triggerAfterUserCreated` kiểm tra connection không còn transaction rồi mới gọi Hook. Do đó Hook được gọi sau transaction Auth đã commit.
+- Source `internal/hooks/v0hooks/v0hooks.go` định nghĩa `AfterUserCreatedInput` gồm `metadata` và `user`; metadata có UUID mới được sinh cho mỗi lần gọi Hook. Không giả định UUID này là stable idempotency key hoặc cùng một ID qua retry.
+- Khác với Before Hook, After Hook receipt được ghi sau khi Auth user transaction đã commit. Đây là candidate evidence mạnh hơn: signed After Hook + token/attempt correlation + Auth-generated user ID, và receipt commit bền vững.
+- Lưu ý quan trọng: trong source hiện tại, `Invite()` gọi `triggerAfterUserCreated` sau transaction mà không đặt điều kiện `isCreate`. Vì vậy không giả định After Hook chỉ phát ra cho user mới. Hook handler phải chỉ xử lý event có reserved correlation token khớp chính xác một attempt đang chờ; event không có marker hoặc không khớp phải không tạo receipt, không thay đổi trạng thái Saga.
+- Vì Hook được gọi sau Auth commit, nếu Hook/receipt lỗi thì Auth user có thể đã tồn tại trong khi `/invite` trả lỗi. Saga phải giữ `outcome_unknown`; không gọi Auth lại. Reconciliation chỉ có thể dùng receipt hợp lệ đã commit. Nếu không có receipt, không suy luận từ HTTP response hoặc email; giữ `needs_review`/manual recovery.
+- Token vẫn chỉ là opaque transport trong `user_metadata`, không phải quyền truy cập. Edge Function tạo token >=256-bit; digest lưu trong attempt trước dispatch; verify Standard Webhooks signature; đối chiếu digest, attempt, project, trạng thái, email fingerprint; receipt unique theo `attempt_id` và ràng buộc một Auth user ID. Cùng attempt + cùng user ID replay idempotent; cùng attempt + user ID khác là conflict. Webhook metadata UUID chỉ là audit metadata.
+- Receipt RPC phải server-only, append-only, không nhận actor/tenant/operation tùy ý từ payload ngoài các giá trị đã đối chiếu với attempt. Chống replay bằng attempt state, unique constraints, consumed/observed state và exact match. Không log raw token, secret, invite URL hoặc email raw.
+- Existing account / existing unconfirmed user vẫn phải được kiểm tra bằng attempt marker: nếu không có marker hợp lệ thì After Hook không tạo receipt. Dù source gọi hook sau transaction cho route Invite, không được coi event không có correlation là user vừa được operation tạo.
+
+**Kết luận cập nhật:** ưu tiên nghiên cứu After User Created Hook làm điểm ghi receipt sau Auth commit; Before Hook không còn là điểm receipt chính vì có thể tạo orphan pre-create observation. Đây vẫn là source-level feasibility, chưa phải cam kết availability trên Supabase Cloud/plan hoặc production readiness. Cần xác minh Auth/GoTrue + SDK version đã pin, hook type được bật trên project, delivery/retry/timeout semantics, và test end-to-end. Chưa duyệt implementation; không sửa DDL 021/RPC/Edge Function, không chạy SQL hoặc thay đổi Supabase.
