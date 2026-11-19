@@ -4813,3 +4813,15 @@ Lock-order map dựa trên migration/function trên main; caller runtime và beh
 
 ### Giới hạn
 Kết luận dựa trên static search và các call sites đã mở, không phải dynamic runtime trace đầy đủ. Chưa chạy test, chưa ghi DB, không thay đổi code hoặc Supabase.
+
+## 96. Ma trận concurrency Cloud P0/P1 – hợp đồng winner semantics – 20/11/2026
+
+Đã thiết kế ma trận test cho các writer Cloud đang có caller và các DB capability có thể tranh chấp trực tiếp:
+
+- **P0 Asset Lease:** hai acquire cùng Asset; mutation ↔ mutation; mutation ↔ heartbeat; mutation ↔ release; Asset DELETE ↔ mutation/heartbeat/acquire.
+- **P1 Import:** retry cùng mutation ID; mutation ID bị tái sử dụng với payload/actor/asset khác; import khác mutation ID cùng category; import ↔ allocator; import trùng UUID/code.
+- **P1 Settings:** update `organization_settings.asset_code_config` ↔ import; update ↔ allocator helper. Hai reader hiện không khóa Settings row, nên chưa bảo đảm reader nhìn snapshot cấu hình trước hay sau update theo một protocol khóa chung.
+
+Điểm kỹ thuật: Asset mutation dùng Lease FOR UPDATE → Asset UPDATE; Import dùng advisory mutation lock → Settings read → Counter UPSERT → Asset FOR UPDATE/INSERT → import ledger. Advisory lock chỉ bảo vệ retry cùng mutation ID; Counter mới serialize category. Allocator cũng Counter → Asset. Settings writer đang PostgREST UPDATE trực tiếp, không có shared row lock với reader.
+
+Winner semantics và điều kiện test được ghi tại `CLOUD_FOUNDATION_DRAFTS_REVIEW.md` §82 và `CLOUD_MEMBER_MANAGEMENT_RPC_DESIGN.md` §73. Chưa chạy concurrency test, chưa ghi DB, không sửa code/Supabase. Chỉ nghiên cứu và cập nhật tài liệu.
