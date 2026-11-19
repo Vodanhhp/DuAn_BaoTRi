@@ -1886,3 +1886,18 @@ Chỉ cho phép attempt mới nếu tất cả điều kiện đều đúng: (a)
 **Khuyến nghị:** ở giai đoạn đầu, allowlist `provider_rejection_no_side_effect` để trống cho tới khi kiểm tra được contract của đúng Supabase Auth endpoint đang dùng. Chỉ các lỗi local preflight chứng minh chưa dispatch mới được coi là definitive. Tất cả lỗi sau dispatch mặc định unknown, trừ khi sau này có bằng chứng endpoint-specific đủ mạnh.
 
 **Phạm vi:** proposal; chưa sửa DDL 021, chưa viết RPC/worker, không chạy SQL, không thay đổi Supabase Test/Production.
+
+
+### 40. Quyết định đã chốt: fail-closed retry policy cho Auth (20/11/2026)
+
+Người dùng đã đồng ý chốt nguyên tắc:
+
+- Giai đoạn đầu để trống allowlist provider error codes được phép retry.
+- Chỉ lỗi local preflight có bằng chứng chắc chắn request chưa được dispatch mới được phân loại `definitive_no_side_effect`.
+- Mọi lỗi xảy ra sau dispatch, hoặc không xác định được request đã dispatch hay chưa, mặc định `outcome_unknown` và phải reconciliation; không gọi Auth lại.
+- Không dùng HTTP status, email trùng, `Retry-After`, timeout hay lease expiry làm bằng chứng không có side effect.
+- Chỉ mở allowlist sau khi review contract của đúng endpoint/provider/version và có test evidence chứng minh no-side-effect.
+
+Quyết định này bổ sung cho policy ở §39; không thay đổi nguyên tắc `needs_review/conflict` khi provenance/identity không rõ.
+
+**Phạm vi:** quyết định policy đã chốt; chưa sửa DDL 021, chưa tạo RPC/worker, không chạy SQL hoặc thay đổi Supabase.
