@@ -1963,3 +1963,41 @@ Các hướng còn lại cần đánh giá riêng, không tự ý chọn:
 - Nếu không có correlation atomic cho native invite endpoint, giữ `outcome_unknown`/`needs_review`, manual review; không auto attach.
 
 **Nguồn source đã kiểm tra:** `supabase/auth-js` `GoTrueAdminApi.ts`, `lib/types.ts`; `supabase/auth` `internal/api/admin.go`, `internal/api/invite.go`. Source trên nhánh master có thể thay đổi; trước implementation phải pin release/commit tương ứng với project. Chưa sửa DDL 021, chưa tạo RPC/worker, không chạy SQL hoặc thay đổi Supabase.
+
+
+### 43. Proposal: Before User Created Hook làm correlation receipt cho native invite (20/11/2026)
+
+#### 43.1 Kết luận source-level
+
+Supabase docs hiện hành mô tả Before User Created Hook chạy ngay trước khi user được insert, payload gồm `metadata` (request UUID/time/name/IP) và `user` (có `id`, `email`, `app_metadata`, `user_metadata`); hook có thể allow hoặc reject, không có contract để sửa user object. HTTP Hook payload phải verify theo Standard Webhooks signature. Supabase Auth source hiện hành cho thấy native `Invite` route gọi `triggerBeforeUserCreated` chỉ khi `isCreate == true`, trước transaction tạo user; `InviteParams.Data` được đưa vào user metadata. `ToUserModel`/`NewUser` sinh UUID user ở server trước khi hook được gọi. Vì vậy có thể khảo sát một **pre-create correlation receipt**, không phải metadata mutation.
+
+#### 43.2 Luồng đề xuất
+
+1. Edge Function tạo random correlation token đủ entropy (>=256 bit) cho đúng `operation_id + attempt_id`. Không nhận token từ client. Trước khi gọi Auth, lưu digest + key version của token vào attempt record bằng internal RPC; commit attempt và digest trước network dispatch. Raw token chỉ tồn tại trong Edge Function memory và request `inviteUserByEmail({data})`; không log token.
+2. Đặt token vào một reserved key trong `data` (tức user_metadata transport). Dữ liệu này **không được tin** và không được dùng làm authorization/provenance trực tiếp. Nó chỉ là locator/correlation challenge. Token có thể còn trong user_metadata sau create; xem là opaque non-authorizing marker, không chứa operation data/PII/secret có quyền truy cập. Không sử dụng marker trong RLS, JWT authorization hoặc permission.
+3. Cấu hình HTTP Before User Created Hook. Hook bắt buộc verify Standard Webhooks signature + timestamp/replay policy; parse đúng payload. Nếu reserved marker key xuất hiện, hook tính digest bằng secret/key version phía server và đối chiếu attempt đang `auth_calling`, marker chưa consume, đúng project/environment, đúng email fingerprint/operation/attempt. Thiếu hoặc mismatch => reject, không ghi event. Với signup thông thường không có reserved key, áp dụng policy signup bình thường.
+4. Sau khi marker hợp lệ, hook gọi internal server-only RPC để ghi append-only `hook_observation`/correlation receipt: webhook event ID, hook request UUID, operation_id, attempt_id, Auth-generated `user.id`, project/environment, marker digest/key version, observed time. Unique webhook ID và unique attempt binding; cùng webhook replay idempotent; attempt đã map user khác => conflict. RPC chỉ cho service-side caller, không public/anon/authenticated; không nhận actor do client chỉ định. Commit receipt bền vững rồi hook mới trả HTTP 200 allow.
+5. Auth tiếp tục tạo user. Khi reconcile, đọc receipt từ DB và query Auth Admin `getUserById(receipt.auth_user_id)` trong đúng project. Chỉ khi Auth user hiện tồn tại với đúng ID và dữ liệu provider phù hợp mới có thể xác lập `created_by_operation`; email chỉ là consistency check, không phải proof. Receipt một mình chưa chứng minh user đã commit vì hook chạy trước insert.
+6. Nếu hook ghi receipt thành công nhưng Auth transaction sau đó rollback, receipt là orphan pre-create observation; Auth user không tồn tại. Không được finalize/attach, không tự coi một lần query không thấy là definitive no-side-effect; giữ unresolved và theo dõi/review. Nếu hook không thể ghi receipt bền vững, hook fail closed (reject); không cho Auth tiếp tục.
+
+#### 43.3 Giới hạn và điều kiện bảo mật
+
+- Marker nằm trong `user_metadata` chỉ là phương tiện chuyển correlation token vào hook. Chính hook phải xác minh token với digest đã commit trước dispatch; không tin metadata chỉ vì nó xuất hiện trong payload. Sau hook, bằng chứng là signed hook + durable receipt + Auth-generated immutable user ID + xác nhận Auth user tồn tại.
+- Không để client gọi trực tiếp service-role invite path hoặc truyền correlation token; Edge Function server-side tự tạo token. Không ghi raw token vào DB/log/receipt. Chống replay bằng attempt state, unique constraints, expiry và consumed state.
+- Hook có thể được gọi cho nhiều loại account creation; reserved marker phải chỉ được chấp nhận khi khớp một invite attempt hợp lệ. Không biến hook thành cơ chế tạo membership hoặc cấp quyền.
+- `Invite` route chỉ gọi Before User Created khi `isCreate == true`. Nếu email đã có Auth user chưa xác nhận, endpoint đi nhánh existing user và hook không chạy. Vì vậy giải pháp này **không chứng minh provenance cho preexisting account**; trường hợp đó vẫn cần independent verification hoặc `needs_review`.
+- External hook receipt và Auth user insert không phải cùng một transaction. Thiết kế an toàn dựa trên hai pha: receipt trước + exact Auth user ID tồn tại sau. Receipt orphan không được dùng để attach. Cần kiểm tra webhook retry/timeout và tính nhất quán Auth read bằng test thực tế.
+- Hook availability/plan, signature rotation, timeout, retry semantics, rate limits, event ID semantics, Auth user lookup consistency, project version và SDK/Auth release phải được pin/test trước triển khai. Không suy diễn HTTP 200 của hook đồng nghĩa Auth create đã commit.
+
+#### 43.4 Test bắt buộc
+
+- Hook event signature sai, timestamp cũ, replay cùng webhook ID; duplicate/reordered hook calls.
+- Token sai, token của operation/attempt khác, marker missing, expired, consumed, email/project mismatch.
+- Hook DB receipt insert success nhưng Auth transaction rollback; receipt tồn tại nhưng Auth getUserById không thấy user.
+- Hook DB receipt insert timeout/lost response; retry cùng webhook ID không tạo duplicate.
+- Auth create commit nhưng response mất; receipt + exact user ID cho phép reconcile đúng.
+- User metadata bị sửa/xóa sau khi tạo: provenance vẫn dựa vào immutable receipt, không dựa metadata hiện tại.
+- Existing unconfirmed account: hook không chạy, không gán `created_by_operation`.
+- Không log token, email raw, webhook secret, service key hoặc invite URL.
+
+**Trạng thái:** proposal nghiên cứu; chưa được người dùng phê duyệt. Supabase source/docs trên bản hiện hành; cần pin phiên bản dự án trước implementation. Chưa sửa DDL 021, chưa viết RPC/Edge Function, không chạy SQL hoặc thay đổi Supabase.
