@@ -3859,3 +3859,15 @@ Còn mở: provider evidence/correlation, definitive failure classification, lea
 Người dùng đồng ý mô hình hai bảng: `organization_member_invite_attempts` là immutable attempt header; `organization_member_invite_attempt_events` là append-only event history. Attempt phải được commit trước Auth call. Lease expiry chỉ cho phép takeover reconciliation, không tự động gọi Auth lại. `outcome_unknown` không phải definitive failure; chỉ retry khi có bằng chứng đáng tin cậy rằng attempt trước không tạo side effect; nếu không đủ bằng chứng thì unresolved/`needs_review`.
 
 Còn mở: provider evidence/correlation, definitive failure classification, lease duration và quyền Admin takeover. Chưa sửa DDL 021, chưa tạo RPC/worker, không chạy SQL và không thay đổi Supabase.
+
+
+## 54. Phân loại lỗi Auth và điều kiện retry cho Invite Saga (20/11/2026)
+
+Đã lập policy proposal tại Member design §39 và Foundation review §42:
+- `definitive_no_side_effect`: chỉ khi chứng minh request chưa dispatch hoặc endpoint-specific contract xác nhận lỗi xảy ra trước mọi side effect.
+- `outcome_unknown`: timeout, mất kết nối, crash, response không đầy đủ, 5xx hoặc mọi lỗi sau dispatch chưa rõ side effect; không retry Auth, phải reconciliation.
+- `needs_review/conflict`: duplicate/existing account, Auth ID mismatch, evidence mâu thuẫn hoặc chưa chứng minh ownership; không tự gắn/xóa Auth user.
+- Không suy luận từ HTTP status; 4xx/429 không mặc nhiên an toàn để retry. Ban đầu để trống allowlist provider rejection, chỉ local preflight chứng minh chưa dispatch mới definitive.
+- Retry chỉ khi có evidence allowlist, request cũ không còn khả năng chạy, operation còn hợp lệ và quyền/policy cho phép.
+
+Đây là proposal, chưa được người dùng chốt. Chưa sửa DDL 021, chưa tạo RPC/worker, không chạy SQL hoặc thay đổi Supabase.
