@@ -1114,3 +1114,104 @@ Mọi writer/revoker của Organization, Membership, Role và Role Permission ph
 ### 26.5 Ranh giới an toàn
 
 Chỉ bổ sung chuẩn hóa thiết kế trong tài liệu này. Không sửa §13 quyết định sản phẩm, không sửa SQL draft/migration, Edge Function, client hoặc Dexie; không chạy SQL/RPC, không thay đổi Supabase Test/Production, quyền hoặc dữ liệu.
+
+
+## 27. Contract operation, fingerprint, Receipt disclosure và audit cho Member RPC (19/11/2026)
+
+Trạng thái: **đề xuất chuẩn hóa để review; chưa phải SQL schema hoặc cutover approval**. Mục này chốt contract ở mức nghiệp vụ cho các Member RPC đã xác định tại §25.3, đồng thời giữ ranh giới Invite Saga/Auth API và roster Change Feed tại §26.
+
+### 27.1 Operation code ổn định
+
+Dùng đúng các mã sau, độc lập tên SQL function và không tái sử dụng cùng một mã cho intent khác:
+
+| Intent | Operation code | Mutation ID |
+|---|---|---|
+| Finalize/tạo membership sau khi Invite Saga đã resolve Auth identity | `member.create` | UUID riêng cho lần finalize logical |
+| Đổi role membership | `member.role.change` | UUID riêng cho lần đổi role |
+| Suspend/reactivate membership | `member.status.change` | UUID riêng cho lần đổi status |
+| Remove membership | `member.remove` | UUID riêng cho lần remove |
+| User tự kích hoạt membership đã xác nhận email | `member.self.activate` | UUID riêng cho lần self-activation |
+
+Không dùng Shared Receipt của `member.create` thay cho Invite Saga operation record. Auth invite/create là external side effect; Saga giữ `invite_operation_id` riêng. Chỉ bước finalize membership trong PostgreSQL dùng Shared Receipt, fingerprint bind invite_operation_id đã được server xác minh. Reset password/Auth Admin API không phải Member business mutation và không được giả làm Receipt của membership.
+
+### 27.2 Fingerprint field allowlist — server-built
+
+Mọi fingerprint đều do RPC dựng từ JWT, DB state và payload đã chuẩn hóa; client chỉ gửi mutation_id cùng các input nghiệp vụ được phép.
+
+| Operation | Trường bắt buộc bind vào fingerprint |
+|---|---|
+| `member.create` | operation code; organization_id; actor auth.uid(); invite_operation_id đã xác minh; auth_user_id đã được Saga resolve; target role code; trạng thái khởi tạo do server suy ra từ email-confirmed state; schema/contract version |
+| `member.role.change` | operation code; organization_id; actor; target membership_id; role code hiện tại đã đọc dưới lock; role code đích; trạng thái membership đã xác thực; schema/contract version |
+| `member.status.change` | operation code; organization_id; actor; target membership_id; status hiện tại; status đích; schema/contract version |
+| `member.remove` | operation code; organization_id; actor; target membership_id; status và role assignment hiện tại đã xác thực; schema/contract version |
+| `member.self.activate` | operation code; organization_id; actor auth.uid(); target membership_id thuộc chính actor; status invited; email_confirmed_at do server đọc và xác minh; schema/contract version |
+
+Quy tắc:
+- Common scope luôn bind organization + actor + operation; target identity và mọi trường làm thay đổi kết quả phải được bind.
+- Không bind giá trị do client tự khai là sự thật (actor ID, email-confirmed flag, role hiện tại, membership status, permission list).
+- Không đưa email, phone, invite URL, token, Auth metadata, raw request headers hoặc dữ liệu không liên quan vào fingerprint.
+- Chuẩn hóa enum theo canonical code; UUID về canonical representation; chuỗi theo quy tắc trim/case đã định nghĩa cho field đó; không tự lower-case display name. Các trường server-derived được đọc lại trong transaction/lock scope.
+- Không có row_version cho Membership/Role assignment hiện tại; không giả định có expected_version. Dùng current state dưới row lock + fingerprint. Nếu sau này thêm revision, phải version hóa contract.
+- Cùng organization + mutation_id nhưng khác operation/actor/fingerprint là key reuse và phải từ chối không side effect. Timeout/unknown outcome replay cùng mutation_id và cùng logical payload.
+- `member.create` retry phải dùng cùng invite_operation_id và cùng mutation_id của finalize. Không tạo Auth invite mới chỉ vì response finalize bị mất.
+
+### 27.3 Receipt read-permission và disclosure policy
+
+Để tuân Shared Receipt all-or-nothing mà không làm lộ roster:
+
+| Operation | Read permission codes gắn với snapshot | Full result được phép trả khi replay |
+|---|---|---|
+| `member.create` | `users.view` | Chỉ khi actor hiện còn users.view; nếu không chỉ acknowledgement tối thiểu |
+| `member.role.change` | `users.view` | Chỉ khi actor hiện còn users.view; nếu không chỉ acknowledgement tối thiểu |
+| `member.status.change` | `users.view` | Chỉ khi actor hiện còn users.view; nếu không chỉ acknowledgement tối thiểu |
+| `member.remove` | `users.view` | Chỉ acknowledgement tối thiểu sau remove; không trả roster snapshot hoặc dữ liệu target đã xóa |
+| `member.self.activate` | Không lưu roster read permission; result payload chỉ là acknowledgement self-scoped | Chỉ trả acknowledgement self-scoped; không trả roster hoặc thông tin thành viên khác |
+
+- Write permission cho bốn thao tác quản trị là `users.manage`, được kiểm tra trong transaction. Đổi role membership không tự đòi `roles.manage`; quyền đó dành cho quản trị Role/Permission catalog, trừ khi policy sản phẩm sau này quyết định khác.
+- `member.self.activate` không dùng `users.manage`; server bắt buộc auth.uid() = auth user sở hữu membership, organization active, membership invited và email đã xác nhận.
+- `users.manage` không thay thế `users.view`. Có manage-only nhưng không view thì vẫn có thể thực hiện mutation được phép, song Receipt replay chỉ nhận acknowledgement.
+- Receipt mismatch hoặc actor khác không được tiết lộ có Receipt hay result nào.
+- `member.remove` không trả affected snapshot có chứa membership đã xóa. Receipt chỉ trả trạng thái xử lý tối thiểu cùng operation identity an toàn.
+
+### 27.4 Audit contract — độc lập Shared Receipt
+
+Mỗi state transition quản trị thành công ghi một audit row append-only trong cùng transaction với Membership/Role assignment mutation và Shared Receipt. Audit không phải Change Feed, không làm tăng organization sync cursor và không mang roster payload tới Local.
+
+Schema logic đề xuất (tên bảng/cột chỉ là contract, chưa chốt DDL):
+- `audit_id`: UUID bất biến.
+- `organization_id`: tenant scope.
+- `actor_user_id`: actor lấy từ auth.uid(); với Saga recovery lưu actor thực hiện bước adoption/finalize và giữ actor gốc trong Saga operation record.
+- `action_code`: một trong operation code ở §27.1; adoption dùng action riêng `member.invite.adopt`.
+- `target_membership_id`: nullable; giữ giá trị dạng scalar, không FK cascade tới membership để audit còn nguyên sau remove.
+- `invite_operation_id`: nullable, chỉ tham chiếu Saga operation đã xác minh; không lưu email.
+- `mutation_id`: nullable với thao tác external/Saga chưa có Shared Receipt; khi có Receipt thì liên kết đúng mutation.
+- `before_state` / `after_state`: JSONB allowlist tối thiểu, chỉ role code/status cần audit; không snapshot toàn bộ row.
+- `reason`: nullable cho thao tác thường; bắt buộc cho adoption theo quyết định đã chốt. Không ghi email/PII hoặc token vào reason.
+- `outcome`: `applied` cho transition đã commit; không tạo audit transition giả cho no_change.
+- `occurred_at`: timestamp do database gán.
+- `schema_version`: version của audit payload.
+
+Bất biến:
+1. Audit append-only; không UPDATE/DELETE từ client hoặc RPC nghiệp vụ thông thường. Retention/archive là quy trình riêng, cần phê duyệt và không được cascade theo membership.
+2. Audit ghi cùng transaction với state transition và Receipt; nếu audit insert thất bại thì mutation rollback.
+3. Audit không thay thế Receipt: Receipt phục vụ idempotency/recovery; audit phục vụ truy vết actor/action/target/before-after/reason/time.
+4. Không đưa email, phone, Auth metadata, invite URL, token hoặc result payload nhạy cảm vào audit. PII cần cho Invite Saga nằm trong bảng operation riêng, có RLS/grants/retention riêng.
+5. Adoption ghi audit riêng với actor adopter, operation ID, reason bắt buộc; không đổi actor gốc, fingerprint hoặc Receipt gốc.
+6. Self-activation ghi audit lifecycle tối thiểu trong cùng transaction; no_change idempotent không tạo audit transition mới.
+7. Permission denial/validation failure không tạo audit state-transition row; nếu cần security telemetry thì dùng hệ thống log bảo mật riêng, không trộn vào audit committed mutation.
+
+### 27.5 Bảng quyết định tổng hợp
+
+| RPC intent | Write authorization | Receipt | Audit | Change Feed |
+|---|---|---|---|---|
+| member.create/finalize | users.manage | Shared Receipt | Có khi membership tạo mới | Không |
+| member.role.change | users.manage | Shared Receipt | Có khi role thực sự đổi | Không |
+| member.status.change | users.manage | Shared Receipt | Có khi status thực sự đổi | Không |
+| member.remove | users.manage | Shared Receipt | Có khi membership thực sự bị remove | Không |
+| member.self.activate | Self identity + email confirmed; không cần users.manage | Shared Receipt | Có khi invited → active | Không |
+
+### 27.6 Cổng review còn lại
+
+Trước SQL phải xác nhận tên/cột thật của Saga operation table, Role code và status enum; chốt chính xác Receipt result payload tối thiểu; rà soát audit table hiện có để tránh tạo bảng trùng; xác định RLS, function owner, grants, retention và khả năng audit trigger/insert cùng transaction. Mục này chưa cho phép tự tạo audit table nếu repository đã có audit contract khác.
+
+Không sửa migration, draft SQL, Edge Function, UI hoặc Dexie; không chạy SQL/RPC và không thay đổi Supabase Test/Production.
