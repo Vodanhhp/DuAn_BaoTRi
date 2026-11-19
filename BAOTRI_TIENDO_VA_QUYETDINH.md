@@ -3768,3 +3768,12 @@ Hoàn thiện hợp đồng quyền/replay và quyết định điều chỉnh t
 - Chỉ trả snapshot nếu actor hiện có read permission tương ứng; nếu không, chỉ trả acknowledgement tối thiểu, không tiết lộ snapshot nhạy cảm.
 - Quyết định này thuộc shared Receipt design; Asset-specific Receipt/Lease và RPC hiện tại chưa thay đổi, cần kế hoạch chuyển đổi riêng.
 - Chưa tạo SQL/RPC, chưa sửa code, chưa apply migration, chưa thay đổi dữ liệu/quyền Cloud hoặc chạy test.
+
+
+## 45. Tạo SQL draft shared Receipt (19/11/2026)
+
+- Tạo `supabase/drafts/020_organization_mutations_receipt_DRAFT.sql` để review DDL cho bảng Receipt chung `organization_mutations`.
+- Receipt đại diện một logical mutation, hỗ trợ nhiều affected records; gồm organization + mutation ID, actor Auth, operation, canonical JSONB fingerprint, read permission codes, affected refs, result payload và trạng thái.
+- Claim/replay: xác thực Auth + active organization + active membership; tra Receipt trước khi kiểm tra write permission. Receipt cũ cùng actor/fingerprint được replay read-only; full snapshot chỉ khi còn đủ read permission, nếu không chỉ acknowledgement. Mutation mới mới cần write permission và claim unique key.
+- `pending` chỉ tồn tại bên trong transaction nghiệp vụ; deferred trigger buộc finalize trước commit, trigger khác bảo vệ Receipt bất biến sau finalize.
+- Không phụ thuộc pgcrypto, không tạo generic claim RPC, không dual-write hoặc thay Asset Receipt/Lease. Đây chỉ là SQL draft; chưa chạy SQL, chưa apply Test/Production, chưa sửa code, dữ liệu hoặc quyền.
