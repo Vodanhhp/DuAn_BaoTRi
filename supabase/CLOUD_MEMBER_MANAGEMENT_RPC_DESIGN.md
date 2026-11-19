@@ -1397,6 +1397,7 @@ Tạo file nháp: supabase/drafts/021_member_audit_and_invite_saga_DRAFT.sql.
 
 - DDL chỉ tạo hai bảng, index, RLS bật, revoke trực tiếp và append-only trigger. Không có RPC, client read policy, worker, state transition function, audit read function hoặc retention job.
 - resolved_initial_status, actor gốc, fingerprint và state/version transition phải được bảo vệ bất biến/compare-and-set trong RPC; DDL hiện chỉ có CHECK cơ bản, chưa tự enforce toàn bộ state machine.
+- Audit before_state/after_state có CHECK allowlist chỉ cho role_code, membership_status và saga_status với enum hợp lệ; không cho phép key tùy ý. reason vẫn là text cần RPC/operational sanitization, tuyệt đối không đưa PII/token vào reason.
 - Append-only trigger chặn UPDATE/DELETE row; không thay thế quyền vận hành đối với owner/superuser hoặc TRUNCATE. Grants vận hành phải được review riêng.
 - Direct privileges bị revoke khỏi service_role; Edge Function không được ghi bảng trực tiếp. Service orchestration cần RPC SECURITY DEFINER purpose-specific với EXECUTE grants hẹp.
 - FK RESTRICT tới Auth/Profile/Organization có thể chặn xóa identity/tenant; cần xác nhận lifecycle/retention policy và quy trình archive trước production.
