@@ -2437,3 +2437,28 @@ A narrow authenticated PostgREST RPC wrapper may avoid a direct Edge DB credenti
 5. The RPC being callable by authenticated users is not itself a vulnerability if it derives actor from verified PostgREST JWT and enforces every invariant server-side; direct calls must be safe by design.
 
 This alternative may be simpler and safer than a dedicated Edge DB login, but requires exact verification of PostgREST JWT context inside SECURITY DEFINER, exposed-schema configuration, wrapper/inner function ACLs, Vault secret isolation, and concurrent email-change tests. No architecture choice is finalized.
+
+## 58. Authenticated PostgREST RPC identity-context verification (20/11/2026)
+
+### Verified on BAOTRI-Mini-Test, read-only
+- `auth.uid()` definition reads `current_setting('request.jwt.claim.sub', true)`, falling back to `request.jwt.claims` JSON field `sub`, then casts to UUID.
+- The function is STABLE SQL, not SECURITY DEFINER. Its ACL currently includes PUBLIC EXECUTE; this is a harmless identity helper by itself, not permission to access invitation data.
+- Effective privilege checks: anon and authenticated have auth schema USAGE and can EXECUTE auth.uid(); neither has vault schema USAGE nor SELECT on vault secrets/decrypted_secrets. service_role and postgres have vault schema USAGE and SELECT on both Vault views/tables.
+- This confirms the mechanism by which a PostgREST request can supply a verified JWT subject to `auth.uid()`. It does not prove the value is set in a direct SQL connection or arbitrary Edge→Postgres connection. The PostgREST request context must be preserved.
+- No JWT claim was forged/set for testing; no user was modified; no data or privileges changed.
+
+### Implications for the RPC candidate
+1. Exposed wrapper is invoked through the normal authenticated Supabase client, so PostgREST validates the bearer JWT and establishes request claim settings.
+2. Wrapper and private SECURITY DEFINER implementation must derive actor only from `auth.uid()`; do not accept actor UID, email, organization ID or role as trusted authorization inputs.
+3. Do not overwrite `request.jwt.claim.sub` or `request.jwt.claims` in the wrapper/inner function. A direct database caller can set session settings; therefore a direct SQL call is not equivalent to a verified PostgREST request.
+4. `auth.uid()` returning a UUID is not enough by itself: re-read and lock the matching `auth.users` row, verify the current confirmed email and recipient digest, then lock/revalidate invitation and actor authority in the same transaction.
+5. Public RPC wrapper is an intentional authenticated endpoint; revoke EXECUTE from PUBLIC and anon, grant authenticated only. The private implementation lives in a non-exposed schema, with EXECUTE restricted to the wrapper owner/call path. Audit default privileges and SECURITY DEFINER ownership.
+6. Keep function `search_path` fixed/empty and fully qualify all objects. Never resolve untrusted names from caller-controlled search_path.
+
+### Vault finding clarified
+- Effective privilege checks show anon/authenticated have no USAGE on vault and no SELECT on vault.secrets/decrypted_secrets. service_role and postgres do have those privileges.
+- Therefore authenticated RPC can potentially read a Vault secret only through a tightly scoped SECURITY DEFINER owner path; do not grant authenticated or service_role any new secret access. But postgres-owned function is a high-privilege trust boundary; evaluate whether a narrower owner can read one secret safely.
+- Vault schema not appearing in pg_extension is not proof Vault is absent: the schema and Vault objects exist. Extension packaging/managed lifecycle remains unresolved; rely on documented Vault behavior only after project-specific confirmation.
+
+### Status
+Authenticated PostgREST RPC is now the preferred candidate to prototype before direct Edge DB login, because it avoids a separate DB credential and can use the verified PostgREST actor context. This is not final architecture approval. Still required: test JWT context inside SECURITY DEFINER through the real API path, inspect API exposed schemas, design secret access, and test Auth email-change concurrency. No DDL/RPC/grant/secret or configuration change.
