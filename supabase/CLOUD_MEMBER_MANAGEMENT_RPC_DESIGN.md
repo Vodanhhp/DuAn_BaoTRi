@@ -2509,3 +2509,14 @@ No API exposure settings, schemas, functions, grants, SQL data or Supabase confi
 - Consider a dedicated non-BYPASSRLS function owner only if it can safely receive the exact underlying table/Auth privileges needed; do not weaken RLS globally or FORCE RLS as a shortcut without checking owner/foreign-key/trigger semantics.
 
 This reinforces that authenticated RPC is only a transport/identity boundary. Business authorization must be enforced explicitly inside the transaction. No RLS, grants, function, or data changed.
+
+## 61. Existing membership-related trigger side-effect audit (20/11/2026)
+
+Read-only Test catalog inspection of non-internal triggers on `organizations`, `organization_members`, `member_roles`, `roles`, `role_permissions`, and `profiles` found only:
+- `organization_members_set_updated_at` → `set_updated_at()`
+- `organizations_set_updated_at` → `set_updated_at()`
+- `profiles_set_updated_at` → `set_updated_at()`
+
+The inspected tables have no other non-internal triggers. In particular, no trigger automatically creates member_roles, writes invitation audit, or updates Saga/Shared Receipt. Acceptance must explicitly write all required business/audit/receipt/Saga rows in the same transaction. Do not rely on a trigger to complete a partial acceptance.
+
+This is Test-only evidence. Future migrations may add triggers; deployment preflight must re-inspect trigger inventory and function definitions before applying the acceptance migration. No trigger or table was changed.
