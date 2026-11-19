@@ -2244,3 +2244,42 @@ Saga lưu HMAC digest, còn key material nằm ngoài Database. PostgreSQL khôn
 - Candidate state `awaiting_existing_account_acceptance` và điều kiện chuyển từ intent sang pending Inbox.
 - Expiry, revoke, decline, inviter authority reapproval, rate limit, audit retention và Shared Receipt acceptance key.
 - Đây vẫn là design proposal. Không tạo DDL/RPC/Edge Function, không chạy SQL, không thay đổi Supabase.
+
+
+## 53. Supabase Hosted — auth.users row-lock feasibility for invitation acceptance (read-only investigation, 20/11/2026)
+
+### Read-only catalog check on BAOTRI-Mini-Test
+Project checked: `oyzhxgzltpdebpymuicb`, PostgreSQL 17.12. No schema/data changes were made.
+- `auth.users` owner is `supabase_auth_admin`; RLS is enabled; FORCE ROW LEVEL SECURITY is false; catalog query found zero explicit policies on this table.
+- `postgres` is not superuser, but has `BYPASSRLS=true`, `USAGE` on schema auth, and SELECT + UPDATE privileges on `auth.users`.
+- `supabase_auth_admin` also has SELECT + UPDATE; it is not BYPASSRLS.
+- `service_role`, `authenticated`, and `anon` do not have SELECT or UPDATE on `auth.users`.
+- A read-only `SELECT id FROM auth.users WHERE false FOR UPDATE` executed as postgres without permission error. The false predicate ensured no actual user row was locked. This verifies SQL privilege/parse feasibility only, not a live concurrent lock test.
+- These are observations for this Test project only. Do not assume identical grants/ownership on every customer Production project; repeat the catalog preflight on each target project before deployment.
+
+### What this establishes
+PostgreSQL `FOR UPDATE` locks the selected row against concurrent updates/deletes/competing row locks until the transaction ends. GoTrue's current source-level email-change confirmation path updates the `auth.users.email` field as part of its transaction (`ConfirmEmailChange` -> `UpdateOnly(..., "email", ...)`). Therefore, when the deployed Auth version follows this path, locking the exact `auth.users` row serializes invitation acceptance against a concurrent confirmed email change.
+
+Sources reviewed:
+- PostgreSQL 17 explicit row locking: https://www.postgresql.org/docs/17/explicit-locking.html
+- PostgreSQL 17 consistency and blocking locks: https://www.postgresql.org/docs/17/applevel-consistency.html
+- GoTrue current source, `ConfirmEmailChange`: https://github.com/supabase/auth/blob/master/internal/models/user.go
+- Supabase User Management: Auth schema is not exposed through the auto-generated Data API: https://supabase.com/docs/guides/auth/managing-user-data
+
+### Recommended acceptance transaction pattern — proposal only
+1. Edge Function validates the bearer with Auth server-side and obtains the authoritative UID, exact current email string and email-confirmed state. It computes the recipient HMAC using the secret-manager key. Client supplies none of these values.
+2. Internal acceptance function is owned by `postgres` (or another specifically verified role with equivalent SELECT + UPDATE + BYPASSRLS capability), uses `SECURITY DEFINER`, fixed empty `search_path`, and fully qualified object names. It first selects the exact `auth.users` row by actor UID `FOR UPDATE`.
+3. Under that lock, function checks that the database email exactly equals the server-verified email supplied by the Edge Function and that `email_confirmed_at` is still non-null. It then validates recipient digest/key version, locks the invitation Saga row, and rechecks pending/expiry/revocation, organization, role and membership constraints.
+4. Use one consistent lock order: Auth user row first, invitation/Saga row second, then membership/role/audit/receipt rows. Keep transaction short; no HTTP/Auth/email/provider calls while locks are held.
+5. If Auth email update committed first, the locked row exposes the new email and the old invitation digest does not match. If acceptance locks first, the email update waits until the acceptance transaction commits; acceptance is valid against the verified email current at its serialization point. Any transaction/serialization/lock error aborts the whole acceptance; retry only with the same stable mutation ID.
+6. Do not grant SELECT/UPDATE on `auth.users` directly to `service_role`, `authenticated` or the browser. The server role should receive EXECUTE on a narrowly scoped function only; direct table privileges remain confined to the function owner/managed Auth role.
+
+### Important implementation caveats
+- This confirms feasibility on BAOTRI-Mini-Test, not automatic Production portability. Hosted project grants can differ; each tenant project needs a read-only preflight.
+- A `private` schema function is not callable through PostgREST unless the schema is exposed. Choose and security-review one call path before implementation: direct trusted Postgres connection from Edge Function to a private-schema function, or a tightly restricted server-only RPC wrapper with EXECUTE revoked from PUBLIC/anon/authenticated and granted only to the server role. Do not expose a general-purpose Auth lookup RPC.
+- Supabase docs state Auth schema is not exposed through the generated Data API; this is distinct from trusted SQL access. Do not expose `auth.users` as a client API.
+- Source code on `master` is not a substitute for checking the exact GoTrue version deployed to each hosted project. Pin/record Auth version and test normal email change, secure email change, admin email update, concurrent accept-vs-confirm, lock timeout, and transaction rollback on the Test project before production.
+- The test query used `WHERE false`; no real row-level contention test has yet been performed. Do not mark race-condition tests PASS.
+
+### Status
+Read-only investigation supports a viable candidate: a tightly restricted `SECURITY DEFINER` function owned by `postgres` can lock `auth.users` on the current Test project. This is not implementation approval. No DDL, RPC, Edge Function, SQL write, grant, migration or Supabase configuration was changed. Production preflight, deployed Auth version verification, live concurrency tests, and final RPC invocation path remain open.
