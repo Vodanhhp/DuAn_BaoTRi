@@ -1430,3 +1430,135 @@ Không áp dụng SQL. Không có thay đổi database.
 8. Chưa kiểm chứng cú pháp bằng PostgreSQL parser hoặc chạy thử; file vẫn là static draft.
 
 **Kết luận vòng 1:** các điểm ràng buộc SQL nhìn thấy được đã được gia cố; chưa đủ điều kiện promote thành migration. Cần tiếp tục review RPC authorization, transition matrix, lock order, atomic audit + Shared Receipt, PII handling và retention.
+
+
+## 32. Ma trận State Transition và kiểm thử RPC Invite Saga (19/11/2026)
+
+Trạng thái: **hợp đồng review thiết kế**, chưa viết RPC SQL, chưa chạy test database. Dựa trên state machine §15.3–15.10, quyết định adoption/manual recovery §16 và DDL 021.
+
+### 32.1 Ma trận transition được phép
+
+Mỗi transition phải CAS theo (organization_id, operation_id, expected status, expected version); RPC kiểm tra attempt token/lease nếu transition thuộc Auth attempt. Cập nhật Saga row và audit state-change trong cùng transaction. Transition không liệt kê dưới đây mặc định bị từ chối.
+
+| Trạng thái hiện tại | Trạng thái kế tiếp | Điều kiện bắt buộc |
+|---|---|---|
+| (chưa có row) | requested | Begin RPC hợp lệ; actor JWT; organization + membership active; users.manage; role chỉ technician/viewer; claim operation ID + fingerprint |
+| requested | auth_calling | Server-only claim; lease + attempt ID do DB sinh; không có attempt đang hiệu lực |
+| requested | cancelled | Actor hợp lệ; Auth provisioning chưa từng bắt đầu; cancellation atomic + audit |
+| auth_calling | auth_user_resolved | Server-only record result; attempt token hiện hành; Auth user ID + provenance được ghi nhận; kết quả không xung đột |
+| auth_calling | auth_outcome_unknown | Server-only timeout/crash marker; đúng attempt; không kết luận user không tồn tại |
+| auth_calling | failed_terminal | Chỉ lỗi definitive, không retry được và đã chứng minh Auth user không được tạo/liên kết; không dùng cho timeout |
+| auth_outcome_unknown | auth_user_resolved | Reconciliation có bằng chứng đáng tin cậy về đúng Auth user; email trùng đơn thuần không đủ |
+| auth_outcome_unknown | auth_calling | Chỉ sau khi reconciliation chứng minh không có Auth user được tạo/liên kết, lỗi retryable, backoff đủ điều kiện; claim attempt mới + lease mới; operation_id giữ nguyên |
+| auth_outcome_unknown | needs_review | Không xác minh được ownership/provenance, xung đột hoặc hết ngưỡng recovery |
+| auth_user_resolved | finalize_pending | Server đã lưu kết quả Auth; sẵn sàng finalize; trạng thái và version khớp |
+| auth_user_resolved | needs_review | Phát hiện xung đột Auth user, membership hoặc provenance |
+| finalize_pending | completed | Finalize RPC actor JWT recheck quyền hiện tại; membership + role assignment + audit + Shared Receipt commit atomic |
+| finalize_pending | needs_review | Conflict/permission loss cần người có quyền xử lý; không xóa Auth user |
+| needs_review | auth_user_resolved | Sau adoption/review được phép và có bằng chứng xác minh Auth user; không thay actor gốc/fingerprint |
+| needs_review | finalize_pending | Chỉ khi evidence đã được xác minh và operation đủ điều kiện finalize; không dùng để bỏ qua authorization |
+| completed, cancelled, failed_terminal | — | Terminal; không reopen, không adoption; replay chỉ đọc theo Receipt/operation policy |
+
+**Ranh giới quan trọng:**
+- auth_outcome_unknown không được chuyển thẳng sang failed_terminal, cancelled hoặc tạo operation ID mới.
+- Hết lease chỉ cho phép reconciliation/claim có điều kiện; không chứng minh Auth call cũ đã dừng.
+- needs_review là trạng thái giữ an toàn, không phải hàng đợi tự động retry.
+- Adoption là metadata/audit riêng, không tự đổi trạng thái và không tự finalize/compensate.
+- auth_user_created_by_operation=true chỉ khi provenance được chứng minh; user có sẵn luôn false.
+- resolved_initial_status là giá trị được server quyết định một lần và giữ bất biến; không đưa trạng thái Auth thay đổi sau đó vào fingerprint retry.
+
+### 32.2 Ma trận RPC — authorization và tác dụng
+
+| RPC | Ai được gọi | Tác dụng / transaction boundary |
+|---|---|---|
+| begin_member_invite | authenticated actor JWT | Derive auth.uid(); lock Organization → actor Membership → Role/Permission; check users.manage; canonicalize intent/fingerprint; insert requested; replay cùng key/fingerprint; audit |
+| claim_member_invite_auth_attempt | server identity בלבד | Atomic claim; tạo attempt ID/token + lease từ DB; CAS requested hoặc retry đủ điều kiện → auth_calling; không giữ transaction qua Auth API |
+| record_member_invite_auth_result | server identity בלבד | Check operation + attempt token; ghi auth_user_id/provenance + resolved_initial_status; idempotent cùng kết quả, reject kết quả xung đột |
+| mark_member_invite_outcome_unknown | server identity בלבד | Check attempt token; auth_calling → auth_outcome_unknown; không kết luận absence |
+| finalize_member_invite | authenticated actor JWT | Recheck actor/org/membership/users.manage; kiểm tra operation + role + target; claim/replay Shared Receipt; tạo membership + role assignment + audit + finalize Receipt + Saga completed atomic |
+| adopt_member_invite_operation | authenticated Admin khác | Recheck active membership + users.manage; reason bắt buộc; khóa operation; chỉ unresolved/nonterminal và không có ownership dispute; append adoption audit; giữ nguyên actor gốc/fingerprint; không tự finalize |
+| activate_my_confirmed_membership (lifecycle RPC riêng) | chính authenticated user | Chỉ kích hoạt membership của auth.uid() khi email đã confirmed; lock Organization → own Membership; invited → active idempotent. Audit/Receipt semantics cần chốt riêng trước khi đưa vào implementation |
+
+Ghi chú: server-only RPC không cấp EXECUTE cho anon/authenticated; actor JWT RPC không được gọi bằng service_role để giả danh Admin. Các tên RPC là contract thiết kế, chưa khẳng định function đã tồn tại.
+
+### 32.3 Bộ kiểm thử bắt buộc theo RPC
+
+**A. Begin**
+1. anon/NULL auth.uid() → deny, không tạo row.
+2. organization inactive, actor membership inactive, thiếu users.manage → deny.
+3. role admin/role không hợp lệ → deny; chỉ technician/viewer.
+4. cùng operation_id + cùng canonical fingerprint → replay operation hiện tại, không tạo row thứ hai.
+5. cùng operation_id + khác org/actor/email/role/fingerprint → reject, không lộ dữ liệu PII.
+6. email normalize (trim/lowercase) nhất quán; response không chứa normalized_email.
+
+**B. Claim Auth attempt**
+1. anon/authenticated trực tiếp → permission denied; chỉ server identity được execute.
+2. hai worker đồng thời claim → chỉ một attempt token/lease thắng.
+3. stale version/token hoặc lease chưa hết → reject/no-op an toàn.
+4. hết lease → worker mới chỉ được reconcile; không tự gọi Auth API trước khi chứng minh retry an toàn.
+5. operation terminal → không claim.
+
+**C. Record Auth result**
+1. đúng attempt + kết quả mới → ghi auth_user_id/provenance.
+2. lặp cùng Auth user/provenance → idempotent.
+3. cùng attempt nhưng Auth user khác → reject + needs_review theo quy trình; không overwrite âm thầm.
+4. stale attempt token → reject.
+5. Auth user đã tồn tại trước invite → created_by_operation=false.
+6. không chứng minh provenance → không set true; không tự attach user.
+
+**D. Mark outcome unknown**
+1. đúng attempt đang auth_calling → chuyển unknown + audit atomic.
+2. stale token/wrong operation/wrong status → reject.
+3. gọi lặp sau khi đã unknown → idempotent hoặc trả current state, không tạo transition mới.
+4. xác nhận rõ Auth user không tồn tại không được suy ra từ timeout hoặc một lần lookup không đầy đủ.
+
+**E. Finalize**
+1. actor mất users.manage, membership suspended hoặc organization inactive sau Begin → deny; không tạo membership/role assignment.
+2. actor ban đầu mất quyền nhưng operation đã adoption hợp lệ → chỉ adopter active có users.manage được tiếp tục theo policy.
+3. tạo membership + member_roles + audit + Shared Receipt + Saga completed cùng transaction; ép lỗi giữa chừng phải rollback tất cả.
+4. timeout sau commit → retry cùng operation_id trả receipt/result; không tạo membership thứ hai.
+5. cùng operation ID khác payload/fingerprint → reject.
+6. duplicate membership/role assignment hoặc target Admin → fail closed; không tự sửa role.
+7. email confirmed trước khi resolve initial status → trạng thái khởi tạo theo server policy; confirmation race sau đó xử lý bằng self-activation RPC, không để Auth trigger ghi membership.
+8. Audit actor là actor JWT thật; không nhận actor_user_id từ payload.
+
+**F. Adoption**
+1. actor không phải Admin/thiếu users.manage/inactive → deny.
+2. actor không phải người khác actor gốc → deny.
+3. reason NULL/rỗng/chỉ spaces/quá dài → deny.
+4. completed/cancelled/failed_terminal → deny; ownership đang tranh chấp → needs_review, không adoption để bypass.
+5. hai Admin adoption đồng thời → một CAS thắng; loser đọc trạng thái hiện tại, không overwrite adopter.
+6. adoption không đổi actor_user_id, request_fingerprint, operation_id; không tự finalize, không delete Auth user.
+7. actor gốc finalize đồng thời adoption → lock/CAS xác định một thứ tự; không có finalize dưới actor cũ sau khi operation đã được chuyển quyền hợp lệ.
+
+**G. Self activation (nếu được chốt)**
+1. auth.uid() NULL hoặc target user khác caller → deny.
+2. email chưa confirmed → deny.
+3. membership không thuộc organization/caller hoặc không invited → deny/no-op theo trạng thái.
+4. email confirmed + invited → active; lặp lại active → no-op idempotent.
+5. confirmation đồng thời Finalize → cuối cùng user chỉ active khi điều kiện confirmed đã được xác thực; không có Auth trigger cập nhật membership.
+
+### 32.4 Kiểm thử xuyên suốt, bảo mật và crash matrix
+
+- Crash trước Auth call; giữa Auth call; Auth create thành công nhưng response mất; crash trước/sau record result; crash sau Finalize commit nhưng response mất.
+- Timeout Auth không tạo operation ID mới và không gửi invite mù quáng.
+- Hai worker claim cùng operation; lease hết hạn trong khi Auth call cũ còn chạy.
+- Adoption cạnh tranh với Finalize; revoke users.manage cạnh tranh với Finalize.
+- Actor khác/cross-tenant không thể dò operation, email, Auth user hoặc Receipt.
+- Không PII trong client response, Shared Receipt, Change Feed, audit before/after, error, logs, telemetry.
+- Kiểm tra grants: server-only RPC không execute bởi anon/authenticated; actor RPC derive auth.uid().
+- Kiểm tra SECURITY DEFINER, owner/BYPASSRLS, search_path rỗng, schema qualification và RLS.
+- Kiểm tra atomicity: Saga state + audit cùng transaction; membership + role assignment + audit + Shared Receipt cùng transaction.
+- Kiểm tra terminal state không reopen; unresolved/needs_review không bị retention cleanup.
+- Kiểm tra lock order Organization → Membership sorted → role assignments → Role/Permission → Receipt claim → business rows → receipt finalize; không giữ transaction qua Auth network call.
+
+### 32.5 Các điểm cần đóng trước khi viết RPC SQL
+
+1. DDL 021 hiện không lưu attempt history riêng. Giai đoạn đầu có thể dùng current_attempt_id/count + manual recovery, nhưng nếu cần forensic retries phải thêm bảng attempt append-only trước implementation.
+2. auth_user_created_by_operation provenance cần đặc tả nguồn chứng minh cụ thể; không dựa vào email match hoặc user_metadata.
+3. activate_my_confirmed_membership cần chốt audit/Receipt semantics và kiểm tra trigger migration 013; không được đưa vào cùng Admin Invite RPC.
+4. needs_review recovery phải có thao tác Admin rõ ràng và bằng chứng; không cho generic transition endpoint.
+5. PII encryption/key management và retention còn mở; chưa được phép promote DDL.
+6. Các transition CHECK trong DDL chỉ giới hạn enum; transition graph/CAS/version phải nằm trong RPC.
+
+**Kết luận:** Ma trận trên là baseline để review implementation. Không có SQL, RPC hoặc worker nào được tạo/chạy trong bước này.
