@@ -2602,3 +2602,21 @@ Chỉ đọc catalog/function definitions và tài liệu. Không SQL write, kh�
 
 ### Kết luận tạm thời
 Lock order Auth -> Membership đã xuất hiện trong legacy create function; Auth profile-sync trigger cũng đi Auth -> Profile -> Membership. Tuy vậy global order chưa chốt vì cần kiểm tra mọi writer, đặc biệt các thao tác role/status và caller server-side. Không thay đổi ACL hoặc function.
+
+
+## 66. Kết quả rà caller và preflight role cardinality – 20/11/2026
+
+### Caller và các lớp kiểm tra
+- Static search repo xác định `manage-organization-members` là caller duy nhất tìm thấy cho bốn RPC membership legacy. Caller xác thực JWT và gọi `has_org_permission(users.manage)` trước khi dùng service_role client. Đây là preflight tách request; RPC phải tự xác thực actor/quyền/tenant/target bên trong transaction để tránh TOCTOU và không tin dữ liệu do Edge Function truyền vào.
+- Action list lấy membership, profile, role assignment và role bằng nhiều truy vấn độc lập; không có snapshot transaction. Code dựng `Map<member_id, role_id>`, do đó nếu dữ liệu có nhiều role thì chỉ một role được giữ lại theo thứ tự kết quả.
+- UI `OrganizationMemberView` dùng scalar `roleCode` và `roleName`, hiển thị một select duy nhất. Điều này củng cố policy đã chốt: một role hiện hành cho mỗi membership ở phiên bản hiện tại; không triển khai multi-role.
+- Invite gọi Auth Admin API trước, rồi gọi `admin_create_org_membership`. Khi RPC trả lỗi và Auth user do thao tác này vừa tạo, Edge Function gọi `deleteUser` mà không kiểm tra kết quả xóa. Với lỗi/outcome không chắc chắn, cần đọc lại trạng thái operation/membership và chỉ compensation khi đã xác định an toàn; không xóa Auth user chỉ dựa trên lỗi trả về.
+- Reset/remove thực hiện preflight qua nhiều request rồi mới gọi RPC. Mọi điều kiện bảo vệ Admin/target phải được xác minh lại bên trong RPC dưới lock. Supabase báo Edge Function ACTIVE version 5, verify_jwt=true; chưa có bằng chứng source deployed đồng nhất với GitHub.
+
+### Snapshot role cardinality trên Test
+- Schema hiện tại chỉ có PK `(organization_id, member_id, role_id)`, nên vẫn cho phép nhiều assignment; chưa có UNIQUE `(organization_id, member_id)`.
+- Read-only query trên BAOTRI-Mini-Test: 4 memberships; 4 có đúng một role assignment; 0 thiếu; 0 nhiều; 0 có assignment nhưng role không active. Đây chỉ là snapshot Test tại 20/11/2026, không phải kết luận cho Production hoặc dữ liệu tương lai.
+- Policy một role/membership đã có trong tài liệu thiết kế. Việc thêm unique constraint vẫn cần preflight lại ngay trước migration, kiểm tra legacy mirror và xử lý mismatch thủ công; không tự chọn/xóa role.
+ 
+### Trạng thái
+Chỉ đọc GitHub, Edge Function metadata và catalog/dữ liệu Test. Không triển khai migration, không thay đổi function, Edge Function, grants, role, Auth user hoặc dữ liệu.
