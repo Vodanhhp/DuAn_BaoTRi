@@ -73,3 +73,26 @@
 - [x] Đã lập danh sách các vertical slices và transaction cần chuyển.
 - [ ] Chưa audit hết mọi action UI/setting/restore; danh sách write sites là audit ban đầu, cần rà soát bổ sung trước triển khai.
 - [ ] Chưa sửa code/SQL/migration/RPC, chưa thao tác dữ liệu Local/Cloud và chưa runtime test trong đợt audit này.
+
+
+## 7. Rà soát bổ sung: dữ liệu mẫu, backup, Checklist tự tạo và cấu hình (19/11/2026)
+
+- Tạo bộ dữ liệu mẫu 30 Asset + 30 Inventory và tạo thêm 15 Asset demo: thao tác chỉ ghi Local và queue, có thông báo rõ chưa đồng bộ Cloud. Đây là công cụ phục vụ test; phải phân loại riêng, không được cho chạy trong tenant dữ liệu thật hoặc tự đưa dữ liệu demo lên Cloud.
+- `ensureDefaultChecklist(asset)` tự ghi Template + Version khi mở Checklist và chưa có template. Đây là side-effect khi mở màn hình, cần chuyển thành Cloud-first/idempotent hoặc chỉ tạo draft cho đến khi user chủ động lưu; không nên tự tạo chính thức chỉ vì xem màn hình.
+- Backup JSON là đọc dữ liệu Local và export file; không phải business write. Restore backup thay toàn bộ dữ liệu Local trong Dexie transaction, có preflight bảo vệ Asset linked và mutation unresolved; phải giữ như luồng phục hồi Local có cảnh báo, và đánh giá bảo vệ các pending queue/Cloud mapping. Không tự coi restore là upload Cloud.
+- Một số cấu hình UI (theme, danh mục/vị trí kho, custom categories) lưu localStorage; cần phân loại theo cấu hình cá nhân/device hay cấu hình organization dùng chung. Chỉ cấu hình organization cần Cloud persistence; không chặn cài đặt giao diện cá nhân khi offline.
+- CloudAssetsPanel có thao tác lưu cấu hình mã Asset trên Cloud (organization_settings) và import/restore Asset Cloud → Local. Đây không phải luồng tạo/sửa Asset nghiệp vụ thông thường; cấu hình phải có Cloud confirmation và import phải giữ semantics restore/cache, không ghi Cloud.
+- Export Excel/backup/print là read/export, không phải mutation Cloud. Chúng có thể hoạt động offline nếu nguồn Local đủ dữ liệu và UI ghi rõ phạm vi snapshot.
+
+### Phân loại tạm
+- Business writes: mọi tạo/sửa/xóa/status, giao dịch tồn kho, Task completion, Logs, Checklist Template/Version/Result, Plans; cần Cloud-first.
+- Local-only settings: theme, tùy chọn hiển thị/cá nhân; offline vẫn được.
+- Organization settings: cấu hình mã thiết bị, danh mục được chia sẻ; Cloud-first, có quyền, trả confirmation.
+- Read/export: xem, lọc, in, Excel, backup; cho phép offline theo dữ liệu đã tải.
+- Restore/import: quy trình riêng, xác nhận và preflight; không mặc định Cloud mutation.
+- Demo/test utilities: Local-only và phải tách khỏi dữ liệu thật; không auto-sync.
+
+## 8. Audit bổ sung – trạng thái
+- [x] Phân loại sơ bộ dữ liệu mẫu, Checklist auto-create, backup/restore, local settings, Cloud settings, import/restore và export.
+- [ ] Chưa rà soát từng component/modal, các nút delete trên tất cả phân hệ và permission matrix để bảo đảm danh sách write site không bỏ sót.
+- [ ] Chưa thiết kế hay triển khai Cloud-first APIs/RPC; chưa chạy test.
