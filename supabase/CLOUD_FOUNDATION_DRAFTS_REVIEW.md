@@ -1153,3 +1153,31 @@ Phạm vi: static review `supabase/functions/manage-organization-members/index.t
 - Không có bằng chứng migrations 013/014 đã áp dụng vào bất kỳ project Supabase nào.
 
 Không có thay đổi code, Edge Function, SQL migration, database hoặc Supabase. Đây chỉ là tài liệu thiết kế/review.
+
+
+## §23 — Thiết kế bảng Invite Saga và phục hồi
+
+Static design review ngày 19/11/2026. Đã bổ sung mục 15 trong `CLOUD_MEMBER_MANAGEMENT_RPC_DESIGN.md`.
+
+### Kết luận kiến trúc
+
+- Tách `organization_member_invite_operations` khỏi Shared Receipt: Saga là workflow nhiều transaction + Auth API; Receipt chỉ đại diện DB mutation đã commit.
+- Operation key là (organization_id, operation_id), fingerprint do server chuẩn hóa; actor gốc bất biến.
+- State machine phân biệt requested, auth_calling, auth_outcome_unknown, auth_user_resolved, finalize_pending, completed, needs_review, failed_terminal, cancelled. Timeout không phải failed.
+- Các transition dùng expected status/version compare-and-set; operation/audit không cho client ghi trực tiếp.
+- Begin và Finalize dùng actor JWT + auth.uid(); Auth provisioning chỉ dùng server identity cho Auth Admin API và server-only operation RPC. Không dùng service_role để giả danh actor trong Finalize.
+- Crash window Auth create thành công nhưng chưa ghi auth_user_id là không thể loại bỏ bằng transaction Postgres. Không dựa email trùng hoặc user_metadata để chứng minh ownership; unresolved không tự gắn và không tự xóa.
+- Finalize tạo membership + role assignment + Shared Receipt atomic; timeout sau commit phải replay cùng operation ID/Receipt.
+- Lease hết hạn chỉ cho worker reconcile; không tự động gửi invite lần nữa. Không giữ DB locks khi gọi Auth API.
+- Default compensation: không tự động delete Auth user nếu không chứng minh được ownership và absence of membership/other use.
+- Adoption của Admin khác được đề xuất nhưng chưa được người dùng xác nhận; nếu chấp thuận, actor gốc/fingerprint không đổi và adoption có audit riêng.
+
+### Các điểm chưa được quyết định/kiểm chứng
+
+1. Admin khác có được adoption operation không?
+2. Có worker nền ngay giai đoạn đầu hay recovery thủ công?
+3. Policy cho Auth user đã tồn tại/chưa xác nhận email.
+4. RLS, grants, function owner, service-only RPC và Auth Admin metadata/provenance phải được kiểm chứng trong môi trường test.
+5. Không có SQL draft hoặc runtime test; chưa xác minh migrations đang áp dụng ở Supabase.
+
+Không sửa Edge Function/migration, không chạy SQL/RPC, không thay đổi Supabase.
