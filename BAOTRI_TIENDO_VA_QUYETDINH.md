@@ -3962,3 +3962,16 @@ Hướng ứng viên (chưa duyệt/chưa triển khai): Edge Function tạo mar
 Blocking gap: createUser không gửi invite email; generateLink invite sẽ tự tạo user và không nhận trusted app_metadata. Chưa chứng minh recovery/setup link hoạt động an toàn với user chưa xác nhận hoặc custom email flow. Không auto-confirm. Do đó chưa phải giải pháp thay thế hoàn chỉnh cho inviteUserByEmail. Giữ native invite hiện tại và fail-closed/manual review đến khi test onboarding, reconciliation, security, timeout/crash với phiên bản Auth/SDK pin cụ thể.
 
 Chưa sửa DDL/RPC/Edge Function, không chạy SQL, không thay đổi Supabase.
+
+
+## 63. Kiểm chứng link recovery cho user chưa xác nhận — chưa đủ bằng chứng
+
+Ngày 20/11/2026:
+- Supabase có `admin.generateLink({type:'recovery', email})`; đây là chức năng tạo link/OTP recovery để ứng dụng tự gửi email, không tự gửi email.
+- Tài liệu không cam kết recovery link hoạt động với user do `admin.createUser({email_confirm:false})` trước khi xác nhận email, cũng không cam kết verify recovery sẽ xác nhận email. Không được mặc định recovery là invite/activation.
+- Tài liệu Users nói user có email chưa xác minh mặc định không thể sign in. Invite flow được mô tả rõ là xác nhận email và cho phép người nhận hoàn tất thiết lập (ví dụ đặt password). Không suy rộng hành vi này sang recovery/magiclink.
+- `generateLink({type:'invite'})` tự tạo user, không phải bước thiết lập password generic sau createUser và không có tham số trusted app_metadata tại thời điểm tạo.
+
+Kết luận: onboarding gap của hướng createUser + app_metadata marker vẫn chưa được giải quyết. Trước khi chọn, cần test cô lập trên phiên bản Auth/SDK pin của BAOTRI: tạo recovery link cho user chưa xác nhận, kết quả verify và email_confirmed_at, đặt password, expiry/replay, custom email delivery, và liên kết an toàn với Saga attempt. Chưa triển khai. Giữ native inviteUserByEmail + fail-closed/manual review.
+
+Không sửa DDL/RPC/Edge Function, không chạy SQL, không thay đổi Supabase.
