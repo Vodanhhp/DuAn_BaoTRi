@@ -1624,3 +1624,79 @@ Lưu ý: auth_outcome_unknown có thể tồn tại lâu; không đặt CHECK bu
 6. Không chạy trên Supabase Test/Production cho đến khi có phê duyệt riêng.
 
 **Kết luận cuối:** Không promote DDL 021 ở trạng thái hiện tại. Không có thay đổi DDL, migration, RPC, Edge Function hoặc Supabase trong vòng review này.
+
+
+## 34. Đề xuất khóa Auth provenance và request fingerprint (19/11/2026)
+
+Phần này là **đề xuất thiết kế để người dùng xem xét**, chưa phải quyết định được phê duyệt và chưa phải DDL. Không có SQL/Supabase operation trong bước này.
+
+### 34.1 Auth provenance — không suy luận quyền sở hữu từ email match
+
+Mục tiêu: mỗi `auth_user_id` được gắn với Invite Operation phải có nguồn gốc có thể giải thích và kiểm chứng. Không dùng `auth_user_created_by_operation = true/false` như bằng chứng duy nhất.
+
+**Đề xuất mô hình provenance:**
+
+| Giá trị | Ý nghĩa | Có được Finalize? |
+|---|---|---|
+| `created_by_operation` | Auth provider trả về chính xác user ID mới được tạo bởi attempt thuộc operation hiện tại; attempt/result được đối chiếu | Có |
+| `preexisting_verified` | Tài khoản đã tồn tại trước operation; danh tính được xác minh qua nguồn Auth đáng tin cậy và quy trình invite/claim chứng minh đúng chủ tài khoản | Chỉ khi thỏa quy trình xác minh và policy membership |
+| `unknown` | Không đủ bằng chứng để kết luận tài khoản mới hay đã tồn tại, ví dụ timeout/crash hoặc kết quả Auth không rõ | Không |
+| `conflict` | Auth result không khớp operation/attempt, nhiều ứng viên, hoặc có dấu hiệu liên kết sai | Không; chuyển needs_review |
+
+Không dùng `email match`, `user_metadata`, client-supplied Auth ID hoặc một lần tra cứu không có kiểm chứng làm bằng chứng `created_by_operation`. Không tự xóa Auth user khi provenance là unknown/conflict.
+
+**Dữ liệu tối thiểu nên lưu (tên cột chỉ là gợi ý):**
+- `auth_provenance`: enum/text allowlist như bảng trên.
+- `provenance_attempt_id`: attempt đã tạo ra hoặc xác minh kết quả.
+- `provenance_evidence_code`: mã bằng chứng allowlist, không chứa raw Auth response.
+- `provenance_verified_at`: thời điểm xác minh.
+- `provenance_verified_by`: actor/system thực hiện xác minh; system event phải có audit tương ứng.
+- `auth_user_id`: chỉ gắn khi có ID từ nguồn Auth đáng tin cậy.
+
+`created_by_operation` chỉ hợp lệ khi provider result gắn trực tiếp với cùng operation + attempt và user ID. `preexisting_verified` cần một quy trình chứng minh quyền sở hữu/claim độc lập; không được tự động suy ra chỉ từ việc tìm thấy email trùng. Khi chưa có quy trình này, xử lý pre-existing account theo `needs_review` thay vì tự gắn membership.
+
+### 34.2 Request fingerprint — digest của ý định bất biến
+
+**Đề xuất:** thay JSONB fingerprint bằng digest có version, không lưu plaintext email trong fingerprint/receipt/log.
+
+Canonical intent gồm các trường ổn định:
+1. schema/version của fingerprint;
+2. organization ID;
+3. actor_user_id ban đầu (không đổi khi adoption);
+4. operation type;
+5. normalized email được đưa qua keyed HMAC riêng cho mục đích fingerprint;
+6. role code;
+7. immutable invite options/policy version có ảnh hưởng đến ý nghĩa yêu cầu.
+
+Tạo digest bằng HMAC-SHA-256 với secret quản lý ngoài database (ví dụ secret của server/Edge Function), không lưu secret cạnh digest. Lưu `fingerprint_version`, `fingerprint_key_version` và `request_fingerprint_digest`; không lưu key material. Việc xoay key phải có kế hoạch giữ khả năng replay operation cũ (giữ key version cũ trong secret manager trong thời hạn retention hoặc quy trình re-key có kiểm soát).
+
+**Không đưa vào fingerprint:**
+- Auth user ID được resolve sau này;
+- current membership/status/role/permission tại thời điểm retry;
+- thời gian, attempt ID, lease, retry count;
+- adopter hiện tại;
+- trạng thái hiện tại của Saga;
+- email plaintext.
+
+Các dữ liệu trên thay đổi theo thời gian hoặc thuộc kết quả thực thi, không phải ý định ban đầu. Nếu có expected-current-state là precondition, lưu riêng trong intent và chỉ kiểm tra ở nhánh mutation mới sau khi khóa dữ liệu; không lấy live DB state làm nguồn fingerprint khi replay.
+
+**Quy tắc idempotency:**
+- Cùng operation ID + cùng digest + cùng actor gốc: tiếp tục/replay đúng operation.
+- Cùng operation ID + digest khác: reject conflict; không ghi đè intent.
+- Cùng operation ID nhưng fingerprint version/key version cũ: tính/so sánh bằng đúng version/key đã lưu, không tự diễn giải lại bằng key hiện hành.
+- Adoption không thay actor gốc hoặc digest.
+- Không trả email, digest trung gian hoặc thông tin cho phép dò email qua client response.
+
+### 34.3 Ranh giới giữa provenance và fingerprint
+
+Fingerprint chứng minh **yêu cầu ban đầu không đổi**; provenance chứng minh **Auth user được gắn vào operation bằng con đường nào**. Hai khái niệm không thay thế nhau. Một digest hợp lệ không chứng minh quyền sở hữu Auth user; một Auth user ID hợp lệ cũng không cho phép thay đổi role/email/actor của intent đã claim.
+
+### 34.4 Khuyến nghị triển khai theo thứ tự
+
+1. Chốt các giá trị provenance và bằng chứng hợp lệ; nếu chưa có quy trình xác minh pre-existing account thì fail closed sang needs_review.
+2. Chốt HMAC secret location, key version và retention/rotation.
+3. Chọn tên/cấu trúc cột tương ứng, sau đó mới sửa DDL 021.
+4. Bổ sung test: provider create success; timeout sau create; pre-existing account; email trùng nhưng chưa xác minh; mismatched Auth ID; retry cùng operation; cùng operation ID với digest khác; key rotation/replay.
+5. Chỉ sau khi DDL được review và parser/clone tests đạt mới thiết kế RPC SQL.
+
+**Trạng thái:** đề xuất để thảo luận; chưa được coi là policy đã duyệt. Không chỉnh DDL 021, không chạy SQL, không thay đổi Supabase Test/Production.
