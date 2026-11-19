@@ -3748,3 +3748,4 @@ Hoàn thiện hợp đồng quyền/replay và quyết định điều chỉnh t
 - Draft 019 thêm created_by_user_id, revision table append-only, backfill legacy baseline, permission logs.revise Admin-only.
 - Đây chưa phải migration áp dụng. Chưa chạy SQL, chưa thay DB, grants, UI hoặc dữ liệu.
 - Bước tiếp: review logic và dependency, đặc biệt shared Receipt, row_version 015, direct grants cutover, legacy migration và kiểm thử trên Test.
+\n\n## 42. Bổ sung tương thích Movement display fields (19/11/2026)\n\n- Đã đối chiếu Local Movement: note hiện trùng reason; không tạo cột note lặp.\n- Bổ sung performed_by_label tùy chọn để giữ snapshot tên người thao tác; created_by_user_id vẫn là Auth actor.\n- Chưa sửa code/mapping hoặc chạy SQL.\n
