@@ -4492,3 +4492,23 @@ Chỉ đọc ACL/catalog và tài liệu. Không SQL write, DDL, role, grant, RP
 - Đã xác minh trigger side effect, FK cascade/restrict, default ACL và một phần role graph.
 - Chưa xác minh toàn bộ function-call surface, quyền chính xác cho từng bảng Saga/Audit/Receipt (vì Saga/Audit chưa triển khai), schema exposure trong Dashboard, và global lock order across all writers.
 - Bước kế tiếp: rà soát toàn bộ function SECURITY DEFINER và các RPC/business writers đang thao tác organization_members, Auth và roles để tìm lock-order ngược; tiếp tục chỉ đọc.
+
+
+## 82. Legacy SECURITY DEFINER membership writers – 20/11/2026
+
+### Đã kiểm tra
+Đọc định nghĩa và ACL các SECURITY DEFINER function liên quan organization_members/member_roles/roles trên BAOTRI-Mini-Test:
+- admin_create_org_membership: owner postgres; EXECUTE chỉ postgres/service_role; khóa auth.users FOR UPDATE, kiểm tra profile, sau đó tạo organization_members và member_roles. Không có Saga/audit/Shared Receipt.
+- admin_remove_org_membership: owner postgres; EXECUTE chỉ postgres/service_role; khóa membership FOR UPDATE, DELETE membership; FK cascade xóa member_roles.
+- admin_update_org_member_role: owner postgres; EXECUTE chỉ postgres/service_role; đọc membership/role rồi DELETE/INSERT member_roles; bước đọc ban đầu không FOR UPDATE parent membership.
+- admin_update_org_member_status: owner postgres; EXECUTE chỉ postgres/service_role; đọc membership rồi UPDATE status, lock membership được lấy tại UPDATE.
+- has_org_permission/has_org_role/is_org_member là read-only SECURITY DEFINER helpers dựa vào auth.uid().
+
+### Kết luận và lưu ý
+- Legacy create function và Auth profile-sync trigger đều có đường khóa bắt đầu từ Auth user rồi mới tới membership; acceptance mới không được đảo thành membership -> Auth.
+- Các hàm ghi cũ chỉ dành cho service_role theo ACL hiện tại, nhưng là đường ghi song song ngoài Saga/audit/receipt. Cần phân loại rõ thao tác Admin tạo trực tiếp với self-acceptance; rà server callers trước khi quyết định giữ/giới hạn/retire.
+- Role update không khóa tường minh parent membership ở bước đọc đầu; cần test cạnh tranh và xác nhận role cardinality trước khi kết luận về invariant một role/membership.
+- Remove path có FK cascade member_roles; phải tính vào quyền DELETE và cleanup semantics. Không có thay đổi ACL/function.
+
+### Bước kế tiếp
+Tiếp tục audit toàn bộ caller và các writer khác liên quan Auth/Profile/Membership, rà role cardinality và shared receipt contract; sau đó mới đề xuất lock matrix cuối. Tất cả vẫn chỉ đọc/nghiên cứu.
