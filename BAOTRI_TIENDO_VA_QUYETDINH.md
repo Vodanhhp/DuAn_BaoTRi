@@ -4036,3 +4036,35 @@ Cách thông báo lời mời cho tài khoản có sẵn (in-app hay email riên
 **Thứ tự triển khai được khuyến nghị:** (1) in-app inbox + explicit accept; (2) email thông báo phụ sau khi outbox/sender được duyệt; (3) Realtime chỉ tối ưu trải nghiệm, không phải dependency.
 
 **Trạng thái:** proposal thiết kế, không phải phê duyệt triển khai. Không sửa DDL 021, không tạo RPC/Edge Function/worker, không chạy SQL và không thay đổi Supabase.
+
+
+## 66. Thiết kế In-app Invitation Inbox: dữ liệu và quyền truy cập
+
+### Quyết định đề xuất
+- Chưa tạo bảng Inbox riêng. `organization_member_invite_operations` là nguồn trạng thái gốc; Inbox chỉ là projection qua API/RPC hẹp.
+- Attempts và attempt events giữ nội bộ server; client không SELECT trực tiếp Saga hoặc các bảng lịch sử này.
+- Inbox chỉ hiển thị lời mời đang chờ người nhận với trạng thái dẫn xuất `pending`; không lộ các trạng thái Saga nội bộ như `auth_outcome_unknown`, `needs_review`, `failed_terminal`.
+
+### Dữ liệu được phép trả
+Chỉ gồm: `invitation_id` (opaque operation UUID, không phải token), tên tổ chức, nhãn vai trò an toàn, thời điểm tạo/hết hạn và trạng thái `pending`. Ban đầu không trả tên người mời. Tuyệt đối không trả email đích, Auth UUID, member ID, fingerprint/digest/key version, invite URL/token, receipt ID, attempt ID/events, provider response hoặc dữ liệu recovery riêng tư.
+
+### Quyền truy cập
+- anon/chưa đăng nhập: không được xem/chấp nhận.
+- Authenticated nhưng email chưa xác minh: không được xem/chấp nhận.
+- Tài khoản đăng nhập có email Auth authoritative đã xác minh: chỉ thấy lời mời khớp với email xác minh hiện tại của chính tài khoản.
+- Admin/người mời không có quyền xem Inbox của người nhận chỉ vì đã tạo lời mời.
+- Không có endpoint dò theo email tùy ý; không SELECT trực tiếp bảng Saga/attempt từ client.
+- Không dùng user_metadata hoặc email/UID client gửi làm căn cứ phân quyền.
+
+### Luồng
+- List Inbox chỉ là snapshot; không reserve lời mời, không tạo membership, không cấp tenant access.
+- Accept revalidate trong transaction: actor, email xác minh, lời mời pending/chưa hết hạn/chưa revoke, organization active, role hợp lệ, không membership conflict.
+- Membership + single role + audit + Shared Receipt + Saga completion commit nguyên tử.
+- Client chỉ gửi invitation ID và mutation/idempotency key ổn định; không gửi actor UID, email, organization ID hoặc role làm căn cứ.
+- Replay cùng invitation và cùng actor phải idempotent; actor khác bị từ chối. Cần khớp contract receipt với Shared Receipt design.
+- Dùng keyset pagination, giới hạn page size; không OFFSET/COUNT. Realtime chỉ là wake-up hint, không phải dependency.
+
+### Điểm chặn HMAC
+Saga lưu HMAC digest nhưng key material nằm ngoài Database. PostgreSQL không thể tự đối chiếu digest nếu không có cơ chế cấp key đáng tin cậy. Phương án cần nghiên cứu là Edge Function xác thực bearer với Auth, lấy user/email xác minh authoritative, tính HMAC bằng secret manager và gọi RPC nội bộ server-only. RPC thực hiện acceptance transaction; Edge Function là trust boundary cần threat-model review riêng. Không thay bằng email client gửi hoặc email matching không xác minh.
+
+**Trạng thái:** design proposal, chưa phê duyệt DDL/RPC/Edge Function/worker; chưa chạy SQL và chưa thay đổi Supabase. Trước implementation cần chốt HMAC trust boundary, acceptance idempotency/receipt, expiry/revoke/decline, rate limit và audit retention.
