@@ -1523,3 +1523,10 @@ Chưa chạy parser/SQL, chưa tạo migration, chưa thay đổi Supabase.
 Đã bổ sung Member design §32: ma trận trạng thái hợp lệ, RPC authorization/transaction boundary và test matrix Begin/Cancel/Claim/Record Result/Mark Unknown/Finalize/Adoption/Self Activation. Các điểm trọng yếu: CAS theo status+version, attempt token, manual recovery, không retry Auth mù quáng sau lease expiry, không dùng service_role giả actor, atomic membership + role + audit + Shared Receipt, và terminal state không reopen.
 
 Chưa viết RPC SQL, chưa chạy test database, chưa thay đổi Supabase. Self activation vẫn cần chốt audit/Receipt semantics; provenance Auth user và attempt-history vẫn là các gate mở.
+
+
+## 37. Schema adequacy review DDL 021 (19/11/2026)
+
+Đối chiếu DDL 021 với Member design §32–33: draft hiện là khung operation/audit, chưa đủ triển khai RPC an toàn. Các gap chính: không có attempt history; Auth provenance chỉ là boolean nullable, thiếu evidence; status CHECK chưa ràng buộc attempt/lease/result; immutable intent chưa được bảo vệ; request_fingerprint chưa có canonical/hash contract; audit thiếu transition sequence/idempotency; audit state-change chưa bắt buộc đủ before/after; normalized_email plaintext; retention chưa định nghĩa.
+
+Đã ghi chi tiết ma trận gap và hướng xử lý tại Member design §33. Không sửa DDL, không tạo migration/RPC, không chạy SQL hoặc thay đổi Supabase.
