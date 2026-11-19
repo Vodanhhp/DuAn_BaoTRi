@@ -1,0 +1,103 @@
+# BAOTRI Mini — Cloud-first schema migration plan
+
+Ngày: 19/11/2026  
+Trạng thái: **Thiết kế đã đối chiếu mã nguồn/migration; chưa tạo migration áp dụng, chưa chạy SQL.**
+
+## 1. Phạm vi và thứ tự triển khai
+
+Không gộp tất cả nghiệp vụ vào một migration lớn. Tách thành các lát cắt có thể review/test độc lập:
+
+1. **Foundation prerequisite:** shared `organization_mutations` Receipt + canonical request comparison + replay contract; review pgcrypto/hash availability trước khi chọn fingerprint. Draft `015_row_version_foundation_DRAFT.sql` vẫn là draft, cần review và test riêng.
+2. **Inventory schema + RPC cutover:** thêm audit fields cho movement; sau đó trong cùng release/cutover có RPC tạo item + opening stock, metadata update, Nhập/Xuất, kiểm kê actual; thu hồi direct INSERT/UPDATE tương ứng khi RPC đã sẵn sàng.
+3. **Maintenance Log schema + RPC cutover:** thêm `created_by_user_id`, revision table, backfill revision 1 cho legacy rows; thêm `logs.revise` Admin-only; RPC create/revise/complete Task; thu hồi direct INSERT vào root Log khi RPC create đã sẵn sàng.
+4. **Change feed:** mỗi transaction phát event cho đúng các record đã đổi; pull quyền đọc theo `*.view`; chỉ triển khai sau khi Receipt và row_version contract ổn định.
+5. **Client cutover:** Local draft only; Cloud response canonical; Dexie snapshot/mapping cập nhật sau Cloud commit; queue cũ được reconcile, không auto replay.
+
+Không apply schema-only migration trong lúc client vẫn còn write path có thể bỏ qua revision/Receipt. Schema và RPC cutover phải được release đồng bộ hoặc có giai đoạn tương thích được kiểm soát.
+
+## 2. Inventory movement schema contract
+
+Bảng hiện tại `inventory_movements` có `quantity > 0`, type Nhập/Xuất/Điều chỉnh; `inventory_items.quantity` không âm. Giữ nguyên semantics cũ.
+
+### Field bổ sung đề xuất
+- `quantity_delta numeric(18,4)`: signed delta chuẩn.
+- `balance_before numeric(18,4)`, `balance_after numeric(18,4)`: tồn trước/sau.
+- `counted_quantity numeric(18,4)`: chỉ có ở Điều chỉnh kiểm kê actual.
+- `created_by_user_id uuid references auth.users(id)`: actor Cloud; nullable cho legacy.
+- `mutation_id uuid`: truy vết mutation; nullable cho legacy.
+- `expected_item_version bigint`: version client đã đọc khi thay đổi item; nullable với opening movement và legacy.
+
+### Constraints cho movement mới
+- Legacy rows giữ các field mới NULL; không suy đoán số dư cũ từ movement history.
+- Với movement mới, bắt buộc actor + mutation + quantity_delta + balance_before/after; expected_item_version bắt buộc với movement trên item đã tồn tại, nhưng không áp cho opening movement của item vừa tạo.
+- `balance_before >= 0`, `balance_after >= 0`, `quantity_delta <> 0`, `balance_after = balance_before + quantity_delta`.
+- Nhập: delta dương; Xuất: delta âm; Điều chỉnh: counted_quantity = balance_after và delta = counted - before.
+- Cột `quantity` hiện hữu tiếp tục dương và bằng `abs(quantity_delta)` cho movement mới.
+- Lý do không rỗng với movement mới. Adjustment delta 0 không insert movement.
+- Unique partial index trên (organization_id, mutation_id) cho movement mới; shared ledger vẫn là nguồn idempotency chính.
+- Không thay đổi/backfill quantity hoặc balance lịch sử.
+
+## 3. Inventory cutover và permissions
+
+- `create_inventory_item`: `inventory.create`; Admin/Technician; tạo item và nếu initial_quantity > 0 thì tạo opening movement Nhập cùng transaction. initial_quantity = 0 thì không movement.
+- `update_inventory_item_metadata`: `inventory.update`; payload allowlist không có quantity.
+- `post_inventory_movement`: `inventory.adjust`; Nhập/Xuất, lượng tuyệt đối dương; server lock item, check expected row_version, tính balance; xuất không âm.
+- `adjust_inventory_count`: `inventory.adjust`; nhận actual counted_quantity >= 0, reason; lock item và tính delta. Delta = 0 trả no_change, không movement/version/change event.
+- `inventory_items.quantity` không được client update trực tiếp. Không direct insert item hoặc movement khi RPC cutover hoàn tất.
+- Inventory item code chưa có unique (organization_id, code) do development data từng có duplicate VT-001. Trước khi thêm unique constraint phải có read-only duplicate preflight và kế hoạch xử lý; không thêm constraint trong draft này.
+
+## 4. Maintenance Log schema contract
+
+### Root
+- Giữ `maintenance_logs.id` và FK hiện có để không phá Task/Checklist/Asset references.
+- Thêm `created_by_user_id uuid references auth.users(id)`, nullable để giữ nguyên legacy rows không có actor đáng tin cậy.
+- Không xóa các cột payload cũ trong root ở giai đoạn đầu. Sau khi cutover, root là identity/relationship anchor; canonical nội dung hiển thị lấy từ revision mới nhất.
+- Không backfill actor từ `performed_by` hoặc tên hiển thị; đây không phải Auth identity.
+
+### `maintenance_log_revisions` đề xuất
+- Identity: `id`, `organization_id`, `log_id`, `revision_no`.
+- Snapshot đầy đủ: `log_date`, `due_date`, `kind`, `description`, `parts`, `readings`, `requested_by`, `result`, `completed_at`, `performed_by`.
+- Audit: `action` (created / edited / legacy_baseline), `reason`, `edited_by_user_id`, `mutation_id`, `created_at`.
+- Unique (organization_id, log_id, revision_no); FK (organization_id, log_id) → root.
+- Legacy backfill: revision 1 lấy đúng dữ liệu hiện có trong root; due_date/requested_by NULL vì schema cũ không lưu; action = legacy_baseline; actor/reason/mutation_id NULL. Không bịa lịch sử.
+- Revision mới: actor lấy auth.uid(); revision 1 do create RPC; revision >=2 do Admin-only revise RPC và reason bắt buộc.
+- Revision table append-only; không UPDATE/DELETE. Root không hard-delete.
+
+## 5. Permission và RLS/grants
+
+- Thêm catalog permission `logs.revise` với mô tả sửa nhật ký đã lưu bằng revision.
+- Gán permission này cho role Admin ở mọi organization; không gán Technician/Viewer. Migration phải insert permission trước rồi mới insert role_permissions cho các role Admin; không dựa vào seed cũ tự cập nhật grant.
+- RLS SELECT revision dùng `has_org_permission(organization_id, 'logs.view')`.
+- Không tạo INSERT/UPDATE/DELETE policy trực tiếp cho revisions; không cấp direct write grants. SECURITY DEFINER RPC là write path duy nhất, với `search_path = ''`, `row_security = off`, Auth + active membership + permission + org boundary checks.
+- Khi RPC create Log đã sẵn sàng, thu hồi direct INSERT trên `maintenance_logs`; không thu hồi trước khi RPC được deploy cùng release để tránh mất khả năng tạo Log Cloud.
+- Khi Inventory RPC cutover sẵn sàng, thu hồi direct INSERT item và direct UPDATE metadata columns; quantity hiện đã bị loại khỏi column grant. Direct movement INSERT vẫn không được cấp.
+- UI gating là UX; RLS/RPC phải là enforcement cuối cùng.
+
+## 6. Transaction boundaries
+
+- Create Item + optional opening movement + shared Receipt + change events: một transaction.
+- Nhập/Xuất/Điều chỉnh actual + Item balance/version + Movement + Receipt + events: một transaction.
+- Create Log + root + revision 1 + Receipt + event: một transaction.
+- Revise Log + revision mới + Receipt + event: một transaction.
+- Complete Task + Task state/version + Log root + revision 1 + một Receipt + events cho Task/Log: một transaction.
+- Receipt replay cùng actor/operation/resource/payload trả canonical result cũ; key reuse khác request bị reject. Không tạo mutation ID mới khi response outcome chưa rõ.
+
+## 7. Migration rollout và kiểm thử bắt buộc
+
+1. Read-only preflight trên BAOTRI-Mini-Test: migration hiện đã apply đến đâu; duplicate inventory codes; legacy movement rows; legacy Log count/FK integrity; role rows và permission assignments; extension/hash capability.
+2. Backup và xác nhận restore/recovery trước khi ghi schema.
+3. Apply draft riêng trên Test, xác minh row counts, constraints, indexes, RLS/grants.
+4. RPC tests: Admin/Technician/Viewer; permission revoked; inactive membership; cross-org; expected-version conflict; same mutation replay; same ID different payload; rollback giữa transaction; concurrent inventory adjustments; concurrent Log revisions.
+5. Data tests: adjustment to zero, positive/negative delta, no-change count; opening quantity 0/nonzero; legacy movement remains readable with new fields NULL; legacy Log revision 1 snapshot correct.
+6. Client tests: Cloud fail leaves Local business data unchanged; timeout replay same mutation ID; Cloud commit then Dexie failure recovers from receipt; old queue never blindly replayed.
+7. Chỉ sau PASS và phê duyệt mới promote migration/RPC/client release; Production là bước riêng.
+
+## 8. Những việc không được làm trong đợt này
+
+- Không sửa migration đã tồn tại; chỉ tạo draft mới.
+- Không apply SQL trên Test/Production.
+- Không thay đổi code UI/Local Dexie, queue, worker hoặc dữ liệu.
+- Không bật full sync.
+- Không thêm unique inventory code trước preflight.
+- Không dùng performed_by/name label làm actor.
+- Không suy đoán historical balances hoặc edit history.
