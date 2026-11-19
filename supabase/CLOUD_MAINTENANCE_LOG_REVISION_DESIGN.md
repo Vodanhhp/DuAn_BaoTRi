@@ -137,3 +137,42 @@ Trạng thái: **ĐÃ CHỐT**. Nội dung mục này thay thế câu hỏi perm
 - Timeout sau commit rồi replay cùng mutation ID: trả revision đã commit, không tạo revision thứ hai.
 - Task completion + Log creation rollback cùng nhau khi một bước thất bại.
 - Chưa thêm permission/migration hoặc triển khai RPC cho đến khi thiết kế schema/grants và có lệnh triển khai riêng.
+
+
+## 9. Hợp đồng RPC và response chi tiết (thiết kế)
+
+### 9.1 Quy tắc chung
+- Actor lấy từ `auth.uid()`; không nhận `created_by_user_id`, `edited_by_user_id` hoặc role do client tự khai.
+- Mọi request có organization scope, mutation_id ổn định và payload đầy đủ. Server kiểm tra active membership + permission.
+- Revision là snapshot đầy đủ, không patch thiếu trường có thể khiến dữ liệu cũ bị xóa ngoài ý muốn. Nếu hỗ trợ patch, server phải merge trên snapshot hiện tại và trả snapshot canonical; cần chốt allowlist trước migration.
+- Mọi revision sau revision 1 bắt buộc có reason không rỗng.
+- Replay cùng mutation ID trả kết quả cũ; cùng key khác actor/operation/log/revision/payload bị từ chối.
+
+### 9.2 Các RPC
+| RPC | Input chính | Permission |
+|---|---|---|
+| `create_maintenance_log` | `organization_id`, `mutation_id`, `log_id`, payload revision 1 đầy đủ | `logs.create` |
+| `revise_maintenance_log` | `organization_id`, `mutation_id`, `log_id`, `expected_revision_no`, `reason`, full revision payload | `logs.revise` (Admin-only) |
+| `complete_maintenance_task` | `organization_id`, `mutation_id`, `task_id`, `expected_task_version`, `log_id`, payload revision 1 | `maintenance.update` + `logs.create` |
+
+### 9.3 Canonical response
+- `status`: `applied` | `conflict`.
+- `mutation_id`, `log_id`, `current_revision_no`; với Task completion trả thêm Task snapshot/version.
+- `log`: root identity + canonical latest revision; `revision`: revision mới được commit.
+- Conflict trả revision mới nhất và expected/current revision number, không insert revision.
+- Auth/permission/membership/validation/idempotency mismatch bị từ chối; không rò rỉ revision của organization khác.
+- `revise_maintenance_log` phải trả revision đã commit để Local cập nhật snapshot sau Cloud confirmation.
+
+### 9.4 Quyền và bất biến
+- Admin-only `logs.revise`; Technician không có permission này kể cả khi là người tạo Log.
+- `logs.create` không cho phép sửa; `performed_by` chỉ là dữ liệu nghiệp vụ hiển thị, không xác định actor hay quyền sở hữu.
+- `created_by_user_id` root bất biến, lấy từ auth.uid(); legacy imported root có thể NULL kèm nguồn import được đánh dấu.
+- Root/revision không cho client direct INSERT/UPDATE/DELETE. RPC được kiểm soát là write path duy nhất.
+- Root không hard-delete; revisions append-only; unique (organization_id, log_id, revision_no).
+
+### 9.5 Transaction boundary và recovery
+- Create Log: root + revision 1 + Receipt + Change events cùng transaction.
+- Complete Task: Task status/version + Log root + revision 1 + một Receipt + Change events cho Task và Log cùng transaction.
+- Revise Log: insert revision mới + Receipt + Change event cùng transaction; không update revision cũ.
+- Response mất sau commit: retry đúng mutation ID/payload; không tạo revision mới. Nếu Local DB lỗi sau Cloud success, khôi phục bằng canonical receipt result/pull snapshot.
+- Draft trước submit chỉ ở form/memory; không ghi business IndexedDB trước Cloud commit.
