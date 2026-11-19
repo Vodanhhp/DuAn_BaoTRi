@@ -4299,3 +4299,14 @@ Nếu function owner là postgres hoặc role BYPASSRLS, hàm có thể bỏ qua
 Bổ sung negative test: invitation ID tenant khác, sai recipient, user suspended/removed, invite expired/revoked, role không hợp lệ, inviter bị hạ quyền/suspended, membership đã tồn tại, replay bởi actor khác, RPC giả mạo actor parameter.
 
 Không dựa vào RLS làm lớp bảo vệ cho SECURITY DEFINER; không bật FORCE RLS hoặc nới RLS toàn cục như cách chữa nhanh khi chưa đánh giá owner/FK/trigger. Đây là yêu cầu nghiệp vụ bắt buộc. Không đổi RLS/grant/function/data.
+
+## 76. Kiểm tra trigger nghiệp vụ liên quan membership
+
+Catalog chỉ đọc trên Test cho thấy các bảng được kiểm tra chỉ có trigger cập nhật updated_at:
+- organization_members → set_updated_at()
+- organizations → set_updated_at()
+- profiles → set_updated_at()
+
+Không thấy trigger nghiệp vụ khác trên các bảng organizations, organization_members, member_roles, roles, role_permissions, profiles. Không có trigger tự tạo member_roles, ghi audit invitation, cập nhật Saga hoặc Shared Receipt. Vì vậy acceptance function phải tự ghi đầy đủ membership + role + audit + Shared Receipt + Saga trong cùng transaction; không dựa vào trigger để hoàn tất một phần.
+
+Đây là bằng chứng riêng của Test. Trước migration cần kiểm tra lại trigger inventory/function definitions vì migration tương lai có thể bổ sung trigger. Không thay đổi trigger hoặc bảng.
