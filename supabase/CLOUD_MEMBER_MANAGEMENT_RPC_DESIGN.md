@@ -238,11 +238,9 @@ Không dùng users.manage như quyền đọc roster mặc định.
 
 Rollback không được xóa Auth users hoặc memberships đã tạo hợp lệ. Nếu đã có operation saga đang chạy, phải reconcile từng operation trước khi đổi protocol.
 
-## 12. Quyết định còn cần chủ sản phẩm xác nhận trước SQL draft
+## 12. Quyết định sản phẩm (đã xác nhận)
 
-1. Có giữ policy hiện hành rằng chỉ Admin quản lý thành viên, và không cho Admin tự đổi role/trạng thái/xóa chính mình? Thiết kế này đang giả định CÓ.
-2. Khi suspend/remove một thành viên, có cần thu hồi phiên đăng nhập ngay lập tức ở mọi thiết bị hay chỉ chặn truy cập dữ liệu/RPC theo membership status? Thiết kế hiện giả định membership status là nguồn chặn authorization; Auth session toàn cục không bị xóa.
-3. Roster có cần đồng bộ tới PC/Mobile trong Change Feed không? Thiết kế hiện giả định CHƯA, cho đến khi users.view và dữ liệu được phép lộ được chốt.
+Ba mặc định đã được người dùng đồng ý; xem mục 13. Không còn chờ xác nhận sản phẩm cho ba nội dung này. Các câu hỏi kỹ thuật còn mở được liệt kê tại mục 14.5.
 
 Không có SQL executable trong tài liệu này. Không sửa migrations 013/014, Edge Function hoặc client; không chạy SQL, không gọi RPC, không thay đổi Supabase.
 
