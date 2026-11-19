@@ -3749,3 +3749,13 @@ Hoàn thiện hợp đồng quyền/replay và quyết định điều chỉnh t
 - Đây chưa phải migration áp dụng. Chưa chạy SQL, chưa thay DB, grants, UI hoặc dữ liệu.
 - Bước tiếp: review logic và dependency, đặc biệt shared Receipt, row_version 015, direct grants cutover, legacy migration và kiểm thử trên Test.
 \n\n## 42. Bổ sung tương thích Movement display fields (19/11/2026)\n\n- Đã đối chiếu Local Movement: note hiện trùng reason; không tạo cột note lặp.\n- Bổ sung performed_by_label tùy chọn để giữ snapshot tên người thao tác; created_by_user_id vẫn là Auth actor.\n- Chưa sửa code/mapping hoặc chạy SQL.\n
+
+## 43. Review shared Receipt và row_version (19/11/2026)
+
+- Shared Receipt thiết kế theo logical mutation, hỗ trợ nhiều affected records trong một transaction (ví dụ Task + Log).
+- Fingerprint canonical do server dựng; không giả định pgcrypto; unique claim chống hai request cùng mutation ID chạy trùng.
+- Receipt, business rows, row_version và change feed cùng commit/rollback. Conflict/no_change được ghi Receipt nhưng không phát event.
+- Phát hiện Asset RPC hiện check assets.update trước replay. Đã đề xuất quy tắc replay same actor + active membership, không cần write permission lần nữa; snapshot phụ thuộc read permission hiện tại. Chờ xác nhận.
+- Asset-specific Receipt/Lease vẫn giữ nguyên trong chuyển tiếp; không dual-write và không xóa receipt cũ.
+- row_version trigger tăng theo mỗi SQL UPDATE; RPC cần update mỗi row đúng một lần. Asset chưa chuyển token từ updated_at/Lease.
+- Chưa tạo shared-ledger SQL draft, chưa sửa draft 015, chưa chạy SQL.
