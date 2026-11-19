@@ -160,3 +160,106 @@ RLS/grants:
 - Không thay đổi BAOTRI-Mini-Test hoặc Production.
 
 Bước tiếp theo: viết các SQL draft tách biệt cho idempotency ledger và change feed sau khi hoàn tất review hash extension, grants, FK delete và pull permissions. Mọi draft vẫn nằm trong `supabase/drafts/`, không được áp dụng khi chưa phê duyệt.
+
+
+## 8. Chuẩn hóa shared Receipt và xử lý replay sau khi quyền thay đổi (19/11/2026)
+
+Trạng thái: **Thiết kế đề xuất; chưa áp dụng.** Mục này làm rõ các điểm còn thiếu của hợp đồng ở mục 3–6.
+
+### 8.1 Shared Receipt schema logic
+
+Một dòng `organization_mutations` đại diện cho **một logical mutation**, không phải một record đơn lẻ. Hợp đồng tối thiểu:
+- `organization_id uuid`, `mutation_id uuid`: primary key ghép.
+- `actor_user_id uuid`: lấy từ `auth.uid()`, không nhận từ client.
+- `operation text`: mã thao tác ổn định, không phụ thuộc tên hàm có thể đổi.
+- `request_fingerprint jsonb`: envelope canonical do server tự dựng, gồm organization, operation, actor scope, resource IDs, expected version/revision và payload đã chuẩn hóa. Không tin hash do client gửi.
+- `result_status text`: applied | no_change | conflict.
+- `result_payload jsonb`: response canonical đã commit; với mutation nhiều record chứa danh sách snapshot/identity/version của tất cả record bị ảnh hưởng.
+- `created_at`, `completed_at`.
+
+Không dùng `record_id` đơn làm mô hình duy nhất vì `complete_maintenance_task` tác động Task + Log trong cùng transaction. Response/Receipt phải mô tả được 1..N affected records, mỗi record có table/type, id, operation và version/revision sau giao dịch. Primary key vẫn chỉ là (organization_id, mutation_id).
+
+### 8.2 Fingerprint — không giả định pgcrypto
+
+- Server tự chuẩn hóa payload theo allowlist và kiểu cột trước khi dựng fingerprint; JSONB object equality tránh phụ thuộc thứ tự key.
+- Trước mắt có thể so sánh canonical JSONB trực tiếp trong bảng Receipt riêng tư, nhưng phải đánh giá dữ liệu nhạy cảm/kích thước payload và chỉ lưu phần cần để phát hiện key reuse.
+- Chỉ chuyển sang digest SHA-256 nếu đã xác minh extension/hàm có thật trên Supabase Test và có test canonicalization ổn định. Không dùng MD5 hoặc hash client tự khai làm căn cứ bảo mật.
+- Khác actor, operation, organization, resource ID, expected version/revision hoặc payload đều là `idempotency_key_reuse`; không chạy side effect.
+
+### 8.3 Claim và concurrency của mutation ID
+
+- Auth + organization active + active membership được xác minh trước khi trả bất kỳ receipt nào.
+- Với request mới, kiểm tra permission nghiệp vụ và payload; sau đó claim key bằng unique key (organization_id, mutation_id) trong cùng transaction với business write.
+- Nếu hai request cùng key đến đồng thời, unique constraint phải serialize claim. Request thua đọc lại receipt đã commit trong statement tiếp theo; so actor + fingerprint rồi replay hoặc reject. Nếu transaction đầu rollback, request còn lại có thể claim và thực hiện.
+- Không commit receipt trạng thái processing độc lập với business transaction. Receipt chỉ tồn tại sau commit với kết quả hoàn chỉnh; business write, receipt, row_version và change events cùng rollback/commit.
+- Không lưu receipt cho Auth/membership/permission/validation errors trước khi mutation được chấp nhận. Conflict/no_change là kết quả nghiệp vụ xác định và được lưu để retry cùng key trả đúng kết quả cũ.
+
+### 8.4 Chính sách replay khi permission bị thu hồi — cần người dùng xác nhận
+
+Phát hiện trong migration Asset hiện tại: `apply_asset_mutation_with_lock` kiểm tra `assets.update` trước khi tra Receipt. Vì vậy, nếu Cloud đã commit nhưng phản hồi mất, sau đó permission bị thu hồi, cùng actor retry sẽ bị chặn trước khi nhận biết mutation đã thành công.
+
+Đề xuất cho shared RPC:
+1. Auth vẫn bắt buộc; organization phải active; actor phải còn active membership trong organization.
+2. Tra Receipt theo organization + mutation ID; chỉ actor_user_id khớp mới được replay. Actor khác/cross-org/inactive member bị từ chối; không tiết lộ receipt.
+3. Replay không phải business write mới, nên không yêu cầu lại permission ghi của operation đã commit.
+4. Nếu actor hiện còn quyền đọc tương ứng cho mọi record trong result, trả canonical snapshots như Receipt đã lưu.
+5. Nếu actor còn active membership nhưng quyền đọc một phần/toàn bộ đã bị thu hồi, chỉ trả acknowledgement tối thiểu (đã commit, mutation ID, resource IDs/version đã biết trong request), không trả snapshot nhạy cảm; client đọc lại bằng luồng read/pull được cấp quyền hiện tại.
+6. Nếu membership bị vô hiệu hoặc organization inactive, deny replay hoàn toàn.
+
+Quy tắc này giữ được recovery sau mất phản hồi nhưng không biến Receipt thành kênh vượt quyền đọc. Cần xác nhận chính sách này trước khi viết RPC SQL.
+
+### 8.5 Asset Receipt trong giai đoạn chuyển tiếp
+
+- Không dual-write độc lập vào `asset_mutation_receipts` và `organization_mutations` cho cùng một mutation.
+- Giữ Asset-specific Receipt + Asset Edit Lease cho RPC hiện hữu đến khi có migration/harmonization riêng và test replay đầy đủ.
+- Khi chuyển Asset sang shared Receipt, phải bảo toàn tra cứu các mutation ID đã commit trong bảng cũ; định nghĩa cách replay legacy receipt trước khi ngừng RPC cũ hoặc ngừng ghi bảng cũ.
+- Không xóa Asset Receipt/Lease trong cùng bước chỉ vì shared ledger đã tồn tại.
+
+## 9. row_version contract sau khi đối chiếu trigger hiện hữu
+
+### 9.1 Bảng thuộc phạm vi
+
+Draft 015 hiện thêm row_version cho: assets, inventory_items, maintenance_tasks, maintenance_plans, checklist_templates, organization_settings. Đây là các mutable master/config rows. Không thêm row_version cho inventory_movements, maintenance_logs root/revisions, checklist_template_versions hoặc checklist_results (append-only history).
+
+### 9.2 Trigger và updated_at
+
+- Schema 002 hiện có BEFORE UPDATE trigger `*_set_updated_at`; draft 015 đặt `*_set_row_version`. PostgreSQL chạy cùng loại trigger theo thứ tự tên alphabetic; tên row_version hiện đứng trước updated_at. Hàm version bỏ `row_version` và `updated_at` khi so sánh JSONB nên updated_at-only change không tự tăng version.
+- Trigger tăng version một lần cho mỗi SQL UPDATE có thay đổi business field; không tự hiểu logical transaction. Do đó mỗi RPC phải UPDATE từng mutable row đúng một lần. Hai UPDATE cùng row trong một RPC sẽ tăng version hai lần và phải được thiết kế tránh.
+- INSERT luôn bắt đầu version 1; client không được quyết định row_version. No-op không UPDATE row, không tăng version.
+- RPC lock row, so expected_version, UPDATE đúng allowlist, trả snapshot/version mới. Conflict không UPDATE; lưu Receipt conflict và trả current snapshot nếu quyền đọc cho phép.
+
+### 9.3 Ranh giới nghiệp vụ
+
+- Inventory movement: row_version thuộc inventory_items; Item balance + một movement là một transaction. Movement append-only không có row_version.
+- Task completion + Log: Task row_version tăng đúng một; Log revision_no bắt đầu 1; cả hai dùng một Receipt, hai change events trong cùng transaction.
+- Log revise: expected_revision_no trên revision mới nhất, không dùng row_version; insert revision mới, không update root/revision cũ.
+- Checklist template: row_version trên template header; version snapshot mới là append-only row riêng. Cần bảo đảm mỗi lần publish chỉ UPDATE header một lần và INSERT đúng một version row.
+- Asset: row_version có thể là nền tương lai nhưng Asset RPC hiện dùng expected_cloud_updated_at + Edit Lease + Asset Receipt. Chưa chuyển token/version hoặc bỏ Lease cho đến khi có thiết kế migration riêng.
+- organization_settings là một row/organization, RPC dùng organization_id làm resource key; row_version vẫn do DB quản lý.
+
+## 10. Change feed và multi-record mutation
+
+- Receipt một dòng có thể tham chiếu nhiều affected records; change feed tạo một event cho từng record thực sự thay đổi.
+- Một transaction khóa organization counter, cấp cursor liên tiếp cho tất cả event của mutation, insert event + Receipt + business rows trước commit. Transaction khác cùng organization chờ counter; không thể commit cursor cao trước cursor thấp.
+- Conflict và no_change có Receipt nhưng không change event. Task completion có event cho Task và Log; Log revise có event cho Log/revision aggregate; Inventory movement có event cho Item và Movement.
+- Pull page phải apply toàn bộ event vào Dexie transaction rồi mới advance cursor. Nếu một event fail, rollback page và giữ cursor cũ.
+
+## 11. Kiểm thử bổ sung trước khi viết SQL
+
+- Commit thành công → response mất → thu hồi write permission → cùng actor active membership replay: trả acknowledgement; snapshot chỉ trả nếu còn read permission.
+- Commit thành công → actor inactive hoặc organization inactive → replay bị deny.
+- Cùng key, actor khác hoặc organization khác → deny, không lộ result.
+- Hai request cùng mutation ID đồng thời: đúng một business execution; request còn lại replay cùng result.
+- Request đầu rollback: request thứ hai có thể claim và thực hiện.
+- Multi-record Task+Log: một Receipt, một transaction, đúng hai events, rollback toàn bộ khi lỗi.
+- No-op inventory count: Receipt no_change, không row_version/event/movement.
+- Hai client cùng expected_version: một applied, một conflict có snapshot.
+- Mỗi RPC update cùng row đúng một lần; trigger không tăng version hai lần.
+- Asset legacy Receipt replay vẫn hoạt động trong khi chuyển tiếp; không dual-write.
+
+## 12. Trạng thái
+
+- Shared Receipt/row_version contract đã được làm rõ ở mức thiết kế.
+- Chính sách replay sau khi quyền ghi/đọc bị thu hồi tại mục 8.4 là đề xuất, chờ người dùng xác nhận.
+- Chưa tạo shared-ledger SQL draft mới; chưa sửa draft 015; chưa thay đổi Asset receipt migration.
+- Chưa chạy SQL, chưa gọi RPC, chưa thay đổi Test/Production, chưa bật worker.
