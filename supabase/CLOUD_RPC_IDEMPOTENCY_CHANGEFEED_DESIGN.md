@@ -277,3 +277,14 @@ Người dùng đồng ý với chính sách replay read-only sau khi quyền gh
 Phạm vi chấp thuận là chính sách thiết kế cho shared Receipt; không tự động thay đổi hành vi Asset RPC hiện hữu. Asset-specific Receipt/Lease tiếp tục giữ nguyên cho đến migration/harmonization riêng. Cần đưa các ca replay sau revoke write/read, inactive membership và inactive organization vào kiểm thử bắt buộc.
 
 Chưa tạo SQL/RPC, chưa sửa code, chưa apply migration hoặc thay đổi dữ liệu/quyền Cloud.
+
+
+## 14. SQL draft shared Receipt – 19/11/2026
+
+- Đã tạo `supabase/drafts/020_organization_mutations_receipt_DRAFT.sql` để review; đây là DDL cho `organization_mutations`, chưa phải migration áp dụng.
+- Một Receipt cho một logical mutation, hỗ trợ nhiều affected records; lưu actor từ `auth.uid()`, operation ổn định, canonical request fingerprint JSONB do RPC dựng, read-permission requirements, resource refs tối thiểu và kết quả canonical.
+- Unique `(organization_id, mutation_id)` làm khóa claim. RPC phải kiểm tra Receipt hiện hữu trước; replay cùng actor/fingerprint không yêu cầu lại write permission. Nếu chưa có Receipt mới kiểm tra write permission rồi claim bằng `INSERT ... ON CONFLICT DO NOTHING`; request thua concurrency đọc lại bằng statement tiếp theo.
+- `pending` chỉ tồn tại trong transaction nghiệp vụ; deferred constraint trigger ngăn commit nếu Receipt chưa được finalize. Trigger chỉ cho phép chuyển `pending` sang `applied/no_change/conflict` một lần và khóa các trường nhận dạng.
+- Replay yêu cầu Auth + organization active + active membership; actor khác/cross-org/inactive bị deny. Full snapshot chỉ trả khi actor hiện có toàn bộ read permissions; nếu không chỉ acknowledgement + affected refs.
+- Không dùng pgcrypto, không có generic claim RPC, không sửa Asset Receipt/Lease và không dual-write. Chưa có business RPC, change feed hoặc SQL promotion.
+- Chưa chạy SQL, chưa thay đổi Supabase Test/Production, quyền, dữ liệu hoặc code.
