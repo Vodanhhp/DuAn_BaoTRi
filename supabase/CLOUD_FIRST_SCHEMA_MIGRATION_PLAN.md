@@ -130,3 +130,12 @@ Bảng hiện tại `inventory_movements` có `quantity > 0`, type Nhập/Xuất
 - Đây là chính sách thiết kế cho shared Receipt, không phải cho phép ghi mới và không tự thay đổi Asset RPC/Receipt hiện hữu. Asset migration phải có adapter/legacy replay plan riêng.
 - Bổ sung test commit → mất response → revoke write → replay cùng ID; revoke read; inactive membership; inactive organization; actor khác.
 - Chưa tạo SQL/RPC, chưa sửa code, chưa apply migration hoặc thay đổi dữ liệu/quyền.
+
+
+## 12. Shared Receipt DDL draft 020 (19/11/2026)
+
+- Đã tạo `supabase/drafts/020_organization_mutations_receipt_DRAFT.sql`; file chỉ định nghĩa bảng Receipt chung, index, RLS deny-by-default, trigger bảo vệ bất biến và deferred guard bắt buộc finalize.
+- `organization_mutations` dùng PK `(organization_id, mutation_id)`, actor Auth, operation, canonical JSONB fingerprint, read permission codes, affected refs, result payload và trạng thái cuối `applied/no_change/conflict`. `pending` chỉ là trạng thái tạm trong cùng transaction và không được commit.
+- Claim/replay algorithm được ghi trong comment của draft: kiểm tra membership trước; tra Receipt trước write permission; nếu Receipt tồn tại thì replay read-only cùng actor/fingerprint; nếu chưa có mới kiểm tra write permission và claim bằng unique key. Request cạnh tranh đọc Receipt sau khi `ON CONFLICT DO NOTHING` hoàn tất.
+- Không giả định pgcrypto; không tạo generic callable claim RPC; không thay đổi Asset-specific Receipt/Lease, không dual-write.
+- Draft chưa được áp dụng; chưa có business RPC hoặc read-replay RPC, chưa chạy SQL và chưa thay đổi Supabase.
