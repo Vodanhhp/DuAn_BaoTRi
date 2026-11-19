@@ -1902,3 +1902,24 @@ Chỉ đọc function definitions và ACL. Không sửa function, grant, role ho
 
 ### Trạng thái
 Chỉ đọc tài liệu và catalog. Không SQL write, DDL, RPC, grants, role, Auth/data, secrets hoặc cấu hình Supabase thay đổi.
+
+
+## 71. Writer/revoker inventory cho Organization, Role và Permission – 20/11/2026
+
+### Catalog Test
+- Năm bảng `organizations`, `organization_members`, `member_roles`, `roles`, `role_permissions` đều bật RLS.
+- Effective privilege: authenticated có SELECT, không có INSERT/UPDATE/DELETE trên cả năm bảng. Service_role có INSERT/UPDATE/DELETE; RLS không phải ranh giới bảo vệ service_role.
+- Policies hiện chỉ là SELECT cho authenticated, predicate `is_org_member(...)`; không có write policy cho authenticated trên các bảng này.
+- Trigger inventory: `organizations` và `organization_members` chỉ có BEFORE UPDATE `set_updated_at()`; không có trigger trên `member_roles`, `roles`, `role_permissions`.
+- Public SECURITY DEFINER function inventory không có RPC tạo/sửa organization, roles hoặc role_permissions. Các hàm quản lý member hiện tại chỉ tạo/xóa membership, gán role hoặc đổi status; `has_org_permission`, `has_org_role`, `is_org_member` là read helpers. Seed built-in roles/permissions nằm trong migration 005.
+- Supabase hiện chỉ liệt kê một Edge Function ACTIVE: `manage-organization-members`. Nó gọi các RPC membership đã rà soát; không thấy Edge Function riêng để quản lý Organization/Role/Role Permission.
+- Static GitHub search không tìm thấy caller dùng `.from("organizations").insert/update`, `.from("roles").insert/update` hoặc `.from("role_permissions").insert/delete`. Đây là giới hạn của search/code snapshot, không phải bằng chứng tuyệt đối về mọi external client.
+
+### Hệ quả lock matrix
+- Trong trạng thái Test hiện tại, chưa có server RPC/revoker nghiệp vụ cho Organization, Role hoặc Role Permission ngoài các migration/manual privileged SQL. Vì vậy chưa có một cặp RPC writer/revoker runtime đầy đủ để concurrency-test trên các bảng này.
+- Service_role vẫn có DML và bypass RLS; mọi Edge Function mới dùng service_role phải được xem là privileged writer và được audit như một transaction path, không dựa vào RLS.
+- Trước khi triển khai `roles.manage` hoặc Organization status management, phải bổ sung RPC có authorization trong transaction, khóa theo Member §25.1/Shared Receipt §6.3 và test cạnh tranh giữa grant/revoke với business mutation. Không cho phép client authenticated ghi trực tiếp.
+- `has_org_permission()` là helper đọc trạng thái hiện tại, không thay thế việc khóa membership/assignment/role/permission trong transaction mutation cần bảo đảm quyền không bị thu hồi giữa chừng.
+
+### Trạng thái
+Read-only catalog, RLS/grants/policy/trigger/function inventory và static search. Không thay đổi schema, grants, role, data, RPC hoặc Supabase config.
