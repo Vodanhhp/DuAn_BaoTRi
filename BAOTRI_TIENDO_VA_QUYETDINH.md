@@ -4462,3 +4462,33 @@ B. Public membership acceptance wrapper/transaction function (candidate owner ri
 
 ### Trạng thái
 Chỉ đọc ACL/catalog và tài liệu. Không SQL write, DDL, role, grant, RPC, secret value, Auth user hoặc cấu hình Supabase thay đổi.
+
+
+## 81. Auth trigger side effect, FK/cascade và default ACL – 20/11/2026
+
+### Công việc tiếp tục từ §80
+Đã đọc lại các tài liệu Member Management RPC, Foundation Drafts Review và draft 021_member_audit_and_invite_saga_DRAFT.sql; đối chiếu tài liệu PostgreSQL 17 và catalog/function definitions trên BAOTRI-Mini-Test ở chế độ chỉ đọc.
+
+### Phát hiện trọng yếu
+- auth.users có trigger on_auth_user_profile_sync_update sau UPDATE email/raw_user_meta_data/email_confirmed_at. Trigger gọi public.sync_auth_user_profile(), SECURITY DEFINER owner postgres, search_path=''.
+- Function đồng bộ profiles, rồi nếu email_confirmed_at khác NULL thì tự đổi toàn bộ organization_members có cùng user_id và status='invited' sang active.
+- Side effect không kiểm tra invitation, recipient digest, expiry/revocation, organization status, role, inviter authority hoặc idempotency. Không tạo member_roles, audit, Shared Receipt hay Saga completion.
+- Đây là blocker cần giải quyết trước khi triển khai acceptance RPC mới: tách profile sync khỏi membership activation; trạng thái membership chỉ được đổi bởi acceptance transaction đã kiểm tra đầy đủ. Phải review tương thích legacy trước khi thay đổi; chưa áp dụng.
+- Các bảng organization_member_invite_operations và organization_member_audit_events trong draft 021 chưa có trong catalog Test; draft chưa được áp dụng.
+
+### FK/trigger và lock order
+- Đường khóa ngầm của Auth update: auth.users -> profiles -> organization_members; membership UPDATE còn chạy set_updated_at.
+- FK đã xác minh: organization_members -> organizations/profiles RESTRICT; member_roles -> organization_members/roles CASCADE; member_roles.assigned_by_user_id -> profiles RESTRICT; roles -> organizations RESTRICT.
+- Không có trigger nghiệp vụ trên member_roles/roles/role_permissions ở inventory hiện tại. Acceptance INSERT vẫn phải tính FK parent checks/locks; cascade liên quan thao tác xóa về sau.
+- Candidate tránh deadlock: không khóa membership trước Auth user; bắt đầu từ Auth actor, profile nếu cần, rồi Organization/Saga/Membership/Role và audit/receipt. Chưa chốt thứ tự Organization vs Saga hoặc global lock matrix vì còn phải audit tất cả writer.
+- PostgreSQL 17 xác nhận deadlock có thể phát sinh từ row-level locks; cách phòng ngừa chính là mọi transaction khóa các object theo cùng thứ tự, transaction ngắn và retry an toàn sau deadlock. Nguồn: https://www.postgresql.org/docs/17/explicit-locking.html
+
+### Default ACL / role graph
+- Default ACL Test: postgres tạo function mới trong public sẽ mặc định cấp EXECUTE cho anon/authenticated/service_role; default table privileges cũng rộng. Cần revoke/GRANT chính xác trong cùng transaction tạo function và kiểm tra effective ACL.
+- postgres có membership vào service_role với admin/inherit/set option; authenticator có SET membership vào các API roles. Chưa tồn tại custom member_rpc_owner. Owner mới phải NOLOGIN, không có role membership/SET ROLE path tới role đặc quyền; đọc default ACL của đúng effective creator, không giả định từ postgres.
+- Không thực hiện DDL, RPC, grants, role changes, Auth/data updates, secret access hoặc Supabase config changes.
+
+### Trạng thái và bước kế tiếp
+- Đã xác minh trigger side effect, FK cascade/restrict, default ACL và một phần role graph.
+- Chưa xác minh toàn bộ function-call surface, quyền chính xác cho từng bảng Saga/Audit/Receipt (vì Saga/Audit chưa triển khai), schema exposure trong Dashboard, và global lock order across all writers.
+- Bước kế tiếp: rà soát toàn bộ function SECURITY DEFINER và các RPC/business writers đang thao tác organization_members, Auth và roles để tìm lock-order ngược; tiếp tục chỉ đọc.
