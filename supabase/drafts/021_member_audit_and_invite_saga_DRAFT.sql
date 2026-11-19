@@ -13,7 +13,7 @@ begin;
 -- normalized_email is PII: never expose it to clients, receipts, feed, or logs.
 -- ---------------------------------------------------------------------------
 
-create table if not exists public.organization_member_invite_operations (
+create table public.organization_member_invite_operations (
   organization_id uuid not null
     references public.organizations(id) on delete restrict,
   operation_id uuid not null,
@@ -115,16 +115,16 @@ comment on column public.organization_member_invite_operations.membership_id is
 comment on column public.organization_member_invite_operations.membership_receipt_mutation_id is
   'Scalar reference to Shared Receipt mutation ID; asset-specific Receipt remains separate.';
 
-create index if not exists organization_member_invite_operations_recovery_idx
+create index organization_member_invite_operations_recovery_idx
   on public.organization_member_invite_operations
     (organization_id, status, retry_after, created_at);
 
-create index if not exists organization_member_invite_operations_auth_user_idx
+create index organization_member_invite_operations_auth_user_idx
   on public.organization_member_invite_operations
     (auth_user_id)
   where auth_user_id is not null;
 
-create index if not exists organization_member_invite_operations_lease_idx
+create index organization_member_invite_operations_lease_idx
   on public.organization_member_invite_operations
     (lease_expires_at)
   where status = 'auth_calling';
@@ -136,7 +136,7 @@ create index if not exists organization_member_invite_operations_lease_idx
 -- actor_kind distinguishes an authenticated human action from server orchestration.
 -- ---------------------------------------------------------------------------
 
-create table if not exists public.organization_member_audit_events (
+create table public.organization_member_audit_events (
   audit_id uuid primary key default gen_random_uuid(),
   organization_id uuid not null
     references public.organizations(id) on delete restrict,
@@ -201,16 +201,16 @@ comment on column public.organization_member_audit_events.after_state is
 comment on column public.organization_member_audit_events.actor_kind is
   'user = real authenticated actor; system = server-side Saga transition with actor_user_id NULL.';
 
-create index if not exists organization_member_audit_events_org_time_idx
+create index organization_member_audit_events_org_time_idx
   on public.organization_member_audit_events
     (organization_id, occurred_at desc, audit_id desc);
 
-create index if not exists organization_member_audit_events_target_time_idx
+create index organization_member_audit_events_target_time_idx
   on public.organization_member_audit_events
     (organization_id, target_membership_id, occurred_at desc)
   where target_membership_id is not null;
 
-create index if not exists organization_member_audit_events_invite_idx
+create index organization_member_audit_events_invite_idx
   on public.organization_member_audit_events
     (organization_id, invite_operation_id, occurred_at desc)
   where invite_operation_id is not null;
@@ -220,7 +220,7 @@ create index if not exists organization_member_audit_events_invite_idx
 -- Table owner/superuser remains a privileged operational boundary.
 -- ---------------------------------------------------------------------------
 
-create or replace function public.reject_member_audit_mutation()
+create function public.reject_member_audit_mutation()
 returns trigger
 language plpgsql
 security definer
@@ -233,9 +233,6 @@ end;
 $function$;
 
 revoke all on function public.reject_member_audit_mutation() from public, anon, authenticated, service_role;
-
-drop trigger if exists organization_member_audit_events_no_update_delete
-  on public.organization_member_audit_events;
 
 create trigger organization_member_audit_events_no_update_delete
 before update or delete on public.organization_member_audit_events
