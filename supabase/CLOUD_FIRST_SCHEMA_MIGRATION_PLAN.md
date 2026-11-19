@@ -120,3 +120,13 @@ Bảng hiện tại `inventory_movements` có `quantity > 0`, type Nhập/Xuất
 - Draft 015 tăng version theo từng SQL UPDATE, không theo logical transaction; mỗi RPC phải UPDATE mỗi mutable row đúng một lần. Asset hiện vẫn dùng expected_cloud_updated_at + Lease; chưa chuyển sang row_version.
 - Chi tiết: mục 8–12 của CLOUD_RPC_IDEMPOTENCY_CHANGEFEED_DESIGN.md.
 - Chưa tạo shared Receipt SQL draft hoặc sửa draft 015; chưa chạy SQL.
+
+
+## 11. Chính sách replay Receipt đã được chấp thuận (19/11/2026)
+
+- Người dùng chấp thuận replay read-only cho cùng actor khi Receipt đã commit, Auth hợp lệ, organization active và membership của actor vẫn active; không yêu cầu lại permission ghi của mutation cũ.
+- Actor khác/cross-organization bị từ chối. Membership inactive hoặc organization inactive thì deny hoàn toàn.
+- Snapshot Receipt chỉ được trả nếu actor hiện có quyền đọc tương ứng; nếu không, chỉ trả acknowledgement tối thiểu và không lộ snapshot nhạy cảm.
+- Đây là chính sách thiết kế cho shared Receipt, không phải cho phép ghi mới và không tự thay đổi Asset RPC/Receipt hiện hữu. Asset migration phải có adapter/legacy replay plan riêng.
+- Bổ sung test commit → mất response → revoke write → replay cùng ID; revoke read; inactive membership; inactive organization; actor khác.
+- Chưa tạo SQL/RPC, chưa sửa code, chưa apply migration hoặc thay đổi dữ liệu/quyền.
