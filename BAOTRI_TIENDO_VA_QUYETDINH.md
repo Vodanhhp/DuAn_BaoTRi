@@ -3800,3 +3800,13 @@ Hoàn thiện hợp đồng quyền/replay và quyết định điều chỉnh t
 - Cập nhật Member design §31, Foundation review §35, Shared Receipt review §9.
 - GitHub files đã fetch lại xác minh SHA/nội dung. Chưa chạy SQL/parser, chưa tạo migration, chưa thay đổi Supabase Test/Production, RPC, code hoặc dữ liệu.
 - Bước kế tiếp: tiếp tục review transition/authorization/lock-order contract và lập bảng test cho các RPC trước khi có thể promote DDL.
+
+
+## 48. Ma trận transition và test RPC Invite Saga (19/11/2026)
+
+- Hoàn thiện Member design §32: transition graph cho requested/auth_calling/auth_outcome_unknown/auth_user_resolved/finalize_pending/needs_review và terminal states.
+- Định nghĩa RPC contract: begin, cancel (chỉ trước Auth provisioning), claim Auth attempt, record Auth result, mark outcome unknown, finalize, adopt; self-activation là lifecycle RPC riêng cần chốt semantics.
+- Thêm test cases về authorization, CAS/version, concurrency, stale attempt, Auth crash/timeout, replay Shared Receipt, adoption race, atomic rollback, PII leakage, grants/RLS/SECURITY DEFINER và lock order.
+- Giữ quyết định đã duyệt: manual recovery giai đoạn đầu; Admin khác có thể adoption có audit; không tự xóa/attach Auth user khi ownership không rõ.
+- GitHub Member design đã fetch lại xác minh sau commit. Chưa tạo RPC/SQL, chưa chạy Supabase, chưa sửa migration hoặc code.
+- Còn mở: Auth provenance evidence, attempt-history requirement, self-activation audit/Receipt semantics, PII encryption/key management và retention.
