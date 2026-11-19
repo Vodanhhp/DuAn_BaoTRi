@@ -4003,3 +4003,36 @@ Pending-invite discovery phải tối thiểu dữ liệu, không lộ roster/Au
 Cách thông báo lời mời cho tài khoản có sẵn (in-app hay email riêng); expiry/resend; decline/revoke; email thay đổi; nhiều lời mời; quyền inviter còn hiệu lực hay Admin khác reapprove; rate limit/audit retention; response shape và chống enumeration. Cần xác minh API/Auth version pin trước khi chọn delivery mechanism.
 
 **Trạng thái:** proposal để review, chưa phải quyết định schema đã duyệt. Chưa thêm state vào DDL 021, chưa tạo RPC/Edge Function, không chạy SQL, không thay đổi Supabase. Hiện tại vẫn giữ native inviteUserByEmail + fail-closed/manual review.
+
+
+## 65. Kênh thông báo lời mời cho tài khoản Auth có sẵn: in-app trước, email phụ (proposal, 20/11/2026)
+
+### Khuyến nghị
+
+**In-app inbox là kênh chính thức và có thẩm quyền. Email chỉ là thông báo phụ tùy chọn.** Không kênh nào tự chứng minh danh tính, quyền sở hữu tài khoản, email đã xác minh hay việc chấp nhận lời mời. Chỉ phiên đăng nhập đúng Auth user và transaction acceptance ở §64 mới có quyền tạo membership.
+
+### 1. In-app inbox
+
+- Sau đăng nhập, client gọi RPC authenticated hẹp để lấy lời mời chờ của chính Auth UID hiện tại, server tự đối chiếu email xác minh authoritative. Danh tính lấy từ auth.uid(), không nhận UID/email do client truyền.
+- Chỉ trả các trường hiển thị tối thiểu: invitation ID opaque, tên tổ chức, nhãn role nếu được phép hiển thị, người mời nếu an toàn, thời điểm tạo/hết hạn, trạng thái pending. Không trả email đích, Auth UUID, fingerprint, receipt ID, token, secret hoặc chi tiết Saga/attempt.
+- Đọc inbox không reserve/accept lời mời, không kích hoạt membership, không cấp tenant access. Nút Accept gọi RPC riêng và transaction phải kiểm tra lại toàn bộ điều kiện §64.
+- Refresh khi login, mở ứng dụng, mở inbox. Realtime nếu dùng chỉ là tín hiệu báo có thay đổi; client phải fetch lại qua RPC có quyền. Không broadcast nội dung lời mời. Không phụ thuộc websocket; app-open/on-demand refresh vẫn phải hoạt động.
+
+### 2. Email thông báo phụ
+
+- Chỉ gửi email thông báo chung rằng có lời mời đang chờ, kèm link về trang đăng nhập/inbox bình thường của ứng dụng.
+- Không nhúng bearer token chấp nhận, Auth confirmation/recovery token, Auth UUID hoặc secret. Mở link không đồng nghĩa chấp nhận; người nhận phải đăng nhập bình thường, xem inbox và bấm Accept.
+- Không dùng Auth invite/recovery API để thông báo cho tài khoản có sẵn. Đây là business notification, không phải Auth activation/verification.
+- Dùng transactional email provider riêng qua trusted server-side sender (SMTP riêng hoặc provider API được review). Supabase custom SMTP liên quan Auth mail; Send Email Auth Hook thay thế việc gửi Auth email, không nên biến thành hàng đợi thông báo nghiệp vụ BAOTRI. Secret chỉ ở server; cấu hình SPF/DKIM/DMARC; tắt tracking nếu có thể.
+- Không để Admin/API trả lời rằng email đích có hay không có tài khoản Auth. Chỉ xác nhận invitation intent đã được ghi nhận.
+
+### 3. Outbox, retry và dữ liệu cá nhân
+
+- Nếu bật email, tạo outbox job tối thiểu cùng transaction với invitation intent; chỉ gửi sau commit. Idempotency theo notification_id; retry/backoff có giới hạn; rate limit; audit; không log email thô hoặc raw provider response.
+- Fingerprint không phải địa chỉ gửi được. Nếu cần gửi, phải thiết kế nơi lưu recipient email có mã hóa, quyền truy cập hẹp, quản lý khóa và retention; không để email thô trong queue/log phổ thông.
+- Provider chấp nhận gửi không chứng minh email vào inbox; email delivery không làm thay đổi membership/provenance/acceptance.
+- Hiện tại quy định manual recovery, chưa có background worker. Vì vậy chưa triển khai email cho đến khi duyệt provider, outbox, worker, secret, PII retention và monitoring.
+
+**Thứ tự triển khai được khuyến nghị:** (1) in-app inbox + explicit accept; (2) email thông báo phụ sau khi outbox/sender được duyệt; (3) Realtime chỉ tối ưu trải nghiệm, không phải dependency.
+
+**Trạng thái:** proposal thiết kế, không phải phê duyệt triển khai. Không sửa DDL 021, không tạo RPC/Edge Function/worker, không chạy SQL và không thay đổi Supabase.
