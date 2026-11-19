@@ -1755,3 +1755,8 @@ Proposed, unapplied matrix:
 Blocking identity issue: direct Postgres does not set PostgREST JWT context, so auth.uid()/auth.jwt() cannot be trusted as caller identity. If Edge Function validates JWT then passes UID, DB trusts that code and credential; credential compromise could spoof UID. Before implementation choose explicitly between accepting Edge Function as the trusted boundary with strong controls, or designing a signed short-lived actor assertion verified by DB (signature, audience, expiry, replay). No ad-hoc GUC/client UID is sufficient.
 
 This is design/read-only evidence only. No role, grant, schema, function, secret or migration was created or changed.
+
+### Additional role-semantics verification
+On BAOTRI-Mini-Test, read-only `pg_roles` inspection shows postgres is LOGIN but not SUPERUSER; however CREATEDB, CREATEROLE, REPLICATION and BYPASSRLS are true, so it is unsuitable as a runtime Edge credential. service_role is NOLOGIN and BYPASSRLS true; anon/authenticated are NOLOGIN without BYPASSRLS; authenticator is LOGIN/NOINHERIT for PostgREST role switching; supabase_auth_admin is LOGIN/CREATEROLE for Auth internals and must not be reused.
+
+Supabase's Postgres Roles guide recommends a separate database user per external service. For the dedicated Edge login, prefer no role memberships at all, not merely NOINHERIT: NOINHERIT blocks automatic inheritance but membership may still permit SET ROLE depending on membership options/version. Verify no membership path, no SET ROLE path and effective privileges. No changes applied.
