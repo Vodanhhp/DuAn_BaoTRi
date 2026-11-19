@@ -2033,3 +2033,16 @@ Supabase docs hiện hành mô tả Before User Created Hook chạy ngay trướ
 - Existing account / existing unconfirmed user vẫn phải được kiểm tra bằng attempt marker: nếu không có marker hợp lệ thì After Hook không tạo receipt. Dù source gọi hook sau transaction cho route Invite, không được coi event không có correlation là user vừa được operation tạo.
 
 **Kết luận cập nhật:** ưu tiên nghiên cứu After User Created Hook làm điểm ghi receipt sau Auth commit; Before Hook không còn là điểm receipt chính vì có thể tạo orphan pre-create observation. Đây vẫn là source-level feasibility, chưa phải cam kết availability trên Supabase Cloud/plan hoặc production readiness. Cần xác minh Auth/GoTrue + SDK version đã pin, hook type được bật trên project, delivery/retry/timeout semantics, và test end-to-end. Chưa duyệt implementation; không sửa DDL 021/RPC/Edge Function, không chạy SQL hoặc thay đổi Supabase.
+
+
+## 46. Supabase Cloud availability and HTTP Hook delivery constraints
+
+Đối chiếu tài liệu Supabase Auth Hooks hiện hành (20/11/2026):
+
+- Bảng hook được Supabase công bố theo plan liệt kê Before User Created, Custom Access Token, Send SMS, Send Email (Free/Pro), MFA Verification và Password Verification (Teams/Enterprise). **After User Created không xuất hiện trong danh sách hook có thể cấu hình trên Supabase Cloud**. Vì vậy source GoTrue có `AfterUserCreated` không đủ chứng minh tính năng này được cung cấp/bật trên hosted project. Không thiết kế production phụ thuộc After Hook nếu Supabase xác nhận bằng tài liệu hoặc support chính thức rằng project có thể cấu hình nó.
+- Before User Created được tài liệu công bố cho Free/Pro, nhưng chạy trước insert; receipt ở đây không chứng minh Auth user đã commit.
+- HTTP Hooks dùng Standard Webhooks: phải xác minh raw request body cùng `webhook-id`, `webhook-timestamp`, `webhook-signature` bằng thư viện chuẩn; không tự parse rồi serialize lại body trước verify. Secret có dạng `v1,whsec_<base64>` và phải lưu trong secret store.
+- Tài liệu hiện nêu HTTP Hook trả 429/503 kèm `retry-after` không rỗng sẽ được retry tối đa 3 lần, backoff 2 giây, tổng time budget 5 giây cho cả invocation. `Retry-After` chỉ là trigger retry, không bảo đảm đúng thời gian RFC. HTTP Hook có timeout; lỗi/timeout có thể làm Auth request fail dù side effect ở endpoint đã xảy ra.
+- Vì hook retry và timeout, receipt endpoint phải idempotent theo attempt_id + Auth user ID, có unique constraint, xác minh signature/timestamp, chống replay và không thực hiện side effect không idempotent. Trả success chỉ sau khi receipt đã commit bền vững. Nếu handler không thể ghi receipt, không giả vờ success; Saga vẫn phải xử lý Auth outcome theo trạng thái unknown và không gọi lại Auth.
+
+**Quyết định kỹ thuật tạm thời:** After Hook là source-level capability nhưng chưa được xác nhận là Supabase Cloud feature; không được coi là triển khai khả thi trên BAOTRI Mini hosted project. Before Hook có documented availability nhưng không phải proof-of-commit. Giữ fail-closed/manual review cho đến khi có một kênh correlation sau commit được Supabase Cloud hỗ trợ chính thức hoặc một provisioning workflow khác được duyệt. Không đổi DDL/RPC/Edge Function, không chạy SQL hoặc thay đổi Supabase.
