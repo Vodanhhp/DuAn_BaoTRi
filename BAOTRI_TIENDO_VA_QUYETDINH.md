@@ -3946,3 +3946,19 @@ Kết luận: ưu tiên After User Created Hook làm receipt point; Before Hook 
 - Kết luận tạm thời: After Hook chưa xác nhận hosted availability; Before Hook không phải proof-of-commit. Tiếp tục fail-closed/manual review cho đến khi có post-commit correlation channel được Supabase Cloud hỗ trợ chính thức hoặc provisioning flow khác được duyệt.
 
 Chưa sửa DDL/RPC/Edge Function, không chạy SQL, không thay đổi Supabase.
+
+
+## 62. Nghiên cứu provisioning Auth thay After User Created Hook
+
+Ngày 20/11/2026 — rà soát Supabase JS Auth Admin API:
+
+- `admin.createUser(attributes)` là server-only, nhận `app_metadata` ngay trong attributes tạo user; không gửi email xác nhận. Nếu không set `email_confirm:true`, email chưa được xác nhận. BAOTRI tuyệt đối không auto-confirm chỉ để lách luồng mời.
+- `inviteUserByEmail(email, options)` gửi invite, nhưng `options.data` là `user_metadata`, không phải app_metadata.
+- `generateLink({type:'invite'})` tự xử lý tạo user và link; `data` vẫn là user_metadata, không có trusted app_metadata ở thời điểm tạo.
+- `admin.listUsers()` chỉ phân trang page/perPage, không hỗ trợ filter email/app_metadata; `getUserById()` cần biết UUID.
+
+Hướng ứng viên (chưa duyệt/chưa triển khai): Edge Function tạo marker ngẫu nhiên riêng cho attempt, lưu digest/key version trước khi dispatch; gọi `admin.createUser({email,email_confirm:false,app_metadata:{marker}})`; nếu response mất thì chỉ reconcile bằng exact marker qua truy vấn server-side hẹp tới `auth.users`, email chỉ là locator. Truy vấn này cần thiết kế RPC server-only riêng, least privilege, không expose anon/authenticated. `listUsers()` scan toàn bộ không phải phương án reconciliation thường xuyên. Nếu không thấy marker ngay sau timeout, chưa chứng minh không có side effect/request còn chạy; giữ outcome_unknown, không gọi createUser lại.
+
+Blocking gap: createUser không gửi invite email; generateLink invite sẽ tự tạo user và không nhận trusted app_metadata. Chưa chứng minh recovery/setup link hoạt động an toàn với user chưa xác nhận hoặc custom email flow. Không auto-confirm. Do đó chưa phải giải pháp thay thế hoàn chỉnh cho inviteUserByEmail. Giữ native invite hiện tại và fail-closed/manual review đến khi test onboarding, reconciliation, security, timeout/crash với phiên bản Auth/SDK pin cụ thể.
+
+Chưa sửa DDL/RPC/Edge Function, không chạy SQL, không thay đổi Supabase.
