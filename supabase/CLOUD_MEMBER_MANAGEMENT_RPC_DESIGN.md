@@ -2690,3 +2690,13 @@ Read-only catalog/FK/ACL/trigger và source review trên BAOTRI-Mini-Test/GitHub
 
 ### Giới hạn
 Chỉ thiết kế test matrix. Chưa chạy concurrency test, không tạo fixtures/test functions và không thay đổi SQL/RPC/grants/Auth/data.
+
+## 70. Coverage mở rộng – membership/auth và các writer phụ thuộc
+
+- Auth confirmation trigger là writer độc lập có thể kích hoạt invited → active ngoài acceptance transaction; cần test xác nhận email ↔ revoke invitation ↔ acceptance, và không để trigger bypass invitation validation.
+- Organization settings là đầu vào của Asset create/import; update settings đồng thời với create/import cần xác định snapshot semantics.
+- Counter dùng chung giữa create và import; test cùng organization/category, tránh duplicate code hoặc nhảy/lùi sequence khi hai luồng chạy đồng thời.
+- Inventory item ↔ inventory movement, Maintenance plan/task ↔ maintenance log, Checklist template/version ↔ checklist result là các nhóm phụ thuộc FK/version cần thêm vào coverage. Chưa đủ bằng chứng để kết luận chúng deadlock; đây là consistency/race candidates.
+- RLS permission policies là điều kiện cho phép DML, không thay thế row lock protocol. Nếu thao tác cần serialize với revoke, writer phải khóa cùng Organization/Membership và xác minh permission trong transaction.
+
+Không được tuyên bố mọi writer đã được test cho đến khi hoàn thành runtime caller inventory, lock-order graph và test cho các nhóm này.
