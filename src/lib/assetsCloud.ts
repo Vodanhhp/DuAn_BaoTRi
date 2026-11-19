@@ -79,6 +79,24 @@ export async function listCloudAssets(
   return ((data ?? []) as unknown as AssetRow[]).map(toAsset)
 }
 
+/** Re-read one tenant-scoped Cloud Asset immediately before a controlled Local restore. */
+export async function getCloudAssetById(
+  client: SupabaseClient,
+  organizationId: string,
+  assetId: string
+): Promise<Asset> {
+  if (!organizationId || !assetId) throw new Error('Thiếu tổ chức hoặc UUID thiết bị Cloud.')
+  const { data, error } = await client
+    .from('assets')
+    .select(ASSET_COLUMNS)
+    .eq('organization_id', organizationId)
+    .eq('id', assetId)
+    .maybeSingle()
+  if (error) throw new Error('Không thể đọc lại thiết bị Cloud: ' + error.message)
+  if (!data) throw new Error('Thiết bị không còn tồn tại trong tổ chức Cloud đang chọn.')
+  return toAsset(data as unknown as AssetRow)
+}
+
 /** All Cloud asset edits now go through src/lib/assetEditLocks.ts RPCs. */
 export type AssetCodeConfig = {
   facility_code: string
