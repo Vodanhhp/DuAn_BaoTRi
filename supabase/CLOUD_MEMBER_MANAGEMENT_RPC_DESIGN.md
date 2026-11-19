@@ -2203,3 +2203,44 @@ Saga lưu HMAC digest, còn key material nằm ngoài Database. PostgreSQL khôn
 
 ### Trạng thái
 Đây là design proposal. Chưa phê duyệt DDL, RPC, Edge Function, worker, SQL hoặc thay đổi Supabase. Các điểm cần giải quyết trước implementation: HMAC trust boundary; contract idempotency/Shared Receipt cho acceptance; expiry/revoke/decline policy; rate limit và audit retention.
+
+
+
+## 52. In-app Invitation Inbox — RPC contract and recipient matching refinement (design proposal, 20/11/2026)
+
+### Tách digest người nhận khỏi request fingerprint
+- Không dùng `request_fingerprint_digest` để tìm Inbox: digest đó đại diện toàn bộ canonical request (recipient + organization + role + actor + intent), không phải digest riêng của email.
+- Cần một recipient lookup digest riêng, ví dụ `recipient_email_digest`, kèm `recipient_digest_key_version` và `recipient_normalization_version`. Digest dùng HMAC-SHA-256 với key/purpose tách biệt (domain separation) khỏi request fingerprint; key material chỉ ở secret manager.
+- Email normalization phải là một canonicalization contract duy nhất, versioned và test bằng các trường hợp Unicode/domain/case/whitespace. Không tự ý áp dụng provider-specific alias folding (dấu chấm, plus-addressing).
+- Không lưu email thô trong bảng Saga nếu không có quyết định riêng về mã hóa, quyền truy cập, retention và xóa. Digest không thể dùng để gửi email.
+- Key rotation phải cho phép tra cứu digest theo các key version còn hiệu lực; không fallback sang so khớp email không xác minh. Retire key chỉ sau khi mọi lời mời còn hiệu lực đã được migrate/reissued hoặc có kế hoạch dual-key rõ ràng.
+
+### Trust boundary và RPC nội bộ
+- Client chỉ gọi Edge Function công khai bằng access token hiện tại; không được gửi actor UID/email. Edge Function xác thực token bằng Auth server-side (không chỉ decode JWT), lấy UID, email và email-confirmed state từ Auth authoritative.
+- Edge Function chuẩn hóa email và tính recipient digest bằng secret manager. Không log access token, email thô, digest, secret hoặc response Auth chứa PII.
+- Edge Function gọi RPC ở schema private/internal bằng server credential. RPC không được expose qua Data API; revoke EXECUTE khỏi PUBLIC, anon và authenticated; chỉ cấp cho server role cần thiết. Không đặt SECURITY DEFINER function trong exposed schema.
+- RPC nhận actor UID + verified email (chỉ truyền nội bộ) + digest/key version + các tham số nghiệp vụ. Bên trong transaction, kiểm tra actor UID tồn tại trong auth.users và email/email_confirmed_at hiện tại vẫn khớp giá trị Edge Function vừa xác minh; lock phù hợp trên auth.users row để tránh race email-change trong lúc acceptance. Sau đó mới đối chiếu digest.
+- RPC phải kiểm tra tham số không null, key version allowlist, giới hạn độ dài, invitation state và expiry; mọi mismatch fail closed. Không có RPC nhận email tùy ý từ browser.
+- Đây là trust-boundary proposal; cần test quyền schema/function, bearer validation, email-change race, key rotation và Edge Function secret handling trước khi implementation.
+
+### Contract đọc Inbox
+- Public Edge Function: `list_pending_invitations(cursor?, limit?)`. Không nhận email, UID, organization ID hay role.
+- Nội bộ RPC lọc theo recipient digest + key version, trạng thái Saga được phép hiển thị pending/awaiting-existing-account-acceptance, chưa hết hạn, chưa revoke/cancel, tổ chức còn active và role vẫn hợp lệ.
+- Chỉ trả allowlist đã chốt ở §51: invitation_id, organization_name, requested_role_label, created_at, expires_at, display_status='pending'. Không trả recipient digest hay internal state.
+- Pagination keyset theo cặp ổn định `(created_at, operation_id)`, thứ tự xác định; page size mặc định 20, tối đa 50. Cursor chỉ là continuation marker, không phải credential; validate cấu trúc/version và ràng buộc với actor/digest ở server. Không OFFSET/COUNT/total.
+- Không trả lỗi phân biệt “email không có tài khoản”, “không có lời mời”, “email chưa xác minh” theo cách cho phép dò tài khoản. Edge Function chỉ trả danh sách rỗng hoặc lỗi xác thực chung phù hợp; rate-limit theo actor và IP/device signals.
+
+### Contract chấp nhận
+- Public Edge Function: `accept_invitation(invitation_id, mutation_id)`. Client không gửi actor UID, email, organization ID, role hoặc recipient digest.
+- Edge Function xác thực bearer lại ở mỗi request, lấy authoritative UID/email/verified state và tính digest; không tin kết quả list cũ.
+- RPC trong một transaction khóa invitation/Saga row và revalidate actor/email hiện tại, recipient digest, invitation state, expiry/revocation, organization active, role validity, membership uniqueness/conflict và inviter/approval policy.
+- Tạo membership + đúng một role + audit + Shared Receipt + acceptance result + Saga completion trong cùng transaction. Không có trạng thái membership/role nửa chừng.
+- Idempotency: cùng invitation_id + cùng authenticated actor + cùng mutation_id/payload trả lại cùng receipt/result; cùng mutation_id với payload khác là conflict; invitation đã được actor đó accept thì replay theo receipt gốc. Actor khác không được nhận receipt hoặc membership. Cần reconcile chính xác với Shared Receipt unique key và mutation receipt schema trước DDL.
+- Nếu email đổi hoặc mất verified status giữa list và accept, reject/fail closed; yêu cầu người dùng xác minh email mới và tạo/khôi phục invitation theo policy, không tự động attach.
+
+### Những gì chưa chốt
+- Tên cột digest cuối cùng, normalization contract và key rotation/migration.
+- Có thể khóa auth.users row phù hợp trong RPC hosted Supabase hay không; phải xác minh quyền/transaction semantics trên project test trước khi dựa vào nó.
+- Candidate state `awaiting_existing_account_acceptance` và điều kiện chuyển từ intent sang pending Inbox.
+- Expiry, revoke, decline, inviter authority reapproval, rate limit, audit retention và Shared Receipt acceptance key.
+- Đây vẫn là design proposal. Không tạo DDL/RPC/Edge Function, không chạy SQL, không thay đổi Supabase.
