@@ -1235,3 +1235,31 @@ Admin, users.view-only, users.manage-only, Technician, Viewer, custom role; tena
 ### Khuyến nghị chờ xác nhận
 
 Mặc định không cho Viewer xem roster. Đây là quyết định privacy/hiển thị nhân sự, không nên tự suy ra chỉ vì Viewer là read-only. Chưa sửa migration 005, Edge Function, UI hoặc Cloud; chưa tạo SQL draft và chưa chạy SQL/RPC.
+
+
+## §26 — Roster RPC design và policy Viewer
+
+### Policy được chốt để triển khai
+
+- Viewer mặc định không được xem roster.
+- Admin có users.view + users.manage; Technician không có; Viewer không có users.view.
+- Custom Role có thể được cấp users.view riêng.
+- users.manage không ngầm cấp quyền đọc; list yêu cầu users.view riêng.
+
+### RPC đề xuất
+
+`list_organization_members` là read-only SECURITY DEFINER, caller JWT/auth.uid(), kiểm tra organization active + actor membership active + users.view trong cùng statement. Trả membership_id, display_name, role code/name, status, created_at; tuyệt đối không email/phone/Auth metadata/user ID. Roster gồm invited/active/suspended, không gồm removed.
+
+Keyset pagination theo (created_at,id), page size 1..100, không OFFSET/COUNT; cursor gồm đủ hai thành phần hoặc cả hai NULL. Tất cả truy vấn tenant-scoped. Edge Function nếu còn làm transport phải gọi RPC bằng caller JWT; không dùng service_role SELECT sau một pre-check permission riêng.
+
+### Phát hiện migration seed cần sửa
+
+Migration 005 seed Viewer bằng mọi permission có action='view', vì vậy Viewer hiện được cấp users.view. Migration triển khai phải dùng allowlist rõ hoặc loại trừ users.view và thu hồi permission đã cấp cho Viewer ở các organization đã seed; không chỉ sửa câu INSERT cho tổ chức mới.
+
+### Điểm chưa chốt kỹ thuật
+
+Schema member_roles cho phép nhiều role trên một membership, trong khi UI hiện giả định một role. Trước SQL RPC cần chọn một trong hai: constraint một role system hiện hành/membership hoặc trả roles[] có thứ tự ổn định và cập nhật UI. Không được lấy role tùy tiện bằng LIMIT 1.
+
+### Ranh giới
+
+Policy Viewer không xem roster đã được chốt cho thiết kế. Chưa tạo migration/draft SQL, chưa sửa code/Edge Function/UI, chưa chạy SQL/RPC và chưa thay đổi Supabase.
