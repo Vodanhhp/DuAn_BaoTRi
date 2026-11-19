@@ -3777,3 +3777,15 @@ Hoàn thiện hợp đồng quyền/replay và quyết định điều chỉnh t
 - Claim/replay: xác thực Auth + active organization + active membership; tra Receipt trước khi kiểm tra write permission. Receipt cũ cùng actor/fingerprint được replay read-only; full snapshot chỉ khi còn đủ read permission, nếu không chỉ acknowledgement. Mutation mới mới cần write permission và claim unique key.
 - `pending` chỉ tồn tại bên trong transaction nghiệp vụ; deferred trigger buộc finalize trước commit, trigger khác bảo vệ Receipt bất biến sau finalize.
 - Không phụ thuộc pgcrypto, không tạo generic claim RPC, không dual-write hoặc thay Asset Receipt/Lease. Đây chỉ là SQL draft; chưa chạy SQL, chưa apply Test/Production, chưa sửa code, dữ liệu hoặc quyền.
+
+
+## 46. Live Test inventory và DDL draft Member audit/Invite Saga (19/11/2026)
+
+- Đã kết nối đúng Supabase project BAOTRI-Mini-Test (ref oyzhxgzltpdebpymuicb), PostgreSQL 17.12; chỉ truy vấn metadata/catalog SELECT, không ghi dữ liệu.
+- Test không có bảng Invite Saga hoặc audit nghiệp vụ Member. auth.audit_log_entries là audit nội bộ Supabase Auth, không tái sử dụng. asset_import_mutations và asset_mutation_receipts là asset-specific idempotency/receipt, không phải audit.
+- Xác nhận role codes admin/technician/viewer; organization_members có id, organization_id, user_id, role, status, invited_by_user_id, created_at, updated_at.
+- Tạo draft supabase/drafts/021_member_audit_and_invite_saga_DRAFT.sql: hai bảng riêng organization_member_invite_operations (PII/Saga) và organization_member_audit_events (append-only), RLS bật, không policy client, revoke direct table grants, audit target membership ID không FK/cascade, before/after JSONB có CHECK allowlist.
+- Draft chưa có RPC, worker, audit read permission, retention/cleanup, PII encryption/key management hoặc state transition CAS. Adoption, audit scope, permission đọc audit, retention/backup, worker/manual recovery và actor_kind system còn cần quyết định.
+- Cập nhật CLOUD_MEMBER_MANAGEMENT_RPC_DESIGN.md §30, CLOUD_FOUNDATION_DRAFTS_REVIEW.md §34, CLOUD_SHARED_RECEIPT_DRAFT_REVIEW.md §8.
+- Các cập nhật GitHub đã fetch lại và xác minh SHA/nội dung. Chưa chạy DDL, chưa tạo migration, chưa thay đổi Supabase Test/Production, code, RLS/grants đang áp dụng hoặc dữ liệu.
+- Cổng tiếp theo: review tĩnh DDL 021, chốt các quyết định còn mở, viết RPC/transaction tests; chỉ tạo migration và áp dụng Test sau khi có phê duyệt riêng.
