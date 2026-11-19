@@ -4711,3 +4711,28 @@ Chỉ đọc catalog/function definitions và GitHub source. Không chạy concu
 
 ### Trạng thái
 Checkpoint §91. Chỉ đọc catalog, ACL, FK, trigger và GitHub source. Không SQL write, DDL, RPC, grants, role, Auth/data, secrets, Edge Function deployment hoặc Supabase config change.
+
+## 92. Thiết kế ma trận concurrency test – Organization/Auth/Membership/Asset – 20/11/2026
+
+### Quy tắc winner semantics
+- Khi hai thao tác tranh chấp quyền: mutation nghiệp vụ chỉ được commit nếu nó khóa Organization/Membership chung và xác minh quyền trong cùng transaction trước khi revoke thắng.
+- Nếu Asset mutation lấy khóa và xác minh quyền trước, nó được hoàn tất rồi suspend/revoke mới tiếp tục. Nếu suspend/revoke commit trước, Asset mutation phải bị từ chối.
+- Không chấp nhận kết quả phụ thuộc vào preflight permission ở Edge Function hoặc helper chỉ đọc không khóa.
+
+### Bốn kịch bản
+1. **Organization suspend ↔ Asset mutation:** baseline hiện không có shared Organization lock. Target: cả suspend và Asset RPC khóa Organization trước Membership/domain; suspend thắng thì Asset bị từ chối, Asset thắng thì commit trước suspend.
+2. **Auth deletion ↔ Asset Lease/Receipt:** baseline candidate Auth row → cascade Lease đối nghịch Lease → Asset → Receipt FK Auth. Chỉ dùng synthetic disposable user; target là deactivate/revoke, drain operation/Lease, account erasure riêng theo retention; không hard-delete đồng thời business mutation.
+3. **Membership revoke ↔ Asset mutation:** test riêng status suspend, role revoke và remove. Target cùng khóa actor Membership; revoke thắng thì Asset/Receipt không được commit; mutation thắng thì hoàn tất trước revoke.
+4. **Asset hard-delete ↔ Lease update:** baseline direct DELETE có thể Asset → cascade Lease đối nghịch Lease → Asset. Target cấm direct DELETE, chỉ dùng delete RPC khóa Lease → Asset và kiểm tra history/FK.
+
+### Harness và dữ liệu cần thu
+- Hai DB sessions/transactions độc lập; barrier ở client/test harness để xác nhận session đã giữ khóa rồi mới cho session kia chạy. Không dùng `pg_sleep` đơn thuần làm bằng chứng thứ tự.
+- Mỗi case có fixture tenant/user/Asset riêng, snapshot trước/sau và cleanup có kiểm soát; Auth deletion chỉ dùng identity tổng hợp không có dữ liệu người dùng thật.
+- Ghi timeline, `pg_stat_activity`, `pg_locks`, deadlock log, SQLSTATE (`40P01` deadlock, `55P03` lock timeout), trạng thái cuối của Organization/Membership/member_roles/Asset/Lease/Receipt.
+- Chạy cả hai thứ tự thắng (T1 trước/T2 trước), lặp nhiều vòng với lịch xen kẽ. PASS cần đúng winner semantics, không partial Receipt/mutation, không orphan, FK/history nguyên vẹn và không deadlock trong protocol đích ở phạm vi đã test.
+
+### Trạng thái và giới hạn
+- §92 là thiết kế, chưa phải kết quả kiểm thử. Không tạo fixture, không chạy SQL có ghi dữ liệu, không tạo test function/migration.
+- Muốn thực thi các concurrency test trên BAOTRI-Mini-Test phải có phê duyệt riêng vì chúng tạo/xóa dữ liệu và có thể tác động Auth.
+- Sau khi có kết quả, cập nhật riêng baseline và protocol đích; không tuyên bố hệ thống global deadlock-free chỉ từ bốn kịch bản.
+
