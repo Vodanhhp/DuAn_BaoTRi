@@ -1715,3 +1715,52 @@ Người dùng đã xác nhận chốt các nguyên tắc sau; từ thời đi�
 **Hệ quả triển khai:** DDL 021 cần biểu diễn provenance, evidence/attempt linkage và fingerprint version/key version/digest; RPC phải kiểm tra các bất biến trên trong transaction. Trước khi triển khai thực tế vẫn phải chốt thời hạn giữ key cũ để replay, quy trình xác minh `preexisting_verified`, cùng phương án bảo vệ/retention dữ liệu email. Các chi tiết vận hành này không làm thay đổi năm nguyên tắc đã chốt.
 
 **Phạm vi thay đổi lần này:** chỉ ghi nhận quyết định thiết kế. Chưa sửa DDL 021, chưa tạo migration/RPC/Edge Function, chưa chạy SQL, không thay đổi Supabase Test/Production.
+
+
+### 36. Phương án cấu trúc dữ liệu DDL 021 sau khi chốt provenance/fingerprint (20/11/2026)
+
+Đây là schema proposal để review, chưa phải DDL được duyệt. Không chỉnh file SQL trong bước này.
+
+#### 36.1 `organization_member_invite_operations`
+
+**Thay fingerprint JSONB và boolean provenance cũ:**
+- Bỏ `request_fingerprint jsonb` sau khi có transition/migration plan; thay bằng `fingerprint_version smallint NOT NULL`, `fingerprint_key_version text NOT NULL`, `request_fingerprint_digest bytea NOT NULL` (độ dài đúng 32 bytes cho HMAC-SHA-256). Không lưu key material hoặc canonical payload chứa email plaintext.
+- Bỏ `auth_user_created_by_operation boolean`; thay bằng `auth_provenance text` allowlist bốn giá trị `created_by_operation`, `preexisting_verified`, `unknown`, `conflict` (nullable trước khi có kết quả Auth đáng tin cậy).
+- Thêm `provenance_attempt_id uuid`, `provenance_evidence_code text`, `provenance_verified_at timestamptz`, `provenance_verified_by uuid` (FK Profile khi là user; nếu system thì cần biểu diễn actor kind rõ ràng, không giả lập user ID). Evidence code là allowlist, không lưu raw provider response/token.
+- Chỉ coi `auth_user_id` là liên kết đã được xác minh khi provenance là `created_by_operation` hoặc `preexisting_verified`. Với kết quả Auth quan sát được nhưng chưa đáng tin hoặc đang conflict, giữ candidate ID trong attempt record riêng, không gắn vào `auth_user_id` của operation.
+- Thêm `transition_version bigint NOT NULL DEFAULT 0 CHECK (transition_version >= 0)` riêng với `version`: `version` tăng cho mọi CAS mutation của operation; `transition_version` chỉ tăng khi Saga `status` thực sự đổi.
+
+#### 36.2 Bảng attempt history `organization_member_invite_attempts`
+
+Đề xuất tạo append-only table ngay cả khi giai đoạn đầu recovery thủ công, để giữ dấu vết từng lần gọi Auth và xử lý cửa sổ crash/timeout:
+- PK `attempt_id uuid`; FK `(organization_id, operation_id)` tới operation với `ON DELETE RESTRICT`.
+- `attempt_no integer > 0`; unique `(organization_id, operation_id, attempt_no)`.
+- `claimed_by_kind` (`user`/`system`) và `claimed_by_user_id` nullable có CHECK tương ứng; `started_at`, `finished_at`, `lease_expires_at`.
+- `outcome` allowlist: `calling`, `created`, `preexisting`, `definitive_failure`, `outcome_unknown`, `mismatch`; trạng thái `calling` có thể là record còn dang dở sau crash, không được tự diễn giải lease hết hạn là Auth request đã dừng.
+- `observed_auth_user_id uuid` chỉ là dữ kiện provider trả về/được quan sát, không tự tạo quyền liên kết; `evidence_code`, `error_code` allowlist; không lưu email, raw response, access token, refresh token hoặc secret.
+- Unique/constraint bảo đảm một attempt number duy nhất; operation giữ `current_attempt_id` để truy cập attempt đang xử lý. Composite FK từ operation về attempt có thể bổ sung sau khi chốt thứ tự insert và deferrability; nếu chưa dùng FK thì RPC bắt buộc kiểm tra attempt thuộc đúng organization/operation.
+- Cấm UPDATE/DELETE client; mọi thay đổi kết quả attempt ghi bằng event append-only hoặc chỉ cho phép finalize đúng một lần bằng server RPC. Khuyến nghị attempt record immutable; nếu cần nhiều mốc kết quả, dùng bảng attempt events append-only thay vì sửa lịch sử.
+
+#### 36.3 Audit transition idempotency
+
+- Bổ sung `transition_id uuid NOT NULL` cho event thay đổi trạng thái Saga; RPC tạo một ID ổn định cho một transition intent và tái sử dụng khi retry.
+- Bổ sung `transition_version bigint NOT NULL` trên audit event Saga; unique `(organization_id, invite_operation_id, transition_version)` và unique `(organization_id, transition_id)` để chặn ghi trùng.
+- `transition_version` trên operation tăng đơn điệu trong cùng transaction với đổi `status` và insert audit event. Không dùng timestamp để suy ra thứ tự.
+- Audit state-change bắt buộc có `before_state.saga_status` và `after_state.saga_status`, hai giá trị khác nhau; RPC xác minh cặp trạng thái thuộc transition graph §32. Các action membership khác không được phép giả dạng Saga transition.
+
+#### 36.4 Adoption và các liên kết
+
+- Giai đoạn hiện tại giữ một adopter hiện hành trên operation (`adopted_by_user_id`, `adoption_reason`, `adopted_at`); mỗi lần adoption/handoff phải tạo audit event riêng có actor, reason, before/after adopter reference tối thiểu và mutation/operation idempotency.
+- Không thay actor gốc, intent, digest hoặc operation ID khi adoption. Chỉ Admin khác actor gốc, có membership/permission hợp lệ tại thời điểm adoption, được nhận operation.
+- Chưa tạo adoption history table riêng: append-only audit là lịch sử handoff; nếu sau này cần query/approval workflow chuyên biệt mới tách bảng.
+- `membership_id` và `membership_receipt_mutation_id` vẫn là scalar lịch sử; finalize RPC phải xác minh membership đúng organization/target và receipt đúng actor/operation/fingerprint. Không thêm FK có thể làm mất lịch sử khi membership lifecycle thay đổi.
+
+#### 36.5 Những điểm còn phải quyết định trước khi viết DDL
+
+1. Quy trình và evidence code cụ thể để đạt `preexisting_verified` (nếu chưa có, pre-existing account luôn đi `needs_review`).
+2. Fingerprint/key version type, secret manager và thời hạn giữ key cũ; phải giữ khả năng replay trong toàn bộ thời hạn operation/receipt retention.
+3. Cách bảo vệ `normalized_email` at rest, backup/restore, retention và quyền truy cập; HMAC digest không mã hóa cột email gốc.
+4. Attempt record immutable hoàn toàn hay có attempt-events table cho nhiều mốc kết quả; đề xuất immutable attempt + append-only event nếu cần.
+5. `transition_id` được sinh/giữ ổn định ở operation intent hay được truyền từ orchestration; không được tạo ID mới khi retry cùng transition.
+
+**Kết luận:** phương án khuyến nghị là bổ sung attempt history, provenance có evidence, digest versioned, transition sequence/idempotency; giữ adoption history trong audit append-only. Chưa sửa DDL 021, chưa tạo migration/RPC, chưa chạy SQL và không thay đổi Supabase Test/Production.
