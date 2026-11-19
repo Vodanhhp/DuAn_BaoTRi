@@ -1624,3 +1624,17 @@ Blocking gap: createUser sends no invite email. generateLink invite creates the 
 Supabase docs document `admin.generateLink({type:'recovery'})` as a recovery link for a custom email provider, but do not guarantee it works for a `createUser({email_confirm:false})` account before email confirmation or that it confirms that email. Supabase Users docs say unverified email users cannot sign in by default; the documented invite flow explicitly confirms email and lets the invitee finish setup. That behavior cannot be assumed for recovery or magiclink. `generateLink({type:'invite'})` creates the user itself and lacks trusted create-time app_metadata input.
 
 Therefore the createUser + app_metadata marker alternative still has an unresolved onboarding blocker. Do not implement/select it until isolated tests on pinned Auth/SDK establish recovery generation for an existing unconfirmed user, verification/email_confirmed_at outcome, password setup, replay/expiry, custom email delivery, and secure attempt correlation. Current native inviteUserByEmail + fail-closed/manual review remains unchanged.
+
+
+## 52. Existing Auth account: self-acceptance instead of inviter-side attachment (proposal, 20/11/2026)
+
+An email match, even with a verified-email flag, must not let the inviter attach an existing Auth UUID to an organization. Proposed safe path:
+
+1. Authorized Admin creates only an immutable pending invitation intent (target email fingerprint, organization, role, original actor, expiry, request fingerprint); no Auth provisioning call and no membership write.
+2. Existing account holder signs in to the exact Auth account. A restricted RPC lists only pending invitations matching that account's authoritative verified email; it derives identity from auth.uid() and server-side Auth data, never caller-supplied UID/email.
+3. The invitee explicitly accepts. In one transaction the server rechecks UID, email_confirmed_at, normalized verified-email fingerprint, pending/unexpired/not-revoked invite, active organization, valid role, inviter authority/reapproval policy and membership uniqueness. Then it atomically writes membership, single role assignment, audit, Shared Receipt and Saga completion.
+4. Until acceptance there is no membership, role, tenant access or Auth-user association. The inviter cannot silently attach the account.
+
+Unverified existing accounts cannot accept until completing the normal supported Auth verification/sign-in flow; do not auto-confirm, reset password or assume inviteUserByEmail will notify/activate an existing account. Changed email, ambiguous/multiple candidates or inconsistent evidence => needs_review/new invitation, never auto-attach/delete. Pending-invite discovery returns minimal data and must not reveal arbitrary Auth account existence or roster details. Recheck conditions at acceptance; a previous list result is not authorization.
+
+Candidate Saga state awaiting_existing_account_acceptance, expiry/decline/revoke transitions and notification delivery are open design items, not approved schema. This is a design proposal only; DDL 021, RPC, Edge Function and Supabase remain unchanged. Native invite + fail-closed/manual review remains current behavior.
