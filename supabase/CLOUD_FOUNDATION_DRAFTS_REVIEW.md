@@ -1118,3 +1118,38 @@ Invite có hai hệ thống transaction không thể gộp nguyên tử: Supabas
 
 Không sửa migration 013/014/017, không sửa Edge Function, không tạo SQL, không chạy SQL, không gọi RPC, không thay đổi Supabase trong lượt review này.
 
+
+
+## §22 — Đối chiếu Edge Function quản lý thành viên và Invite Saga
+
+Phạm vi: static review `supabase/functions/manage-organization-members/index.ts`, migrations 001/005/013/014, draft 020 và thiết kế `CLOUD_MEMBER_MANAGEMENT_RPC_DESIGN.md`. Không chạy code/SQL, không gọi Auth Admin API, không thay đổi Supabase.
+
+### Kết luận chính
+
+1. **TOCTOU xác nhận:** Edge Function gọi `has_org_permission(users.manage)` bằng caller JWT, sau đó chuyển sang service_role để thực hiện đọc/ghi. Các RPC 013/014 chỉ chấp nhận service_role và nhận actor qua `p_actor_user_id`. Vì vậy authorization và mutation không nằm trong cùng transaction; actor truyền vào chưa được DB ràng buộc với auth.uid().
+2. **Invite compensation nguy hiểm:** Invite tạo Auth user rồi gọi `admin_create_org_membership`; nếu RPC trả lỗi, code gọi `deleteUser` nhưng bỏ qua kết quả. Timeout/response không rõ không chứng minh membership chưa commit. Không thể giữ cách bù trừ này.
+3. **Target checks ở Edge Function không đủ:** update role/status/remove đọc target và role assignments trước RPC. Những kết quả đọc có thể stale; RPC phải tự khóa target và role assignments, kiểm tra Admin/self/status trong cùng transaction.
+4. **Roster authorization chưa tách:** action list dùng users.manage. Product đã chốt chưa bật roster Change Feed; khi chỉnh luồng đọc, dùng users.view riêng hoặc giới hạn roster cho Admin, không dùng users.manage như quyền đọc mặc định.
+5. **Reset password là Auth side effect:** không phải business mutation Receipt/Change Feed; cần actor permission và target eligibility được xác minh server-side, không lưu email/recovery data vào Receipt.
+6. **Email confirmation trigger là writer thứ hai:** migration 013 trigger `sync_auth_user_profile()` đổi invited → active mà chưa theo Organization → Membership lock order. Phải kiểm thử deadlock với Auth transaction; nếu không thể tuân lock order, dùng worker/Edge Function idempotent.
+
+### Hợp đồng đã chốt ở mức thiết kế
+
+- RPC database mutation được gọi bằng JWT actor; actor lấy từ auth.uid(). service_role chỉ dùng cho Auth Admin API.
+- Begin Invite ghi operation intent bền vững trước Auth provisioning; Auth Admin phase; Finalize membership bằng actor JWT và recheck permission. Không có transaction xuyên Auth API + PostgreSQL.
+- Operation saga tách khỏi Shared Receipt: operation có trạng thái nhiều pha; Receipt đại diện transaction database đã commit.
+- Timeout ở bất kỳ pha nào là unresolved cho đến khi query/reconcile bằng cùng operation_id. Không tạo ID mới, không xóa Auth user khi outcome chưa rõ.
+- Admin khác có thể adopt operation unresolved chỉ qua RPC riêng, kiểm tra quyền hiện tại và ghi audit; không sửa actor/fingerprint của Receipt ban đầu.
+- Invite/create, role change, status change, remove cần idempotency Receipt. Chưa phát roster Change Feed.
+- List roster dùng users.view riêng. Reset password không có business Receipt/Change Feed.
+- Ba mặc định người dùng xác nhận: chỉ Admin quản lý; không self-change/self-suspend/self-remove; suspend/remove chỉ chặn quyền tenant qua Membership, không xóa Auth session toàn cục; chưa đồng bộ roster qua Change Feed.
+
+### Các việc chưa được quyết định/kiểm chứng
+
+- Quyền cụ thể nào được cấp users.view và dữ liệu roster nào được hiển thị.
+- Cơ chế adoption/recovery cho Invite saga khi actor gốc mất quyền hoặc bị vô hiệu.
+- Khả năng chuyển invited → active qua trigger theo lock order mà không deadlock; cần concurrency test.
+- RLS/function owner/grants và quyền gọi RPC bằng authenticated JWT phải được kiểm thử trên Supabase Test.
+- Không có bằng chứng migrations 013/014 đã áp dụng vào bất kỳ project Supabase nào.
+
+Không có thay đổi code, Edge Function, SQL migration, database hoặc Supabase. Đây chỉ là tài liệu thiết kế/review.
