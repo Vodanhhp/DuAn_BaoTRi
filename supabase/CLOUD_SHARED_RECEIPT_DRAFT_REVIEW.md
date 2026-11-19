@@ -175,3 +175,24 @@ DDL 021 đã yêu cầu mutation_id cho audit membership lifecycle và invite_op
 - Audit CHECK chỉ kiểm tra shape/allowlist; authorization, state transition và idempotency vẫn thuộc RPC.
 
 Chưa chạy SQL hoặc thay đổi database.
+
+
+## 10. Cross-review Member Receipt contract và lock-order prerequisite (20/11/2026)
+
+### Contract đã đối chiếu
+- Shared Receipt draft 020 vẫn là DRAFT ONLY. Catalog BAOTRI-Mini-Test hiện chỉ có `asset_mutation_receipts`; chưa có `organization_mutations`, `organization_member_invite_operations` hoặc `organization_member_audit_events`. Không có cơ sở nói Shared Receipt/Member Saga đã được triển khai.
+- Receipt là kết quả cuối của một PostgreSQL logical mutation, PK `(organization_id, mutation_id)`; Saga `operation_id` là identity riêng cho Auth provisioning nhiều pha. `member.create` Receipt chỉ bao phủ transaction finalize membership và liên kết `invite_operation_id`; không biến Auth API call thành transaction DB.
+- Member operation codes ổn định: `member.create`, `member.role.change`, `member.status.change`, `member.remove`, `member.self.activate`. Mutation ID phải giữ nguyên khi timeout/unknown outcome; không tạo ID mới để retry.
+- Fingerprint canonical JSONB do server dựng. Áp dụng Member §27.7: fingerprint nhận diện request intent ổn định; không đưa mutable current role/status sau commit vào fingerprint. Optional expected-current-state là precondition chỉ kiểm tra ở nhánh mutation mới sau khi lấy lock.
+- Replay và mutation mới là hai nhánh khác nhau. Replay yêu cầu Auth hợp lệ, Organization active, actor membership active, cùng actor/operation/fingerprint; không yêu cầu lại write permission cũ. Full snapshot chỉ khi còn read permission hiện tại; remove chỉ acknowledgement tối thiểu. Mutation mới mới kiểm tra write permission, claim unique key và thực hiện side effect.
+- Receipt, business mutation, row_version/counter/events nếu áp dụng và audit state transition phải atomic trong một transaction. Audit là append-only và độc lập Receipt; Saga state transition nằm ở transaction riêng. Membership hiện không bật Change Feed theo contract hiện tại.
+- Claim dùng unique key và `INSERT ... ON CONFLICT DO NOTHING`; request thua concurrency đọc Receipt ở statement tiếp theo theo READ COMMITTED. Không bắt unique violation rồi tiếp tục transaction đã abort. Khi permission deny nhưng Receipt có thể vừa commit sau lookup đầu, phải recheck Receipt read-only trước khi trả deny.
+
+### Lock-order prerequisite đang tồn tại
+- Member §25.1 và mục 6.3 của review này cùng nêu thứ tự: Organization → actor/target Membership theo UUID → member_roles → Role → Role Permission → Auth user (nếu cần) → Receipt → business rows → sync counter/events → Receipt finalize. Replay lookup là nhánh read-only sau Organization + actor Membership.
+- Tuy nhiên Auth trigger hiện trên Test vẫn đi Auth user → Profile → Membership, vì `sync_auth_user_profile()` còn tự UPDATE membership invited thành active. Đây là lock-order inversion trực tiếp với Member §25.1 nếu hai luồng chạy đồng thời: một bên giữ Auth chờ Membership, bên kia giữ Membership chờ Auth.
+- Do đó §25.1 chỉ có thể áp dụng an toàn sau khi tách membership activation khỏi Auth trigger (trigger chỉ sync Profile) hoặc có một thiết kế concurrency khác được chứng minh bằng lock analysis/test. Đây là prerequisite, không phải việc đã hoàn thành. Không tự sửa trigger.
+- Cần đồng bộ mọi tài liệu lock-order cũ: các candidate Auth-first ở §67/§81 chỉ mô tả đường khóa trigger hiện tại; Member §25.1 là proposed canonical order sau khi trigger không còn ghi Membership. Không được trộn hai thứ tự trong cùng cutover.
+
+### Trạng thái
+Chỉ đối chiếu tài liệu và catalog read-only. Không sửa draft 020/021, không tạo migration/RPC, không thay đổi Supabase.
