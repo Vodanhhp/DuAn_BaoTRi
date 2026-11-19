@@ -2462,3 +2462,30 @@ This alternative may be simpler and safer than a dedicated Edge DB login, but re
 
 ### Status
 Authenticated PostgREST RPC is now the preferred candidate to prototype before direct Edge DB login, because it avoids a separate DB credential and can use the verified PostgREST actor context. This is not final architecture approval. Still required: test JWT context inside SECURITY DEFINER through the real API path, inspect API exposed schemas, design secret access, and test Auth email-change concurrency. No DDL/RPC/grant/secret or configuration change.
+
+## 59. PostgREST exposure boundary and wrapper placement (20/11/2026)
+
+### Exposure configuration inspection
+- Read-only catalog checks of `pg_settings`, `pg_db_role_setting` and database/role settings did not reveal a configured `pgrst.db_schemas` value.
+- This is not proof that no schemas are exposed: Supabase may manage API exposure outside these visible catalog settings. The actual project's API Settings → Exposed schemas must be checked in Dashboard or via a supported management API before implementation.
+- The repository currently has no `supabase/config.toml` at the queried path; do not infer deployed API exposure from repository configuration.
+- Existing app tables are in `public` and RLS-enabled in Test, but that does not establish which RPC schemas are exposed or which function ACLs are safe.
+
+### Wrapper placement candidate
+- Keep private tables and internal implementation in a non-exposed schema (candidate `private`), never expose `auth` or `vault`.
+- Put exactly one narrow public RPC wrapper in a schema deliberately exposed to PostgREST (likely `public`, subject to Dashboard verification).
+- Wrapper should be SECURITY DEFINER only if it needs to invoke a private function/read Auth state beyond authenticated's direct grants. Fix `search_path = ''`, fully qualify every reference, derive actor via `auth.uid()`, validate non-null actor, and do not accept actor/email/org/role as trusted inputs.
+- Internal function should be non-exposed, callable only by wrapper owner; wrapper's EXECUTE is revoked from PUBLIC and anon and granted to authenticated. Do not grant browser roles USAGE on private schema or table access.
+- Keep wrapper and inner function within the same database transaction; PostgREST RPC execution naturally executes the function call transactionally. All acceptance writes must happen in that function call.
+- Check whether PostgREST schema cache reload is needed after adding/changing wrapper; plan deployment ordering and rollback. No schema exposure change has been made.
+
+### Required preflight checks
+1. Confirm exposed schemas in Dashboard for Test and Production separately.
+2. Confirm `private` exists/is not exposed; if absent, schema creation is future DDL and not yet approved.
+3. Verify wrapper appears in PostgREST RPC discovery only in intended schema.
+4. Verify anon cannot execute; authenticated can execute; direct client cannot read private tables or Auth/Vault.
+5. Verify request JWT context remains intact inside SECURITY DEFINER and private function.
+6. Verify no overload ambiguity and no default PUBLIC EXECUTE grant.
+7. Recheck effective privileges and RLS after migration; test with anon, authenticated without membership, valid invitee, expired/revoked invitee and unrelated authenticated user.
+
+No API exposure settings, schemas, functions, grants, SQL data or Supabase configuration were changed.
