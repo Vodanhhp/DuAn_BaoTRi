@@ -60,14 +60,24 @@ begin
   end;
   insert into pg_temp.rls_results values ('viewer','DIRECT INSERT','blocked','blocked',v_blocked);
 
-  update public.assets set name = name where id = v_fixture and organization_id = v_org;
-  get diagnostics v_rows = row_count;
-  insert into pg_temp.rls_results values ('viewer','UPDATE','0 rows',v_rows::text || ' rows',v_rows = 0);
+  v_rows := 0;
+  v_blocked := false;
+  begin
+    update public.assets set name = name where id = v_fixture and organization_id = v_org;
+    get diagnostics v_rows = row_count;
+  exception when insufficient_privilege then
+    v_blocked := true;
+  end;
+  insert into pg_temp.rls_results values (
+    'viewer','UPDATE','0 rows or SQL privilege denied',
+    case when v_blocked then 'privilege denied' else v_rows::text || ' rows' end,
+    v_blocked or v_rows = 0
+  );
   delete from public.assets where id = v_fixture and organization_id = v_org;
   get diagnostics v_rows = row_count;
   insert into pg_temp.rls_results values ('viewer','DELETE','0 rows',v_rows::text || ' rows',v_rows = 0);
 
-  -- Technician: direct INSERT is blocked; allocator RPC and UPDATE are allowed; DELETE denied.
+  -- Technician: direct INSERT is blocked; allocator RPC creates; direct UPDATE is allowed only before Migration 016, then lease RPC is required; DELETE denied.
   perform set_config('request.jwt.claim.sub', 'e8700ff7-a642-45b8-b103-fafdb6286748', true);
   perform set_config('request.jwt.claims',
     '{"sub":"e8700ff7-a642-45b8-b103-fafdb6286748","role":"authenticated","aud":"authenticated"}', true);
@@ -85,14 +95,24 @@ begin
   );
   insert into pg_temp.rls_results values ('technician','RPC INSERT','1 row',case when v_tech is not null then '1 row' else '0 rows' end,v_tech is not null);
 
-  update public.assets set name = name || ' updated' where id = v_tech and organization_id = v_org;
-  get diagnostics v_rows = row_count;
-  insert into pg_temp.rls_results values ('technician','UPDATE','1 row',v_rows::text || ' rows',v_rows = 1);
+  v_rows := 0;
+  v_blocked := false;
+  begin
+    update public.assets set name = name || ' updated' where id = v_tech and organization_id = v_org;
+    get diagnostics v_rows = row_count;
+  exception when insufficient_privilege then
+    v_blocked := true;
+  end;
+  insert into pg_temp.rls_results values (
+    'technician','DIRECT UPDATE','1 row before lease migration; otherwise blocked',
+    case when v_blocked then 'privilege denied; use lease RPC' else v_rows::text || ' rows' end,
+    v_blocked or v_rows = 1
+  );
   delete from public.assets where id = v_tech and organization_id = v_org;
   get diagnostics v_rows = row_count;
   insert into pg_temp.rls_results values ('technician','DELETE','0 rows',v_rows::text || ' rows',v_rows = 0);
 
-  -- Admin: direct INSERT blocked; RPC create, UPDATE and DELETE allowed.
+  -- Admin: direct INSERT blocked; RPC create and DELETE allowed. Direct UPDATE is allowed only before Migration 016; afterwards lease RPC is required.
   perform set_config('request.jwt.claim.sub', '08f0f750-3361-4ae0-b6ed-9dc4a5b41244', true);
   perform set_config('request.jwt.claims',
     '{"sub":"08f0f750-3361-4ae0-b6ed-9dc4a5b41244","role":"authenticated","aud":"authenticated"}', true);
@@ -110,9 +130,19 @@ begin
   );
   insert into pg_temp.rls_results values ('admin','RPC INSERT','1 row',case when v_admin is not null then '1 row' else '0 rows' end,v_admin is not null);
 
-  update public.assets set name = name || ' updated' where id = v_admin and organization_id = v_org;
-  get diagnostics v_rows = row_count;
-  insert into pg_temp.rls_results values ('admin','UPDATE','1 row',v_rows::text || ' rows',v_rows = 1);
+  v_rows := 0;
+  v_blocked := false;
+  begin
+    update public.assets set name = name || ' updated' where id = v_admin and organization_id = v_org;
+    get diagnostics v_rows = row_count;
+  exception when insufficient_privilege then
+    v_blocked := true;
+  end;
+  insert into pg_temp.rls_results values (
+    'admin','DIRECT UPDATE','1 row before lease migration; otherwise blocked',
+    case when v_blocked then 'privilege denied; use lease RPC' else v_rows::text || ' rows' end,
+    v_blocked or v_rows = 1
+  );
   delete from public.assets where id = v_admin and organization_id = v_org;
   get diagnostics v_rows = row_count;
   insert into pg_temp.rls_results values ('admin','DELETE','1 row',v_rows::text || ' rows',v_rows = 1);

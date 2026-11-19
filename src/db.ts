@@ -1,4 +1,5 @@
 import Dexie, { type Table } from 'dexie'
+import { buildAssetRekeyPlan, buildInventoryRekeyPlan } from './lib/localIdentity'
 
 export type AssetStatus = 'Đang hoạt động' | 'Đang sửa chữa' | 'Ngừng sử dụng' | 'Thanh lý'
 export type TaskStatus = 'Chờ thực hiện' | 'Đang thực hiện' | 'Hoàn thành' | 'Quá hạn'
@@ -6,6 +7,7 @@ export type MaintenancePlanPeriod = 'Tuần' | 'Tháng' | 'Quý' | 'Năm'
 export type MaintenancePlanExecution = 'Nội bộ' | 'Thuê ngoài'
 
 export type ChecklistAnswerType = 'pass-fail-na' | 'yes-no' | 'text' | 'number'
+export type IdentityStatus = 'legacy' | 'draft' | 'ready' | 'synced' | 'conflict'
 
 export interface ChecklistTemplateItem {
   id: string
@@ -68,12 +70,51 @@ export interface ChecklistResult {
 
 export interface Asset {
   id: string; code: string; name: string; category: string; brand: string; model: string
+  identityStatus?: IdentityStatus; createdByLabel?: string; createdByUserId?: string
   serial: string; location: string; commissionedAt: string; power: string; cycle: string; cycleStartedAt?: string
   transferredFromOtherFacility?: boolean
   status: AssetStatus; notes: string; images: string[]; archivedAt?: string; createdAt: string; updatedAt: string
 }
+export type AssetCloudLinkStatus = 'linked' | 'conflict'
+export type AssetMutationStatus = 'pending' | 'processing' | 'applied' | 'conflict'
+
+export type AssetMutationPayload = Pick<Asset,
+  'name' | 'brand' | 'model' | 'serial' | 'location' | 'commissionedAt' |
+  'power' | 'cycle' | 'cycleStartedAt' | 'transferredFromOtherFacility' |
+  'status' | 'notes' | 'archivedAt'
+>
+
+export interface AssetCloudLink {
+  id: string
+  organizationId: string
+  assetId: string
+  cloudCode: string
+  cloudUpdatedAt: string
+  lastSyncedLocalUpdatedAt: string
+  status: AssetCloudLinkStatus
+  linkedAt: string
+  lastVerifiedAt: string
+}
+
+export interface AssetMutation {
+  mutationId: string
+  organizationId: string
+  assetId: string
+  payload: AssetMutationPayload
+  expectedCloudUpdatedAt: string
+  localUpdatedAt: string
+  status: AssetMutationStatus
+  attempts: number
+  lastError?: string
+  createdAt: string
+  updatedAt: string
+  appliedAt?: string
+  cloudUpdatedAt?: string
+}
+
 export interface InventoryItem {
   id: string; code: string; name: string; group: string; unit: string
+  identityStatus?: IdentityStatus; createdByLabel?: string; createdByUserId?: string
   partNumber?: string; size?: string
   quantity: number; minQuantity: number; location: string; supplier: string; unitPrice: number
   updatedAt: string
@@ -104,7 +145,7 @@ export interface Log {
 }
 export interface Movement {
   id: string; itemId: string; date: string; type: 'Nhập' | 'Xuất' | 'Điều chỉnh'
-  quantity: number; reason: string; linkedAssetId?: string
+  quantity: number; reason: string; note?: string; performedBy?: string; linkedAssetId?: string
 }
 export type SyncStatus = 'pending' | 'processing' | 'failed'
 
@@ -129,6 +170,8 @@ class MaintenanceDB extends Dexie {
   logs!: Table<Log, string>
   movements!: Table<Movement, string>
   syncQueue!: Table<SyncItem, string>
+  assetCloudLinks!: Table<AssetCloudLink, string>
+  assetMutations!: Table<AssetMutation, string>
   checklistTemplates!: Table<ChecklistTemplate, string>
   checklistVersions!: Table<ChecklistTemplateVersion, string>
   checklistResults!: Table<ChecklistResult, string>
@@ -225,6 +268,49 @@ class MaintenanceDB extends Dexie {
       await table.clear()
       if (latest.size) await table.bulkPut([...latest.values()])
     })
+    // v7: metadata định danh để chuẩn bị cho draft Local. Dữ liệu hiện có
+    // được đánh dấu legacy; không đổi ID, mã, foreign key hoặc timestamps.
+    this.version(7).stores({
+      assets: 'id, code, name, category, status, archivedAt, updatedAt, identityStatus',
+      inventory: 'id, code, name, group, quantity, updatedAt, identityStatus',
+      tasks: 'id, assetId, dueDate, status, updatedAt',
+      logs: 'id, assetId, taskId, checklistResultId, date, kind',
+      movements: 'id, itemId, date, type',
+      syncQueue: 'id, &[tableName+recordId], tableName, recordId, operation, queuedAt, status, attempts, lastAttemptAt, deviceId, mutationId',
+      checklistTemplates: 'id, assetId, active, updatedAt',
+      checklistVersions: 'id, templateId, assetId, version, createdAt',
+      checklistResults: 'id, assetId, templateId, templateVersionId, performedAt, result',
+      maintenancePlans: 'id, assetId, period, startDate, endDate, updatedAt'
+    }).upgrade(async tx => {
+      const assets = await tx.table('assets').toArray()
+      const inventory = await tx.table('inventory').toArray()
+      await Promise.all([
+        tx.table('assets').bulkPut(assets.map(asset => ({
+          ...asset,
+          identityStatus: asset.identityStatus ?? 'legacy'
+        }))),
+        tx.table('inventory').bulkPut(inventory.map(item => ({
+          ...item,
+          identityStatus: item.identityStatus ?? 'legacy'
+        })))
+      ])
+    })
+     // v8: Asset-only Cloud links and immutable mutation ledger.
+    // Existing Local records are intentionally NOT auto-linked or queued.
+    this.version(8).stores({
+      assets: 'id, code, name, category, status, archivedAt, updatedAt, identityStatus',
+      inventory: 'id, code, name, group, quantity, updatedAt, identityStatus',
+      tasks: 'id, assetId, dueDate, status, updatedAt',
+      logs: 'id, assetId, taskId, checklistResultId, date, kind',
+      movements: 'id, itemId, date, type',
+      syncQueue: 'id, &[tableName+recordId], tableName, recordId, operation, queuedAt, status, attempts, lastAttemptAt, deviceId, mutationId',
+      checklistTemplates: 'id, assetId, active, updatedAt',
+      checklistVersions: 'id, templateId, assetId, version, createdAt',
+      checklistResults: 'id, assetId, templateId, templateVersionId, performedAt, result',
+      maintenancePlans: 'id, assetId, period, startDate, endDate, updatedAt',
+      assetCloudLinks: 'id, &[organizationId+assetId], organizationId, assetId, cloudCode, cloudUpdatedAt, status',
+      assetMutations: 'mutationId, [organizationId+assetId], [organizationId+assetId+status], organizationId, assetId, status, createdAt'
+    })
   }
 }
 export const db = new MaintenanceDB()
@@ -236,7 +322,7 @@ function queueId(tableName: string, recordId: string) {
 }
 
 let cachedDeviceId: string | undefined
-function getDeviceId() {
+export function getDeviceId() {
   if (cachedDeviceId) return cachedDeviceId
   const key = 'baotri-device-id'
   try {
@@ -278,5 +364,68 @@ export async function deleteAndQueue<T>(table: Table<T, string>, tableName: stri
   await db.transaction('rw', table, db.syncQueue, async () => {
     await table.delete(recordId)
     await queueChange(tableName, recordId, 'delete')
+  })
+}
+
+export async function rekeyAssetDraftId(draftId: string, officialId: string) {
+  return db.transaction('rw', [
+    db.assets, db.tasks, db.maintenancePlans, db.logs,
+    db.checklistTemplates, db.checklistVersions, db.checklistResults,
+    db.movements, db.syncQueue
+  ], async () => {
+    const asset = await db.assets.get(draftId)
+    if (!asset) throw new Error('Không tìm thấy thiết bị bản nháp.')
+    if (await db.assets.get(officialId)) throw new Error('UUID thiết bị đích đã tồn tại.')
+    const [tasks, maintenancePlans, logs, checklistTemplates, checklistVersions, checklistResults, movements, syncQueue] = await Promise.all([
+      db.tasks.where('assetId').equals(draftId).toArray(),
+      db.maintenancePlans.where('assetId').equals(draftId).toArray(),
+      db.logs.where('assetId').equals(draftId).toArray(),
+      db.checklistTemplates.where('assetId').equals(draftId).toArray(),
+      db.checklistVersions.where('assetId').equals(draftId).toArray(),
+      db.checklistResults.where('assetId').equals(draftId).toArray(),
+      db.movements.toArray(),
+      db.syncQueue.where('tableName').equals('assets').toArray()
+    ])
+    const plan = buildAssetRekeyPlan({
+      asset, tasks, maintenancePlans, logs, checklistTemplates, checklistVersions,
+      checklistResults, movements: movements.filter(item => item.linkedAssetId === draftId), syncQueue
+    }, draftId, officialId, { mutationId: uid(), deviceId: getDeviceId(), queuedAt: now() })
+
+    await db.assets.delete(draftId)
+    await db.assets.add(plan.asset)
+    await Promise.all([
+      db.tasks.bulkPut(plan.tasks),
+      db.maintenancePlans.bulkPut(plan.maintenancePlans),
+      db.logs.bulkPut(plan.logs),
+      db.checklistTemplates.bulkPut(plan.checklistTemplates),
+      db.checklistVersions.bulkPut(plan.checklistVersions),
+      db.checklistResults.bulkPut(plan.checklistResults),
+      db.movements.bulkPut(plan.movements)
+    ])
+    if (plan.queueItem.oldId) await db.syncQueue.delete(plan.queueItem.oldId)
+    await db.syncQueue.add(plan.queueItem.value)
+    return plan.asset
+  })
+}
+
+export async function rekeyInventoryDraftId(draftId: string, officialId: string) {
+  return db.transaction('rw', [db.inventory, db.movements, db.syncQueue], async () => {
+    const item = await db.inventory.get(draftId)
+    if (!item) throw new Error('Không tìm thấy vật tư bản nháp.')
+    if (await db.inventory.get(officialId)) throw new Error('UUID vật tư đích đã tồn tại.')
+    const [movements, syncQueue] = await Promise.all([
+      db.movements.where('itemId').equals(draftId).toArray(),
+      db.syncQueue.where('tableName').equals('inventory').toArray()
+    ])
+    const plan = buildInventoryRekeyPlan({
+      item, movements, syncQueue
+    }, draftId, officialId, { mutationId: uid(), deviceId: getDeviceId(), queuedAt: now() })
+
+    await db.inventory.delete(draftId)
+    await db.inventory.add(plan.item)
+    await db.movements.bulkPut(plan.movements)
+    if (plan.queueItem.oldId) await db.syncQueue.delete(plan.queueItem.oldId)
+    await db.syncQueue.add(plan.queueItem.value)
+    return plan.item
   })
 }

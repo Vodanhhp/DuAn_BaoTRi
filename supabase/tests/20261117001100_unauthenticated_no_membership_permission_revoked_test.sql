@@ -197,11 +197,19 @@ begin
   insert into pg_temp.security_results values
     ('No membership', 'SELECT Org B asset', '0 visible', v_count::text || ' visible', v_count = 0);
 
-  update public.assets set name = name || ' unauthorized'
-  where id = f.asset_b and organization_id = f.org_b;
-  get diagnostics v_rows = row_count;
+  v_rows := 0;
+  v_blocked := false;
+  begin
+    update public.assets set name = name || ' unauthorized'
+    where id = f.asset_b and organization_id = f.org_b;
+    get diagnostics v_rows = row_count;
+  exception when insufficient_privilege then
+    v_blocked := true;
+  end;
   insert into pg_temp.security_results values
-    ('No membership', 'UPDATE Org B asset', '0 rows', v_rows::text || ' rows', v_rows = 0);
+    ('No membership', 'UPDATE Org B asset', '0 rows or SQL privilege denied',
+     case when v_blocked then 'privilege denied' else v_rows::text || ' rows' end,
+     v_blocked or v_rows = 0);
 
   v_blocked := false;
   begin
@@ -222,6 +230,7 @@ do $revoked_permission_test$
 declare
   f record;
   v_rows integer;
+  v_blocked boolean := false;
 begin
   select * into strict f from pg_temp.security_fixture;
 
@@ -230,13 +239,20 @@ begin
      public.has_org_permission(f.org_a, 'assets.update')::text,
      not public.has_org_permission(f.org_a, 'assets.update'));
 
-  update public.assets set name = name || ' permission revoked'
-  where id = f.asset_a and organization_id = f.org_a;
-  get diagnostics v_rows = row_count;
+  v_rows := 0;
+  v_blocked := false;
+  begin
+    update public.assets set name = name || ' permission revoked'
+    where id = f.asset_a and organization_id = f.org_a;
+    get diagnostics v_rows = row_count;
+  exception when insufficient_privilege then
+    v_blocked := true;
+  end;
 
   insert into pg_temp.security_results values
-    ('Permission revoked', 'UPDATE Org A asset', '0 rows',
-     v_rows::text || ' rows', v_rows = 0);
+    ('Permission revoked', 'UPDATE Org A asset', '0 rows or SQL privilege denied',
+     case when v_blocked then 'privilege denied' else v_rows::text || ' rows' end,
+     v_blocked or v_rows = 0);
 end
 $revoked_permission_test$;
 

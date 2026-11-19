@@ -63,24 +63,6 @@ function toAsset(row: AssetRow): Asset {
   }
 }
 
-function toCloudUpdate(asset: Asset) {
-  return {
-    name: asset.name.trim(),
-    brand: asset.brand ?? '',
-    model: asset.model ?? '',
-    serial: asset.serial ?? '',
-    location: asset.location ?? '',
-    commissioned_at: asset.commissionedAt || null,
-    power: asset.power ?? '',
-    cycle: asset.cycle ?? '',
-    cycle_started_at: asset.cycleStartedAt || null,
-    transferred_from_other_facility: Boolean(asset.transferredFromOtherFacility),
-    status: asset.status,
-    notes: asset.notes ?? '',
-    updated_at: new Date().toISOString()
-  }
-}
-
 /** Read only this tenant's Assets. RLS independently verifies membership. */
 export async function listCloudAssets(
   client: SupabaseClient,
@@ -97,56 +79,7 @@ export async function listCloudAssets(
   return ((data ?? []) as unknown as AssetRow[]).map(toAsset)
 }
 
-/**
- * Update editable fields only. ID, code, organization_id, timestamps created
- * and image metadata are not accepted from the browser as mutable fields.
- */
-export async function updateCloudAsset(
-  client: SupabaseClient,
-  organizationId: string,
-  asset: Asset
-): Promise<Asset> {
-  if (!organizationId) throw new Error('Thiếu tổ chức đang hoạt động.')
-  if (!asset.id) throw new Error('Thiếu ID thiết bị.')
-  if (!asset.name.trim()) throw new Error('Tên thiết bị không được để trống.')
-
-  const { data, error } = await client
-    .from('assets')
-    .update(toCloudUpdate(asset))
-    .eq('organization_id', organizationId)
-    .eq('id', asset.id)
-    .select(ASSET_COLUMNS)
-    .single()
-
-  if (error) throw new Error('Không thể cập nhật thiết bị cloud: ' + error.message)
-  return toAsset(data as unknown as AssetRow)
-}
-
-/** Archive/restore is a soft update; no hard delete is exposed by this module. */
-export async function setCloudAssetArchived(
-  client: SupabaseClient,
-  organizationId: string,
-  assetId: string,
-  archived: boolean
-): Promise<Asset> {
-  if (!organizationId) throw new Error('Thiếu tổ chức đang hoạt động.')
-  if (!assetId) throw new Error('Thiếu ID thiết bị.')
-
-  const { data, error } = await client
-    .from('assets')
-    .update({
-      archived_at: archived ? new Date().toISOString() : null,
-      updated_at: new Date().toISOString()
-    })
-    .eq('organization_id', organizationId)
-    .eq('id', assetId)
-    .select(ASSET_COLUMNS)
-    .single()
-
-  if (error) throw new Error('Không thể cập nhật lưu kho thiết bị cloud: ' + error.message)
-  return toAsset(data as unknown as AssetRow)
-}
-
+/** All Cloud asset edits now go through src/lib/assetEditLocks.ts RPCs. */
 export type AssetCodeConfig = {
   facility_code: string
   category_codes: Record<string, string>
@@ -238,4 +171,57 @@ export async function createCloudAsset(
   const row = (Array.isArray(data) ? data[0] : data) as unknown as AssetRow
   if (!row?.id || !row?.code) throw new Error('RPC không trả về hồ sơ thiết bị hợp lệ.')
   return toAsset(row)
+}
+
+/**
+ * Explicit one-off import of an existing Local asset.
+ * The Local UUID and management code are immutable inputs; the mutation ID
+ * reuses the asset UUID so a retry after a partial batch is idempotent.
+ */
+export async function importCloudAssetPreservingIdentity(
+  client: SupabaseClient,
+  organizationId: string,
+  asset: Asset
+): Promise<{ asset: Asset; alreadyPresent: boolean; counterReconciled: boolean }> {
+  if (!organizationId) throw new Error('Thiếu tổ chức đang hoạt động.')
+  if (!asset.id) throw new Error('Thiếu UUID thiết bị Local.')
+  if (!asset.code || !asset.code.trim()) throw new Error('Thiếu mã quản lý thiết bị Local.')
+
+  const { data, error } = await client.rpc('import_asset_preserving_identity', {
+    p_organization_id: organizationId,
+    p_id: asset.id,
+    p_code: asset.code,
+    p_mutation_id: asset.id,
+    p_asset: {
+      name: asset.name,
+      category: asset.category,
+      brand: asset.brand ?? '',
+      model: asset.model ?? '',
+      serial: asset.serial ?? '',
+      location: asset.location ?? '',
+      commissioned_at: asset.commissionedAt || null,
+      power: asset.power ?? '',
+      cycle: asset.cycle ?? '',
+      cycle_started_at: asset.cycleStartedAt || null,
+      transferred_from_other_facility: Boolean(asset.transferredFromOtherFacility),
+      status: asset.status,
+      notes: asset.notes ?? '',
+      archived_at: asset.archivedAt || null,
+      created_at: asset.createdAt,
+      updated_at: asset.updatedAt
+    }
+  })
+
+  if (error) throw new Error('Không thể nhập thiết bị ' + asset.code + ' lên Cloud: ' + error.message)
+  const result = data as { asset?: AssetRow; already_present?: boolean; counter_reconciled?: boolean } | null
+  const row = result?.asset
+  if (!row?.id || !row?.code) throw new Error('RPC import không trả về hồ sơ thiết bị hợp lệ.')
+  if (row.id !== asset.id || row.code !== asset.code) {
+    throw new Error('Cloud trả về UUID hoặc mã quản lý không khớp với Local: ' + asset.code)
+  }
+  return {
+    asset: toAsset(row),
+    alreadyPresent: result?.already_present === true,
+    counterReconciled: result?.counter_reconciled === true
+  }
 }

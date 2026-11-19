@@ -6,7 +6,11 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "tsc -b && vite build",
-    "preview": "vite preview --host 0.0.0.0"
+    "preview": "vite preview --host 0.0.0.0",
+    "test:sync-mapping": "node --test tests/syncMapping.test.mjs",
+    "test:local-identity": "node --test tests/localIdentity.test.mjs",
+    "test:template-release": "node --test tests/templateRelease.test.mjs",
+    "validate:template": "node scripts/validate-template-release.mjs templates/HOTEL_SMALL_BASIC/1.0.0.json"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.119.0",

@@ -998,7 +998,6 @@ Người dùng xác nhận đồng ý đưa cả dữ liệu thử nghiệm đan
 
 
 ## 17/11/2026 – Migration 002 và Smoke test đã chạy thành công trên Test
-
 - Người dùng xác nhận Migration 002 trả về `Success. No rows returned` trên project `BAOTRI-Mini-Test`.
 - Người dùng chạy Smoke test; ảnh kết quả cho thấy cột `row_security_active` là `true` cho các bảng hiển thị và người dùng xác nhận **cả 11/11 bảng đều true**.
 - Kết luận trong phạm vi bằng chứng hiện có: Migration 002 thực thi không báo lỗi; RLS đang bật trên toàn bộ 11 bảng. Các kiểm tra khác trong Smoke test đã được script chạy nhưng chưa có ảnh/toàn bộ output để lưu từng dòng kết quả. Không diễn giải kết quả này thành kiểm thử RLS runtime dưới các vai trò authenticated/anon hoặc kiểm thử cách ly tenant thực tế.
@@ -1908,3 +1907,1502 @@ assets.images hiện là dữ liệu ảnh local; adapter Cloud trả images r�
 - Việc chọn dữ liệu gốc giữa backup máy tính và điện thoại vẫn là điểm chặn riêng trước lần seed Cloud đầu tiên. Không tự chọn một thiết bị làm nguồn chuẩn.
 
 **Bước kế tiếp:** kiểm thử mở ứng dụng sau migration v6 và các thao tác lưu/sửa/xóa, Checklist, hoàn thành công việc, nhập/xuất kho, restore backup; sau đó hoàn thành đối chiếu backup và thiết kế trạng thái conflict/version trước khi viết adapter Cloud.
+
+---
+
+# BỔ SUNG KIỂM TRA HÀNG ĐỢI ĐỒNG BỘ LOCAL – 18/11/2026
+
+## Phạm vi triển khai
+
+- Bổ sung phần xem chi tiết hàng đợi trong **Cài đặt → Dữ liệu và sao lưu**.
+- Danh sách hiển thị tối đa 50 mục gần nhất, đọc trực tiếp từ IndexedDB; không chỉnh sửa/xóa queue.
+- Các cột hiển thị: phân hệ, ID bản ghi, thao tác upsert/delete, trạng thái pending/processing/failed, số lần thử, thời điểm ghi nhận và lỗi gần nhất.
+- Dùng live query để số lượng và danh sách tự cập nhật sau các thao tác nghiệp vụ.
+- Không thêm nút chạy đồng bộ, không gọi Supabase, không thay đổi dữ liệu nghiệp vụ hoặc cấu hình Supabase.
+
+## Build/deploy
+
+- Commit: `cb73055cf1b2fb7a3d4a8b2ad5d18005819f52cc`.
+- GitHub Actions run #171 (ID `44232589189`): build **success**, deploy **success**.
+- Chưa kiểm tra thủ công giao diện chi tiết hàng đợi trên desktop/mobile; chưa xác nhận các thao tác nghiệp vụ thực tế đã sinh đúng từng queue item.
+
+## Cách nghiệm thu thủ công
+
+1. Mở Cài đặt → Dữ liệu và sao lưu → mở “Kiểm tra hàng đợi đồng bộ local”.
+2. Thực hiện lần lượt một thao tác sửa thiết bị, nhập kho, hoàn thành công việc và lưu một phiếu Checklist.
+3. Kiểm tra số queue tăng và từng dòng có đúng tên phân hệ, ID bản ghi, thao tác, trạng thái pending, attempts = 0, deviceId/mutationId được lưu trong DB (hai trường cuối chưa hiển thị trên giao diện).
+4. Kiểm tra sửa cùng một bản ghi nhiều lần chỉ còn một queue item cho cặp tableName + recordId, với mutationId/queuedAt mới nhất.
+5. Không xóa queue hoặc thử nút đồng bộ vì worker Cloud chưa được triển khai.
+
+## Bước tiếp theo
+
+- Dùng bảng kiểm tra này để nghiệm thu queue local trên trình duyệt thật.
+- Hoàn tất thiết kế conflict/version và mapping theo schema chuẩn hóa.
+- Chỉ sau khi hoàn tất đối chiếu nguồn dữ liệu và cơ chế bảo vệ xung đột mới triển khai worker Cloud trên project Test. Không thay đổi Production và không chạy SQL/migration nếu chưa có phê duyệt riêng.
+
+---
+
+# MAPPING DỮ LIỆU VÀ REVIEW GIAO THỨC CLOUD SYNC – 18/11/2026
+
+## Đã triển khai trên main
+
+- Thêm `src/lib/syncMapping.ts`: lớp mapping thuần local ↔ Cloud cho assets, inventory, tasks, maintenancePlans, checklistTemplates, checklistVersions, checklistResults và maintenance_logs.
+- Mapping yêu cầu organization_id không rỗng; giữ UUID; chuyển camelCase → snake_case; ảnh không được đưa vào row PostgreSQL.
+- Inventory có hai hàm tách biệt: baseline có quantity chỉ dành cho seed có kiểm soát; metadata upsert thường ngày loại quantity để không ghi đè số tồn đã được cập nhật qua movement RPC.
+- maintenance_logs từ chối sync nếu local có dueDate, requestedBy hoặc editHistory vì schema SQL hiện tại chưa có các cột đó; không âm thầm bỏ dữ liệu.
+- inventory_movements bị chặn ghi trực tiếp; chỉ được đồng bộ khi có RPC transaction + idempotency đã review.
+- Thêm tài liệu `supabase/CLOUD_SYNC_PROTOCOL_REVIEW.md` mô tả push/pull, conflict, retry, cursor, tombstone, idempotency và các khoảng trống schema.
+
+## Build/deploy
+
+- Mapping commit: `d2a5107882a929814717088561a060074e12cf38`.
+- GitHub Actions workflow #173: build **success**, deploy **success**.
+- Tài liệu giao thức review commit: `5455fc21954ee98da1c0a1969fa3fc090e670f56`.
+- Không có worker chạy và không có request ghi dữ liệu nghiệp vụ lên Supabase.
+
+## Các khoảng trống đã xác định
+
+1. Chưa có row_version/revision cho optimistic concurrency.
+2. Chưa có idempotency ledger theo mutationId.
+3. Chưa có RPC inventory movement cập nhật tồn và ghi lịch sử cùng transaction.
+4. maintenance_logs thiếu due_date, requested_by, edit_history so với local model.
+5. Chưa có change feed/cursor/tombstone để pull phân trang và truyền delete.
+6. Queue chưa lưu base Cloud version/snapshot để xác định xung đột.
+7. Ảnh còn local; chưa có Storage transfer.
+8. customAssetCategories còn localStorage; chưa có luồng đồng bộ vào organization_settings.asset_categories.
+
+## Lưu ý nguồn dữ liệu
+
+- Repository hiện có file `backup-baotri-day-du-2026-11-16.json` với 34 assets, 41 inventory, 4 tasks, 6 logs, 34 Checklist templates, 34 versions và 17 syncQueue items.
+- Đây là file backup đã commit trong repository; không mặc định đó là một trong hai bản backup desktop/mobile đã đối chiếu trong cuộc trao đổi trước (30 assets desktop, 31 mobile). Không dùng file này làm nguồn seed Cloud khi chưa đối chiếu nguồn gốc và quan hệ.
+- Không tự chọn desktop/mobile, không hợp nhất theo mã/tên, không sửa/xóa các backup gốc.
+
+## Trạng thái và bước kế tiếp
+
+- Đã có mapping an toàn bước đầu và tài liệu giao thức; chưa có đồng bộ Cloud thực tế.
+- Tiếp theo: review schema delta (row_version, mutation idempotency, change feed/tombstone, log fields, inventory RPC), bổ sung kiểm thử mapping, tiếp tục đối chiếu backup desktop/mobile.
+- Chưa tạo hoặc chạy SQL migration; chưa gửi dữ liệu nghiệp vụ lên Supabase Test hoặc Production; chưa thay đổi dữ liệu Cloud.
+
+### Ràng buộc mã thiết bị phát hiện khi review giao thức
+- Migration 012 đã thu hồi INSERT trực tiếp trên `assets`; thiết bị Cloud mới phải qua `create_asset_with_code`.
+- RPC hiện tại nhận p_id nhưng tự sinh code, không nhận code local. Do đó mapper không đồng nghĩa với quyền upsert; cần RPC import riêng để giữ UUID + code hiện hữu có kiểm tra Admin/audit, hoặc quy trình online tạo mã Cloud trước.
+- Thiết bị tạo offline trên hai máy có thể sinh trùng code dù UUID khác nhau; unique constraint của organization sẽ chặn. Không tự đổi mã vì có thể ảnh hưởng QR và hồ sơ tham chiếu.
+- `customAssetCategories`, `organization_settings.asset_categories` và `asset_code_config` là các cấu trúc khác nhau, cần mapping cấu hình riêng.
+
+---
+
+# KIỂM THỬ TỰ ĐỘNG LỚP MAPPING CLOUD – 18/11/2026
+
+- Thêm `tests/syncMapping.test.mjs` với 8 nhóm kiểm thử:
+  1. Asset mapping giữ UUID/trường nghiệp vụ, không đưa ảnh local vào payload.
+  2. Mapper từ chối organization_id rỗng.
+  3. Inventory baseline có quantity, metadata upsert không có quantity.  4. Task mapping giữ asset foreign key và status.
+  5. Checklist version/result giữ snapshot.
+  6. Maintenance log từ chối dueDate, requestedBy, editHistory khi schema chưa hỗ trợ.
+  7. Inventory movement bị chặn ghi trực tiếp.
+  8. Kiểm tra thứ tự phụ thuộc và vị trí movement cuối.
+- Thêm script `npm run test:sync-mapping`.
+- GitHub Actions chạy test trước bước build.
+- Workflow #180: test thành công, build thành công, deploy thành công.
+- Run: https://github.com/Vodanhhp/DuAn_BaoTRi/actions/runs/44234010852
+- Chưa bật worker Cloud; chưa gọi Supabase để ghi dữ liệu; không chạy SQL/migration; không thay đổi dữ liệu Test/Production.
+
+**Bước tiếp theo:** tiếp tục review thiết kế schema version/idempotency/change feed và RPC inventory; sau đó mới triển khai kiểm thử worker trên Test khi các hợp đồng dữ liệu đã chốt.
+
+
+---
+
+# REVIEW RACE CONDITION HÀNG ĐỢI CLOUD SYNC – 18/11/2026
+
+## Phát hiện
+
+- `syncQueue` Dexie v6 dùng unique key `[tableName+recordId]`; `queueChange()` luôn ghi đè row hiện có, chuyển về pending và tạo mutationId mới.
+- Cách gộp này an toàn khi chưa có worker và mọi mục đều pending. Khi worker đang gửi mutation A mà người dùng sửa tiếp cùng bản ghi tạo mutation B, row A có thể bị ghi đè. Phản hồi thành công của A có nguy cơ xóa nhầm B hoặc làm mất dữ liệu cần retry.
+- Vì vậy không được bật worker trên queue v6 chỉ bằng cách thêm trạng thái processing/claim.
+
+## Đã thiết kế
+
+- Tạo `supabase/CLOUD_SYNC_QUEUE_V7_DESIGN.md` (commit `3961d6d6fc329adccba98235337734231794e9ac`).
+- Đề xuất mỗi mutation có khóa mutationId riêng; pending chưa claim có thể coalesce, processing/sent là bất biến.
+- Mutation mới trong lúc mutation cũ processing phải tạo row riêng; xác nhận chỉ tác động đúng mutationId + claimToken.
+- Lưu baseVersion và payload snapshot; retry giữ nguyên mutationId/payload; server idempotency ledger và business write phải cùng transaction.
+- Append-only history không coalesce; delete dùng tombstone và giữ thứ tự; conflict chặn mutation kế tiếp của cùng record.
+- Đã ghi rõ 10 nhóm kiểm thử bắt buộc và yêu cầu migration Dexie v7 không đụng bảng nghiệp vụ.
+
+## Trạng thái an toàn
+
+- Chỉ thêm tài liệu thiết kế; không sửa Dexie v6 hoặc dữ liệu local.
+- Không tạo worker, không gọi Supabase, không chạy SQL/migration.
+- Không thay đổi BAOTRI-Mini-Test hoặc Production.
+- Workflow #181 tại commit `42b20b61255f6e03c5aa2366a1d72402e6063c1b` đã success; commit thiết kế mới cần chờ workflow tương ứng hoàn tất.
+
+**Bước tiếp theo:** review schema idempotency + row_version + change feed/tombstone và hợp đồng RPC kho; sau đó mới triển khai migration queue v7 cùng test mô phỏng race condition.
+
+---
+
+# REVIEW SCHEMA VERSION / IDEMPOTENCY / CHANGE FEED / INVENTORY RPC – 18/11/2026
+
+## Đã review tĩnh
+
+- Migration 002 có trigger `updated_at` nhưng chưa có `row_version`; timestamp không đủ làm optimistic concurrency token.
+- Migration 002 cấp INSERT trực tiếp `inventory_items`; RLS member cũng cho phép INSERT. Dù authenticated không được UPDATE cột quantity, đường INSERT hiện tại vẫn có thể tạo item với số tồn mà không có movement.
+- Migration 012 đã thu hồi INSERT trực tiếp `assets`, buộc tạo mới qua allocator RPC; RPC hiện không hỗ trợ import code local.
+- UI local hiện tính tồn `+quantity` cho Nhập và `-quantity` cho Xuất/Điều chỉnh. Nghiệp vụ “Điều chỉnh” chưa rõ là delta có dấu hay đặt tồn thực tế; chưa được tự viết RPC trước khi chốt.
+- Kiểm tra thao tác kho cho thấy inventory balance và movement đang được ghi cùng Dexie transaction; Cloud phải bảo toàn tính nguyên tử tương tự trong một transaction PostgreSQL.
+
+## Đã thiết kế
+
+- Tạo `supabase/CLOUD_SYNC_SCHEMA_PROTOCOL_DESIGN.md`, commit `822b8a9b04ea57823677b9f3c7064a9e103b550d`.
+- Thiết kế row_version do DB tăng, optimistic concurrency theo expected version; không dùng updated_at làm version.
+- Thiết kế idempotency ledger unique theo organization + mutationId, lưu payload hash và kết quả; ledger + business mutation cùng transaction.
+- Thiết kế change feed theo counter từng organization được khóa trong transaction, sequence commit-order, tombstone cho delete; không dùng sequence độc lập dễ phát sinh commit đảo thứ tự.
+- Thiết kế RPC kho khóa row FOR UPDATE, tính tồn phía DB, ghi movement + balance + idempotency trong cùng transaction.
+- Ghi rõ cần thu hồi direct INSERT inventory_items và thay bằng RPC tạo item + tồn đầu kỳ/movement.
+- Liệt kê test bắt buộc: duplicate mutation, payload mismatch, rollback, conflict, cursor commit-order, tombstone, permission revoked và cross-organization.
+
+## Trạng thái
+
+- Chỉ thêm tài liệu review/thiết kế; không tạo SQL migration, không sửa database grants/RLS.
+- Không chạy SQL, không gọi RPC, không bật worker.
+- Không thay đổi dữ liệu local, BAOTRI-Mini-Test hoặc Production.
+- Commit schema protocol design: `822b8a9b04ea57823677b9f3c7064a9e103b550d`.
+
+**Bước tiếp theo:** rà soát schema fields và permission matrix cụ thể, đối chiếu thêm thao tác kho/Checklist/log với UI; sau đó lập migration draft theo từng phần để review, vẫn chưa áp dụng vào Supabase.
+
+
+---
+
+# ĐỐI CHIẾU QUYỀN VAI TRÒ VỚI THAO TÁC UI – 18/11/2026
+
+- Đã rà soát migration 005 (roles/permissions), migration 006 (RLS), migration 012 (asset allocator RPC), test RLS 009 và các thao tác chính trong `src/App.tsx`.
+- Tạo `supabase/CLOUD_PERMISSION_UI_MATRIX.md`, commit `4d2aa2bcbeb29ce7743eaf1fcbd1e3c2137d7d81`.
+- Xác nhận các khác biệt quan trọng:
+  1. UI hiện chỉ phân biệt Viewer và non-Viewer; chưa kiểm tra permission chi tiết.
+  2. Technician hiện có thể sửa Checklist template trên UI/local nhưng permission catalog không cấp `checklist.template.manage` (Admin-only).
+  3. UI có thể cho Technician xóa kế hoạch, trong khi permission catalog không cấp `maintenance.delete`.
+  4. Direct INSERT `inventory_items` có thể tạo tồn ban đầu không kèm movement; cần thu hồi và thay bằng RPC nguyên tử.
+  5. RPC tạo thiết bị hiện cấp mã Cloud, không nhận mã local; cần RPC import riêng nếu phải bảo toàn UUID + mã hiện có.
+  6. Log local có dueDate/requestedBy/editHistory và có thể được sửa; Cloud schema thiếu trường và RLS hiện append-only. Cần chốt mô hình event/revision, không bỏ dữ liệu hoặc update log cũ âm thầm.
+  7. Hoàn thành task tạo task update + log insert trong cùng Dexie transaction; Cloud cần transaction tương ứng.
+- Workflow #185 (run ID `44234972918`) đã hoàn tất: test mapping, build Vite và deploy đều **success**.
+- Chưa sửa mã ứng dụng, chưa tạo worker, chưa gửi dữ liệu nghiệp vụ lên Cloud.
+- Không chạy SQL/migration, không thay đổi BAOTRI-Mini-Test hoặc Production, không tạo organization/membership/tài khoản mới.
+
+**Bước tiếp theo:** tiếp tục hoàn thiện hợp đồng permission/RPC và schema cho Log, Checklist, thiết bị import và kho; sau đó tạo migration draft trong repository để review, tuyệt đối chưa áp dụng lên Supabase.
+
+
+---
+
+# DRAFT ROW_VERSION FOUNDATION – 18/11/2026
+
+- Tạo bản nháp SQL `supabase/drafts/015_row_version_foundation_DRAFT.sql`, commit `a7593a2ca738ca532514e644aa9466c56253837e`.
+- Phạm vi gồm các bảng mutable: assets, inventory_items, maintenance_tasks, maintenance_plans, checklist_templates, organization_settings.
+- Không thêm row_version vào các bảng lịch sử append-only: checklist_template_versions, checklist_results, maintenance_logs, inventory_movements.
+- Trigger đặt row_version do database quản lý: insert bắt đầu ở 1; update cột nghiệp vụ tăng 1; chỉ đổi updated_at không tăng version.
+- File nằm trong `supabase/drafts/`, không nằm trong `supabase/migrations/`; không được chạy như migration.
+- Quan trọng: row_version/trigger chỉ là nền tảng. Chưa có optimistic concurrency đầy đủ nếu client còn UPDATE trực tiếp; mọi update Cloud phải qua RPC kiểm tra expected_version và xử lý conflict nguyên tử. Cần thiết kế/review grants trước khi đưa vào migrations chính thức.
+- Chưa chạy SQL, chưa thay đổi Supabase Test/Production, chưa sửa code app, chưa bật worker hoặc ghi dữ liệu Cloud.
+
+**Bước kế tiếp:** review thiết kế RPC update có expected_version và quyền thực thi; tiếp đó thiết kế idempotency ledger/change feed theo cùng nguyên tắc chỉ draft trong repository.
+
+
+---
+
+# HỢP ĐỒNG RPC UPDATE / IDEMPOTENCY / CHANGE FEED – 18/11/2026
+
+- Tạo `supabase/CLOUD_RPC_IDEMPOTENCY_CHANGEFEED_DESIGN.md`, commit `2569d1836ac9faa6cdf7cf8abfe15500f042b894`.
+- Chốt nguyên tắc: không bật Cloud worker khi client còn UPDATE trực tiếp các bảng; row_version phải đi kèm RPC expected_version và thu hồi direct UPDATE grants tương ứng.
+- Định nghĩa hợp đồng RPC theo bảng/nghiệp vụ, không nhận tên bảng/cột động; kiểm tra auth.uid, active membership, active organization và permission cụ thể; khóa row, so sánh version, trả conflict snapshot.
+- Thiết kế idempotency ledger theo organization + mutationId; server tự tính payload hash, kiểm tra actor/operation/record/hash; replay trả kết quả cũ, key reuse khác payload bị từ chối; ledger và business mutation cùng transaction.
+- Thiết kế change feed theo counter row được khóa trong transaction để cấp cursor commit-order; event/tombstone cùng transaction; pull phân trang và chỉ tiến cursor local sau khi apply page thành công.
+- Ghi rõ các điểm chưa được giả định: phải kiểm tra pgcrypto/hash extension thực tế; phải chốt FK/delete/tombstone; quyền pull theo từng phân hệ; payload và retention.
+- Chưa tạo SQL migration cho RPC/ledger/change feed; chưa sửa grants/RLS; chưa bật worker; không chạy SQL và không ghi dữ liệu lên Supabase Test/Production.
+
+**Bước tiếp theo:** review extension/hash và quan hệ FK/delete, quyền pull; sau đó mới tạo SQL draft cho idempotency và change feed trong `supabase/drafts/`.
+
+
+---
+
+# REVIEW HASH / FK / DELETE SEMANTICS – 18/11/2026
+
+- Tạo `supabase/CLOUD_DELETE_AND_HASH_PREREQUISITES.md`, commit `f8f9183809e0e4ace6aa55e40a5bcac2686d17cc`.
+- Repository chưa khai báo pgcrypto hoặc hàm digest SHA-256. Chưa thể kết luận extension chưa bật trên Supabase runtime; cần kiểm tra metadata Test trước khi chọn cách hash. Không dùng MD5 thay thế.
+- Review FK từ migration 002: assets được tasks, plans, checklist templates/results, logs, movements, asset_images tham chiếu; inventory_items được movements tham chiếu; tasks được logs tham chiếu; template/version được result tham chiếu. Nhiều FK ON DELETE RESTRICT.
+- Kết luận: không đổi FK sang CASCADE; không hard-delete thiết bị/vật tư/công việc/template có lịch sử. Phải phân biệt lưu kho, ngừng hoạt động, xóa logic và tombstone đồng bộ. `archived_at` không thể thay thế `deleted_at`.
+- RPC `create_asset_with_code` hiện chưa idempotent: retry sau commit có thể lỗi duplicate ID và không được tăng sequence/cấp mã lần hai. Khi thêm ledger, ledger + cấp counter + insert asset phải cùng transaction.
+- Chưa tạo SQL migration cho ledger/change feed/delete; chưa chạy SQL hoặc truy vấn database runtime; không thay đổi Test/Production.
+- Workflow #185 (run ID `44235551185`, commit `ee4160b2d9b93694c84c63d68ee635776ebabb78`) đã success. Workflow cho commit tài liệu tiếp theo đang chạy/đợi queue, cần kiểm tra trước khi xác nhận deploy.
+
+**Bước kế tiếp:** tiếp tục rà soát delete/archive/restore ở UI và semantics nghiệp vụ; sau đó chuẩn bị danh sách truy vấn chỉ đọc để người vận hành kiểm tra extension/hash trên Test. Chưa viết migration phụ thuộc extension cho đến khi có kết quả xác minh.
+
+
+- Bổ sung đối chiếu trực tiếp UI archive/restore/disposal vào `supabase/CLOUD_DELETE_AND_HASH_PREREQUISITES.md`, commit `5d1526bc0246c6be0c039cf7dd7af7a927901955`.
+- UI xác nhận Lưu kho chỉ đặt `archivedAt`, Khôi phục bỏ `archivedAt`, Thanh lý chỉ đổi trạng thái và không phải xóa; nút Xóa vĩnh viễn hiện disabled, chờ Admin xác thực máy chủ.
+- Vì vậy archive/restore/thanh lý phải là update có row_version, không được biến thành tombstone delete. Xóa vĩnh viễn là nghiệp vụ tương lai, cần RPC Admin riêng và kiểm tra FK/lịch sử.
+
+
+---
+
+# RÀ SOÁT QUÁ TRÌNH SINH / IN / QUÉT QR – 18/11/2026
+
+- Tạo `QR_GENERATION_AND_SCAN_REVIEW.md`, commit `b27f55515c204542e94be6e9de7225b245976310`.
+- Đã rà soát 3 vị trí sinh QR trong `src/App.tsx`: QR chi tiết thiết bị, tem 50×30 mm và QR trên bản in chi tiết. Cả ba đều mã hóa `ASSET:<UUID nội bộ>`.
+- Scanner bỏ prefix ASSET rồi tra theo UUID hoặc mã quản lý không phân biệt hoa thường; tương thích QR cũ raw UUID, raw management code và `ASSET:<code>`. Checklist giữ kiểm tra expectedAssetId để không mở nhầm thiết bị.
+- Phát hiện điểm cần quyết định: yêu cầu QR là mã truy cập nhanh riêng, không phải ID thiết bị, nhưng payload hiện chứa UUID trực tiếp. Asset model và Cloud schema chưa có QR token độc lập. Đề xuất token riêng, ngẫu nhiên, lưu bền vững, có thể cấp lại mà không đổi asset UUID/mã quản lý; giữ resolver tương thích QR đời cũ.
+- Chưa xác nhận QR có cần URL deep-link hay chỉ hoạt động khi mở ứng dụng và dùng chức năng Quét QR. Hiện tại chỉ hỗ trợ quét trong ứng dụng; không tự mở trang.
+- Tem đang đặt QR 17×17 mm trên tem 50×30 mm; chưa có kiểm thử máy in/điện thoại thực tế.
+- Phát hiện lân cận: `buildAssetCode()` local hard-code cơ sở HP01 và bảng vị trí; sequence tính từ IndexedDB từng browser. Không đảm bảo sequence duy nhất giữa nhiều browser offline. Cloud allocator/config là luồng riêng.
+- Không sửa code/DB/QR hiện hữu, không chạy SQL, không thay đổi Supabase Test/Production.
+- Workflow #44235935310 cho commit `43a06bbb` đã success. Commit QR review mới cần CI kiểm tra riêng.
+
+**Bước tiếp theo:** xác định hợp đồng QR token (token riêng hay UUID reference; QR có URL hay chỉ token) rồi mới sửa đồng bộ Asset model, generator, scanner, backup/restore, Cloud schema và migration. Giữ QR legacy trong giai đoạn chuyển đổi.
+
+
+---
+
+# CHỐT VÀ SỬA QUY TẮC QR THEO MÃ QUẢN LÝ – 18/11/2026
+
+Người dùng xác nhận: UUID nội bộ chỉ hiển thị nhỏ trong Chi tiết thiết bị khi xem bằng quyền Admin; QR chính là mã quản lý thiết bị được mã hóa thành hình QR.
+
+Đã sửa trực tiếp trên `main`:
+- `src/App.tsx`: cả 3 vị trí QR (Chi tiết thiết bị, tem 50×30 mm, bản in chi tiết) dùng payload `value.code`, không còn mã hóa `ASSET:<UUID>`.
+- Cửa sổ Chi tiết thiết bị chỉ hiển thị UUID nội bộ bằng chữ nhỏ khi `organizationRole` là `admin`; UUID không in trên tem.
+- Không thay đổi UUID, mã quản lý hiện có, dữ liệu thiết bị, Dexie schema hoặc Supabase schema.
+- Scanner giữ tương thích QR cũ: `ASSET:<UUID>`, UUID thô, mã quản lý thô và `ASSET:<mã quản lý>`. QR mới dùng mã quản lý thô.
+- Cập nhật `QUY_UOC_MA_DINH_DANH_VA_VIET_TAT_THIET_BI.txt` và `QR_GENERATION_AND_SCAN_REVIEW.md` cho thống nhất nghiệp vụ.
+
+Commits:
+- App: `41aab9ce8e80e415a9dc7a6a3fdc6c30db5f5f2e`
+- Quy ước mã: `9bd36f9e82f923342de4efca0f6275ff5847ddfd`
+- QR review: `2556000a0f9e213f492b1e8c1355a328476618ce`
+
+Chưa xác minh build/CI cho chuỗi commit trên; cần chờ workflow tương ứng. Chưa giải mã QR bằng test tự động, chưa in tem và thử camera thực tế. Không chạy SQL/migration, không ghi dữ liệu Supabase Test/Production.
+
+
+---
+
+# TIẾP TỤC RÀ SOÁT QR VÀ CLOUD INVENTORY – 18/11/2026
+
+## QR scanner
+- Đã sửa `ScanModal` để camera callback luôn đọc danh sách thiết bị, expectedAssetId và openAsset mới nhất qua refs; tránh stale closure khi dữ liệu/ngữ cảnh thay đổi trong lúc modal còn mở.
+- Khi scan thành công hoặc modal unmount, callback được vô hiệu hóa và scanner được clear.
+- Commit code: `26f16d19232974307eddc41dde39542c97e71c7c`.
+- Cập nhật `QR_GENERATION_AND_SCAN_REVIEW.md`, commit `70ca03ec743066804fcf7d76fce4ea7750b0379d`.
+- Chưa xác nhận CI của commit code; workflow của code bị cancel khi các commit kế tiếp được push. Cần chờ workflow mới nhất hoặc chạy build CI lại. Chưa thử camera/tem vật lý.
+
+## Cloud Inventory RPC design
+- Tạo `supabase/CLOUD_INVENTORY_RPC_DESIGN.md`, commit `4e5f8d4bddc0c0d29bfc76ff17bea1e30f44b64b`.
+- Phát hiện từ UI: ItemModal cho sửa trực tiếp quantity; saveItem ghi item nhưng không tạo movement. Đây là đường có thể làm lệch số tồn và lịch sử.
+- Thiết kế đề xuất ba RPC:
+  1. `create_inventory_item`: tạo vật tư và movement tồn đầu kỳ trong cùng transaction.
+  2. `update_inventory_item_metadata`: chỉ sửa metadata, tuyệt đối không nhận quantity, có expected_version.
+  3. `post_inventory_movement`: Nhập/Xuất, khóa inventory row, kiểm tra tồn, cập nhật balance + append movement + idempotency + change event cùng transaction.
+- UI hiện có Nhập/Xuất; chưa có Điều chỉnh riêng. Không tự quyết định semantics Điều chỉnh khi chưa thống nhất.
+- Trước Cloud worker cần khóa trường quantity khi sửa vật tư cũ; số tồn chỉ đổi qua movement. Tồn đầu kỳ phải có movement riêng.
+- Chưa tạo SQL/migration, chưa sửa UI, chưa gọi Supabase, không ghi Test/Production.
+
+
+## Cloud Maintenance Logs – thiết kế revision append-only
+- Tạo `supabase/CLOUD_MAINTENANCE_LOG_REVISION_DESIGN.md`, commit `1935501613fb9e5e8b462f181f5146a9b2752c27`.
+- Local Log có dueDate, requestedBy, editHistory; Cloud `maintenance_logs` hiện thiếu các field này và được thiết kế append-only. Mapper từ chối sync nếu có field bị thiếu.
+- Đề xuất giữ Log ID ổn định ở bảng root, thêm bảng `maintenance_log_revisions` lưu snapshot bất biến cho mỗi lần tạo/sửa; không UPDATE revision cũ.
+- Hoàn thành Task + tạo Log cần một RPC transaction duy nhất để giữ atomicity giống local Dexie transaction.
+- Permission catalog hiện có logs.create nhưng chưa xác nhận logs.update; phải chốt ai được sửa phiếu trước khi viết migration/RPC. Không tự nâng quyền.
+- Chưa sửa schema/UI, chưa tạo migration, không chạy SQL, không ghi Supabase Test/Production.
+
+
+---
+
+# TỔNG KẾT ĐỢT TIẾP TỤC – 18/11/2026
+
+Các nội dung mới trong đợt này:
+- QR payload đã đổi sang mã quản lý `value.code` tại cả 3 vị trí; UUID chỉ hiển thị nhỏ cho Admin trong chi tiết thiết bị.
+- Scanner đã được sửa stale closure bằng refs; callback bị vô hiệu khi scan thành công hoặc modal đóng.
+- Đã tạo thiết kế RPC Kho tại `supabase/CLOUD_INVENTORY_RPC_DESIGN.md`: tạo vật tư + tồn đầu kỳ; update metadata không được sửa quantity; Nhập/Xuất phải cập nhật balance + movement nguyên tử.
+- Đã tạo thiết kế revision Nhật ký tại `supabase/CLOUD_MAINTENANCE_LOG_REVISION_DESIGN.md`: giữ Log ID gốc, revision append-only; hoàn thành task + tạo log qua một RPC transaction.
+- QR review: `QR_GENERATION_AND_SCAN_REVIEW.md`; quy ước QR: `QUY_UOC_MA_DINH_DANH_VA_VIET_TAT_THIET_BI.txt`.
+
+Trạng thái kiểm thử:
+- Deploy workflow #44236669550 (commit `0a7dd946`) success, xác nhận QR payload/UUID UI đã được build và deploy.
+- Workflow #44237030709 (commit `70ca03ec`) success; đây là commit tài liệu sau code scanner fix, build trên tree đã bao gồm thay đổi scanner.
+- Workflow cho các commit tài liệu sau cùng bị cancel do push liên tiếp; cần một workflow cuối chạy hết để xác nhận trạng thái repository hiện tại.
+- Chưa kiểm thử camera thật, tem in thật hoặc giải mã QR tự động.
+
+Giới hạn an toàn vẫn giữ:
+- Chưa tạo migration mới cho Inventory/Log RPC.
+- Chưa sửa UI quantity, chưa thay đổi permission catalog.
+- Chưa bật Cloud worker, chưa đồng bộ nghiệp vụ.
+- Không chạy SQL/migration, không ghi dữ liệu Supabase Test/Production.
+- Không tạo thêm user/organization/membership; không triển khai multi-tenant test.
+
+---
+
+# SỬA UUID HIỂN THỊ, NGƯỜI THỰC HIỆN CHECKLIST VÀ THIẾT KẾ IMPORT ASSET – 18/11/2026
+
+## Sửa ứng dụng
+- Commit `58cddd602fa0dda1830d744283c1935b67faea6f`: loại bỏ chuỗi ký tự xuống dòng thừa `\\n` ở phần UUID trong Chi tiết thiết bị; truyền tên tài khoản đăng nhập xuống Checklist; ô Người thực hiện chuyển sang chỉ đọc và phiếu mới lưu snapshot `performedBy` từ tài khoản hiện tại.
+- Commit `bef695c702c4716742d7c3926fcb1b299430fbb0`: chỉnh lại chữ ký component AssetDetailModal để truyền userName đúng một lần, tránh khai báo trùng prop.
+- Nguồn tên hiện tại: `profile.fullName.trim() || userEmail`. Nếu hồ sơ chưa khai báo họ tên, phiếu sẽ lưu email đăng nhập thay vì tên mặc định “Người sử dụng”.
+- Không đổi cấu trúc ChecklistResult, Dexie schema hoặc dữ liệu phiếu cũ. Phiếu đã lưu trước đây giữ nguyên tên cũ; chỉ phiếu thực hiện sau bản cập nhật mới lấy tên tài khoản tự động.
+- Chưa xác nhận build/deploy CI của commit sửa mới nhất; workflow mới nhất cần được kiểm tra sau khi queue hoàn tất.
+
+## Thiết kế import thiết bị bảo toàn UUID + mã quản lý
+- Tạo `supabase/CLOUD_ASSET_IMPORT_DESIGN.md`, commit `bb091a58d0acd57e1ea8f449229a179610bdd1b8`.
+- Thiết kế RPC import riêng, giữ nguyên UUID và mã quản lý hiện có; không sửa `create_asset_with_code` allocator dùng cho thiết bị mới.
+- Đề xuất quyền riêng `assets.import` (Admin-only), idempotency theo mutation ID, chống trùng UUID/code, đồng bộ counter và transaction nguyên tử.
+- Tách biệt `organization_settings.asset_categories` (cây danh mục) với `asset_code_config` (quy tắc sinh mã).
+- Chưa chọn backup desktop/mobile làm nguồn chuẩn; không merge tự động vì UUID có thể khác giữa browser.
+- Chỉ là tài liệu thiết kế; chưa tạo migration/RPC, chưa chạy SQL, chưa ghi dữ liệu lên Supabase Test/Production.
+
+## Giới hạn tiếp tục
+- Không bật Cloud worker hoặc thực hiện import trước khi chốt nguồn backup và hoàn thiện kiểm thử.
+- Giữ nguyên quy tắc QR dùng mã quản lý; UUID chỉ là khóa nội bộ, hiển thị nhỏ cho Admin trong Chi tiết thiết bị.
+
+---
+
+# RÀ SOÁT DANH MỤC VÀ CẤU HÌNH MÃ THIẾT BỊ – 18/11/2026
+
+- Commit `e0126a6d90d3efa14e3ee95a2b47c70368937e51`: sửa chú thích tại màn hình thêm thiết bị; nội dung cũ nói QR dùng ID nội bộ, nay khớp quyết định chính thức: QR mã hóa mã quản lý, đổi mã thì phải in lại tem.
+- Commit `998857efc6f53e582923444c5626645dcac046d1`: thêm `supabase/CLOUD_ASSET_CATEGORY_AND_CODE_CONFIG_REVIEW.md`.
+- Đã xác nhận customAssetCategories hiện chỉ lưu localStorage, không đi vào syncQueue; backup/restore có mang theo danh mục custom.
+- Local đang hard-code cơ sở HP01 và mã vị trí; Cloud allocator dùng organization_settings.asset_code_config riêng và yêu cầu mapping category/location hợp lệ.
+- Cloud settings tách asset_categories (cây danh mục) khỏi asset_code_config (quy tắc cấp mã). Cần hai RPC/quyền cập nhật độc lập, versioning và kiểm soát Admin.
+- Rủi ro lớn cần giải quyết trước Cloud worker: mô hình mã cơ sở nhiều cơ sở, mã vị trí chưa gán (local dùng 99 nhưng Cloud cần config), thay category code sau khi đã cấp mã, và cập nhật counter sau import.
+- Chưa tạo migration/RPC, chưa chỉnh UI cấu hình, chưa chạy SQL, chưa ghi Supabase.
+- CI của commit ứng dụng trước đó `bef695c702c4716742d7c3926fcb1b299430fbb0` đã PASS build/deploy; commit chú thích mới và tài liệu hiện cần workflow riêng xác nhận.
+
+
+### Chốt nguyên tắc bản nháp Local và định danh chính thức khi online (18/11/2026)
+
+- Local tiếp tục là nơi nhập và lưu dữ liệu nghiệp vụ trước; Cloud không tự tạo thiết bị/vật tư và không cấp UUID/mã quản lý.
+- Khi online: ứng dụng phải đồng bộ/đọc dữ liệu Cloud mới nhất, sau đó phía Local mới sinh UUID chính thức và cấp mã quản lý thiết bị; lưu Local + hàng đợi rồi gửi lên Cloud. Cloud chỉ kiểm tra quyền, unique, idempotency và lưu nguyên giá trị Local gửi.
+- Khi offline: cho phép lưu bản nháp Local bằng ID tạm riêng, chưa có UUID chính thức và chưa có mã quản lý thiết bị chính thức. Khi online trở lại, xử lý bản nháp theo thứ tự tạo, refresh dữ liệu trước khi chính thức hóa.
+- UUID chính thức chỉ được tạo khi online; không tự chuyển đổi UUID hiện có của dữ liệu cũ. ID tạm tuyệt đối không được gửi vào cột UUID Cloud.
+- Vật tư áp dụng cùng quy tắc UUID tạm/chính thức. Mã vật tư hiện do người dùng nhập cần được phân biệt với UUID; không tự đổi thành mã Cloud cấp.
+- Lưu dấu vết người thêm bất biến cho Thiết bị và Vật tư: họ tên tài khoản, fallback email; không thay đổi khi người khác sửa.
+- Một tài khoản có tối đa một phiên PC và một phiên Mobile; đăng nhập mới cùng nền tảng vô hiệu phiên cũ, PC và Mobile vẫn được phép cùng hoạt động.
+- Khi bản nháp Asset được chính thức hóa, phải chuyển tất cả FK ở Tasks, Plans, Logs, Checklist Templates/Versions/Results và queue; với Inventory phải chuyển FK Movement. Thực hiện atomic trong Dexie transaction, rollback nếu có lỗi.
+- Conflict trùng mã/UUID chỉ cảnh báo; không tự đổi mã, xóa hoặc gộp. Người tạo xác minh hai thiết bị riêng hay nhập trùng một thiết bị.
+- Lưu ý: một PC + một Mobile vẫn có thể hoạt động đồng thời trên hai IndexedDB riêng. Vì vậy online flow phải pull đầy đủ dữ liệu mới nhất trước khi cấp mã, đồng bộ ngay sau tạo và xử lý unique conflict. Không tuyên bố bảo đảm tuyệt đối nếu chưa có cơ chế reservation/lock số thứ tự.
+- Migration 012 / RPC `create_asset_with_code` đã tồn tại trong repository nhưng không còn là hướng cấp mã cho luồng tạo thông thường. Không xóa lịch sử migration; cần rà trạng thái đã áp dụng ở Test/Production và thiết kế migration tiến về phía trước nếu cần.
+- Tài liệu thiết kế chi tiết: `supabase/CLOUD_LOCAL_DRAFT_IDENTITY_DESIGN.md`.
+- Đã lưu quyết định vào tài liệu tiến độ và thiết kế chi tiết tại `supabase/CLOUD_LOCAL_DRAFT_IDENTITY_DESIGN.md`.
+- Commit tài liệu thiết kế: `c808b9b12084e46727a4568b2df52367aa87b547`.
+- Commit cập nhật tiến độ trước đó: `703528e52897b982d6d2664d1cb99d073595442a`.
+- Trạng thái: mới cập nhật tài liệu; chưa sửa mã nguồn, chưa chạy SQL/migration, chưa gọi RPC và chưa ghi dữ liệu Supabase.
+
+
+
+### Audit triển khai bản nháp Local / UUID chính thức (18/11/2026)
+
+- Tạo `supabase/CLOUD_LOCAL_DRAFT_IMPLEMENTATION_AUDIT.md`, commit `9f73c5b74a146031198de3c151b227b9c748f904`.
+- Xác minh hiện trạng: `emptyAsset()` và `emptyItem()` sinh UUID ngay khi mở form; Asset cấp mã tại Local trong `saveAsset()`; mã vật tư hiện do người dùng nhập tay; chưa có Cloud pull/push worker theo protocol mới.
+- Đã lập dependency map cho Asset ID: Tasks, Maintenance Plans, Logs, Checklist Templates/Versions/Results, syncQueue và state UI; Inventory ID: Movements, linkedAssetId và syncQueue.
+- Đổi ID phải chạy trong Dexie transaction bao gồm tất cả bảng liên quan, giữ nguyên ID bản ghi con/lịch sử và rollback toàn bộ nếu lỗi.
+- Không thể dùng riêng `navigator.onLine` để xác nhận dữ liệu Cloud mới nhất. Cần Auth + Cloud reachability + pull đầy đủ pagination/cursor trước khi Local cấp UUID/mã chính thức.
+- Inventory code là mã nhập tay, không phải mã thiết bị tự sinh; chỉ kiểm tra trùng khi chính thức hóa, không tự đổi quy tắc mã vật tư.
+- Chưa sửa mã nguồn hoặc Dexie schema, chưa chạy SQL/migration, chưa gọi RPC và chưa ghi dữ liệu Supabase. Bước tiếp theo là Phase A: thiết kế và kiểm thử helper chuyển ID + migration Dexie tương thích, sau đó mới triển khai draft UI.
+
+
+---
+
+# CHUẨN BỊ LÀM SẠCH BỘ DỮ LIỆU THỬ NGHIỆM – 18/11/2026
+
+- Người dùng xác nhận chọn Supabase `BAOTRI-Mini-Test`; không tác động Production.
+- Mục tiêu: làm sạch dữ liệu thử nghiệm Thiết bị + Vật tư và các bản ghi phụ thuộc; làm sạch Local trên trình duyệt/thiết bị hiện tại sau khi có bản sao lưu; sau đó tạo 30 thiết bị + 30 vật tư theo quy tắc Local-first mới.
+- Rà soát migration 002 xác nhận nhiều FK `ON DELETE RESTRICT`: assets được tasks, plans, checklist templates/versions/results, logs, inventory movements và asset_images tham chiếu; inventory_items được inventory_movements tham chiếu. Không thể xóa riêng hai bảng cha.
+- Rà soát migration 012: RPC `create_asset_with_code` vẫn là bộ cấp mã Cloud cũ, không được dùng cho luồng mới. Không sửa/xóa migration lịch sử; cần migration tiến về phía trước.
+- Rà soát schema: `inventory_items` hiện chưa có unique constraint cho `(organization_id, code)`; phải bổ sung kiểm tra và ràng buộc phù hợp trước khi cho phép chính thức hóa/sync mã vật tư.
+- Đã thêm `supabase/drafts/016_test_reset_preflight_READ_ONLY.sql`, commit `9a8a6079c4c3b5ac44d1728d0f22814ff7f731b4`. Script chỉ SELECT, liệt kê số lượng từng bảng theo tổ chức và membership của tài khoản hiện tại; không ghi/xóa dữ liệu.
+- Giới hạn thao tác: chưa có kết nối Supabase trực tiếp trong phiên làm việc; chưa chạy bất kỳ SQL nào, chưa xóa Cloud/Local, chưa tạo dữ liệu mẫu. Người dùng cần chạy script preflight trên đúng project Test và gửi kết quả để xác định organization_id + số liệu trước khi viết/chạy script reset có phạm vi chính xác.
+- Chưa bật đồng bộ; `cloudSync.ts` là luồng JSON cũ không tương thích schema chuẩn hóa và tuyệt đối không được kích hoạt lại. Cần hoàn thiện protocol Local-first, quyền ghi, unique validation, idempotency và RPC giao dịch kho trước khi sync bộ 30+30.
+
+---
+
+# ĐỊNH HƯỚNG MÔ HÌNH KHỞI TẠO DOANH NGHIỆP THEO NGÀNH VÀ QUY MÔ – 18/11/2026
+
+Người dùng thống nhất định hướng: khi nhà cung cấp cấp tài khoản Admin chính đầu tiên, doanh nghiệp phải được khởi tạo từ một hồ sơ mẫu phù hợp với loại hình và quy mô hoạt động. BAOTRI Mini không áp dụng một bộ nghiệp vụ bảo trì quá chuyên sâu cho tất cả khách hàng.
+
+## 1. Nguyên tắc kiến trúc đã thống nhất
+- Một nền tảng lõi và một bộ mã nguồn BAOTRI Mini dùng chung; không phát triển một ứng dụng riêng cho từng ngành.
+- Mỗi doanh nghiệp được khởi tạo từ một bộ hồ sơ cấu hình gồm: nhóm ngành, quy mô, mức độ quản lý bảo trì, quy ước mã, danh mục từ điển, phân hệ/menu và mẫu nghiệp vụ.
+- Ba yếu tố phân loại ban đầu: (1) nhóm khách hàng/ngành; (2) quy mô nhỏ, trung bình, lớn; (3) mức quản lý bảo trì cơ bản, tiêu chuẩn, chuyên sâu. Hệ thống có thể đề xuất mức thứ ba theo hai yếu tố đầu, Admin được xác nhận/điều chỉnh.
+- Không chỉ lấy bộ dữ liệu nhà máy rồi ẩn bớt để tạo mô hình đơn giản. Mỗi nhóm ngành cần có bộ từ điển chuyên dụng thực sự, chỉ kế thừa các thành phần lõi phù hợp.
+- Menu/phân hệ thay đổi theo cấu hình, nhưng ẩn menu không đồng nghĩa xóa dữ liệu hoặc xóa chức năng. Phải tách trạng thái kích hoạt phân hệ, quyền truy cập và dữ liệu nghiệp vụ.
+
+## 2. Cấu trúc từ điển ba tầng
+1. Từ điển lõi: các khái niệm dùng chung như thiết bị, vật tư, đơn vị tính, trạng thái, công việc, mức độ ưu tiên.
+2. Từ điển theo ngành: nhóm thiết bị, nhóm vật tư, loại công việc, mẫu checklist và nghiệp vụ đặc thù của từng ngành.
+3. Cấu hình theo quy mô/doanh nghiệp: chọn danh mục sử dụng, tùy chỉnh tên/nhóm, bổ sung danh mục riêng, cấu hình menu, mẫu công việc và quy tắc mã.
+
+Mỗi mục từ điển cần có định danh nội bộ bất biến, mã danh mục, tên hiển thị, loại danh mục, phạm vi ngành/quy mô, trạng thái và nguồn (lõi/ngành/doanh nghiệp). Phân biệt từ điển chuẩn do BAOTRI quản lý, từ điển tùy chỉnh của doanh nghiệp và dữ liệu thực tế phát sinh. Cập nhật từ điển chuẩn không được tự ý sửa/xóa dữ liệu thực tế đã tạo.
+
+## 3. Quy trình onboarding dự kiến
+1. Nhà cung cấp tạo/cấp quyền khởi tạo cho Admin chính đầu tiên.
+2. Admin khai báo thông tin doanh nghiệp, mã doanh nghiệp và số cơ sở/mô hình cơ sở.
+3. Chọn nhóm ngành.
+4. Chọn quy mô.
+5. Chọn hoặc xác nhận mức độ quản lý bảo trì.
+6. Xem trước và xác nhận quy ước mã cho thiết bị, vật tư, công việc, cơ sở và các đối tượng cần thiết.
+7. Hệ thống nạp bộ từ điển, menu/phân hệ, checklist và mẫu bảo trì tương ứng.
+8. Admin rà soát, bổ sung/bỏ chọn danh mục trước khi đưa vào sử dụng.
+
+## 4. Hồ sơ mẫu đầu tiên: Nhà nghỉ – khách sạn nhỏ
+Dùng làm mô hình mẫu đầu tiên để thiết kế và kiểm chứng:
+- Đặc điểm giả định: ít thiết bị, một cơ sở, một kho vật tư chung, đội bảo trì nhỏ hoặc kiêm nhiệm.
+- Thiết bị gợi ý: điện (tủ điện, aptomat, đèn, ổ cắm); điều hòa; nước (máy bơm, bồn nước, phao điện); bình nóng lạnh; camera/đầu ghi; quạt và thiết bị phụ trợ.
+- Vật tư gợi ý: vật tư điện, vật tư nước, vật tư điều hòa, linh kiện/phụ kiện thiết bị thông dụng và vật tư phụ. Không mặc định đưa các nhóm vòng bi công nghiệp, phớt cơ khí, gioăng công nghiệp, khí nén, dầu thủy lực vào giao diện của mô hình này.
+- Vật tư phân loại theo công dụng; một vật tư có thể được liên kết với nhiều thiết bị tương thích.
+- Nghiệp vụ: sửa chữa, kiểm tra định kỳ, bảo trì/bảo dưỡng đơn giản; checklist ngắn theo thiết bị. Kế hoạch bảo trì năm, phân công nhiều cấp và báo cáo kỹ thuật chuyên sâu không bắt buộc ở cấu hình mặc định.
+- Một kho chung: không bắt buộc khai báo vị trí lưu kho cho từng vật tư; cấu hình vị trí phải có thể tắt theo thiết lập doanh nghiệp, không phụ thuộc localStorage riêng của từng trình duyệt/máy.
+
+## 5. Mô hình menu và khả năng nâng cấp
+- Mô hình nhỏ hiển thị các phân hệ thiết yếu: Tổng quan, Thiết bị, Vật tư, Sửa chữa/Công việc, Kiểm tra định kỳ, Nhân sự và Cài đặt.
+- Mô hình lớn có thể kích hoạt thêm Checklist chuyên sâu, Kế hoạch bảo trì, Báo cáo kỹ thuật, quản lý nhiều cơ sở và phân quyền nâng cao.
+- Cho phép doanh nghiệp nâng cấp từ nhỏ lên trung bình/lớn hoặc bật thêm phân hệ mà không đổi ID, mã quản lý hiện có, xóa vật tư, ghi đè checklist đã tùy chỉnh hoặc làm mất lịch sử công việc.
+- Cần có version cho bộ mẫu; cập nhật mẫu của nhà cung cấp không tự động ghi đè tùy chỉnh/dữ liệu doanh nghiệp.
+
+## 6. Kiến trúc cấu hình dự kiến
+Các khái niệm cần thiết kế ở giai đoạn kiến trúc: Business Profiles, Size Profiles, Maintenance Profiles, Module Templates, Dictionary Templates, Checklist Templates, Maintenance Templates, Code Templates và Tenant Configuration. Đây là danh sách khái niệm định hướng, chưa phải quyết định tên bảng/schema cuối cùng.
+
+- Tách cấu hình mẫu do nhà cung cấp quản lý khỏi bản cấu hình đã được khởi tạo cho từng doanh nghiệp.
+- Giữ nguyên nguyên tắc Local-first đã thống nhất: dữ liệu nghiệp vụ thiết bị/vật tư/công việc được tạo tại Local trước; Cloud lưu trữ và đồng bộ, không tự sinh dữ liệu nghiệp vụ hoặc mã quản lý.
+- Cấu hình cần dùng nhất quán giữa PC/Mobile và được đồng bộ theo kiến trúc đã chốt; không dùng localStorage riêng lẻ làm nguồn cấu hình cấp doanh nghiệp.
+- ID nội bộ bất biến tách biệt với mã hiển thị theo quy ước doanh nghiệp; mã thiết bị/vật tư/công việc có thể cấu hình riêng. Không để thay đổi hồ sơ ngành làm thay đổi định danh bản ghi đã tồn tại.
+
+## 7. Phạm vi và bước tiếp theo
+- Đây là quyết định định hướng sản phẩm/kiến trúc; mới ghi nhận trong TIENDO, chưa sửa mã nguồn, chưa thay đổi database/schema, chưa tạo migration/RPC và chưa chạy SQL.
+- Chưa xây dựng đồng loạt tất cả bộ ngành. Thứ tự dự kiến: Nhà nghỉ – khách sạn nhỏ (mẫu đầu tiên), sau đó khách sạn trung bình/lớn, tòa nhà – văn phòng, nhà máy – xưởng sản xuất và các ngành khác.
+- Bước tiếp theo khi tiếp tục: thiết kế chi tiết hồ sơ mẫu Nhà nghỉ – khách sạn nhỏ (danh mục thiết bị, vật tư, công việc, checklist, menu, quy tắc mã và cấu hình một kho chung); rà soát với schema/code hiện tại rồi mới lập kế hoạch triển khai.
+- Theo quy trình dự án, trước mỗi đợt code phải cập nhật mục tiêu, phạm vi, file/bảng dự kiến tác động, rủi ro và cách kiểm thử vào chính file TIENDO. Chỉ sửa code khi người dùng yêu cầu bắt đầu triển khai.
+
+
+---
+
+# THIẾT KẾ THƯ VIỆN MÔ HÌNH MẪU VÀ CẤU HÌNH DOANH NGHIỆP – 18/11/2026
+
+- Đã tạo tài liệu kiến trúc logic `docs/BAOTRI_TEMPLATE_MODEL_DATA_ARCHITECTURE.md`, commit `c4b858a119d500027fc6c38da140710356a74dd6`.
+- Chốt định hướng: một nền tảng lõi, nhiều mô hình doanh nghiệp, nhiều bộ từ điển chuyên dụng.
+- Tách ba lớp: thư viện mẫu chuẩn do BAOTRI quản lý; bản cấu hình sao chép/tùy chỉnh của doanh nghiệp; dữ liệu nghiệp vụ thực tế. Mẫu không tự tạo Asset, InventoryItem, Task, Log, Movement hoặc kết quả Checklist.
+- Thiết kế các trục ngành, quy mô, mức quản lý; các gói module/menu, từ điển thiết bị/vật tư/công việc, Checklist, bảo trì, cơ cấu cơ sở/kho, code profile và gợi ý permission.
+- Thiết kế version release, provenance nguồn mẫu, tenant config version, preview cập nhật, conflict và nguyên tắc không ghi đè tùy chỉnh/dữ liệu thực tế.
+- Mô hình `HOTEL_SMALL_BASIC` được đưa vào làm ví dụ kiểm chứng; chưa được cài vào dữ liệu doanh nghiệp.
+- Giữ nguyên nguyên tắc Local-first và quyết định Local/Cloud mới nhất: Cloud không tự sinh dữ liệu nghiệp vụ hoặc mã quản lý; cấu hình doanh nghiệp phải nhất quán PC/Mobile.
+- **Chỉ là tài liệu thiết kế. Chưa sửa code, chưa tạo/chạy migration, chưa ghi dữ liệu Supabase Test/Production.**
+- **Thứ tự công việc:** tạm dừng triển khai thư viện mẫu; quay lại hoàn thiện và kiểm thử BAOTRI Mini hiện tại. Chỉ triển khai template engine sau khi app lõi ổn định và có kế hoạch riêng.
+
+
+### Bổ sung hợp đồng dữ liệu Template Release – 18/11/2026
+
+- Đã tạo JSON Schema `docs/schemas/baotri-template-release.schema.json`, commit `eb4a58260550f9b2618134bb3ec15b8fb54fbb9e`.
+- Hợp đồng mô tả manifest/version/compatibility; hồ sơ ngành-quy mô-mức quản lý; module/menu; từ điển thiết bị/vật tư/đơn vị/công việc/trạng thái/ưu tiên; checklist; mẫu bảo trì; cơ cấu cơ sở/kho; code profile; gợi ý vai trò/quyền; quy tắc an toàn.
+- JSON đã được parse kiểm tra cú pháp thành công khi tạo file. Chưa chạy JSON Schema validator chuyên dụng và chưa có package mô hình thực tế nào được phát hành.
+- Schema chỉ là hợp đồng dữ liệu cho thư viện mẫu, không phải schema Dexie/Supabase và không được dùng để tạo dữ liệu nghiệp vụ trực tiếp.
+- Chưa sửa code, chưa tạo/chạy migration, chưa ghi dữ liệu Test/Production.
+
+
+# KẾ HOẠCH PHASE A – NỀN TẢNG ĐỊNH DANH LOCAL – 18/11/2026
+
+## Mục tiêu
+Chuẩn bị nền tảng dữ liệu cho bản nháp Local và chuyển ID tạm sang UUID chính thức trong tương lai, nhưng không bật luồng tạo draft/online finalization khi Cloud pull/push worker chưa hoàn thiện.
+
+## Phạm vi dự kiến
+- `src/db.ts`: bổ sung metadata định danh tùy chọn cho Asset/InventoryItem; Dexie v7 chỉ thêm index/field metadata và đánh dấu dữ liệu đang có là legacy, tuyệt đối không đổi ID, mã, FK hoặc xóa dữ liệu.
+- `src/lib/localIdentity.ts`: helper thuần để nhận diện ID draft/UUID và lập kế hoạch rekey Asset/Inventory cùng toàn bộ FK liên quan.
+- `src/App.tsx`: với bản ghi mới theo luồng hiện tại, lưu snapshot người thêm (tên, fallback email, Auth user ID) và trạng thái legacy; không đổi cách cấp mã, không thay hành vi form, không tạo draft trong đợt này.
+- `tests/localIdentity.test.mjs` và `package.json`: kiểm thử helper rekey, bao gồm toàn bộ quan hệ Asset/Inventory, queue và tình huống trùng ID/ID không hợp lệ.
+
+## Không thuộc phạm vi
+- Không bật Cloud sync worker, không gọi RPC, không thay đổi Supabase schema/migration.
+- Không thay đổi quy tắc tạo Asset/Inventory hiện tại, không thay mã thiết bị hoặc mã vật tư.
+- Không thay đổi QR, ảnh, backup format hoặc dữ liệu đã tồn tại ngoài migration metadata an toàn.
+- Không triển khai session registry PC/Mobile trong đợt này.
+
+## Rủi ro và kiểm soát
+- Rekey sai có thể làm mất liên kết lịch sử; helper phải bao phủ tasks, plans, logs, checklist templates/versions/results, movements.linkedAssetId và syncQueue của bản ghi cha.
+- Giao dịch rekey thật phải chạy trong một Dexie transaction trên tất cả bảng liên quan; helper thuần được unit test trước. Không cho phép ID draft đi vào mapper Cloud.
+- Dữ liệu hiện có được đánh dấu legacy, không chuyển thành draft và không đổi ID/mã.
+- Nếu không thể chứng minh cập nhật đầy đủ quan hệ hoặc rollback, không tích hợp helper vào UI.
+
+## Cách kiểm thử
+- Chạy `npm run test:local-identity` và `npm run build`.
+- Kiểm tra test bao phủ FK và queue; kiểm tra migration v6→v7 giữ nguyên số lượng, ID, code và timestamps.
+- Kiểm tra backup/restore tương thích dữ liệu cũ và mới nếu có thay đổi payload.
+- Sau khi build PASS mới yêu cầu người dùng pull và kiểm tra thao tác thực tế; không đánh dấu hoàn tất chỉ từ kiểm tra tĩnh.
+
+**Trạng thái:** kế hoạch trước triển khai; chưa sửa code hoặc Dexie schema tại thời điểm ghi mục này.
+
+
+# TRIỂN KHAI NỀN TẢNG ĐỊNH DANH LOCAL – PHASE A – 18/11/2026
+
+## Đã cập nhật trên main
+- `src/db.ts`: Dexie version 7 bổ sung `identityStatus` cho Asset/InventoryItem; migration đánh dấu bản ghi hiện có là `legacy`, không đổi ID, mã, foreign key, số lượng, timestamps hoặc lịch sử. Bổ sung helper rekey Asset và Inventory chạy trong một Dexie transaction, cập nhật các FK và queue liên quan.
+- `src/lib/localIdentity.ts`: tạo namespace ID `draft:`, nhận diện UUID/ID draft, lập kế hoạch chuyển Asset và Inventory sang UUID chính thức; cập nhật Tasks, Plans, Logs, Checklist Templates/Versions/Results, Movements liên quan và queue; chặn collision hoặc mutation đang processing.
+- `src/App.tsx`: bản ghi Asset/Inventory mới theo luồng hiện tại lưu snapshot người thêm (tên, fallback email, Auth user ID) và trạng thái `legacy`; chi tiết thiết bị/vật tư hiển thị Người thêm. Backup tăng version 3; restore backup cũ tự bổ sung `identityStatus=legacy` mà không đổi ID/mã.
+- `src/lib/syncMapping.ts`: từ chối ID draft/foreign key draft; từ chối mapping Asset/Inventory có creator snapshot cho đến khi schema Cloud có trường tương ứng, tránh âm thầm bỏ dữ liệu.
+- Thêm `tests/localIdentity.test.mjs`, bổ sung test chặn draft/creator metadata trong `tests/syncMapping.test.mjs`; workflow CI chạy cả hai bộ test.
+
+## Các commit chính
+- Thiết kế helper: `e1afe958014eabe05f63a5afb060482601b1c194`.
+- Dexie v7 + transaction rekey: `8fabd84b3f13f69fa7d138ebde5acd26d14e4dd0`.
+- Lưu metadata người tạo: `6a5b2d245f7a3e294920908d39359ec3d74522ee`.
+- Chặn draft trong Cloud mapping: `6c835ebf698c5353e8a90539f05dd1b299cb427a` và `5eee32b42898ad88a9ae2ac0f61c482c36bf4b18`.
+- Unit tests + CI: `1eea3f0a3d2381e639d062463575cad50d0876cb`, `a2c2a8d810965eb41d70b78f9d9787a0b6a03995`, `698cc316b5a9ab681dbee66e009f289d9959514d`, `2d25a22f90cd912fb3c904bde79beabcee6b327f`, `e62f33c929153f7e8a95c38f7867fb7548b7c2bc`, `c61ffe531468053b6632f6e2558c9fa31853d9a7`.
+- Hiển thị Người thêm: `7c19a48f6f00f56ec8ddb73fcf3bb5026b5ec41c`.
+
+## Xác minh tự động
+- GitHub Actions run #270, ID `44316658162`, commit `7c19a48f6f00f56ec8ddb73fcf3bb5026b5ec41c`: test Cloud mapping **success**, test Local identity **success**, build Vite **success**, deploy GitHub Pages **success**.
+- Link: https://github.com/Vodanhhp/DuAn_BaoTRi/actions/runs/44316658162
+
+## Giới hạn chưa triển khai
+- Luồng tạo draft offline chưa bật; `emptyAsset()`/`emptyItem()` và cách cấp mã hiện tại chưa thay đổi. Bản ghi mới trong giai đoạn chuyển tiếp vẫn ở trạng thái `legacy`.
+- Helper rekey đã có transaction thực tế; unit test hiện kiểm tra kế hoạch chuyển đổi thuần, chưa có integration test IndexedDB/browser để chứng minh rollback transaction trên runtime.
+- Chưa có Cloud pull/push worker; chưa xác minh Cloud mới nhất trước khi chính thức hóa; không gọi RPC và không gửi dữ liệu nghiệp vụ.
+- Schema Supabase hiện chưa có `created_by_label`/`created_by_user_id`; mapper chủ động chặn các bản ghi có creator metadata, không được bật worker trước khi có migration/contract tương ứng.
+- Chưa triển khai session registry một PC + một Mobile.
+- Dexie v7 sẽ chạy migration khi người dùng mở phiên bản mới; cần kiểm tra trên trình duyệt hiện có dữ liệu: số lượng bản ghi, ID, mã, FK, ảnh và lịch sử phải giữ nguyên. Cần thử thêm mới Asset/Inventory, xem Người thêm và backup/restore bản cũ.
+
+**Kết luận:** Phase A mới hoàn thành nền tảng metadata và helper rekey; chưa bật draft Local hoặc Cloud sync. Tiếp tục theo thứ tự an toàn: kiểm thử migration/runtime trên dữ liệu Local hiện có, sau đó mới thiết kế Phase B pull/push và online finalization. Không thao tác Supabase Test/Production.
+
+
+# KHÉP LẠI THIẾT KẾ THƯ VIỆN MÔ HÌNH MẪU – 18/11/2026
+
+## Kết quả hoàn tất tạm thời
+- JSON Schema Draft 2020-12: `docs/schemas/baotri-template-release.schema.json`; đã sửa pattern Semantic Version và pattern thời gian RFC3339 để validator hoạt động ổn định trong CI.
+- Gói mẫu đầu tiên: `templates/HOTEL_SMALL_BASIC/1.0.0.json` – Nhà nghỉ/Khách sạn nhỏ, một cơ sở, một kho chung, vị trí kho tắt, vật tư cơ bản, bảo trì đơn giản; PCCC và thang máy là tùy chọn, không bật mặc định.
+- Semantic validator chỉ đọc: `scripts/validate-template-release.mjs`; kiểm tra mã duy nhất, liên kết nhóm/loại thiết bị, nhóm/vật tư/đơn vị, Checklist, bảo trì, module/menu, safety rule và code profile. Không ghi dữ liệu.
+- Bộ test: `tests/templateRelease.test.mjs` – kiểm tra gói hợp lệ và các lỗi tham chiếu/định danh mẫu.
+- CI đã bổ sung ba bước: kiểm tra JSON Schema bằng Ajv, test liên kết, chạy validator trên gói mẫu.
+- Tài liệu kiến trúc cập nhật tại `docs/BAOTRI_TEMPLATE_MODEL_DATA_ARCHITECTURE.md`.
+
+## Xác minh
+- GitHub Actions run #273, ID `44318442365`, commit `32772a345b4dd4631c545ba4e58206bda29ee405`: test Cloud mapping PASS; test Local identity PASS; JSON Schema PASS; template reference tests PASS; validator PASS; build Vite PASS; deploy GitHub Pages PASS.
+- Link: https://github.com/Vodanhhp/DuAn_BaoTRi/actions/runs/44318442365
+
+## Phạm vi đã đóng
+- Thư viện mô hình mẫu được dừng ở tầng thiết kế + JSON Schema + gói JSON + validator/test.
+- Chưa tích hợp template vào app, chưa tạo onboarding nạp mô hình, chưa tạo cấu hình doanh nghiệp thật.
+- Không tạo/chạy migration; không chạy SQL/RPC; không ghi dữ liệu Supabase Test/Production.
+- Khi cần thiết kế ngành khác, tạo gói JSON theo schema và đối chiếu gói `HOTEL_SMALL_BASIC`; không tự động nạp vào app.
+
+**Quyết định tiếp theo:** Tạm đóng nhánh công việc thiết kế thư viện mô hình mẫu. Quay lại BAOTRI Mini hiện tại. Việc tiếp theo là trao đổi và rà soát kiến trúc đồng bộ Local–Cloud trước khi sửa code đồng bộ; chưa bật worker hoặc thay đổi Supabase cho đến khi chốt thiết kế.
+
+
+## QUYẾT ĐỊNH MỚI – KHÓA CHỈNH SỬA THIẾT BỊ GIỮA CÁC NỀN TẢNG (18/11/2026)
+
+### 1. Phạm vi
+- Đợt thiết kế/triển khai tiếp theo tập trung vào **hồ sơ thiết bị** và cơ chế khóa chỉnh sửa giữa PC/Mobile.
+- Tạm thời không mở rộng xử lý xung đột vật tư, Checklist và bảo dưỡng trong đợt này. Các nghiệp vụ Checklist/bảo dưỡng vẫn được phép thực hiện Local theo quy tắc đã thống nhất; lịch sử liên quan thiết bị đang khóa chưa được đẩy lên Cloud cho đến khi khóa được giải phóng.
+- Không coi màn hình Cloud hiện có là luồng đồng bộ Local–Cloud hoàn chỉnh. Hiện ứng dụng vẫn có workspace Local và màn hình quản lý thiết bị Cloud riêng; chưa có sync worker tổng thể.
+
+### 2. Quy tắc khóa thiết bị đã thống nhất
+1. Khóa theo từng thiết bị, không khóa toàn bộ hệ thống.
+2. Khi một nền tảng bắt đầu chỉnh sửa hồ sơ thiết bị, nền tảng đó phải xin khóa từ Cloud trước. Chỉ khi Cloud xác nhận cấp khóa mới được phép chỉnh sửa/lưu.
+3. Trong thời gian khóa, các nền tảng khác hiển thị thiết bị màu đỏ, kèm tên/người dùng hoặc nền tảng đang giữ khóa; chỉ được xem hồ sơ, không được thêm/sửa/xóa thông tin thiết bị đó.
+4. Checklist, bảo dưỡng và công việc khác vẫn được thực hiện trên Local của nền tảng hiện trường. Nếu thiết bị đang bị khóa, lịch sử/các dữ liệu liên quan thiết bị đó phải chờ nhả khóa mới được đồng bộ lên Cloud.
+5. Khi chủ khóa hoàn tất hoặc hủy chỉnh sửa, chủ khóa giải phóng khóa; thiết bị trở lại trạng thái bình thường và các nền tảng có thể nhận dữ liệu thiết bị mới nhất. Sau đó mới đồng bộ các lịch sử/công việc đang chờ của thiết bị.
+6. Khóa Cloud có thời hạn 2 phút tính từ lần gia hạn/heartbeat hợp lệ cuối cùng. Nếu Cloud không nhận được heartbeat trong 2 phút, Cloud tự hết hạn khóa để nền tảng khác có thể xin khóa.
+7. Nếu PC mất Internet trong lúc đang chỉnh sửa: PC lập tức chuyển phiên chỉnh sửa sang trạng thái khóa cục bộ do mất kết nối, không cho tiếp tục sửa/lưu. Sau 2 phút không nhận heartbeat, Cloud giải phóng khóa cho nền tảng khác. Trên PC cũ, thiết bị vẫn bị khóa cho đến khi PC kết nối lại, đồng bộ trạng thái và kiểm tra quyền khóa mới; PC cũ không được tự khôi phục quyền chỉnh sửa.
+8. Nếu không xác nhận được quyền khóa từ Cloud (mất Internet, Cloud lỗi hoặc timeout), nền tảng không được chỉnh sửa hồ sơ thiết bị. Vẫn cho phép xem dữ liệu Local hiện có và tiếp tục nghiệp vụ Checklist/bảo dưỡng Local theo phạm vi được phép.
+9. Khi PC kết nối lại sau khi đã mất quyền khóa, mọi thao tác lưu cũ phải bị từ chối. Không được ghi đè dữ liệu mà nền tảng khác đã cập nhật.
+
+### 3. Yêu cầu kỹ thuật bắt buộc khi triển khai
+- Cloud là nguồn có thẩm quyền duy nhất về quyền khóa dùng chung; thời gian hết hạn phải dựa trên thời gian máy chủ, không dựa vào đồng hồ client.
+- Khóa phải có token/lease riêng cho từng lần cấp. Mọi heartbeat, release và cập nhật hồ sơ phải kiểm tra đúng token hiện hành; token cũ không có quyền ghi.
+- Cấp khóa phải atomic để hai nền tảng không thể cùng nhận khóa cho một thiết bị.
+- Client giữ trạng thái khóa cục bộ khi mất kết nối; không tự mở khóa chỉ vì Cloud đã hết hạn lease.
+- Khi lưu hồ sơ thiết bị, máy chủ phải kiểm tra lease còn hiệu lực và token đúng trong cùng transaction với cập nhật dữ liệu. Chỉ kiểm tra giao diện hoặc bảng khóa ở client là không đủ.
+- Khi thiết bị đang khóa, hàng đợi đồng bộ của các bản ghi liên quan thiết bị phải được giữ lại; không xóa/đánh dấu hoàn tất trước khi Cloud xác nhận.
+- Mỗi bản ghi lịch sử cần idempotency để retry sau khi nhả khóa mà không sinh bản sao.
+- Giao diện phải phân biệt ít nhất: đang được nền tảng khác khóa; chính máy đang giữ khóa; chính máy mất kết nối/không còn quyền; thiết bị không xác định được trạng thái khóa.
+
+### 4. Trình tự triển khai an toàn
+1. Rà soát toàn bộ luồng tạo/sửa/lưu kho/khôi phục/xóa thiết bị và quyền SQL hiện tại trên nhánh main.
+2. Thiết kế bảng lease và các RPC cấp khóa, gia hạn, giải phóng; dùng server time và token.
+3. Thiết kế RPC cập nhật hồ sơ thiết bị có kiểm tra lease trong cùng transaction; không để đường UPDATE trực tiếp bỏ qua khóa.
+4. Soạn migration SQL và SQL test thành file để người dùng review/chạy thủ công trên BAOTRI-Mini-Test. Assistant không tự chạy SQL hoặc thay đổi Supabase.
+5. Tích hợp UI khóa đỏ/xanh, tên người giữ khóa, heartbeat, xử lý mất mạng và chặn lưu trên client.
+6. Kiểm thử nhiều phiên PC/Mobile, hết hạn 2 phút, mất mạng, token cũ, hai máy xin khóa đồng thời và máy cũ kết nối lại.
+7. Sau khi khóa hồ sơ thiết bị được kiểm chứng, mới nối luồng đồng bộ hồ sơ và lịch sử công việc theo thứ tự: cập nhật thiết bị → xác nhận Cloud → đồng bộ lịch sử đang chờ.
+8. Chưa bật đồng bộ đại trà cho vật tư, Checklist, bảo dưỡng hoặc các bảng khác trong đợt khóa thiết bị này.
+
+### 5. Ranh giới an toàn
+- Không sửa dữ liệu Local hiện có hoặc xóa IndexedDB.
+- Không tự chạy migration/SQL, không thay đổi dữ liệu Supabase Test/Production.
+- Không bật sync worker tổng thể hoặc tự động import dữ liệu.
+- Không sửa các phân hệ vật tư, Checklist, bảo dưỡng ngoài phần cần thiết để giữ lịch sử chờ đồng bộ theo thiết bị.
+- Mọi thay đổi code tiếp tục thực hiện trực tiếp trên main; cập nhật tài liệu tiến độ trước mỗi đợt sửa code.
+
+
+### TRIỂN KHAI ĐỢT 1 – NỀN TẢNG KHÓA THIẾT BỊ PHÍA CLOUD (18/11/2026)
+
+Đã tạo trên `main` hai file để chuẩn bị kiểm thử cơ chế khóa theo từng thiết bị:
+
+- `supabase/migrations/20261118000200_asset_edit_lock_lease.sql`
+  - Tạo bảng `asset_edit_locks`, khóa duy nhất theo organization + asset.
+  - RPC cấp khóa nguyên tử, gia hạn heartbeat, giải phóng khóa và đọc danh sách khóa đang hiệu lực.
+  - Lease hết hạn sau 2 phút theo đồng hồ máy chủ.
+  - Token bí mật chỉ trả cho nền tảng giữ khóa; danh sách trạng thái không tiết lộ token.
+  - RPC cập nhật hồ sơ và lưu kho/khôi phục yêu cầu đúng token còn hiệu lực.
+  - Thu hồi quyền UPDATE trực tiếp bảng assets của authenticated để không thể bỏ qua khóa bằng PostgREST.
+- `supabase/tests/20261118000200_asset_edit_lock_lease_test.sql`
+  - Kiểm tra Admin lấy khóa, Technician không chiếm được khóa đang hiệu lực, heartbeat, token sai, release, chuyển khóa, hết hạn lease và chặn UPDATE trực tiếp.
+  - Script dùng transaction và kết thúc bằng ROLLBACK.
+
+**Trạng thái:** mới tạo và fetch lại xác minh hai file trên GitHub. Chưa chạy SQL, chưa áp dụng Migration 016 lên BAOTRI-Mini-Test hoặc Production; chưa có kết quả PASS từ PostgreSQL.
+
+**Chưa tích hợp giao diện hoặc luồng Local–Cloud.** Mã `src/lib/assetsCloud.ts` hiện vẫn cập nhật trực tiếp bảng `assets` trong các hàm `updateCloudAsset` và `setCloudAssetArchived`; sau khi Migration 016 được áp dụng, các đường ghi này phải được thay bằng RPC có token. Chưa sửa chúng trong đợt này để tránh làm hỏng màn hình Cloud trước khi người dùng chạy migration và xác nhận SQL test.
+
+**Lưu ý kiến trúc:** CloudAssetsPanel hiện là màn hình thao tác dữ liệu Cloud riêng, còn workspace nghiệp vụ vẫn dùng IndexedDB Local. Cần nối cơ chế khóa vào đúng luồng Local-first và đồng bộ sau khi kiểm chứng nền tảng lease; không được coi việc khóa được tạo trên Cloud là đã hoàn thành đồng bộ PC/Mobile.
+
+
+### KẾ HOẠCH ĐỢT 2 – TÍCH HỢP LEASE VÀO MÀN HÌNH THIẾT BỊ CLOUD (18/11/2026)
+
+Trước khi nối Local-first, xử lý riêng màn hình Cloud hiện có để không còn đường ghi hồ sơ bỏ qua lease:
+
+- Tạo client service gọi RPC acquire/heartbeat/release/list lock và các RPC update/archive có token.
+- Mỗi browser installation dùng device ID ổn định hiện có trong IndexedDB helper.
+- Khi mở form sửa hoặc thao tác lưu kho/khôi phục, phải lấy lease thành công trước.
+- Hiển thị trạng thái thiết bị bị khóa cùng nhãn người/nền tảng đang giữ; không cho thao tác khi máy khác giữ lease hoặc trạng thái không xác định.
+- Heartbeat định kỳ; mất mạng/heartbeat lỗi thì form chuyển sang read-only/khóa cục bộ. Không tự lấy lại quyền khi mạng trở lại; người dùng phải kiểm tra và xin lease mới.
+- Tải lại danh sách lease định kỳ để các màn hình khác cập nhật trạng thái. Lease hết hạn do server time sau 2 phút nếu không có heartbeat.
+- Hủy/lưu thành công thì release đúng token. Nếu release thất bại do mất mạng, lease tự hết hạn ở Cloud.
+
+**Ranh giới:** Đây mới là bảo vệ thao tác trong CloudAssetsPanel. Chưa áp dụng khóa vào form Local `saveAsset`, vì Local assets hiện chưa có pipeline đồng bộ hồ sơ đầy đủ và màn hình Local có thể chứa thiết bị chưa được import/mapping lên Cloud. Không được giả định Local ID luôn tồn tại trên Cloud. Sau khi Cloud lease được SQL-test và giao diện xác nhận, thiết kế tiếp mapping Local ID ↔ Cloud ID và đồng bộ Local-first trước khi khóa toàn bộ workspace.
+
+**Trước khi áp dụng Migration 016:** phải kiểm tra lại các RPC create/import hiện có và mọi đường ghi bảng assets; các đường update/archive hiện có sẽ chuyển qua RPC lease. Không được chạy migration chỉ vì client code đã được tạo.
+
+
+### TRIỂN KHAI ĐỢT 2 – CLIENT LEASE CHO MÀN HÌNH THIẾT BỊ CLOUD (18/11/2026)
+
+Đã cập nhật trên `main`:
+
+- `src/lib/assetEditLocks.ts`
+  - Client gọi RPC đọc danh sách lease, xin khóa, heartbeat, release.
+  - Cập nhật hồ sơ và lưu kho/khôi phục đều gọi RPC có token.
+  - Chuyển dữ liệu row trả về từ PostgreSQL sang mô hình `Asset` Local.
+- `src/db.ts`: export helper `getDeviceId()` hiện có; không thay đổi cách tạo/lưu device ID.
+- `src/CloudAssetsPanel.tsx`
+  - Xin lease trước khi mở form sửa và trước thao tác lưu kho/khôi phục.
+  - Hiển thị người/nền tảng giữ khóa trên danh sách Cloud.
+  - Poll trạng thái khóa mỗi 5 giây; heartbeat mỗi 30 giây.
+  - Khi mất Internet hoặc heartbeat lỗi: form chuyển read-only, không cho lưu; không tự lấy lại quyền sau khi kết nối lại.
+  - Hủy/lưu thì release đúng token; nếu không release được, Cloud tự hết hạn lease sau 2 phút.
+  - Nếu không đọc được trạng thái khóa từ Cloud, mặc định chặn thao tác thay đổi.
+- `src/lib/assetsCloud.ts`: đã bỏ các đường UPDATE trực tiếp hồ sơ/lưu kho/khôi phục; chỉ còn đọc danh sách và các RPC tạo/import/cấu hình hiện có.
+
+**CI:** GitHub Actions run #297, run ID `44324086360`, commit `0be9c22166d12481931d864b6a3f12cd4cb3f16e` – completed/success. Các test mapping, local identity, template schema/reference/semantic validator và Vite build đều PASS. Run #296 trước đó thất bại vì một lần chỉnh sửa đã xóa nhầm hàm đọc danh sách Cloud; hàm đã được khôi phục và run #297 xác nhận build PASS.
+
+**Chưa được xác nhận:**
+- Chưa chạy SQL Migration 016 hoặc SQL test trên Supabase.
+- Chưa kiểm thử runtime lease với hai trình duyệt/PC-Mobile.
+- Chưa kiểm thử heartbeat, mất mạng và takeover thực tế.
+- Chưa tích hợp khóa vào form Local `saveAsset` hoặc pipeline Local–Cloud. Workspace Local vẫn lưu IndexedDB độc lập; không được coi đợt này là đã giải quyết xung đột thiết bị trên toàn ứng dụng.
+- Khi Migration 016 chưa được áp dụng, màn hình Cloud vẫn đọc danh sách, nhưng các thao tác sửa/lưu kho/khôi phục bị chặn vì không thể xác nhận lease. Đây là fail-closed có chủ đích.
+
+**Bước tiếp theo:** rà soát SQL Migration 016 và SQL test để chuẩn bị cho người dùng tự chạy trên BAOTRI-Mini-Test; sau khi SQL test PASS mới kiểm thử CloudAssetsPanel. Tiếp đó thiết kế mapping thiết bị Local ↔ Cloud và đưa lease vào Local-first; không bật đồng bộ tổng thể.
+
+
+### RÀ SOÁT TƯƠNG THÍCH MIGRATION 016 VỚI BỘ TEST BẢO MẬT CŨ (18/11/2026)
+
+Phát hiện trước khi cho chạy Migration 016: migration thu hồi quyền UPDATE trực tiếp bảng `assets` của authenticated. Vì vậy ba test bảo mật cũ 008, 010, 011 đang chạy câu UPDATE trực tiếp để chứng minh RLS trả 0 dòng; sau Migration 016, các câu lệnh này có thể ném lỗi thiếu SQL privilege và làm test dừng giữa chừng.
+
+Quyết định:
+- Sửa ba test 008/010/011 theo hướng tương thích cả trước và sau Migration 016: chấp nhận hai kết quả an toàn tương đương là UPDATE bị SQL privilege chặn hoặc RLS trả 0 dòng; không cho phép có dòng bị thay đổi.
+- Test 016 riêng sẽ kiểm tra đường update mới: chỉ RPC `update_asset_with_lock` với lease/token đúng mới được ghi.
+- Bổ sung test token cũ không thể ghi sau khi lease hết hạn và nền tảng khác đã nhận khóa; bổ sung kiểm tra archive/restore qua lease.
+- Không thay đổi dữ liệu Test/Production; chỉ cập nhật file test SQL.
+
+
+### HOÀN TẤT RÀ SOÁT TƯƠNG THÍCH BỘ TEST SAU KHI THU HỒI UPDATE TRỰC TIẾP (18/11/2026)
+
+Đã cập nhật các test SQL cũ để không bị hỏng khi Migration 016 thu hồi UPDATE trực tiếp trên `assets`:
+
+- `supabase/tests/20261117000800_authenticated_asset_crud_rls_test.sql`
+- `supabase/tests/20261117001000_suspended_membership_tenant_isolation_test.sql`
+- `supabase/tests/20261117001100_unauthenticated_no_membership_permission_revoked_test.sql`
+
+Các test chấp nhận đúng hai kết quả an toàn: RLS trả 0 dòng (trước Migration 016) hoặc SQL privilege chặn UPDATE (sau Migration 016). Không chấp nhận có thay đổi trái quyền. Test 008 không còn coi UPDATE trực tiếp là đường ghi hợp lệ sau Migration 016; test 016 riêng xác nhận chỉ RPC với token lease hợp lệ được cập nhật.
+
+Bổ sung vào test 016:
+- Archive và restore phải có lease hợp lệ.
+- Token Mobile cũ không được ghi sau khi lease hết hạn và Admin/PC đã tiếp quản.
+- Tiếp tục kiểm tra heartbeat của token hết hạn, thay lease và chặn direct UPDATE.
+
+**CI:** GitHub Actions run #304, ID `44324948772`, commit `a9256b9aaa03347ccb8bc28589903efaf92f90a8` – completed/success; Vite build PASS. Đây chỉ là TypeScript/build và các test tự động đang có trong workflow; các file SQL vẫn chưa được thực thi trên PostgreSQL/Supabase.
+
+**Trạng thái SQL Migration 016:** đã rà soát schema gốc, xác nhận FK kép `(organization_id, asset_id)` tham chiếu unique `assets(organization_id, id)`, các cột hồ sơ và trạng thái phù hợp. Chưa áp dụng migration và chưa chạy bất kỳ SQL test nào trên BAOTRI-Mini-Test.
+
+
+### SỬA LỖI TEST 016 – MÔ PHỎNG LEASE HẾT HẠN (18/11/2026)
+
+Người dùng chạy Test SQL 016 và gặp lỗi CHECK constraint `asset_edit_locks_expiry_order`: test chỉ đẩy `expires_at` về quá khứ, trong khi `acquired_at` vẫn ở thời điểm hiện tại. Điều này tạo bản ghi sai thứ tự thời gian và bị PostgreSQL từ chối.
+
+Đã sửa file `supabase/tests/20261118000200_asset_edit_lock_lease_test.sql` trên `main`, commit `d95c8126373808834424d74b13f8dd016fb2a7d6`:
+- `acquired_at = clock_timestamp() - interval '2 seconds'`
+- `expires_at = clock_timestamp() - interval '1 second'`
+- `updated_at = clock_timestamp()`
+
+Giữ nguyên CHECK constraint của bảng; không sửa Migration 016 và không nới lỏng bảo vệ thứ tự timestamp. Đã fetch lại file trên GitHub xác nhận đúng nội dung. CI run #306 được tạo cho commit sửa test và đang queued tại thời điểm ghi nhận.
+
+**Yêu cầu:** chạy lại riêng Test SQL 016 bằng phiên bản mới trên `main`. Migration 016 không cần chạy lại nếu lần áp dụng trước đã thành công.
+
+
+### XÁC NHẬN KIỂM THỬ SQL SAU MIGRATION 016 (18/11/2026)
+
+Người dùng đã tự chạy trên môi trường BAOTRI-Mini-Test và xác nhận PASS toàn bộ các bài kiểm thử:
+- Test SQL 008 – CRUD/RLS thiết bị.
+- Test SQL 010 – thành viên bị đình chỉ và cô lập tenant.
+- Test SQL 011 – truy cập unauthenticated, không có membership và thu hồi quyền.
+- Test SQL 016 – lease khóa chỉnh sửa thiết bị, heartbeat, release, hết hạn/chuyển khóa và cập nhật qua token.
+
+Các script kiểm thử sử dụng transaction/ROLLBACK theo nội dung file. Kết quả PASS là do người dùng trực tiếp xác nhận; assistant không kết nối hoặc thực thi SQL trên Supabase.
+
+**Bước tiếp theo – kiểm thử runtime riêng CloudAssetsPanel:**
+1. Dùng hai phiên đăng nhập khác nhau trên hai trình duyệt/thiết bị (PC và Mobile), cùng tổ chức Test.
+2. Trên PC, mở Cloud quản lý thiết bị và bắt đầu sửa thiết bị A; xác nhận form chỉ mở sau khi lấy lease.
+3. Trên Mobile, tải/đợi cập nhật danh sách; xác nhận thiết bị A hiển thị người/nền tảng đang giữ khóa và không cho sửa/lưu kho/khôi phục.
+4. Trên PC, hủy chỉnh sửa; xác nhận Mobile thấy khóa được giải phóng và có thể xin khóa.
+5. Lặp lại với PC lưu thay đổi; xác nhận Mobile nhận dữ liệu mới sau khi tải lại.
+6. Kiểm tra mất mạng khi đang giữ khóa: phiên giữ khóa phải khóa cục bộ và không lưu; sau khi lease hết hạn, thiết bị khác có thể xin khóa; phiên cũ không được tự khôi phục quyền khi có mạng lại.
+7. Kiểm tra lease tự hết hạn khi ngừng heartbeat đủ 2 phút. Không rút ngắn thời gian trong production.
+
+**Giới hạn còn lại:** kiểm thử runtime hai phiên chưa được người dùng xác nhận. Cơ chế lease hiện mới được tích hợp trong CloudAssetsPanel; form Local-first trong App.tsx và pipeline Local–Cloud chưa được nối. Không tuyên bố khóa liên nền tảng toàn ứng dụng đã hoàn tất. Chưa bật sync worker, chưa đồng bộ hàng đợi lịch sử, chưa thay đổi Migration hoặc dữ liệu Supabase.
+
+
+### RÀ SOÁT LUỒNG LOCAL-FIRST TRƯỚC KHI TÍCH HỢP KHÓA (18/11/2026)
+
+Đã đọc lại src/App.tsx, src/db.ts, src/lib/assetEditLocks.ts và src/lib/assetsCloud.ts trên main. Chưa sửa code ở bước rà soát này.
+
+#### 1. Các điểm ghi hồ sơ thiết bị Local hiện tại
+- saveAsset: tạo mới/sửa hồ sơ trong IndexedDB; trong cùng transaction ghi assets và syncQueue.
+- archiveAsset, restoreAsset, changeAssetStatus: ghi trực tiếp Local qua putAndQueue.
+- Checklist, task, log và maintenance plan tiếp tục lưu Local theo các luồng riêng.
+- syncQueue hiện đã có khóa duy nhất theo (tableName, recordId), mutationId và trạng thái retry; tuy nhiên chưa có cơ chế trì hoãn theo asset lock và chưa có sync worker tổng thể được bật.
+- Xóa thiết bị không tìm thấy trong các điểm ghi vừa rà soát; cần tìm toàn repo trước khi triển khai để không bỏ sót đường xóa/ẩn hoặc thao tác hàng loạt.
+
+#### 2. Ràng buộc nhận diện Local ↔ Cloud
+- RPC import_asset_preserving_identity hiện hỗ trợ nhập hồ sơ Local lên Cloud bằng chính UUID và mã quản lý Local, có kiểm tra idempotency/counter.
+- RPC lease khóa Cloud tham chiếu assets(organization_id, id). Do đó Local chỉ có thể xin lease khi hồ sơ thiết bị tương ứng đã tồn tại trên Cloud trong đúng organization.
+- Không được tự suy đoán mapping chỉ dựa trên tên/mã; không được tự động ghi đè hồ sơ Cloud đang có.
+- Phương án an toàn: bước chuẩn bị mapping/import phải có preview, xác nhận trùng UUID/mã và xử lý xung đột; chỉ thiết bị đã xác nhận có Cloud counterpart mới được mở chức năng sửa hồ sơ Local có khóa. Thiết bị chưa mapping hoặc Cloud chưa xác minh được thì chỉ xem hồ sơ, vẫn cho phép Checklist/bảo dưỡng Local như quy tắc đã chốt.
+- Việc import lần đầu là thao tác khởi tạo dữ liệu có chủ đích, không phải sync worker tự chạy nền.
+
+#### 3. Thiết kế kỹ thuật cho đợt Local tiếp theo
+1. Tạo một service dùng chung quản lý lease cho Local UI: acquire trước khi mở form; heartbeat; release khi lưu/hủy; trạng thái fail-closed khi offline/timeout/lỗi.
+2. Không chỉ khóa nút giao diện: saveAsset, archiveAsset, restoreAsset, changeAssetStatus phải đi qua cùng một lớp kiểm soát quyền lease. Token không được lưu lâu dài trong Local DB hoặc syncQueue.
+3. Sửa saveAsset theo hướng tách rõ tạo mới và cập nhật hồ sơ đã tồn tại. Tạo mới cần cơ chế cấp mã/ID và quyền tạo riêng; không được tự ý dùng lease của một asset chưa tồn tại.
+4. Mọi thao tác cập nhật hồ sơ đã mapping phải xác minh lease hiện hành từ Cloud trước khi cho phép ghi Local. Khi lưu Local thành công, giữ mutation trong queue; chưa đánh dấu synced.
+5. Lịch sử Checklist/task/log/maintenance plan liên quan asset đang khóa tiếp tục được ghi Local. Khi triển khai sync worker sau này, worker phải kiểm tra trạng thái lease và chỉ đẩy lịch sử sau khi khóa được giải phóng; mỗi mutation retry phải idempotent.
+6. Cần cơ chế thông báo khóa liên nền tảng cho workspace Local (poll/realtime) nhưng Cloud vẫn là nguồn quyết định. Mất mạng khi đang sửa phải khóa form ngay; reconnect phải refresh và xin lease mới, tuyệt đối không hồi sinh token cũ.
+7. Bổ sung test cho từng đường ghi hồ sơ, hai nền tảng tranh lease, offline/timeout, lease hết hạn, stale token, mapping thiếu và retry hàng đợi. Không bật worker đồng bộ trong đợt này.
+
+#### 4. Phạm vi an toàn
+- Chưa sửa App.tsx, db.ts, migration hoặc dữ liệu Local/Cloud.
+- Chưa tạo bảng mapping mới; cần đánh giá liệu giữ UUID thống nhất hiện có đã đủ hay cần mapping riêng cho các trường hợp legacy trước khi viết migration.
+- Chưa bật sync worker và chưa đẩy bất kỳ hàng đợi Checklist/bảo dưỡng nào lên Cloud.
+- Chỉ bắt đầu tích hợp Local sau khi kiểm thử runtime CloudAssetsPanel bằng hai phiên thật và xác nhận kết quả.
+
+CI: GitHub Actions run #308, commit 22bf7f2b697ed802dd961832ce403c1b2173b599, completed/success. Đây là build/deploy workflow; không thay thế kiểm thử runtime hai phiên hoặc PostgreSQL.
+
+
+### BỔ SUNG ĐIỀU KIỆN GIỮ LEASE KHI LƯU HỒ SƠ TỪ LOCAL (18/11/2026)
+
+Rà soát sâu hơn cho thấy không được giải phóng lease ngay sau khi IndexedDB lưu xong nhưng Cloud chưa xác nhận cập nhật. Nếu làm vậy, nền tảng khác có thể lấy khóa và sửa bản Cloud cũ trước khi mutation Local được đồng bộ, gây ghi đè hoặc xung đột.
+
+Quy tắc bắt buộc cho thiết kế Local:
+1. Khi sửa hồ sơ Local đã mapping, phải lấy lease Cloud trước khi mở form; tiếp tục heartbeat trong cả thời gian sửa và thời gian chờ Cloud xác nhận.
+2. Lưu Local trước theo local-first và ghi mutation vào syncQueue trong transaction. Sau đó gửi chính mutation hồ sơ lên RPC Cloud có token hiện hành.
+3. Chỉ khi Cloud xác nhận cập nhật thành công mới được đánh dấu mutation tương ứng hoàn tất và release lease; sau đó mới cho thiết bị khác sửa.
+4. Nếu Cloud từ chối, timeout hoặc mất mạng sau khi Local đã lưu, giữ mutation ở trạng thái pending/failed, khóa cục bộ hồ sơ đó và không tự release lease khi vẫn có thể heartbeat. UI phải báo rõ Local đã lưu nhưng Cloud chưa xác nhận.
+5. Nếu lease hết hạn hoặc bị nền tảng khác tiếp quản trước khi mutation được Cloud xác nhận, token cũ bị từ chối. Không tự retry mutation bằng token mới và không ghi đè dữ liệu Cloud; chuyển hồ sơ sang trạng thái conflict cần quy trình đối chiếu có chủ đích.
+6. Không được tuyên bố hai nền tảng có dữ liệu đồng nhất cho đến khi Cloud xác nhận và nền tảng còn lại tải/nhận phiên bản mới.
+
+Do đó, phần Local lock và đồng bộ hồ sơ thiết bị phải được thiết kế như một luồng nguyên tử logic gồm: Local transaction → Cloud RPC có lease → xác nhận → release. Đây là đồng bộ hẹp riêng hồ sơ thiết bị, không phải bật sync worker tổng thể cho các bảng khác. Chưa triển khai code cho đến khi thiết kế xử lý rõ timeout, lease hết hạn, retry và conflict.
+
+
+### THIẾT KẾ ĐỢT LOCAL–CLOUD: ĐỒNG BỘ HỒ SƠ THIẾT BỊ CÓ LEASE VÀ IDEMPOTENCY (18/11/2026)
+
+Đã rà soát thực tế:
+- App.tsx: saveAsset ghi assets + syncQueue trong cùng IndexedDB transaction; archiveAsset, restoreAsset, changeAssetStatus ghi qua putAndQueue.
+- db.ts: SyncItem có mutationId nhưng queueChange tự sinh mutationId mới khi coalesce; chưa có base Cloud version, trạng thái mapping theo organization hoặc trạng thái conflict chi tiết.
+- assetsCloud.ts: có listCloudAssets và import_asset_preserving_identity; import giữ nguyên UUID/mã Local, CloudAssetsPanel có preview so khớp hồ sơ trước khi import.
+- Migration 016: update_asset_with_lock và set_asset_archived_with_lock xác minh token, nhưng chưa có biên nhận idempotency cho trường hợp Cloud đã commit mà client mất response.
+- Checklist/task/log/maintenance plan có các queue riêng; không được đưa vào đợt đồng bộ này.
+
+#### A. Mapping thiết bị Local ↔ Cloud
+1. Chỉ xác nhận mapping khi Cloud có đúng organization_id + UUID + mã quản lý trùng Local; không dò ghép theo tên/model.
+2. Nếu UUID trùng nhưng mã khác, hoặc mã trùng nhưng UUID khác, đưa vào trạng thái conflict; không import ghi đè.
+3. Thiết bị mới được tạo ở Local trước. Chỉ sau preview/đối chiếu mới dùng luồng import preserving identity để tạo bản Cloud mirror với nguyên UUID/mã Local. Đây là import có chủ đích, không phải Cloud tự sinh ID/mã.
+4. Thiết bị chưa có counterpart đã xác minh: không mở chức năng sửa hồ sơ master có khóa liên nền tảng. Checklist/bảo dưỡng Local vẫn hoạt động.
+5. Mapping phải gắn organization_id, vì cùng Local UUID không được tự động coi là đã map trong một organization khác.
+
+#### B. Metadata Local cần bổ sung
+Không nhồi token lease vào Asset hoặc SyncItem. Đề xuất bảng IndexedDB riêng assetSyncState, khóa theo organization_id + asset_id, gồm:
+- mappingStatus: unmapped | mapped | conflict;
+- cloudUpdatedAt: phiên bản Cloud cuối cùng đã xác nhận;
+- syncStatus: synced | pending | conflict;
+- pendingMutationId, baseCloudUpdatedAt, lastError, updatedAt;
+- conflictCloudSnapshot (nếu có) để giữ bản Cloud tại thời điểm phát hiện xung đột.
+
+SyncQueue tiếp tục là hàng đợi bền vững; bổ sung khả năng truyền mutationId có sẵn và baseCloudUpdatedAt cho riêng mutation assets. Không sinh mutationId mới khi retry cùng một giao dịch. Không xóa queue trước xác nhận Cloud. Không cho phép sửa tiếp cùng asset khi đang pending/conflict.
+
+Lease token chỉ nằm trong bộ nhớ phiên đang sửa; không ghi vào IndexedDB, localStorage hoặc syncQueue. Khi reload/reconnect không được khôi phục quyền từ token cũ.
+
+#### C. Migration/RPC Cloud kế tiếp – chưa tạo/chưa chạy
+Đề xuất migration 017 bổ sung bảng biên nhận asset_mutation_receipts, không cho client truy cập trực tiếp:
+- khóa duy nhất (organization_id, mutation_id);
+- asset_id, applied_by_user_id, payload jsonb, result_snapshot jsonb, applied_at.
+- Giữ biên nhận đủ lâu để retry sau mất response vẫn nhận được kết quả cũ; chưa thiết kế job xóa tự động.
+
+RPC mới apply_asset_mutation_with_lock:
+1. Nhận organization, asset, token lease, mutationId, expectedCloudUpdatedAt và payload hồ sơ.
+2. Tìm receipt theo organization + mutationId trước. Nếu đã áp dụng bởi cùng user, cùng asset và payload giống hệt thì trả lại kết quả đã ghi (idempotent), kể cả lease cũ đã hết hạn; nếu payload khác thì từ chối.
+3. Nếu chưa có receipt: khóa hàng lease và hàng asset trong cùng transaction; kiểm tra user/token/expiry, permission, organization và expectedCloudUpdatedAt.
+4. Nếu expectedCloudUpdatedAt không khớp Cloud hiện tại thì trả conflict, không update.
+5. Cập nhật asset và insert receipt trong cùng transaction. Không có trường hợp asset update thành công mà receipt không được ghi.
+6. Bao phủ cả sửa trường hồ sơ, trạng thái, lưu kho và khôi phục. Không để các đường ghi Local khác bỏ qua RPC.
+7. Không dùng service_role ở client; mọi quyền vẫn kiểm tra trong RPC.
+
+Lý do cần receipt: nếu Cloud commit thành công nhưng response bị mất, client retry cùng mutationId/payload sẽ nhận lại kết quả đã commit thay vì cập nhật lần hai hoặc bị hiểu nhầm là thất bại. Nếu không có receipt và lease đã hết hạn/bị thay thế, client không được tự xin token mới để gửi lại mutation cũ.
+
+#### D. Luồng cập nhật Local đề xuất
+1. Chặn sửa nếu mapping chưa xác minh, đang pending/conflict hoặc Cloud không truy cập được.
+2. Xin lease Cloud. Sau khi nhận lease, đọc snapshot Cloud hiện tại; so sánh updated_at với cloudUpdatedAt đã lưu. Nếu khác, không mở form; lưu snapshot và chuyển conflict để đối chiếu.
+3. Khi người dùng lưu, trong một IndexedDB transaction: ghi Asset Local, ghi SyncQueue với mutationId cố định, ghi assetSyncState pending + baseCloudUpdatedAt. Local là nơi ghi thao tác trước.
+4. Gọi apply_asset_mutation_with_lock với đúng token, mutationId, baseCloudUpdatedAt và snapshot vừa lưu; heartbeat liên tục trong thời gian chờ.
+5. Chỉ sau response xác nhận (hoặc retry cùng mutationId nhận receipt đã commit) mới đánh dấu mutation đã xác nhận, cập nhật cloudUpdatedAt và nhả lease. Nếu release thất bại thì lease tự hết hạn; không coi đây là lỗi mất dữ liệu.
+6. Khi response không rõ kết quả, giữ queue pending và thử lại cùng mutationId/payload/token trong lúc lease còn hiệu lực. Không sinh mutationId mới.
+7. Nếu lease hết hạn/bị thay thế và receipt không tồn tại, chuyển conflict; giữ nguyên bản Local và queue, không tự gửi lại bằng token mới, không ghi đè Cloud.
+8. Khi receipt cho biết mutation đã commit nhưng Cloud đã có bản cập nhật mới hơn, đánh dấu mutation cũ đã được áp dụng nhưng không ghi snapshot cũ đè lên Cloud mới; tải snapshot Cloud hiện tại và đưa vào đối chiếu nếu Local còn khác.
+9. Chỉ giải quyết conflict bằng thao tác có chủ đích sau khi hiển thị rõ bản Local và bản Cloud; không tự chọn bản mới nhất theo đồng hồ thiết bị.
+
+#### E. Lịch sử Checklist/bảo dưỡng
+- Trong đợt này, Checklist, task, log, maintenance plan vẫn chỉ ghi Local theo các luồng đang chạy.
+- Không đưa các queue đó lên Cloud và không thay đổi trạng thái synced.
+- Thiết kế sync worker lịch sử là đợt riêng sau khi luồng hồ sơ thiết bị ổn định; khi đó worker mới được kiểm tra lease và thứ tự phụ thuộc asset.
+
+#### F. Ma trận kiểm thử bắt buộc trước khi bật
+1. Mapped asset, Cloud/local version trùng: acquire → Local transaction → RPC → receipt → release PASS.
+2. UUID/code mismatch hoặc asset chưa mapped: chặn sửa; không tạo lease sai organization.
+3. Cloud updated_at thay đổi trước khi mở form: phát hiện conflict, không ghi.
+4. Hai nền tảng acquire đồng thời: đúng một lease được cấp.
+5. RPC commit nhưng response bị cắt: retry cùng mutationId trả receipt, không update lần hai.
+6. Retry cùng mutationId nhưng payload khác: bị từ chối.
+7. RPC chưa commit, lease hết hạn và platform khác lấy khóa: token cũ bị từ chối; queue Local giữ nguyên và chuyển conflict.
+8. Mất mạng khi đang sửa: form khóa ngay, không nhận save; không tự khôi phục quyền khi reconnect.
+9. Release RPC lỗi sau khi Cloud đã commit: mutation vẫn được xác nhận; lease hết hạn theo TTL.
+10. Reload trình duyệt khi pending: không khôi phục token; giữ queue và chạy quy trình receipt/conflict an toàn.
+11. Người khác cập nhật Cloud sau khi mutation cũ commit: retry receipt không được ghi đè snapshot mới.
+12. Kiểm tra riêng archive/restore/status để chắc chắn không có đường ghi bỏ qua lease.
+13. Kiểm tra Checklist và bảo dưỡng vẫn lưu Local bình thường trong lúc thiết bị đang bị khóa.
+
+#### G. Trạng thái thực hiện
+- Đây là thiết kế kỹ thuật, chưa thay đổi code Local, chưa tạo migration 017, chưa thực thi SQL.
+- Không bật đồng bộ hàng đợi tổng thể; không đẩy Checklist/task/log/maintenance/inventory.
+- Trước khi code, cần triển khai theo lát nhỏ: (1) migration + SQL test receipt/RPC; (2) metadata IndexedDB và helper queue; (3) Local UI acquire/heartbeat/fail-closed; (4) Local save/status/archive/restore qua RPC; (5) test hai nền tảng và offline.
+- Không mở rộng qua xóa thiết bị hoặc các bảng nghiệp vụ khác.
+
+CI: run #310 cho commit 8b26aae3d1728e2f4f92ce6b240ab60a9a81afd7 completed/success. CI chỉ xác nhận workflow/build; không kiểm thử SQL hoặc runtime hai nền tảng.
+
+
+### TRIỂN KHAI ĐỢT 1 – BIÊN NHẬN IDEMPOTENCY CHO HỒ SƠ THIẾT BỊ (18/11/2026)
+
+Đã bắt đầu triển khai theo lát nhỏ, chỉ thêm nền tảng RPC/biên nhận; chưa nối vào luồng Local UI và chưa bật sync.
+
+#### File mới/sửa
+- Mới: supabase/migrations/20261118000300_asset_mutation_receipts.sql (Migration 017).
+- Mới: supabase/tests/20261118000300_asset_mutation_receipts_test.sql.
+- Sửa: src/lib/assetEditLocks.ts – thêm applyAssetMutationWithEditLock(...).
+
+#### Nội dung Migration 017
+- Bảng asset_mutation_receipts lưu mutationId, organization, asset, user, expected Cloud version, payload và snapshot kết quả.
+- Client không được truy cập trực tiếp bảng receipt.
+- RPC apply_asset_mutation_with_lock:
+  - xác thực permission assets.update;
+  - kiểm tra receipt trước để khôi phục kết quả khi response cũ bị mất;
+  - khóa lease row, kiểm tra token và hạn lease;
+  - khóa asset row, so sánh updated_at với expectedCloudUpdatedAt;
+  - cập nhật hồ sơ và ghi receipt trong cùng transaction;
+  - từ chối dùng lại mutationId với payload khác hoặc từ user/asset khác.
+- Payload dùng chung cho sửa hồ sơ, thay đổi trạng thái, lưu kho/khôi phục; tránh nhiều đường cập nhật Local bỏ qua kiểm soát.
+
+#### Client helper
+- applyAssetMutationWithEditLock gửi đúng mutationId, token, expected Cloud version và snapshot hồ sơ.
+- Helper chỉ là hàm chưa được gọi từ App.tsx; không thay đổi hành vi ứng dụng hiện tại.
+
+#### Trạng thái kiểm thử
+- Chưa chạy Migration 017 hoặc SQL test 017 trên Supabase. Người dùng vẫn là người thực thi SQL trên BAOTRI-Mini-Test.
+- SQL test 017 được viết cho: receipt replay, payload mismatch, replay khác user, stale Cloud version, wrong token, archive field và quyền đọc bảng receipt.
+- CI run #312 (commit tạo migration ban đầu) completed/success; CI không thực thi PostgreSQL. Các run #313–#315 bị cancelled khi commit mới thay thế. Run #316 cho client helper đang in_progress tại thời điểm ghi.
+- Chưa tích hợp helper vào App.tsx; chưa thêm bảng assetSyncState; chưa chặn UI Local; chưa bật sync worker.
+- Migration 017 chỉ được xem là bản đề xuất cho Test sau khi review SQL test và chờ người dùng chạy thủ công; tuyệt đối chưa áp dụng Production.
+
+---
+
+## Cập nhật tiến độ – 18/11/2026 (khóa chỉnh sửa và giao dịch đồng bộ hồ sơ thiết bị)
+
+### 1. Hạ tầng khóa chỉnh sửa Cloud – Migration 016
+- Đã có Migration 016: `supabase/migrations/20261118000200_asset_edit_lock_lease.sql`.
+- Đã có SQL Test 016; người dùng xác nhận chạy PASS.
+- Các SQL Test 008, 010 và 011 cũng đã được người dùng xác nhận PASS sau khi điều chỉnh để tương thích với việc thu hồi quyền UPDATE trực tiếp trên bảng `assets`.
+- Cloud management panel đã tích hợp yêu cầu khóa, heartbeat, release và các thao tác cập nhật/lưu kho/khôi phục có xác thực lease.
+- Phạm vi hiện tại chỉ là Cloud management panel; màn hình thiết bị Local trong `src/App.tsx` chưa tích hợp khóa. Chưa được coi là khóa liên nền tảng PC/Mobile/Cloud hoàn chỉnh.
+
+### 2. Đợt bổ sung biên nhận giao dịch – Migration 017
+Các thành phần đã được xác minh tồn tại trên nhánh `main`:
+- Migration: `supabase/migrations/20261118000300_asset_mutation_receipts.sql`.
+- SQL Test: `supabase/tests/20261118000300_asset_mutation_receipts_test.sql`.
+- RPC: `apply_asset_mutation_with_lock`.
+- Client helper: `applyAssetMutationWithEditLock()` trong `src/lib/assetEditLocks.ts`.
+- Các commit triển khai gần nhất:
+  - `9a5141ec8cb293217e6155b248f7ce2b63c4c70b` – bổ sung kiểm thử biên nhận idempotent.
+  - `9854f93d0109421e39475c767b17e0ef7bdda964` – tăng cường kiểm tra lease cho mutation.
+  - `c8f4733687715991ebf185900b283f3794cb161d` – sửa test giữ token lease đã acquire.
+  - `ad54c43bddf14323565a5b56053d0297155ac52b` – bổ sung client helper dùng biên nhận giao dịch.
+  - `aa493d01c13cbfe7b8db4273786dab17c42f3fb5` – cập nhật tài liệu tiến độ.
+- GitHub Actions run #317 (commit `aa493d01c13cbfe7b8db4273786dab17c42f3fb5`) đã hoàn tất với kết quả SUCCESS.
+- **Lưu ý:** Migration 017 và SQL Test 017 mới được đưa lên repository; chưa có xác nhận người dùng đã chạy migration hoặc SQL Test 017 trên Supabase. Không đánh dấu SQL Test 017 PASS.
+
+### 3. Quy tắc an toàn đồng bộ hồ sơ thiết bị đã chốt
+- Luồng dự kiến: Local lưu thay đổi → gửi mutation lên Cloud bằng RPC xác thực lease → Cloud xác nhận → mới đánh dấu mutation hoàn tất và release lease.
+- Không release lease trước khi Cloud xác nhận cập nhật.
+- Nếu Cloud đã commit nhưng phản hồi bị mất, gửi lại cùng `mutationId` phải nhận biên nhận cũ, không áp dụng mutation lần thứ hai.
+- Cùng `mutationId` nhưng payload khác phải bị từ chối.
+- Kiểm tra phiên bản Cloud trước khi ghi để không ghi đè dữ liệu mới hơn.
+- Token lease hết hạn/bị thay thế không được dùng lại; nếu phát hiện xung đột thì chuyển sang xử lý xung đột, không tự lấy token mới để ghi đè.
+- Không xóa hoặc đánh dấu mutation đã đồng bộ trước khi nhận xác nhận từ Cloud.
+- Chưa bật worker đồng bộ tổng quát; không mở rộng đồng bộ sang vật tư, checklist, bảo dưỡng hoặc các bảng khác.
+
+### 4. Trạng thái Local và phạm vi chưa triển khai
+- Client helper `applyAssetMutationWithEditLock()` đã có trong `src/lib/assetEditLocks.ts`, nhưng chưa được nối vào luồng lưu thiết bị trong `src/App.tsx`.
+- Chưa bổ sung hoàn chỉnh metadata mapping Local↔Cloud, trạng thái đồng bộ và xử lý xung đột trong IndexedDB.
+- Chưa tích hợp khóa vào biểu mẫu chỉnh sửa thiết bị Local.
+- Chưa xác minh bằng kiểm thử thực tế hai phiên PC/Mobile đồng thời.
+- Các luồng Local hiện tại và hàng đợi `syncQueue` chưa được chuyển sang cơ chế đồng bộ hồ sơ mới.
+
+### 5. Việc tiếp theo khi tiếp tục
+1. Người dùng chạy Migration 017 và SQL Test 017 trên môi trường Supabase Test; chỉ ghi PASS khi người dùng xác nhận kết quả.
+2. Rà soát kỹ schema Local, cấu trúc `syncQueue`, các luồng thêm/sửa/lưu kho/khôi phục/trạng thái và cơ chế mapping UUID Local↔Cloud.
+3. Hoàn thiện quy tắc versioning, idempotency, retry, queue coalescing và xử lý conflict; đặc biệt không để mutation mới ghi đè mutation cũ chưa được xác nhận.
+4. Cập nhật tài liệu trước khi sửa code; sau đó mới tích hợp luồng khóa vào màn hình Local theo từng phần nhỏ.
+5. Kiểm thử hai phiên đăng nhập/PC-Mobile và các tình huống mất mạng, timeout, lease hết hạn, phản hồi Cloud bị mất.
+
+### 6. Nguyên tắc bắt buộc khi làm tiếp
+- Làm trực tiếp trên nhánh `main`, không tạo nhánh mới hoặc PR trung gian.
+- Đọc phiên bản file mới nhất trên `main` trước khi sửa.
+- Không tự chạy SQL/migration trên Supabase; người dùng thực hiện và báo kết quả.
+- Không bật đồng bộ đại trà, không thay đổi dữ liệu nghiệp vụ hoặc thực hiện thao tác destructive.
+- Giữ nguyên các chức năng Local đang hoạt động; chỉ sửa đúng phạm vi đã xác định.
+- Không tuyên bố chức năng hoàn tất chỉ vì code/migration đã tồn tại; phải phân biệt rõ code đã có, SQL đã chạy, kiểm thử đã PASS và kiểm thử runtime thực tế.
+
+---
+
+## RÀ SOÁT CHI TIẾT LOCAL DB / SYNC QUEUE TRƯỚC KHI TÍCH HỢP LEASE (18/11/2026)
+
+Đã đọc trực tiếp các file mới nhất trên `main`:
+- `src/db.ts` (Dexie schema hiện có đến version 7).
+- `src/App.tsx` (luồng save/edit/archive/restore/status của Asset).
+- `src/lib/assetEditLocks.ts`.
+- `src/lib/assetsCloud.ts`.
+- `src/lib/localIdentity.ts`.
+- `supabase/migrations/20261118000300_asset_mutation_receipts.sql`.
+- `supabase/tests/20261118000300_asset_mutation_receipts_test.sql`.
+- `supabase/CLOUD_SYNC_QUEUE_V7_DESIGN.md`.
+
+### 1. Hiện trạng thực tế của Dexie và Asset
+- Dexie hiện đã có schema version 7, không phải version 6. Version 7 bổ sung `identityStatus` cho Asset/Inventory; dữ liệu cũ được giữ nguyên ID/mã và đánh dấu `legacy`.
+- `Asset.identityStatus` hiện hỗ trợ `legacy | draft | ready | synced | conflict`; tuy nhiên đây chỉ là trạng thái định danh, chưa phải mapping/sync state đầy đủ.
+- Chưa có bảng `assetSyncState` hoặc bảng riêng lưu snapshot/version Cloud, organization mapping và conflict snapshot.
+- `Asset` Local chứa `id`, `code`, `category`, thông tin hồ sơ, `updatedAt`; Cloud counterpart phải có cùng UUID trong đúng organization thì mới có thể xin lease do FK của `asset_edit_locks` tham chiếu `assets(organization_id,id)`.
+- `importCloudAssetPreservingIdentity()` là thao tác nhập Local lên Cloud riêng biệt, bảo toàn UUID và mã quản lý; đây là luồng import tường minh, không phải worker đồng bộ tự động.
+
+### 2. Các luồng ghi Asset đã xác minh
+- `saveAsset()` trong `src/App.tsx`: ghi Asset Local và gọi `queueChange('assets', saved.id)` trong cùng Dexie transaction.
+- `archiveAsset()`, `restoreAsset()`, `changeAssetStatus()`: dùng `putAndQueue()`, cùng ghi Local và gọi `queueChange()`.
+- `rekeyAssetDraftId()` trong `src/db.ts`: đổi ID Asset và các FK liên quan trong một Dexie transaction; queue item được tạo lại qua `buildAssetRekeyPlan()`.
+- Checklist/task/log/maintenance tiếp tục có luồng ghi riêng. Không được đưa chúng vào đợt đồng bộ hồ sơ Asset này.
+- Chưa thấy worker đang claim/gửi/xác nhận `syncQueue`; không được bật worker chung trong đợt này.
+
+### 3. Vấn đề kỹ thuật đã xác nhận trong syncQueue
+- Schema hiện dùng primary key `id` dạng `tableName:recordId` và unique index `[tableName+recordId]`.
+- `SyncItem` hiện có operation, status, attempts, deviceId và mutationId; chưa có payload snapshot bất biến, base Cloud version, claim token hoặc organization mapping.
+- Mỗi lần gọi `queueChange()`, hàm dùng `put()`, đặt lại pending/attempts và tạo `mutationId` mới. Vì vậy mutation cũ của cùng Asset có thể bị thay thế.
+- Cơ chế này được mô tả trong `supabase/CLOUD_SYNC_QUEUE_V7_DESIGN.md`: chỉ có thể coalesce thay đổi pending chưa claim; mutation đã processing/sent phải bất biến. Không được triển khai worker trên queue hiện tại trước khi thiết kế và migration queue an toàn.
+- Với đợt Asset lease hiện tại, không được để lần sửa mới thay mutationId/payload của mutation đang pending hoặc chưa có Cloud acknowledgement. Cần chặn sửa tiếp Asset đó hoặc có mô hình mutation riêng theo ID; quyết định phải được kiểm thử trước khi code.
+- `buildAssetRekeyPlan()` tạo mutationId mới khi đổi draft ID; logic hiện từ chối queue processing và queue ID chính thức đã tồn tại, nhưng pending queue của draft được thay bằng mutation mới. Phải bảo toàn ngữ nghĩa mutation khi nối lease; không tái sử dụng hoặc làm mất mutation đã gửi/chưa xác nhận.
+
+### 4. Ràng buộc của Migration 017 và helper hiện tại
+- RPC `apply_asset_mutation_with_lock` yêu cầu Asset Cloud đã tồn tại trong đúng organization, lease hợp lệ, mutationId, expected Cloud `updated_at` và payload hồ sơ đầy đủ.
+- RPC ghi Asset và receipt trong cùng transaction; replay cùng user/asset/mutationId/expected version/payload trả receipt cũ; payload khác hoặc user/asset khác bị từ chối.
+- RPC không tạo Asset mới và không thay mã `code` hoặc `category`; các trường này không nằm trong payload cập nhật. Không dùng RPC này thay cho quy trình import/khởi tạo Asset.
+- Helper `applyAssetMutationWithEditLock()` hiện gửi payload snapshot và nhận Asset + receipt; chưa được gọi từ `App.tsx`.
+- Lease không thể được xin cho Asset chưa có Cloud counterpart. Không được tự ghép Local/Cloud theo tên hoặc mã; chỉ mapping khi xác minh UUID và organization.
+- Phải kiểm tra thêm các khác biệt kiểu dữ liệu/null/date giữa Local Asset và Cloud row trước khi nối UI; không tự chuyển đổi mơ hồ.
+
+### 5. Kết luận thiết kế trước khi triển khai Local
+1. Giữ nguyên queue chung hiện tại; không bật worker hoặc thay đổi sync semantics của các bảng khác.
+2. Xác định một trạng thái đồng bộ Asset riêng theo organization + asset UUID, tối thiểu gồm: Cloud mapping đã xác minh, Cloud updated_at đã xác nhận, mutationId/payload đang chờ, trạng thái pending/conflict và snapshot Cloud khi conflict.
+3. Khi Asset có mutation pending/chưa được receipt xác nhận, chặn lần sửa master tiếp theo trên Asset đó; không để `queueChange()` ghi đè mutationId. Chỉ mở lại sau acknowledgement hoặc xử lý conflict có chủ đích.
+4. Với mutation đang gửi, giữ nguyên mutationId, payload và expected Cloud version; retry chỉ được dùng đúng bộ dữ liệu đó. Không tự xin token mới để gửi mutation cũ.
+5. Khi import Local Asset lần đầu lên Cloud, dùng quy trình import hiện có và xác minh UUID/code/org; sau đó mới ghi nhận mapping + Cloud updated_at để cho phép acquire lease. Import không được chạy nền tự động.
+6. Checklist, task, log, maintenance plan và inventory tiếp tục Local-only; không đưa queue của chúng vào luồng này.
+7. Trước khi sửa code, cần thiết kế migration Dexie tiếp theo (nếu cần) và test chuyển đổi từ version 7, bao gồm backup/restore, pending queue và draft rekey. Không sửa Dexie schema chỉ để thử nghiệm.
+
+### 6. Trạng thái rà soát
+- Đây là audit mã nguồn và cập nhật thiết kế; chưa sửa code ứng dụng, chưa đổi Dexie schema, chưa gọi RPC, chưa ghi dữ liệu Cloud.
+- Migration 017 và SQL Test 017 vẫn chưa có xác nhận người dùng đã chạy trên Supabase Test.
+- GitHub Actions run #317 cho commit `aa493d01c13cbfe7b8db4273786dab17c42f3fb5` đã được kiểm tra lại: completed / success.
+- Bước tiếp theo: review chéo thiết kế `CLOUD_SYNC_QUEUE_V7_DESIGN.md` với luồng lease/receipt của Asset; chốt mô hình asset-specific pending/conflict và mapping trước khi thay đổi code.
+
+## 19. Rà soát tiếp theo – tích hợp khóa Asset với Local-first (19/11/2026)
+
+### 19.1 Kết quả đối chiếu mã nguồn hiện tại
+
+- Form `AssetModal` trong `src/App.tsx` khóa trường `category` khi sửa hồ sơ; trường `code` không xuất hiện trong form sửa. Vì vậy, hai trường định danh này phù hợp với hợp đồng `apply_asset_mutation_with_lock` của Migration 017: RPC không nhận và không cập nhật `code` hoặc `category`.
+- Hàm `saveAsset()` hiện vẫn ghi trực tiếp Asset vào IndexedDB và gọi `queueChange('assets', saved.id)`. Form Local chưa xin lease Cloud, chưa lưu snapshot mutation bất biến và chưa gọi RPC Migration 017.
+- `src/lib/assetEditLocks.ts` đã có helper `applyAssetMutationWithEditLock()`, nhưng chưa được gọi từ `src/App.tsx` hoặc luồng lưu Asset Local.
+- `src/CloudAssetsPanel.tsx` hiện vẫn là luồng Cloud độc lập: tạo Asset bằng `createCloudAsset()`, sửa bằng `updateAssetWithEditLock()` (RPC Migration 016), lưu kho/khôi phục bằng RPC khóa. Panel này chưa sử dụng RPC receipt Migration 017. Luồng đó không đồng nhất với nguyên tắc Local-first đã chốt rằng Cloud chỉ phản ánh dữ liệu nghiệp vụ từ Local; cần xử lý rõ trước khi tuyên bố kiến trúc đã thống nhất. Chưa tự ý thay đổi hoặc vô hiệu hóa panel.
+- Luồng import Local → Cloud hiện là thao tác rõ ràng, giữ nguyên UUID và mã quản lý. Sau import, Cloud có `updated_at` để làm mốc phiên bản, nhưng code hiện tại chưa ghi một bản ghi mapping/sync-state riêng vào IndexedDB. Không được coi việc UUID trùng hoặc tên/mã trùng đơn thuần là bằng chứng mapping; chỉ luồng import/xác nhận có kiểm tra đúng organization + UUID + code + payload mới được tạo liên kết.
+- `CLOUD_SYNC_QUEUE_V7_DESIGN.md` là thiết kế hàng đợi chung cho nhiều bảng. Không cần triển khai Dexie queue v7 hoặc worker tổng quát trong giai đoạn khóa Asset. Tuyệt đối không bật đồng bộ Checklist, bảo trì, vật tư hoặc các bảng khác.
+
+### 19.2 Kết luận thiết kế hẹp cho Asset – chưa triển khai
+
+Không dùng `syncQueue` hiện tại làm nguồn mutation Cloud cho Asset. Queue này có unique key `[tableName+recordId]` và `queueChange()` tạo mutationId mới/ghi đè hàng cũ; không bảo toàn snapshot hoặc base Cloud version. Thiết kế v7 tổng quát vẫn để riêng, chưa triển khai.
+
+Đề xuất một lát cắt Asset-only gồm hai bảng Dexie riêng, chưa thêm vào DB cho đến khi duyệt và chuẩn bị test migration:
+
+1. `assetCloudLinks` – liên kết một Asset Local với đúng tổ chức và Asset Cloud:
+   - Khóa ghép logic `organizationId + assetId`.
+   - Lưu `cloudUpdatedAt` (phiên bản Cloud mới nhất đã xác nhận), `lastSyncedLocalUpdatedAt`, trạng thái `linked | conflict`, và thời điểm kiểm tra gần nhất.
+   - Chỉ tạo/cập nhật liên kết sau khi RPC import hoặc RPC mutation trả về đúng organization/asset UUID và kết quả hợp lệ. Không tự ghép theo tên hoặc mã.
+2. `assetMutations` – nhật ký mutation bất biến, chỉ phục vụ Asset:
+   - Primary key `mutationId`; index theo `organizationId + assetId` và trạng thái/thời điểm.
+   - Lưu payload snapshot đầy đủ, `expectedCloudUpdatedAt`, `localUpdatedAt`, trạng thái `pending | processing | applied | conflict`, lỗi và kết quả Cloud nếu có.
+   - Mỗi Asset chỉ có tối đa một mutation chưa được xác nhận. Khi còn mutation `pending/processing/conflict`, chặn lần sửa master tiếp theo để không phải ghi đè mutation hoặc tự tạo chuỗi baseVersion phức tạp.
+   - Retry luôn dùng đúng mutationId, payload snapshot và expectedCloudUpdatedAt cũ. Chỉ đánh dấu applied và cập nhật link version sau khi nhận được receipt hợp lệ; không xóa mutation trước xác nhận.
+   - Không cho generic worker xử lý bảng Asset từ `syncQueue`; luồng Asset-only này là đường đồng bộ duy nhất.
+
+### 19.3 Trình tự tích hợp dự kiến
+
+1. Hoàn tất và người dùng xác nhận Migration 017 + Test SQL 017 PASS trên BAOTRI-Mini-Test. Trước đó không gọi RPC receipt từ ứng dụng.
+2. Chốt xử lý CloudAssetsPanel: chuyển sang chỉ xem/đọc trạng thái, hoặc xác định rõ đây là công cụ quản trị riêng và không phải nguồn tạo/sửa dữ liệu nghiệp vụ. Không duy trì hai đường ghi Cloud cạnh tranh với Local-first.
+3. Xác định cách thiết bị Local trên từng PC/Mobile được liên kết với Cloud: import rõ ràng hoặc tải/nhận bản ghi Cloud theo đúng organization + UUID; không tự động ghép theo tên/mã.
+4. Khi người dùng bắt đầu sửa Asset Local đã liên kết: kiểm tra online, xin lease Cloud trước khi mở quyền sửa; lấy `updated_at` Cloud làm expected version. Không xác minh được lease thì chỉ xem và vẫn cho phép Checklist/bảo trì Local theo quy tắc đã chốt.
+5. Khi mất heartbeat/kết nối: khóa form Local ngay, không cho lưu; không tự khôi phục quyền sửa sau khi reconnect. Phải tải lại trạng thái Cloud và xin lease mới.
+6. Khi lưu: trong transaction Dexie, lưu Asset Local + mutation snapshot bất biến; sau đó gọi `apply_asset_mutation_with_lock` bằng lease token và snapshot. Khi Cloud xác nhận, cập nhật link/version và kết thúc mutation; nếu timeout thì giữ nguyên mutation để retry idempotent.
+7. Nếu Cloud version mismatch: giữ Local và Cloud snapshot, chuyển conflict; không tự ghi đè hoặc tự chọn bên thắng.
+8. Chỉ tích hợp Asset master. Checklist, bảo trì, nhật ký, vật tư và movement tiếp tục Local, chưa có worker/đồng bộ.
+
+### 19.4 Trạng thái và việc chưa làm
+- [x] Đã xác nhận `code` và `category` không thể sửa từ AssetModal hiện tại.
+- [x] Đã xác nhận Local save vẫn ghi IndexedDB + generic `syncQueue`, chưa gọi RPC receipt.
+- [x] Đã xác nhận CloudAssetsPanel vẫn có đường tạo/sửa/lưu kho trực tiếp trên Cloud và chưa dùng Migration 017.
+- [x] Đã rà soát thiết kế queue v7: không cần triển khai queue tổng quát cho lát cắt Asset-only.
+- [x] Đã đề xuất mapping + mutation ledger riêng cho Asset, có chặn sửa lần tiếp theo khi mutation trước chưa được xác nhận.
+- [ ] Chưa sửa mã nguồn, chưa thêm bảng Dexie, chưa gọi RPC Migration 017.
+- [ ] Migration 017 và Test SQL 017 vẫn chờ người dùng chạy trên BAOTRI-Mini-Test và xác nhận kết quả.
+- [ ] Chưa có kiểm thử hai thiết bị PC/Mobile thực tế cho toàn bộ vòng đời lease.
+
+## 20. Chốt vai trò CloudAssetsPanel trước khi tích hợp Local (19/11/2026)
+
+### 20.1 Phạm vi được phép giữ trong CloudAssetsPanel
+
+CloudAssetsPanel là màn hình quản trị/quan sát Cloud, không phải nơi nhập liệu nghiệp vụ Asset chính. Theo nguyên tắc Local-first đã chốt:
+
+- Giữ tải và xem danh sách Asset Cloud; trạng thái lưu kho; thông tin khóa đang hoạt động; tải lại dữ liệu.
+- Giữ luồng import rõ ràng từ Local PC lên Cloud, giữ nguyên UUID và mã quản lý. Đây là thao tác khởi tạo liên kết Cloud có kiểm tra dữ liệu, không phải đồng bộ nền.
+- Tạm giữ phần đọc/cấu hình mã tổ chức như công cụ thiết lập quản trị, nhưng không được dùng nó để tạo Asset Cloud hoặc tự cấp mã từ Cloud. Cần rà soát riêng nguồn cấu hình chuẩn khi hoàn thiện onboarding Local-first.
+- Không cho tạo Asset trực tiếp trên Cloud bằng `createCloudAsset()`.
+- Không cho sửa hồ sơ, lưu kho hoặc khôi phục Asset trực tiếp trong CloudAssetsPanel. Các thao tác nghiệp vụ này phải bắt đầu tại Local, xin lease Cloud và dùng RPC receipt sau khi Migration 017/Test 017 được người dùng xác nhận PASS.
+- Không xóa dữ liệu Cloud, không thay đổi bảng/SQL/RLS, không thu hồi permission backend trong bước UI này. Việc ẩn/ngừng gọi các đường ghi từ UI không đồng nghĩa xóa RPC hoặc dữ liệu đã có.
+
+### 20.2 Kế hoạch thay đổi mã UI an toàn
+
+Trước khi sửa:
+- Chỉ sửa `src/CloudAssetsPanel.tsx` và tài liệu tiến độ.
+- Loại bỏ nút/form tạo Asset Cloud, form sửa Asset Cloud, nút lưu kho/khôi phục Cloud và các handler chỉ phục vụ những thao tác này.
+- Giữ luồng import Local PC → Cloud, xem danh sách, hiển thị lease holder, cấu hình quản trị hiện có.
+- Không thay đổi Local Asset form, Dexie schema, migration, RPC, permission, import contract hoặc các phân hệ khác.
+- Không chạy SQL; không bật queue worker.
+- Chạy kiểm tra TypeScript/build qua CI sau commit; CI không thay thế test SQL hoặc kiểm thử nhiều thiết bị.
+
+### 20.3 Rủi ro và giới hạn đã nhận diện
+
+- Người dùng hiện không còn tạo/sửa/lưu kho/khôi phục Asset từ màn hình Cloud sau khi UI được chuyển read-only. Mọi thay đổi phải thực hiện tại Local; đến khi Local lease + receipt tích hợp hoàn tất, sửa hồ sơ Asset đã liên kết có thể tạm thời chưa có luồng hoàn chỉnh.
+- CloudAssetsPanel hiện có quyền `assets.create`/`assets.update` và RPC tương ứng ở backend; bước này chỉ loại bỏ đường gọi từ giao diện, chưa thay đổi backend. Không được tuyên bố backend đã cấm tuyệt đối mọi client khác.
+- Cấu hình mã tổ chức còn được giữ tạm thời để tránh thay đổi onboarding/cấu hình hiện hữu; chưa kết luận đây là nguồn cấu hình cuối cùng cho Local.
+- Migration 017 và Test SQL 017 chưa được người dùng xác nhận PASS. Không gọi `apply_asset_mutation_with_lock` từ Local trước mốc đó.
+- Sau khi UI read-only hoàn tất, bước tiếp theo là hoàn thiện mapping/mutation Dexie Asset-only và tích hợp Local lease/receipt; không bật đồng bộ tổng quát.
+
+### 20.4 Trạng thái
+- [x] Đã kiểm tra CloudAssetsPanel và xác định các đường tạo/sửa/lưu kho/khôi phục trực tiếp Cloud.
+- [x] Đã xác định giữ import Local PC → Cloud và phần xem Cloud.
+- [ ] Chưa sửa CloudAssetsPanel trong thời điểm ghi nhận.
+- [ ] Chưa thay đổi backend hoặc SQL.
+
+### 20.5 Kết quả thực hiện UI read-only – 19/11/2026
+
+Đã cập nhật trực tiếp trên `main`:
+
+- Commit `83fcc0a204ccccaf2ba746f6d85ffae28182878a`: chuyển `src/CloudAssetsPanel.tsx` thành màn hình chỉ xem đối với hồ sơ Asset; bỏ form/handler tạo Asset Cloud, sửa hồ sơ, lưu kho và khôi phục; bỏ luồng xin lease/heartbeat/release riêng trong panel.
+- Commit `854f5388a35737a80455c7566067a4e69f3cd768`: dọn state/import/hàm phụ không còn sử dụng sau khi bỏ các form ghi Cloud.
+- Giữ lại: tải danh sách Asset Cloud, hiển thị trạng thái khóa, refresh trạng thái khóa, import Local PC → Cloud có preflight và xác nhận, phần cấu hình mã tổ chức hiện có.
+- Không sửa backend/RPC/permission/SQL; không xóa dữ liệu Cloud; không sửa Local form hoặc Dexie; không bật đồng bộ nền.
+- Đã kiểm tra lại nội dung file trên `main`: không còn tham chiếu UI tới `createCloudAsset`, `updateAssetWithEditLock`, `setAssetArchivedWithEditLock`, `acquireAssetEditLock`, `heartbeatAssetEditLock`, hoặc các handler/form tạo/sửa/lưu kho/khôi phục.
+- GitHub Actions run `44408674037` cho commit trên đang ở trạng thái queued tại thời điểm cập nhật; chưa được đánh dấu PASS. Cần kiểm tra lại kết quả run trước khi kết luận build.
+- Thay đổi này chỉ giới hạn giao diện Cloud. Các RPC/backend cũ vẫn tồn tại; không tuyên bố backend đã cấm mọi client khác ghi trực tiếp.
+- Lưu ý vận hành: cho đến khi Local lease + receipt được tích hợp, không dùng CloudAssetsPanel để thay đổi hồ sơ nghiệp vụ. CloudAssetsPanel hiện giữ import Local PC, xem và cấu hình quản trị.
+
+## 21. Chuẩn bị liên kết Asset Local–Cloud (19/11/2026)
+
+### 21.1 Vấn đề xác định trong import hiện tại
+
+- Luồng preflight hiện đếm Asset Cloud đã tồn tại đúng UUID/mã/nội dung là `alreadyPresent` rồi bỏ qua RPC import.
+- Nút xác nhận bị disable khi `toInsert === 0`. Vì vậy, một Asset có thể đã tồn tại chính xác trên Cloud nhưng Local chưa có mapping; thao tác import hiện tại không thể tạo liên kết Local–Cloud cho trường hợp đó.
+- Import RPC cũ có tính idempotent theo UUID/mutation ID và có thể trả lại Asset Cloud đã tồn tại nếu payload khớp hoàn toàn. Có thể dùng chính luồng này để xác nhận lại các bản ghi đã tồn tại, sau đó mới ghi mapping Local.
+- Không được tạo mapping chỉ vì UUID hoặc code trùng; phải có kết quả RPC xác nhận đúng organization + asset UUID + code và payload phù hợp.
+
+### 21.2 Phạm vi schema Dexie v8 dự kiến
+
+Thêm hai bảng riêng, không thay đổi bảng `syncQueue` và không chạy worker:
+
+1. `assetCloudLinks`
+   - Primary key: `id = organizationId + ':' + assetId`.
+   - Unique compound index: `[organizationId+assetId]`.
+   - Các trường: `organizationId`, `assetId`, `cloudCode`, `cloudUpdatedAt`, `lastSyncedLocalUpdatedAt`, `status: linked | conflict`, `linkedAt`, `lastVerifiedAt`.
+   - Mỗi tổ chức chỉ có một liên kết Cloud cho một UUID Local. Không tự ghép theo tên/mã.
+2. `assetMutations`
+   - Primary key: `mutationId` (UUID riêng cho từng lần sửa).
+   - Index thường: `[organizationId+assetId]`, `[organizationId+assetId+status]`, `organizationId`, `assetId`, `status`, `createdAt`.
+   - Lưu snapshot payload bất biến theo allowlist của Migration 017, `expectedCloudUpdatedAt`, `localUpdatedAt`, `status: pending | processing | applied | conflict`, `attempts`, `lastError`, `createdAt`, `updatedAt`, `appliedAt`, `cloudUpdatedAt`.
+   - Không dùng unique index cho organization+asset vì cần giữ lịch sử các mutation đã applied. Ứng dụng sẽ kiểm tra và chỉ cho tối đa một mutation chưa xác nhận cho mỗi Asset.
+   - Chưa tích hợp ghi/đọc bảng mutation vào luồng sửa Local cho đến khi Test SQL 017 PASS.
+
+### 21.3 Điều chỉnh import để tạo mapping an toàn
+
+- Preflight tiếp tục kiểm tra toàn bộ Local và Cloud, không ghi dữ liệu khi chưa xác nhận.
+- Khi người dùng xác nhận, chạy RPC import idempotent cho mọi Asset Local trong snapshot, bao gồm Asset đã có đúng UUID/mã/nội dung trên Cloud. Không bỏ qua Asset chỉ vì Cloud đã có.
+- Chỉ sau khi RPC trả về đúng `organizationId`, `asset.id`, `asset.code` và Asset payload hợp lệ, mới ghi `assetCloudLinks` trong Dexie.
+- Nếu Cloud import thành công nhưng ứng dụng đóng trước khi ghi mapping, lần xác nhận lại dùng cùng import mutation ID theo UUID Asset để RPC trả kết quả cũ và hoàn thiện mapping.
+- Nếu Local/Cloud khác payload, UUID hoặc code xung đột, dừng; không ghi mapping và không tự chọn bên thắng.
+- Thông báo import cần phân biệt số Asset mới được thêm Cloud và số Asset đã được xác nhận/liên kết.
+
+### 21.4 Kiểm thử bắt buộc cho Dexie v8/import
+
+- Nâng DB v7 → v8 không mất Asset/Inventory/Checklist/maintenance/queue cũ.
+- Bảng mapping và mutation mới tạo rỗng, không tự sinh mapping từ dữ liệu cũ.
+- Import Asset mới: Cloud xác nhận đúng UUID/code; mapping được ghi.
+- Asset đã tồn tại Cloud đúng payload nhưng chưa có mapping: RPC idempotent trả kết quả, mapping được ghi.
+- Cùng UUID nhưng code khác, cùng code nhưng UUID khác, hoặc payload khác: dừng, không tạo mapping.
+- Mất phản hồi sau khi Cloud commit: chạy lại import không tạo Asset trùng; mapping hoàn tất khi nhận được kết quả xác nhận.
+- Không thay đổi `syncQueue`, không xử lý Checklist, bảo trì, vật tư hoặc bảng khác.
+- Test SQL 017 vẫn là điều kiện bắt buộc riêng trước khi bật Local edit receipt; Dexie v8 không thay thế test SQL.
+
+### 21.5 Trạng thái
+- [x] Đã xác định lỗ hổng nghiệp vụ: Asset Cloud tồn tại đúng nhưng Local chưa thể tạo mapping khi `toInsert = 0`.
+- [x] Đã chốt thiết kế bảng Dexie v8 cho link và mutation; chưa áp dụng vào mã nguồn.
+- [ ] Chưa thêm schema v8 hoặc ghi mapping trong import.
+- [ ] Chưa tích hợp Local edit lease/receipt; chờ người dùng xác nhận Migration 017 + Test 017 PASS.
+
+### 21.6 Kết quả triển khai Dexie v8 và mapping import – 19/11/2026
+
+Đã cập nhật trên `main`:
+
+- Commit `c7bbf60ee074af907efb55c7e35dd2c91353d690`: thêm type và Dexie schema version 8:
+  - `assetCloudLinks`: liên kết Local–Cloud theo organization + asset UUID, lưu code và phiên bản Cloud/Local đã xác nhận.
+  - `assetMutations`: cấu trúc lưu snapshot mutation bất biến và trạng thái; hiện mới tạo bảng/index, chưa có luồng ghi/đọc mutation.
+- Commit `f5cd368128ab78a00a4258f964aaf2a9e9ce0897`: chỉnh import trong `CloudAssetsPanel`:
+  - Preflight tính riêng số Asset cần thêm mới lên Cloud và số Asset cần tạo/cập nhật mapping.
+  - Nếu Cloud đã có Asset đúng UUID/code/nội dung nhưng Local chưa có mapping, vẫn cho xác nhận.
+  - Khi xác nhận, chạy import RPC idempotent cho Asset cần liên kết, kể cả bản ghi Cloud đã tồn tại đúng; chỉ sau khi RPC trả về Asset hợp lệ mới ghi `assetCloudLinks`.
+  - Retry sau khi Cloud commit nhưng Local chưa ghi mapping dùng lại mutation ID theo Asset UUID; không tạo Asset trùng.
+  - Nếu UUID/code/payload khác nhau thì dừng, không ghi mapping.
+- Dexie v8 không có upgrade transform; dữ liệu cũ được giữ nguyên, hai bảng mới để trống. Không tự động gán link cho dữ liệu legacy.
+- Không thay đổi `syncQueue`, không bật worker, không đồng bộ Checklist/bảo trì/vật tư.
+- Không gọi Migration 017; `assetMutations` hiện chỉ là schema chuẩn bị, chưa được dùng.
+- GitHub Actions cho commit `f5cd368` đang pending tại thời điểm ghi nhận; chưa xác nhận build PASS. Run trước đó cho commit `c7bbf60` đang in progress.
+- Lưu ý: import RPC ledger ràng buộc mutation với actor. Giai đoạn hiện tại đang dùng một Auth account như quyết định trước; nếu sau này cho nhiều Admin import cùng organization, cần đánh giá lại luồng retry/mutation ID theo actor trước khi mở rộng.
+
+### 21.7 Hoàn thiện thông báo và đếm import – 19/11/2026
+
+- Commit `e7b66179e0af33a181ae3cc98323d3d3514022bd`: chỉnh thông báo Cloud panel theo đúng vai trò chỉ xem (không còn nói người dùng bị cấm thao tác sửa/lưu kho vốn đã bỏ khỏi UI); bộ đếm Asset mới thêm Cloud không tính nhầm trường hợp RPC trả về đã tồn tại do chạy đua hoặc retry.
+- Đây là chỉnh sửa giao diện/thông báo; không thay đổi hợp đồng RPC hoặc dữ liệu.
+- Chờ GitHub Actions của commit mới nhất kết thúc để xác nhận build.
+
+## 22. Bảo vệ Asset đã liên kết trong lúc chờ Local lease/receipt (19/11/2026)
+
+Sau khi import tạo mapping, Local hiện vẫn có các đường sửa/lưu kho/khôi phục/thay đổi trạng thái ghi thẳng IndexedDB và generic `syncQueue`. Nếu để các đường này tiếp tục hoạt động trước khi tích hợp lease + receipt, Asset đã liên kết có thể thay đổi Local mà Cloud không được cập nhật, đồng thời bỏ qua khóa Cloud.
+
+Kế hoạch guard tạm thời:
+- Chỉ áp dụng với Asset có bản ghi trong `assetCloudLinks` (bất kể status linked/conflict).
+- Chặn lưu sửa hồ sơ Asset, lưu kho, khôi phục và đổi trạng thái đối với Asset đã liên kết.
+- Không chặn xem hồ sơ, Checklist, bảo trì, nhật ký hoặc các công việc Local được phép.
+- Asset chưa liên kết vẫn giữ hành vi hiện tại.
+- Guard chỉ là lớp an toàn giao diện/Local; chưa thay thế kiểm tra lease ở server. Khi Local lease + receipt hoàn tất và Test SQL 017 PASS, thay guard tạm bằng luồng xin lease + mutation snapshot + RPC receipt.
+- Không xóa queue cũ, không đánh dấu synced, không đổi dữ liệu Cloud.
+
+Phạm vi sửa dự kiến chỉ `src/App.tsx`; thêm kiểm tra link trước các thao tác master data. Cần test thủ công: Asset chưa link vẫn sửa được; Asset linked/conflict bị chặn; Checklist/bảo trì trên Asset linked vẫn hoạt động.
+
+Trạng thái: chưa áp dụng guard tại thời điểm ghi nhận.
+
+### 22.1 Guard tạm thời đã triển khai – 19/11/2026
+
+- Commit `d903c7dab1ec38d2d2cdd588a4e9044f365ece03`: thêm `blockCloudLinkedAssetMutation()` trong `src/App.tsx`.
+- Guard kiểm tra `assetCloudLinks` theo Asset UUID trước khi sửa hồ sơ, lưu kho, khôi phục hoặc đổi trạng thái.
+- Asset có mapping (kể cả status conflict) bị chặn thay đổi master data; Asset chưa mapping giữ nguyên hành vi hiện tại.
+- Checklist, công việc bảo trì và nhật ký không bị chặn bởi guard này.
+- Guard là biện pháp tạm thời phía Local, không thay thế lease/RPC server. Khi Local lease + receipt hoàn tất, phải thay guard bằng luồng khóa Cloud và biên nhận.
+- Chưa xác nhận build; GitHub Actions của commit mới nhất đang chờ.
+
+## 23. Guard thao tác khôi phục backup đối với Asset đã liên kết (19/11/2026)
+
+Rà soát thêm phát hiện `applyRestore()` thay thế toàn bộ Asset bằng backup và không đi qua các handler sửa/lưu kho/khôi phục thông thường. Đây là đường có thể ghi đè hoặc loại bỏ Asset đã liên kết Cloud, đi vòng qua guard mới.
+
+Kế hoạch:
+- Trước khi restore, kiểm tra mọi Asset có `assetCloudLinks`.
+- Chỉ cho phép restore nếu backup vẫn có đủ các Asset đã liên kết và snapshot master data của chúng giống hệt dữ liệu Local hiện tại (bao gồm UUID/code/category, hồ sơ, trạng thái, archivedAt, createdAt/updatedAt; ảnh local không thuộc snapshot master).
+- Nếu backup thiếu hoặc thay đổi bất kỳ Asset đã liên kết nào, dừng toàn bộ restore; không ghi một phần.
+- Nếu `assetMutations` có trạng thái pending/processing/conflict, chặn restore để không làm mất dấu giao dịch chưa được xác nhận/giải quyết.
+- Không xóa mapping hoặc mutation ledger trong restore. Các bảng mới không nằm trong backup cũ và phải được giữ nguyên.
+- Backup/restore vẫn có thể thao tác các Asset chưa liên kết và các bảng nghiệp vụ khác theo luồng hiện có.
+
+Phạm vi sửa chỉ `src/App.tsx`; không thay đổi định dạng backup hoặc các bảng khác. Cần test: backup không đổi Asset linked thì restore được; backup đổi/bỏ Asset linked thì bị chặn; có mutation chưa xử lý thì bị chặn; Asset unlinked restore như trước.
+
+Trạng thái: chưa áp dụng guard backup restore tại thời điểm ghi nhận.
+
+### 23.1 Guard backup restore đã triển khai – 19/11/2026
+
+- Commit `b59cf661b246d79156dbc4dc56a7e1d515ecc424`: thêm kiểm tra Asset Cloud-linked và mutation chưa xử lý trước khi restore.
+- Commit `88716b17206a6ae514c0f27e4f26dc85ccd5b879`: chuyển việc đọc links/mutations/current assets vào cùng Dexie read-write transaction với restore để tránh race giữa các tab.
+- Restore bị chặn nếu có mutation pending/processing/conflict, hoặc backup thiếu/thay đổi master snapshot của Asset linked/conflict.
+- Ảnh Local không nằm trong master snapshot; backup vẫn có thể cập nhật ảnh nếu hồ sơ master không đổi.
+- Hai bảng `assetCloudLinks` và `assetMutations` không bị xóa trong restore. Backup format cũ vẫn không chứa hai bảng này.
+- Asset chưa liên kết tiếp tục theo luồng restore cũ.
+- Chưa có kiểm thử runtime IndexedDB/restore trên trình duyệt; cần test thủ công sau khi build PASS.
+
+### 23.2 CI xác nhận mã nguồn – 19/11/2026
+
+- GitHub Actions run `44409619749`, commit `2118937bdde443c9415e605a3b5ad82ac85be078`: job `build` đã PASS.
+- Các bước Test Cloud sync mapping safety, Test Local identity rekey safety, validate template JSON/reference/package và Build Vite app đều PASS.
+- Job `deploy` đang chạy tại thời điểm cập nhật. Chưa đánh dấu toàn bộ workflow/deploy hoàn tất.
+- CI không chạy SQL Migration 017, không kiểm thử Dexie migration trong trình duyệt thực, không kiểm thử hai thiết bị PC/Mobile đồng thời.
+
+
+## 24. Khắc phục kiểm tra payload của Migration 017 (19/11/2026)
+
+Người dùng đã chạy Migration 017 thành công trên BAOTRI-Mini-Test. Khi chạy Test SQL 017, RPC `apply_asset_mutation_with_lock` báo lỗi PostgreSQL `42883: function jsonb_object_length(jsonb) does not exist`.
+
+Nguyên nhân:
+- Migration 017 dùng `jsonb_object_length(p_payload)` để đếm số key của JSON object.
+- Hàm này không khả dụng trong môi trường PostgreSQL đang dùng.
+- Kiểm tra số lượng key là dư thừa vì điều kiện bắt buộc đủ toàn bộ key (`?& v_required_keys`) và không có key ngoài allowlist (`p_payload - v_required_keys = '{}'`) đã đảm bảo chính xác tập key.
+
+Cách sửa:
+- Loại bỏ phép gọi `jsonb_object_length`; giữ kiểm tra payload phải là JSON object, đủ các key bắt buộc và không có key ngoài allowlist.
+- Dùng `IS DISTINCT FROM 'object'` để xử lý an toàn cả trường hợp payload NULL.
+- Vì Migration 017 đã được áp dụng, không chạy lại toàn bộ Migration 017 (sẽ vướng bảng đã tồn tại). Tạo migration hotfix tiếp theo để thay thế định nghĩa RPC hiện hữu an toàn, sau đó mới chạy lại Test SQL 017.
+- Đồng thời sửa file Migration 017 gốc để các lần cài mới không gặp lại lỗi.
+
+Phạm vi: chỉ hàm kiểm tra payload trong RPC; không đổi schema receipt, lease, quyền, logic cập nhật Asset, idempotency hoặc phạm vi đồng bộ. Không bật worker và không chạy SQL thay người dùng.
+
+Trạng thái:
+- [x] Đã xác định nguyên nhân từ lỗi thực tế.
+- [x] Đã cập nhật Migration 017 gốc tại commit `74a27b4f995ae6c78f8a61acc7626e7b7bd7accb` để bỏ hàm không khả dụng và xử lý payload NULL an toàn.
+- [x] Đã thêm migration hotfix `supabase/migrations/20261119000100_fix_asset_mutation_payload_validation.sql` tại commit `6d38f25a263fc0ec07ad1e982586c0a4e4524bb9`; hotfix chỉ thay định nghĩa RPC hiện hữu, không tạo lại bảng hoặc thay đổi dữ liệu.
+- [ ] Người dùng chạy hotfix trên BAOTRI-Mini-Test.
+- [ ] Chạy lại Test SQL 017 và xác nhận PASS.
+- [ ] Chưa tích hợp Local lease/receipt trước khi Test 017 PASS.
+
+
+### 24.1 Phân tích kết quả Test SQL 017 – stale version
+
+Người dùng chạy Test SQL 017 sau hotfix và báo tất cả dòng PASS ngoại trừ:
+- `Stale expected Cloud version is rejected`
+- Actual: `blocked=false; name=Asset mutation committed once`
+
+Đã kiểm tra lại mã RPC trên `main`:
+- RPC hiện so sánh `v_asset.updated_at IS DISTINCT FROM p_expected_cloud_updated_at` và phải trả SQLSTATE `40001` nếu phiên bản Cloud khác.
+- Bài test hiện tại chỉ kiểm tra tên Asset sau lời gọi, trong khi payload gửi lại cũng giữ nguyên tên; do đó phần Actual chưa đủ để xác định vì sao lời gọi không bị chặn.
+- Cần tăng độ quan sát của test: xác nhận timestamp sau mutation đầu tiên thực sự khác timestamp gốc; chụp timestamp Cloud ngay trước lời gọi stale; sau lời gọi kiểm tra timestamp không thay đổi. Báo rõ các timestamp trong cột Actual.
+- Không thay đổi RPC hoặc tích hợp Local trước khi test chẩn đoán xác nhận rõ nguyên nhân.
+
+Trạng thái:
+- [x] Đã xác nhận nội dung RPC trên main có điều kiện kiểm tra phiên bản.
+- [x] Cập nhật Test SQL 017 tại commit `4e55cdc60855f3043eabdb9a1daa8635bae45ba2`: kiểm tra timestamp sau mutation đầu tiên, timestamp ngay trước stale call và timestamp sau stale call; cột Actual in đủ các mốc để xác định lỗi nằm ở dữ liệu phiên bản hay nhánh RPC.
+- [ ] Người dùng chạy lại Test SQL 017 và gửi dòng kết quả mới.
+- [ ] Người dùng chạy lại Test SQL 017 và gửi dòng kết quả mới.
+
+
+### 24.2 Xác định nguyên nhân timestamp không đổi – 19/11/2026
+
+Người dùng chạy lại Test SQL 017 với chẩn đoán chi tiết và nhận được:
+- `original`, `after_first`, `before_stale`, `after_stale` đều bằng `2026-11-18 22:28:02.599598+00`.
+- `blocked=false`; Asset vẫn giữ tên `Asset mutation committed once`.
+
+Đã kiểm tra mã nguồn trên `main`:
+- Bảng `assets` có trigger `assets_set_updated_at` gọi `public.set_updated_at()`.
+- Hàm dùng `new.updated_at := now()`.
+- Trong một transaction, `now()` trả về thời điểm bắt đầu transaction, nên trigger ghi đè giá trị `clock_timestamp()` mà RPC đặt; timestamp không đổi so với lúc tạo fixture.
+- Vì optimistic version không thay đổi, stale request không bị phát hiện.
+
+Phương án sửa đã chốt để triển khai:
+- Không thay đổi hàm `set_updated_at()` dùng chung, tránh tác động các bảng khác.
+- Tạo trigger function riêng cho Asset, dùng `clock_timestamp()`, và thay trigger `assets_set_updated_at` hiện tại bằng trigger riêng này.
+- Migration riêng, không cập nhật dữ liệu hiện có; chỉ thay hành vi cập nhật timestamp cho các lần UPDATE Asset từ sau khi migration được áp dụng.
+- Giữ nguyên RPC receipt/lease và bài test stale-version; chạy lại Test SQL 017 sau migration mới.
+- Chưa tích hợp Local lease/receipt cho đến khi Test SQL 017 PASS toàn bộ.
+
+Trạng thái:
+- [x] Xác định đúng nguyên nhân từ trigger `set_updated_at()`.
+- [ ] Tạo migration sửa riêng trigger Asset.
+- [ ] Người dùng chạy migration mới trên BAOTRI-Mini-Test.
+- [ ] Chạy lại Test SQL 017 và xác nhận tất cả PASS.
+
+
+### 24.3 Migration 019 đã tạo – 19/11/2026
+
+- Commit tài liệu chẩn đoán: `3bc613101614fe7a5151ef8d34e07c6fd3df3fd8`.
+- Commit Migration 019: `17dd94500b3ccc157e4affa54f602a1253ea7550`.
+- File: `supabase/migrations/20261119000200_asset_updated_at_wall_clock.sql`.
+- Migration tạo hàm trigger riêng `public.set_asset_updated_at()`, dùng `clock_timestamp()`; thay trigger trên `public.assets` để dùng hàm mới.
+- Không sửa hàm `public.set_updated_at()` dùng chung, không tác động timestamp các bảng khác, không cập nhật hàng Asset hiện có.
+- Chưa chạy SQL. Người dùng cần chạy Migration 019 trên BAOTRI-Mini-Test, sau đó chạy lại Test SQL 017.
+
+
+## 22. Kết quả Migration 019 và Test SQL 017 – 19/11/2026
+
+- Người dùng xác nhận đã áp dụng Migration 019 `supabase/migrations/20261119000200_asset_updated_at_wall_clock.sql` trên BAOTRI-Mini-Test và chạy lại toàn bộ Test SQL 017; **PASS toàn bộ**.
+- Migration 019 tạo trigger riêng `set_asset_updated_at()` dùng `clock_timestamp()` cho bảng `assets`, thay trigger cũ dùng `set_updated_at()`/ `now()`. Không sửa hàm timestamp dùng chung, không ảnh hưởng các bảng khác và không cập nhật hàng Asset hiện có.
+- Lỗi stale expected Cloud version đã được xử lý: trong cùng transaction, timestamp Asset thay đổi theo wall-clock, do đó RPC optimistic version check phát hiện phiên bản cũ đúng như yêu cầu.
+- Ghi nhận theo xác nhận của người dùng: Migration 016, 017, 018, 019 và Test SQL 016, 017 đã PASS trên BAOTRI-Mini-Test. Assistant không trực tiếp thực thi SQL.
+- Không chạy lại Migration 017/018; Migration 019 là hotfix tiến về phía trước.
+
+## 23. Kế hoạch tích hợp Asset Local lease + receipt – đợt tiếp theo
+
+### 23.1 Hiện trạng đã đối chiếu trên `main`
+- `src/db.ts` đã có Dexie v8 với `assetCloudLinks` và `assetMutations`; không cần tạo thêm bảng hoặc nâng version chỉ để bắt đầu tích hợp.
+- `src/lib/assetEditLocks.ts` đã có acquire/heartbeat/release và `applyAssetMutationWithEditLock()`.
+- `src/App.tsx` hiện vẫn có `blockCloudLinkedAssetMutation()`: Asset đã liên kết Cloud bị chặn sửa; `saveAsset()` vẫn ghi Asset + generic `syncQueue`, chưa gọi RPC receipt.
+- `src/App.tsx` hiện có Supabase client và organization context; cần dùng đúng `organizationId` + `cloudClient` trong Workspace, không suy đoán mapping từ tên/mã.
+- Import Local → Cloud hiện có xác nhận; mapping được lưu ở Dexie v8. Không thay đổi luồng import trong đợt tích hợp save nếu không cần thiết.
+- Cloud version làm mốc là `assetCloudLinks.cloudUpdatedAt`; trước khi mở form phải đọc/đối chiếu phiên bản Cloud hiện hành. Nếu khác mốc Local, chuyển conflict và không mở quyền sửa.
+
+### 23.2 Phạm vi triển khai
+1. Với Asset chưa mapping Cloud: giữ nguyên hành vi Local hiện tại; không xin lease cho Asset chưa có Cloud counterpart.
+2. Với Asset đã mapping: kiểm tra không có mutation `pending/processing/conflict`; lấy snapshot Cloud mới nhất và so sánh `updated_at` với `cloudUpdatedAt` đã lưu.
+3. Chỉ sau khi xác minh version và acquire lease thành công mới mở form sửa.
+4. Duy trì heartbeat trong toàn bộ phiên chỉnh sửa và trong lúc chờ Cloud receipt. Heartbeat lỗi/mất mạng phải fail-closed; token không được lưu vào IndexedDB/localStorage.
+5. Khi lưu Asset mapped: ghi Local snapshot và mutation bất biến vào Dexie transaction; không gọi `queueChange('assets', ...)` cho mutation Asset đã đi theo receipt protocol.
+6. Gửi đúng mutationId, payload snapshot, expectedCloudUpdatedAt và lease token tới `applyAssetMutationWithEditLock()`.
+7. Chỉ khi nhận receipt hợp lệ mới cập nhật `assetCloudLinks.cloudUpdatedAt`, đánh dấu mutation `applied`, và release lease.
+8. Nếu Cloud từ chối/timeout/mất mạng sau Local commit: giữ mutation và dữ liệu Local, không release lease chủ động khi lease còn hoạt động; khóa thao tác sửa tiếp. Không tự xin token mới để gửi mutation cũ. Cần có đường phục hồi/reconcile rõ ràng trước khi xem là hoàn tất.
+9. Cancel form: release đúng token; không ghi Local mutation.
+10. Các luồng archive/restore/status chỉ tích hợp nếu được chứng minh đi qua cùng receipt RPC; không để đường ghi Local bypass lease.
+11. Checklist/task/log/maintenance và queue tương ứng tiếp tục Local-only; không bật worker hoặc sync bảng khác.
+
+### 23.3 Rủi ro và điều kiện dừng
+- Không được mở form nếu Cloud version không đọc được, không khớp link version, mapping không ở trạng thái `linked`, hoặc còn mutation chưa xác nhận.
+- Không đánh dấu `applied` chỉ vì Local transaction thành công; phải có receipt Cloud.
+- Không xóa mutation/queue trước Cloud acknowledgement; không đổi mutationId/payload/expected version khi retry.
+- Nếu chưa có cách xử lý an toàn trường hợp Cloud đã commit nhưng client mất response, không được release lease hoặc cho sửa tiếp.
+- Không tự thay đổi CloudAssetsPanel, import, migration/RLS hoặc dữ liệu nghiệp vụ trong đợt này.
+- Không tự chạy SQL/migration; người dùng tiếp tục chạy SQL trên BAOTRI-Mini-Test.
+
+### 23.4 Cách kiểm thử
+- Unit tests cho payload snapshot, mutation id ổn định, chặn mutation đang pending/conflict và trạng thái link/version.
+- Build TypeScript/Vite qua CI.
+- Người dùng kiểm tra trên BAOTRI-Mini-Test: sửa Asset mapped, hủy form, lưu thành công, Cloud version tăng, receipt được replay nếu retry; Asset chưa mapped vẫn sửa Local; Asset Cloud đổi từ nền tảng khác thì form bị chặn; mất mạng/heartbeat lỗi thì không thể lưu.
+- Kiểm tra riêng rằng Checklist/bảo trì vẫn hoạt động Local và không có hàng đợi các bảng này bị gửi lên Cloud.
+- Chỉ đánh dấu runtime PASS khi người dùng trực tiếp xác nhận kết quả.
+
+### 23.5 Trạng thái
+- Đã cập nhật kế hoạch sau khi người dùng xác nhận Test SQL 017 PASS.
+- Chưa sửa `src/App.tsx` hoặc `src/db.ts` trong mục này; chưa gọi RPC từ UI; chưa bật worker tổng thể.
+
+
+
+## 24. Kế hoạch code – tích hợp chỉnh sửa Asset Local mapped (19/11/2026)
+
+Trước khi sửa ứng dụng, đã đọc lại phiên bản mới nhất trên `main` của `src/App.tsx`, `src/db.ts`, `src/lib/assetEditLocks.ts` và `src/CloudAssetsPanel.tsx`.
+
+### Phạm vi lát cắt đầu
+- Chỉ tích hợp luồng mở form và lưu hồ sơ master của Asset đã có `assetCloudLinks` trong đúng `organizationId`.
+- Trước khi mở form: kiểm tra link `linked`, không có mutation chưa xác nhận; acquire lease; đọc lại Cloud row sau acquire và so sánh `id/code/updated_at` với mapping. Nếu lệch, đánh dấu link conflict, release lease và không mở form.
+- Lease token chỉ ở React memory. Heartbeat định kỳ; offline/heartbeat thất bại làm lease cục bộ mất hiệu lực và chặn save. Cancel giải phóng đúng token nếu còn hợp lệ.
+- Khi save: ghi Local Asset + snapshot mutation bất biến trong một Dexie transaction; không gọi generic `queueChange('assets', ...)` cho Asset mapped. Gọi RPC receipt bằng đúng mutationId, payload, expectedCloudUpdatedAt và token.
+- Chỉ khi receipt hợp lệ mới đánh dấu mutation applied, cập nhật link version, rồi release lease.
+- Nếu RPC lỗi/timeout: giữ Local và mutation, giữ lease trong memory để heartbeat/retry cùng mutationId/payload/token; không cấp mutation mới. Mutation còn pending sau reload sẽ fail-closed và bị chặn; chưa tự phục hồi receipt sau reload trong lát này.
+- Asset chưa mapped giữ nguyên luồng Local cũ. Archive/restore/status tiếp tục bị chặn cho Asset mapped; không để các đường này bypass receipt.
+- Checklist/bảo trì và các bảng khác không đổi; không bật worker.
+
+### Giới hạn được ghi nhận trước
+- Lát đầu không xử lý tự động pending mutation sau khi reload vì client không lưu token và hiện chưa có RPC tra receipt không cần token. Giữ pending và chặn sửa tiếp an toàn hơn tự xin lease mới.
+- Không đánh dấu runtime hai nền tảng PASS chỉ qua build. Cần test thủ công trên hai phiên sau khi có code.
+
+
+
+
+## 25. Tích hợp Local Asset lease + receipt – code lát đầu (19/11/2026)
+
+Đã cập nhật trực tiếp trên `main`:
+
+- Commit `189cb65aa54108691f5d2fa17a7e176af906d159`: tích hợp trong `src/App.tsx`:
+  - Nút Sửa từ danh sách và từ màn hình chi tiết đều đi qua `openAssetEditor()`.
+  - Asset chưa mapping giữ luồng Local cũ.
+  - Asset mapped phải có link `linked`, không có mutation unresolved; ứng dụng acquire lease, đọc Cloud row sau acquire và kiểm tra đúng organization + UUID + code + `updated_at` bằng link version trước khi mở form.
+  - Heartbeat 30 giây; sự kiện offline hoặc heartbeat thất bại làm lease Local mất hiệu lực và chặn Save.
+  - Khi Save Asset mapped: Local Asset + mutation snapshot được ghi trong cùng Dexie transaction; gọi `applyAssetMutationWithEditLock()`; chỉ khi RPC receipt hợp lệ mới cập nhật mutation `applied` + Cloud version trong link và giải phóng lease.
+  - Không gọi `queueChange('assets', ...)` cho Asset mapped trong luồng Save mới. Asset chưa mapped vẫn dùng Local queue hiện tại.
+  - Archive/restore/status của Asset mapped vẫn bị chặn vì chưa tích hợp qua receipt RPC; Checklist/bảo trì không đổi.
+- Commit `ef1b14fb66124572b62675cb9bc85068e88d6c3f`: sửa đóng form để không giải phóng lease khi mutation còn pending/processing/conflict. Nếu lease đã mất, client không gửi release bằng token cũ.
+- Lease token chỉ ở React state; không ghi vào Dexie/localStorage/syncQueue.
+- Nếu RPC timeout/lỗi sau khi Local commit, mutation giữ nguyên ID/payload và trạng thái pending; form tiếp tục giữ lease để retry đúng mutation. Khi reload, mutation unresolved bị chặn fail-closed vì hiện chưa có RPC tra receipt độc lập với token; không tự cấp token mới để gửi lại.
+- Chưa sửa `src/db.ts`, không thêm migration, không thay đổi SQL/RLS, không bật worker hoặc đồng bộ Checklist/bảo trì.
+- GitHub Actions run #353 (`44414385705`) cho commit tài liệu sau tích hợp `f60f9a1c627cde08631c8a815eabd7d1b2eef396` đã completed / success; các bước build Vite và deploy GitHub Pages đều PASS. Hai run code #351/#352 bị cancel khi commit mới thay thế; không dùng chúng làm bằng chứng PASS.
+- Chưa kiểm thử runtime trên hai phiên PC/Mobile; chưa tuyên bố luồng tích hợp hoàn tất. Cần đợi CI rồi mới test trên BAOTRI-Mini-Test.
+
+## 26. Kiểm thử runtime Asset Edit Lease + Mutation Receipt trên PC – 19/11/2026
+
+### 26.1 Kết quả người dùng trực tiếp kiểm tra
+
+Phạm vi: một Asset thử nghiệm đã được liên kết Local PC ↔ Cloud; không sửa dữ liệu khác và không kiểm thử trên Mobile trong phiên này.
+
+- [x] Mở form sửa Asset mapped trên PC sau khi acquire lease.
+- [x] Đổi tên và lưu thành công; người dùng xác nhận tên mới đã xuất hiện trên Cloud.
+- [x] Sau khi lưu thành công, form tự đóng.
+- [x] Mở lại form sửa được sau lần lưu thành công; sau đó Hủy để đóng form.
+- [x] Khi form đang mở và PC mất Internet: ứng dụng hiển thị thông báo mất kết nối; nút Lưu bị che/không thể thao tác.
+- [x] Khi kết nối Internet trở lại, nút Lưu vẫn bị che; ứng dụng không tự khôi phục quyền sửa. Người dùng chỉ có thể Hủy form.
+- [x] Ngay sau khi Hủy, chưa mở lại được form do lease Cloud cũ vẫn còn hiệu lực.
+- [x] Sau khi chờ quá khoảng 2 phút kể từ lần heartbeat hợp lệ cuối, người dùng mở lại được form sửa.
+- [x] Hủy form sau khi mở lại; tiếp tục mở form, đổi tên lần 2 và lưu thành công. Người dùng xác nhận Cloud cũng hiển thị tên lần 2.
+
+Kết luận runtime trong phạm vi đã thử:
+- Hành vi mất mạng fail-closed: PASS theo quan sát giao diện.
+- Không tự khôi phục quyền sửa sau khi có mạng lại: PASS.
+- Lease cũ hết hạn và cho phép acquire phiên mới sau khoảng 2 phút: PASS theo kết quả mở lại form.
+- Lưu Asset mapped sau khi acquire lease mới và Cloud nhận tên mới: PASS.
+- Chưa quan sát trực tiếp trạng thái lock trên Cloud Assets; giao diện Cloud người dùng thấy bình thường, vì vậy không ghi nhận đây là một phép kiểm tra trạng thái khóa.
+- Chưa kiểm thử PC/Mobile đồng thời, heartbeat failure riêng biệt, hoặc mất mạng đúng thời điểm RPC đang xử lý.
+
+### 26.2 Đối chiếu lại code hiện tại trên main
+
+Đã đọc src/App.tsx và src/lib/assetEditLocks.ts trên main; xác nhận luồng Save Asset mapped hiện tại:
+
+1. Khi nhấn Lưu, saveAsset() ghi Local Asset và snapshot mutation vào cùng Dexie transaction.
+2. Sau transaction Local, mutation được chuyển sang processing, rồi client gọi applyAssetMutationWithEditLock() ngay bằng lease token, mutationId và expected Cloud version.
+3. Chỉ khi RPC trả receipt hợp lệ, mutation mới thành applied, mapping mới cập nhật Cloud version, form mới tự đóng và client mới release lease.
+4. Nếu RPC lỗi/timeout/mất mạng sau khi Local transaction đã commit, mutation được trả về pending; Local snapshot vẫn giữ nguyên, form tiếp tục mở và lease vẫn được giữ trong React memory để retry đúng mutation.
+5. Khi retry, code kiểm tra mutation unresolved; nếu payload giống hệt snapshot đang chờ thì dùng lại mutationId cũ và Local snapshot hiện có. Nếu payload khác hoặc mutation ở trạng thái conflict thì từ chối, không tạo mutationId mới.
+6. Nếu tải lại trang khi mutation còn pending, lease token trong memory bị mất; hiện chưa có cơ chế phục hồi/reconcile tự động sau reload. openAssetEditor() chặn mở phiên sửa mới khi còn mutation pending/processing/conflict. Đây là giới hạn đã biết, fail-closed có chủ ý.
+
+Làm rõ Local-first: đối với Asset đã mapping Cloud, Local được ghi trước; sau đó cùng thao tác Save gọi Cloud RPC để xác nhận và cập nhật Cloud. Đây chưa phải worker đồng bộ nền độc lập. Nếu Cloud chưa xác nhận, Local giữ snapshot và mutation pending; không được coi là đã đồng bộ xong.
+
+### 26.3 Trạng thái và việc tiếp theo
+
+- [x] Ghi nhận kết quả kiểm thử runtime PC trong phiên 19/11/2026.
+- [x] Đối chiếu lại code Save/retry trên main; không sửa mã nguồn trong phiên kiểm thử này.
+- [ ] Thiết kế và thực hiện phép thử an toàn cho trường hợp Local commit thành công nhưng Cloud RPC chưa xác nhận; phải bảo đảm có thể retry cùng snapshot, cùng mutationId và cùng lease khi token còn hợp lệ.
+- [ ] Xác định cách kiểm thử có kiểm soát mà không gây pending không thể phục hồi sau reload; tuyệt đối không tải lại trang/đóng trình duyệt khi mutation còn pending.
+- [ ] Chưa kiểm thử PC/Mobile đồng thời và chưa xác nhận toàn bộ luồng Asset Edit Lease + Mutation Receipt đã nghiệm thu.

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import type { Session, SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
 import AuthScreen from './AuthScreen'
@@ -13,7 +13,8 @@ import {
 import { QRCodeSVG } from 'qrcode.react'
 import { Html5QrcodeScanner } from 'html5-qrcode'
 import namingConventionText from '../QUY_UOC_MA_DINH_DANH_VA_VIET_TAT_THIET_BI.txt?raw'
-import { db, uid, now, queueChange, type Asset, type InventoryItem, type Task, type MaintenancePlan, type MaintenancePlanPeriod, type Movement, type Log, type ChecklistTemplateItem, type ChecklistTemplateVersion, type ChecklistResultItem, type ChecklistResult, putAndQueue, addAndQueue, deleteAndQueue } from './db'
+import { db, uid, now, getDeviceId, queueChange, type Asset, type AssetMutationPayload, type InventoryItem, type Task, type MaintenancePlan, type MaintenancePlanPeriod, type Movement, type Log, type ChecklistTemplateItem, type ChecklistTemplateVersion, type ChecklistResultItem, type ChecklistResult, putAndQueue, addAndQueue, deleteAndQueue } from './db'
+import { acquireAssetEditLock, applyAssetMutationWithEditLock, heartbeatAssetEditLock, releaseAssetEditLock, type AssetEditLease } from './lib/assetEditLocks'
 import { downloadExcelReport } from './lib/excelExport'
 
 type Page = 'dashboard' | 'checklist' | 'assets' | 'inventory' | 'planning' | 'tasks' | 'logs' | 'reports' | 'settings'
@@ -28,6 +29,26 @@ const makeDemoAssetImage = (category: string, code: string, view: number) => {
   return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg)
 }
 const today = () => new Date().toISOString().slice(0, 10)
+const assetMasterRestoreSnapshot = (asset: Asset) => JSON.stringify({
+  id: asset.id,
+  code: asset.code,
+  name: asset.name,
+  category: asset.category,
+  brand: asset.brand ?? '',
+  model: asset.model ?? '',
+  serial: asset.serial ?? '',
+  location: asset.location ?? '',
+  commissionedAt: asset.commissionedAt || null,
+  power: asset.power ?? '',
+  cycle: asset.cycle ?? '',
+  cycleStartedAt: asset.cycleStartedAt || null,
+  transferredFromOtherFacility: Boolean(asset.transferredFromOtherFacility),
+  status: asset.status,
+  notes: asset.notes ?? '',
+  archivedAt: asset.archivedAt || null,
+  createdAt: asset.createdAt,
+  updatedAt: asset.updatedAt
+})
 
 type ChecklistFrequency = 'Hàng ngày' | 'Hàng tuần' | 'Hàng tháng' | 'Hàng quý' | 'Hàng năm'
 type ChecklistScheduleRow = { asset: Asset; dueDate: string; completed: boolean; isMakeup: boolean; result?: string; missingTemplate?: boolean }
@@ -230,7 +251,8 @@ const dateTimeText = (s?: string) => s ? new Date(s).toLocaleString('vi-VN') : '
 
 type EmployeeProfile = { fullName: string; phone: string; dateOfBirth: string; position: string }
 
-function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, organizationId, organizationName, organizationRole, cloudClient }: {
+function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onSignOut, organizationId, organizationName, organizationRole, cloudClient }: {
+  userId: string
   userName: string
   userEmail: string
   profile: EmployeeProfile
@@ -242,14 +264,17 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
   cloudClient: SupabaseClient
 }) {
   const isViewer = organizationRole.trim().toLowerCase() === 'viewer'
+  const isAdmin = organizationRole.trim().toLowerCase() === 'admin'
   const [page, setPage] = useState<Page>('dashboard')
   const [showCloudAssets, setShowCloudAssets] = useState(false)
   const [search, setSearch] = useState('')
   const [theme, setTheme] = useState<'light' | 'dark'>('light')
   const [compact, setCompact] = useState(false)
   const [profileEditOpen, setProfileEditOpen] = useState(false)
+  const [pendingRestore, setPendingRestore] = useState<{ fileName: string; data: any } | null>(null)
   const [modal, setModal] = useState<'asset'|'item'|'task'|'plan'|'planExport'|'log'|'scan'|null>(null)
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null)
+  const [assetEditLease, setAssetEditLease] = useState<{ assetId: string; lease: AssetEditLease; expectedCloudUpdatedAt: string; lost: boolean } | null>(null)
   const [detailAsset, setDetailAsset] = useState<Asset | null>(null)
   const [checklistAccess, setChecklistAccess] = useState(false)
   const [checklistFrequency,setChecklistFrequency] = useState<ChecklistFrequency>('Hàng ngày')
@@ -266,10 +291,15 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
     } catch { return [] }
   })
   const [assetLocationFilter, setAssetLocationFilter] = useState('')
+  const [inventoryLocations, setInventoryLocations] = useState<string[]>(() => {
+    try { const saved = JSON.parse(localStorage.getItem('baotri-inventory-locations') || '[]'); return Array.isArray(saved) ? [...new Set(saved.filter((x:any)=>typeof x==='string'&&x.trim()).map((x:string)=>x.trim()))].sort((a,b)=>a.localeCompare(b,'vi')) : [] } catch { return [] }
+  })
+  const [inventoryLocationEnabled, setInventoryLocationEnabled] = useState<boolean>(() => localStorage.getItem('baotri-inventory-location-enabled') !== 'false')
   const [assetStatusFilter, setAssetStatusFilter] = useState('')
   const [assetSort, setAssetSort] = useState('code-asc')
   const [showArchived, setShowArchived] = useState(false)
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null)
+  const [movementMonth, setMovementMonth] = useState(today().slice(0, 7))
   const [detailItem, setDetailItem] = useState<InventoryItem | null>(null)
   const [editingTask, setEditingTask] = useState<Task | null>(null)
   const [editingPlan, setEditingPlan] = useState<MaintenancePlan | null>(null)
@@ -298,8 +328,30 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
   const checklistTemplates = useLiveQuery(() => db.checklistTemplates.toArray(), []) ?? []
   const allChecklistResults = useLiveQuery(() => db.checklistResults.toArray(), []) ?? []
   const queueCount = useLiveQuery(() => db.syncQueue.count(), []) ?? 0
+  const queueItems = useLiveQuery(() => db.syncQueue.orderBy('queuedAt').reverse().limit(50).toArray(), []) ?? []
 
 
+
+  useEffect(() => {
+    if (!assetEditLease) return
+    let active = true
+    const markLost = (reason: string) => {
+      if (!active) return
+      setAssetEditLease(current => current?.lease.lock_token === assetEditLease.lease.lock_token ? { ...current, lost: true } : current)
+      flash('Mất quyền khóa thiết bị: ' + reason + '. Không thể lưu hồ sơ; hãy đóng form và kiểm tra lại Cloud.')
+    }
+    const heartbeat = async () => {
+      if (!navigator.onLine) { markLost('mất kết nối Internet'); return }
+      try {
+        const renewed = await heartbeatAssetEditLock(cloudClient, organizationId, assetEditLease.assetId, assetEditLease.lease.lock_token)
+        if (!renewed) markLost('Cloud không còn xác nhận lease')
+      } catch (error) { markLost(error instanceof Error ? error.message : String(error)) }
+    }
+    const timer = window.setInterval(() => { void heartbeat() }, 30000)
+    const onOffline = () => markLost('mất kết nối Internet')
+    window.addEventListener('offline', onOffline)
+    return () => { active = false; window.clearInterval(timer); window.removeEventListener('offline', onOffline) }
+  }, [assetEditLease?.assetId, assetEditLease?.lease.lock_token, cloudClient, organizationId])
 
   useEffect(() => {
     const savedTheme = localStorage.getItem('baotri-theme') as 'light' | 'dark' | null
@@ -317,9 +369,13 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
     localStorage.setItem('baotri-compact', String(compact))
   }, [compact])
 
-  useEffect(() => {
-    const seed = async () => {
-      // 30 hồ sơ thiết bị mẫu; đối chiếu theo mã để không tạo trùng khi tải lại.
+  const createDemoData = async () => {
+    try {
+      if (await db.assets.count() !== 0 || await db.inventory.count() !== 0) {
+        alert('Chỉ tạo dữ liệu mẫu khi cả danh sách thiết bị và vật tư đang trống.');
+        return;
+      }
+      // Tạo mới 30 hồ sơ thiết bị mẫu trực tiếp tại Local.
       const demoAssets = [
         { code: 'COMP-001', name: 'Máy nén khí trục vít số 1', category: 'Máy nén khí', brand: 'Atlas Copco', model: 'GA22', location: 'Phòng máy nén khí', commissionedAt: '2023-05-10', power: '22 kW', cycle: 'Hàng tháng' },
         { code: 'KHO-001', name: 'Kho lạnh bảo quản số 1', category: 'Kho lạnh', brand: 'Bitzer', model: 'Cụm lạnh 1', location: 'Khu sản xuất', commissionedAt: '2022-08-01', power: '18 kW', cycle: 'Hàng ngày' },
@@ -352,72 +408,23 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
         { code: 'SEN-001', name: 'Cảm biến áp suất đường khí', category: 'Thiết bị đo lường', brand: 'WIKA', model: 'A-10', location: 'Đường ống khí nén', commissionedAt: '2023-05-10', power: '0–10 bar', cycle: 'Hàng quý' },
         { code: 'PMP-001', name: 'Bơm thoát nước hố gom', category: 'Máy bơm', brand: 'Tsurumi', model: 'PU-series', location: 'Hố gom tầng hầm', commissionedAt: '2021-07-11', power: '1.5 kW', cycle: 'Hàng tháng' }
       ]
-      // Chuẩn hóa 30 thiết bị mẫu theo cấu trúc ABC-ABXY-xxx-BB-MM-YY.
-      // Giữ nguyên ID, ảnh, lịch sử và các chỉnh sửa của hồ sơ demo đã tồn tại.
-      const typeCodes: Record<string, string> = {
-        COMP: 'MNA', KHO: 'KLA', BOM: 'MB', MOT: 'DCD', FAN: 'QCN',
-        AHU: 'AHU', FCU: 'FCU', CHL: 'CHL', CTW: 'TGN', GEN: 'MPD',
-        ATS: 'ATS', MDB: 'TDT', DB: 'TDP', VFD: 'BT', UPS: 'UPS',
-        TRF: 'MBA', CAP: 'TCB', BOI: 'NH', DRY: 'MSK', FLT: 'BLK',
-        WLD: 'MHD', LFT: 'TM', FIR: 'BCC', SEN: 'CBAS', PMP: 'MB'
-      }
-      const locationCodes: Record<string, string> = {
-        'Phòng máy nén khí': '01', 'Khu sản xuất': '02', 'Phòng bơm tầng hầm': '03',
-        'Dây chuyền 1': '04', 'Khu xử lý bụi': '05', 'Nhà xưởng A': '06',
-        'Khu kỹ thuật': '07', 'Phòng kỹ thuật tầng 1': '08', 'Tầng 2': '09',
-        'Khu vực Chiller': '10', 'Sân kỹ thuật mái': '11', 'Phòng máy phát điện': '12',
-        'Phòng điện tổng': '13', 'Tầng 1': '14', 'Phòng bơm': '15',
-        'Phòng IT': '16', 'Trạm biến áp': '17', 'Nhà lò hơi': '18',
-        'Xưởng bảo trì': '19', 'Sảnh chính': '20', 'Phòng bơm PCCC': '21',
-        'Đường ống khí nén': '22', 'Hố gom tầng hầm': '23'
-      }
-      const typeSequences: Record<string, number> = {}
-      const normalizedDemoAssets = demoAssets.map(item => {
-        const legacyCode = item.code
-        const legacyType = legacyCode.split('-')[0]
-        const typeCode = typeCodes[legacyType] ?? 'TBK'
-        typeSequences[typeCode] = (typeSequences[typeCode] ?? 0) + 1
-        const sequence = String(typeSequences[typeCode]).padStart(3, '0')
-        const date = item.commissionedAt
-        const locationCode = locationCodes[item.location] ?? '99'
-        return {
-          ...item,
-          legacyCode,
-          code: `${typeCode}-HP01-${sequence}-${locationCode}-${date.slice(5, 7)}-${date.slice(2, 4)}`
-        }
-      })
+      // Sinh mã theo đúng danh mục và bộ cấp mã đang dùng trong ứng dụng.
+      // UUID và mã chính thức được tạo tại Local; từng mã được tính trên danh sách đã thêm trước đó.
       const existing = await db.assets.toArray()
-      const existingCodes = new Set(existing.map(a => a.code))
-      const updates: Asset[] = []
-      const missing: Asset[] = []
-      for (const item of normalizedDemoAssets) {
-        const oldDemo = existing.find(a => a.serial === `DEMO-${item.legacyCode}` || a.code === item.legacyCode)
-        if (oldDemo) {
-          if (oldDemo.code !== item.code) updates.push({ ...oldDemo, code: item.code, updatedAt: now() })
-        } else if (!existingCodes.has(item.code)) {
-          missing.push({
-            ...emptyAsset(), ...item, serial: `DEMO-${item.legacyCode}`,
-            images: [makeDemoAssetImage(item.category, item.code, 1), makeDemoAssetImage(item.category, item.code, 2)],
-            notes: 'DỮ LIỆU MẪU – ảnh minh họa kỹ thuật, không phải ảnh thực tế của thiết bị.'
-          })
+      const missing: Asset[] = demoAssets.map(item => {
+        const base = { ...emptyAsset(), ...item }
+        const code = buildAssetCode(base, existing, customAssetCategories)
+        if (!code) throw new Error(`Chưa có mã danh mục cho thiết bị mẫu: ${item.category}`)
+        const saved: Asset = {
+          ...base, code, serial: `DEMO-${item.code}`,
+          images: [makeDemoAssetImage(item.category, code, 1), makeDemoAssetImage(item.category, code, 2)],
+          notes: 'DỮ LIỆU MẪU – ảnh minh họa kỹ thuật, không phải ảnh thực tế của thiết bị.'
         }
-      }
-      if (updates.length) await db.assets.bulkPut(updates)
-      if (missing.length) await db.assets.bulkAdd(missing)
-      // Bổ sung ảnh minh họa cho hồ sơ demo cũ; không ghi đè ảnh người dùng đã tải lên.
-      const demoRows = (await db.assets.toArray()).filter(a => a.serial?.startsWith('DEMO-') || a.notes?.includes('DỮ LIỆU MẪU'))
-      const demoWithoutPhotos = demoRows.filter(a => !Array.isArray(a.images) || a.images.length === 0)
-      if (demoWithoutPhotos.length) await db.assets.bulkPut(demoWithoutPhotos.map(a => ({
-        ...a,
-        images: [makeDemoAssetImage(a.category, a.code, 1), makeDemoAssetImage(a.category, a.code, 2)],
-        notes: 'DỮ LIỆU MẪU – ảnh minh họa kỹ thuật, không phải ảnh thực tế của thiết bị.'
-      })))
-      const legacyAssets = (await db.assets.toArray()).filter(a => !Array.isArray(a.images))
-      if (legacyAssets.length) await db.assets.bulkPut(legacyAssets.map(a => ({ ...a, images: [] })))
-
-      const compressor = await db.assets.filter(a => a.serial === 'DEMO-COMP-001').first()
-      const coldStore = await db.assets.filter(a => a.serial === 'DEMO-KHO-001').first()
-      // 40 vật tư giả định để thử nghiệm kho; chỉ bổ sung mã còn thiếu, không ghi đè dữ liệu đã sửa.
+        existing.push(saved)
+        return saved
+      })
+      if (missing.length !== 30) throw new Error('Bộ dữ liệu mẫu thiết bị không đủ 30 hồ sơ.')
+      // 30 vật tư mẫu; mã và UUID được tạo tại Local.
       const demoInventory = [
         { code:'VT-001', name:'Lọc dầu máy nén khí', group:'Khí nén', unit:'Bộ', quantity:3, minQuantity:5, location:'Kho cơ điện - Kệ A1', supplier:'Nhà cung cấp mẫu A', unitPrice:450000 },
         { code:'VT-002', name:'Lọc tách dầu máy nén khí', group:'Khí nén', unit:'Cái', quantity:2, minQuantity:2, location:'Kho cơ điện - Kệ A1', supplier:'Nhà cung cấp mẫu A', unitPrice:1850000 },
@@ -460,22 +467,67 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
         { code:'VT-039', name:'Đầu cos đồng 4 mm²', group:'Dây cáp điện', unit:'Cái', quantity:100, minQuantity:30, location:'Kho điện - Kệ C5', supplier:'Nhà cung cấp mẫu D', unitPrice:1200 },
         { code:'VT-040', name:'Dây rút nhựa 200 mm', group:'Vật tư tiêu hao', unit:'Bịch', quantity:10, minQuantity:5, location:'Kho vật tư chung - Kệ F2', supplier:'Nhà cung cấp mẫu F', unitPrice:28000 }
       ]
-      const existingInventoryCodes = new Set((await db.inventory.toArray()).map(item => item.code))
-      const missingInventory = demoInventory
-        .filter(item => !existingInventoryCodes.has(item.code))
-        .map(item => ({ ...emptyItem(), ...item, updatedAt: now() }))
-      if (missingInventory.length) await db.inventory.bulkAdd(missingInventory)
-      if (!(await db.tasks.count())) {
-        const t1 = { ...emptyTask(), assetId: compressor?.id ?? '', title: 'Kiểm tra máy nén khí định kỳ', dueDate: today(), frequency: 'Hàng tháng', checklist: 'Kiểm tra rò rỉ\nKiểm tra áp suất\nKiểm tra nhiệt độ dầu' }
-        const t2 = { ...emptyTask(), assetId: coldStore?.id ?? '', title: 'Ghi nhận nhiệt độ kho lạnh', dueDate: today(), frequency: 'Hàng ngày', checklist: 'Ghi nhiệt độ hiển thị\nKiểm tra cửa kho\nKiểm tra tình trạng dàn lạnh' }
-        await db.tasks.bulkPut([t1, t2])
-      }
-      // Khởi tạo biểu mẫu riêng cho mọi thiết bị đang quản lý; không đụng vào biểu mẫu đã có.
-      const checklistAssets = (await db.assets.toArray()).filter(asset => !asset.archivedAt)
-      for (const asset of checklistAssets) await ensureDefaultChecklist(asset)
+      const missingInventory = demoInventory.slice(0, 30).map(item => ({ ...emptyItem(), ...item, updatedAt: now() }))
+      if (missingInventory.length !== 30) throw new Error('Bộ dữ liệu mẫu vật tư không đủ 30 mã.')
+      // Ghi 60 hồ sơ và 60 mục hàng đợi trong cùng transaction Dexie.
+      // Không gọi Cloud và không tự đồng bộ.
+      await db.transaction('rw', [db.assets, db.inventory, db.syncQueue], async () => {
+        await db.assets.bulkAdd(missing)
+        await db.inventory.bulkAdd(missingInventory)
+        await Promise.all([
+          ...missing.map(item => queueChange('assets', item.id)),
+          ...missingInventory.map(item => queueChange('inventory', item.id))
+        ])
+      })
+      flash('Đã tạo 30 thiết bị và 30 vật tư mẫu tại Local. Chưa đồng bộ Cloud.')
+    } catch (error) {
+      console.error('Create local demo data failed', error)
+      alert(error instanceof Error ? error.message : 'Không thể tạo bộ dữ liệu mẫu.')
     }
-    seed()
-  }, [])
+  }
+
+  const createAdditionalDemoAssets = async () => {
+    try {
+      const current = await db.assets.toArray()
+      const demoSource = current.filter(item => item.serial.startsWith('DEMO-'))
+      if (demoSource.length < 30) {
+        alert('Cần có đủ 30 thiết bị mẫu ban đầu trước khi tạo thêm.')
+        return
+      }
+      const working = [...current]
+      const additions: Asset[] = demoSource.slice(0, 15).map((item, index) => {
+        const base: Asset = {
+          ...emptyAsset(),
+          ...item,
+          id: uid(),
+          code: '',
+          name: `${item.name} - Bổ sung ${String(index + 1).padStart(2, '0')}`,
+          serial: `DEMO-EXTRA-${String(index + 1).padStart(2, '0')}`,
+          createdAt: now(),
+          updatedAt: now(),
+          notes: 'DỮ LIỆU MẪU BỔ SUNG – tạo riêng để kiểm tra luồng ghi nhận tại Local.'
+        }
+        const code = buildAssetCode(base, working, customAssetCategories)
+        if (!code) throw new Error(`Không cấp được mã cho thiết bị bổ sung: ${base.category}`)
+        const saved: Asset = {
+          ...base,
+          code,
+          images: [makeDemoAssetImage(base.category, code, 1), makeDemoAssetImage(base.category, code, 2)]
+        }
+        working.push(saved)
+        return saved
+      })
+      if (additions.length !== 15) throw new Error('Không tạo đủ 15 thiết bị bổ sung.')
+      await db.transaction('rw', [db.assets, db.syncQueue], async () => {
+        await db.assets.bulkAdd(additions)
+        await Promise.all(additions.map(item => queueChange('assets', item.id)))
+      })
+      flash('Đã tạo thêm 15 thiết bị tại Local. Không thay đổi vật tư và chưa đồng bộ Cloud.')
+    } catch (error) {
+      console.error('Create additional demo assets failed', error)
+      alert(error instanceof Error ? error.message : 'Không thể tạo thêm thiết bị mẫu.')
+    }
+  }
 
   const assetCategories = useMemo(() => [...new Set(activeAssets.map(a => a.category).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'vi')), [activeAssets])
   const assetLocations = useMemo(() => [...new Set(activeAssets.map(a => a.location).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'vi')), [activeAssets])
@@ -605,6 +657,76 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
     flash('Đã xuất tài liệu Quy ước mã thiết bị')
   }
 
+  const blockCloudLinkedAssetMutation = async (asset: Asset, action: string): Promise<boolean> => {
+    const link = await db.assetCloudLinks.get(organizationId + ':' + asset.id)
+    if (!link) return false
+    alert('Thiết bị ' + asset.code + ' đã liên kết Cloud. Thao tác "' + action + '" chưa được tích hợp receipt protocol; không thực hiện để tránh ghi vượt khóa. Checklist và công việc bảo trì Local vẫn được phép.')
+    return true
+  }
+
+  const openAssetEditor = async (asset: Asset) => {
+    if (blockViewer('sửa hồ sơ thiết bị')) return
+    try {
+      const link = await db.assetCloudLinks.get(organizationId + ':' + asset.id)
+      if (!link) {
+        setEditingAsset({ ...asset, images: asset.images ?? [] })
+        setModal('asset')
+        return
+      }
+      if (link.status !== 'linked') throw new Error('Liên kết Asset đang ở trạng thái xung đột. Cần đối chiếu Local/Cloud trước khi sửa.')
+      const unresolved = await db.assetMutations.where('[organizationId+assetId]').equals([organizationId, asset.id])
+        .filter(item => item.status === 'pending' || item.status === 'processing' || item.status === 'conflict').first()
+      if (unresolved) throw new Error('Thiết bị đang có mutation chưa được Cloud xác nhận (' + unresolved.status + '). Không mở phiên sửa mới.')
+      if (!navigator.onLine) throw new Error('Asset đã liên kết Cloud cần Internet để xác minh quyền sửa.')
+      const acquired = await acquireAssetEditLock(cloudClient, organizationId, asset.id, getDeviceId(), userName.trim() || userEmail)
+      if (!acquired.acquired) throw new Error('Thiết bị đang được khóa bởi ' + (acquired.lock?.holder_label || 'nền tảng khác') + '. Bạn chỉ có thể xem hồ sơ.')
+      try {
+        const { data, error } = await cloudClient.from('assets').select('id,code,updated_at')
+          .eq('organization_id', organizationId).eq('id', asset.id).maybeSingle()
+        if (error) throw error
+        const cloudRow = data as { id: string; code: string; updated_at: string } | null
+        if (!cloudRow || cloudRow.id !== asset.id || cloudRow.code !== link.cloudCode) throw new Error('Cloud không có đúng Asset UUID/mã quản lý đã liên kết.')
+        if (cloudRow.updated_at !== link.cloudUpdatedAt) {
+          await db.assetCloudLinks.update(link.id, { status: 'conflict', lastVerifiedAt: now() })
+          throw new Error('Phiên bản Cloud đã thay đổi kể từ lần đồng bộ trước. Đã đánh dấu conflict; không mở form sửa.')
+        }
+        setAssetEditLease({ assetId: asset.id, lease: acquired.lease, expectedCloudUpdatedAt: cloudRow.updated_at, lost: false })
+        setEditingAsset({ ...asset, images: asset.images ?? [] })
+        setDetailAsset(null); setChecklistAccess(false); setModal('asset')
+      } catch (error) {
+        await releaseAssetEditLock(cloudClient, organizationId, asset.id, acquired.lease.lock_token).catch(() => false)
+        throw error
+      }
+    } catch (error) { alert(error instanceof Error ? error.message : 'Không thể mở phiên sửa thiết bị.') }
+  }
+
+  const closeAssetEditor = () => {
+    const current = assetEditLease
+    if (current && !current.lost) {
+      void (async () => {
+        const pending = await db.assetMutations.where('[organizationId+assetId]').equals([organizationId, current.assetId])
+          .filter(item => item.status === 'pending' || item.status === 'processing' || item.status === 'conflict').first()
+        if (pending) {
+          alert('Mutation ' + pending.mutationId + ' chưa được Cloud xác nhận. Không đóng form hoặc giải phóng lease; hãy retry đúng snapshot hoặc chờ xử lý xung đột.')
+          return
+        }
+        setModal(null); setEditingAsset(null); setAssetEditLease(null)
+        try { await releaseAssetEditLock(cloudClient, organizationId, current.assetId, current.lease.lock_token) }
+        catch (error) { flash('Đã đóng form; Cloud sẽ tự hết lease nếu không giải phóng được: ' + (error instanceof Error ? error.message : String(error))) }
+      })()
+      return
+    }
+    setModal(null); setEditingAsset(null); setAssetEditLease(null)
+  }
+
+  const assetMutationPayload = (asset: Asset): AssetMutationPayload => ({
+    name: asset.name.trim(), brand: asset.brand ?? '', model: asset.model ?? '', serial: asset.serial ?? '',
+    location: asset.location ?? '', commissionedAt: asset.commissionedAt || '', power: asset.power ?? '',
+    cycle: asset.cycle ?? '', cycleStartedAt: asset.cycleStartedAt || undefined,
+    transferredFromOtherFacility: Boolean(asset.transferredFromOtherFacility), status: asset.status,
+    notes: asset.notes ?? '', archivedAt: asset.archivedAt || undefined
+  })
+
   const saveAsset = async (a: Asset) => {
     if (blockViewer('thêm hoặc sửa thiết bị')) return
     const isNew = !a.code
@@ -613,35 +735,120 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
       return
     }
     try {
-      // Cấp số trong cùng transaction với thao tác ghi để hai tab trên cùng trình duyệt
-      // không cùng đọc một số thứ tự rồi tạo ra hai mã giống nhau.
+      const link = isNew ? undefined : await db.assetCloudLinks.get(organizationId + ':' + a.id)
+      if (link) {
+        const currentLease = assetEditLease
+        if (!currentLease || currentLease.assetId !== a.id || currentLease.lost) throw new Error('Không còn lease hợp lệ. Hồ sơ không được lưu.')
+        if (link.status !== 'linked') throw new Error('Liên kết Asset không còn ở trạng thái linked.')
+        const existingAsset = await db.assets.get(a.id)
+        if (!existingAsset) throw new Error('Không tìm thấy Asset Local hiện tại.')
+        const cycleStartedAt = a.cycle ? (existingAsset.cycle === a.cycle ? (existingAsset.cycleStartedAt || undefined) : today()) : undefined
+        const savedCandidate: Asset = {
+          ...a, code: existingAsset.code, category: existingAsset.category, cycleStartedAt, images: a.images ?? [], updatedAt: now(),
+          identityStatus: existingAsset.identityStatus, createdByLabel: existingAsset.createdByLabel, createdByUserId: existingAsset.createdByUserId
+        }
+        const payload = assetMutationPayload(savedCandidate)
+        let mutationId = ''
+        let savedAsset: Asset | undefined
+        await db.transaction('rw', [db.assets, db.assetMutations], async () => {
+          const pending = await db.assetMutations.where('[organizationId+assetId]').equals([organizationId, a.id])
+            .filter(item => item.status === 'pending' || item.status === 'processing' || item.status === 'conflict').first()
+          if (pending) {
+            if (pending.status === 'conflict' || JSON.stringify(pending.payload) !== JSON.stringify(payload)) {
+              throw new Error('Đã có mutation chưa xác nhận với snapshot khác. Không được thay payload hoặc tạo mutationId mới.')
+            }
+            mutationId = pending.mutationId
+            savedAsset = await db.assets.get(a.id)
+            if (!savedAsset) throw new Error('Không tìm thấy snapshot Local của mutation đang chờ.')
+          } else {
+            mutationId = uid()
+            const timestamp = now()
+            await db.assets.put(savedCandidate)
+            await db.assetMutations.add({
+              mutationId, organizationId, assetId: a.id, payload,
+              expectedCloudUpdatedAt: currentLease.expectedCloudUpdatedAt,
+              localUpdatedAt: savedCandidate.updatedAt, status: 'pending', attempts: 0,
+              createdAt: timestamp, updatedAt: timestamp
+            })
+            savedAsset = savedCandidate
+          }
+        })
+        if (!savedAsset || !mutationId) throw new Error('Không tạo được mutation Asset Local.')
+        const currentMutation = await db.assetMutations.get(mutationId)
+        await db.assetMutations.update(mutationId, { status: 'processing', attempts: (currentMutation?.attempts ?? 0) + 1, updatedAt: now(), lastError: undefined })
+        try {
+          const result = await applyAssetMutationWithEditLock(cloudClient, organizationId, savedAsset, currentLease.lease.lock_token, mutationId, currentLease.expectedCloudUpdatedAt)
+          const confirmedAt = now()
+          await db.transaction('rw', [db.assetMutations, db.assetCloudLinks], async () => {
+            await db.assetMutations.update(mutationId, { status: 'applied', appliedAt: confirmedAt, cloudUpdatedAt: result.asset.updatedAt, updatedAt: confirmedAt, lastError: undefined })
+            await db.assetCloudLinks.update(link.id, { cloudUpdatedAt: result.asset.updatedAt, lastSyncedLocalUpdatedAt: savedAsset!.updatedAt, status: 'linked', lastVerifiedAt: confirmedAt })
+          })
+          setAssetEditLease(null); setModal(null); setEditingAsset(null)
+          try { await releaseAssetEditLock(cloudClient, organizationId, a.id, currentLease.lease.lock_token) }
+          catch (releaseError) {
+            flash('Cloud đã xác nhận hồ sơ. Lease không giải phóng được và sẽ tự hết hạn: ' + (releaseError instanceof Error ? releaseError.message : String(releaseError)))
+            return
+          }
+          flash(result.alreadyApplied ? 'Cloud xác nhận lại biên nhận đã áp dụng.' : 'Đã lưu Local và Cloud xác nhận cập nhật hồ sơ thiết bị.')
+          return
+        } catch (cloudError) {
+          const message = cloudError instanceof Error ? cloudError.message : String(cloudError)
+          await db.assetMutations.update(mutationId, { status: 'pending', lastError: message, updatedAt: now() })
+          throw new Error('Local đã lưu snapshot và giữ mutation ' + mutationId + ', nhưng Cloud chưa xác nhận. Lease vẫn được giữ để retry đúng mutation; không sửa tiếp hồ sơ này. Chi tiết: ' + message)
+        }
+      }
+
+      // Asset chưa liên kết Cloud tiếp tục theo luồng Local hiện tại.
       const value = await db.transaction('rw', [db.assets, db.syncQueue], async () => {
         const previousAsset = isNew ? undefined : await db.assets.get(a.id)
         const allAssets = await db.assets.toArray()
         const code = isNew ? buildAssetCode(a, allAssets, customAssetCategories) : a.code
         if (!code) throw new Error('Không thể tạo mã định danh. Hãy kiểm tra lại nhóm thiết bị.')
-        if (isNew && allAssets.some(item => item.code === code)) {
-          throw new Error('Mã định danh vừa được sử dụng. Vui lòng lưu lại để hệ thống cấp số tiếp theo.')
+        if (isNew && allAssets.some(item => item.code === code)) throw new Error('Mã định danh vừa được sử dụng. Vui lòng lưu lại để hệ thống cấp số tiếp theo.')
+        const cycleStartedAt = a.cycle ? (previousAsset?.cycle === a.cycle ? (previousAsset.cycleStartedAt || undefined) : today()) : undefined
+        const saved: Asset = {
+          ...a, code, cycleStartedAt, images: a.images ?? [], updatedAt: now(),
+          identityStatus: previousAsset?.identityStatus ?? 'legacy',
+          createdByLabel: previousAsset?.createdByLabel ?? (isNew ? (userName.trim() || userEmail) : undefined),
+          createdByUserId: previousAsset?.createdByUserId ?? (isNew ? userId : undefined)
         }
-        const cycleStartedAt = a.cycle
-          ? (previousAsset?.cycle === a.cycle ? (previousAsset.cycleStartedAt || undefined) : today())
-          : undefined
-        const saved: Asset = { ...a, code, cycleStartedAt, images: a.images ?? [], updatedAt: now() }
-        await db.assets.put(saved)
-        await queueChange('assets', saved.id)
+        await db.assets.put(saved); await queueChange('assets', saved.id)
         return saved
       })
       setModal(null); setEditingAsset(null)
       if (isNew) setDetailAsset(value)
       flash(isNew ? 'Đã thêm thiết bị và cấp mã định danh' : 'Đã lưu thiết bị')
-    } catch (error) {
-      alert(error instanceof Error ? error.message : 'Không thể lưu thiết bị. Vui lòng thử lại.')
-    }
+    } catch (error) { alert(error instanceof Error ? error.message : 'Không thể lưu thiết bị. Vui lòng thử lại.') }
+  }
+  const toggleInventoryLocation = (enabled: boolean) => {
+    if (!isAdmin) return
+    try { localStorage.setItem('baotri-inventory-location-enabled', String(enabled)); setInventoryLocationEnabled(enabled) }
+    catch { alert('Không lưu được thiết lập vị trí lưu kho trên trình duyệt này.') }
+  }
+  const addInventoryLocation = (name: string) => {
+    if (!isAdmin) return false
+    const clean = name.trim().replace(/\s+/g,' ')
+    if (!clean) return false
+    const duplicate = inventoryLocations.some(item=>item.localeCompare(clean,'vi',{sensitivity:'base'})===0)
+    if (duplicate) { alert('Vị trí này đã có trong danh mục. Hãy chọn vị trí có sẵn.'); return false }
+    const next = [...inventoryLocations, clean].sort((a,b)=>a.localeCompare(b,'vi'))
+    try { localStorage.setItem('baotri-inventory-locations',JSON.stringify(next)) } catch { alert('Không lưu được danh mục vị trí trên trình duyệt này.'); return false }
+    setInventoryLocations(next)
+    return true
   }
   const saveItem = async (i: InventoryItem) => {
     if (blockViewer('thêm hoặc sửa vật tư')) return
-    const value = { ...i, updatedAt: now() }
-    await putAndQueue(db.inventory, 'inventory', value); setModal(null); setEditingItem(null); flash('Đã lưu vật tư')
+    const existing = await db.inventory.get(i.id)
+    // Tồn kho chỉ thay đổi qua Nhập/Xuất; tồn tối thiểu chỉ Admin được cập nhật.
+    const value: InventoryItem = {
+      ...i, quantity: existing?.quantity ?? 0,
+      minQuantity: isAdmin ? i.minQuantity : (existing?.minQuantity ?? 0),
+      location: inventoryLocationEnabled ? i.location : '', updatedAt: now(),
+      identityStatus: existing?.identityStatus ?? 'legacy',
+      createdByLabel: existing?.createdByLabel ?? (!existing ? (userName.trim() || userEmail) : undefined),
+      createdByUserId: existing?.createdByUserId ?? (!existing ? userId : undefined)
+    }
+    await putAndQueue(db.inventory, 'inventory', value); setModal(null); setEditingItem(null); flash(existing ? 'Đã cập nhật thông tin vật tư' : 'Đã thêm vật tư (tồn ban đầu = 0)')
   }
   const saveTask = async (t: Task) => {
     if (blockViewer('thêm hoặc sửa công việc')) return
@@ -713,34 +920,41 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
   }
   const archiveAsset = async (a: Asset) => {
     if (blockViewer('đưa thiết bị vào lưu kho')) return
+    if (await blockCloudLinkedAssetMutation(a, 'đưa thiết bị vào lưu kho')) return
     if (!confirm(`Đưa “${a.name}” vào Lưu kho? Hồ sơ, ảnh và lịch sử liên quan vẫn được giữ để tra cứu hoặc khôi phục.`)) return
     const value = { ...a, archivedAt: now(), updatedAt: now() }
     await putAndQueue(db.assets, 'assets', value); flash('Đã đưa thiết bị vào Lưu kho')
   }
   const restoreAsset = async (a: Asset) => {
     if (blockViewer('khôi phục thiết bị')) return
+    if (await blockCloudLinkedAssetMutation(a, 'khôi phục thiết bị')) return
     const value = { ...a, archivedAt: undefined, updatedAt: now() }
     await putAndQueue(db.assets, 'assets', value); flash('Đã khôi phục thiết bị khỏi Lưu kho')
   }
   const changeAssetStatus = async (a: Asset, status: Asset['status']) => {
     if (blockViewer('thay đổi tình trạng thiết bị')) return
+    if (await blockCloudLinkedAssetMutation(a, 'thay đổi tình trạng thiết bị')) return
     if (status === 'Thanh lý' && !confirm(`Xác nhận thanh lý “${a.name}”? Hồ sơ và lịch sử vẫn được giữ để tra cứu; đây không phải xóa vĩnh viễn.`)) return
     const value = { ...a, status, updatedAt: now() }
     await putAndQueue(db.assets, 'assets', value); flash(`Đã cập nhật trạng thái: ${status}`)
   }
-  const addMovement = async (item: InventoryItem, type: 'Nhập'|'Xuất', qty: number) => {
+  const addMovement = async (item: InventoryItem, type: 'Nhập'|'Xuất', qty: number, note = '') => {
     if (blockViewer('nhập hoặc xuất kho')) return
-    if (!qty || qty <= 0) return
+    if (!Number.isFinite(qty) || qty <= 0) { flash('Số lượng phải lớn hơn 0'); return }
     if (type === 'Xuất' && qty > item.quantity) { flash('Số lượng xuất vượt tồn kho'); return }
-    const next = { ...item, quantity: item.quantity + (type === 'Nhập' ? qty : -qty), updatedAt: now() }
-    const movement: Movement = { id: uid(), itemId: item.id, date: today(), type, quantity: qty, reason: 'Thao tác từ màn hình kho' }
+    const timestamp = now()
+    const next = { ...item, quantity: item.quantity + (type === 'Nhập' ? qty : -qty), updatedAt: timestamp }
+    const movement: Movement = {
+      id: uid(), itemId: item.id, date: today(), type, quantity: qty,
+      reason: note.trim(), note: note.trim(), performedBy: userName.trim() || 'Tài khoản'
+    }
     await db.transaction('rw', [db.inventory, db.movements, db.syncQueue], async () => {
       await db.inventory.put(next)
       await db.movements.add(movement)
       await queueChange('inventory', item.id)
       await queueChange('movements', movement.id)
     })
-    flash(`Đã ${type.toLowerCase()} ${qty} ${item.unit}`)
+    flash('Đã ' + type.toLowerCase() + ' ' + qty + ' ' + item.unit + '; đã lưu lịch sử kho')
   }
   const exportRows = async (rows: Record<string, string | number>[], filename: string, title: string, sheetName: string, headers: string[], orientation: 'portrait' | 'landscape' = 'landscape') => {
     if (blockViewer('xuất Excel')) return
@@ -792,13 +1006,13 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
     printWindow.document.open(); printWindow.document.write(html); printWindow.document.close()
     printWindow.focus(); printWindow.onafterprint = () => printWindow.close(); printWindow.print()
   }
-  const exportInventory = () => exportRows(inventory.map(i => ({ 'Mã vật tư':i.code,'Mã số':i.partNumber??'','Tên vật tư':i.name,'Nhóm':i.group,'Kích cỡ':i.size??'','ĐVT':i.unit,'Tồn kho':i.quantity,'Tồn tối thiểu':i.minQuantity,'Vị trí':i.location,'Nhà cung cấp':i.supplier,'Đơn giá (VNĐ)':i.unitPrice })), 'ton-kho-vat-tu.xlsx', 'BÁO CÁO TỒN KHO VẬT TƯ', 'Tồn kho vật tư', ['Mã vật tư','Mã số','Tên vật tư','Nhóm','Kích cỡ','ĐVT','Tồn kho','Tồn tối thiểu','Vị trí','Nhà cung cấp','Đơn giá (VNĐ)'], 'landscape')
+  const exportInventory = () => exportRows(inventory.map(i => ({ 'Mã vật tư':i.code,'Mã số':i.partNumber??'','Tên vật tư':i.name,'Nhóm':i.group,'Kích cỡ':i.size??'','ĐVT':i.unit,'Tồn kho':i.quantity,'Tồn tối thiểu':i.minQuantity,'Vị trí':i.location,'Nhà cung cấp':i.supplier })), 'ton-kho-vat-tu.xlsx', 'BÁO CÁO TỒN KHO VẬT TƯ', 'Tồn kho vật tư', ['Mã vật tư','Mã số','Tên vật tư','Nhóm','Kích cỡ','ĐVT','Tồn kho','Tồn tối thiểu','Vị trí','Nhà cung cấp'], 'landscape')
   const printInventory = () => {
-    const rows = filteredItems.map((i,index)=>'<tr><td class="center">'+(index+1)+'</td><td>'+htmlEscape(i.code)+'</td><td>'+htmlEscape(i.partNumber||'—')+'</td><td><strong>'+htmlEscape(i.name)+'</strong></td><td>'+htmlEscape(i.group)+'</td><td>'+htmlEscape(i.size||'—')+'</td><td class="center">'+htmlEscape(i.unit)+'</td><td class="num">'+i.quantity+'</td><td class="num">'+i.minQuantity+'</td><td>'+htmlEscape(i.location||'—')+'</td><td>'+htmlEscape(i.supplier||'—')+'</td><td class="num">'+Number(i.unitPrice||0).toLocaleString('vi-VN')+'</td></tr>').join('')
+    const rows = filteredItems.map((i,index)=>'<tr><td class="center">'+(index+1)+'</td><td>'+htmlEscape(i.code)+'</td><td>'+htmlEscape(i.partNumber||'—')+'</td><td><strong>'+htmlEscape(i.name)+'</strong></td><td>'+htmlEscape(i.group)+'</td><td>'+htmlEscape(i.size||'—')+'</td><td class="center">'+htmlEscape(i.unit)+'</td><td class="num">'+i.quantity+'</td><td class="num">'+i.minQuantity+'</td><td>'+htmlEscape(i.location||'—')+'</td><td>'+htmlEscape(i.supplier||'—')+'</td></tr>').join('')
     const printWindow=window.open('','_blank')
     if(!printWindow){alert('Trình duyệt đang chặn cửa sổ in. Hãy cho phép cửa sổ bật lên rồi thử lại.');return}
-    const headers=['STT','Mã vật tư','Mã số','Tên vật tư','Nhóm','Kích cỡ','ĐVT','Tồn kho','Tồn tối thiểu','Vị trí lưu kho','Nhà cung cấp','Đơn giá (VNĐ)']
-    const html='<!DOCTYPE html><html lang="vi"><head><meta charset="utf-8"/><title>DANH SÁCH VẬT TƯ</title><style>@page{size:A4 landscape;margin:12mm 8mm 16mm;@bottom-center{content:"Trang " counter(page) " / " counter(pages);font:9pt Tahoma}}*{box-sizing:border-box}body{font-family:Tahoma,sans-serif;font-size:11pt;color:#111;margin:0}h1{text-align:center;font-size:12pt;margin:0 0 12pt}table{width:100%;border-collapse:collapse;table-layout:fixed}thead{display:table-header-group}tr{break-inside:avoid;page-break-inside:avoid}th,td{border:1px solid #333;padding:4pt 3pt;vertical-align:top;overflow-wrap:anywhere;font-size:9pt}th{text-align:center;font-weight:bold;background:#e9eeeb!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.center{text-align:center}.num{text-align:right}.total{text-align:right;font-weight:bold;margin-top:10pt}@media screen{body{padding:16px}}</style></head><body><h1>DANH SÁCH VẬT TƯ</h1><table><colgroup><col style="width:3%"/><col style="width:8%"/><col style="width:8%"/><col style="width:15%"/><col style="width:9%"/><col style="width:8%"/><col style="width:5%"/><col style="width:6%"/><col style="width:7%"/><col style="width:10%"/><col style="width:10%"/><col style="width:11%"/></colgroup><thead><tr>'+headers.map(h=>'<th>'+htmlEscape(h)+'</th>').join('')+'</tr></thead><tbody>'+rows+'</tbody></table><p class="total">Tổng số: '+filteredItems.length+' vật tư</p></body></html>'
+    const headers=['STT','Mã vật tư','Mã số','Tên vật tư','Nhóm','Kích cỡ','ĐVT','Tồn kho','Tồn tối thiểu','Vị trí lưu kho','Nhà cung cấp']
+    const html='<!DOCTYPE html><html lang="vi"><head><meta charset="utf-8"/><title>DANH SÁCH VẬT TƯ</title><style>@page{size:A4 landscape;margin:12mm 8mm 16mm;@bottom-center{content:"Trang " counter(page) " / " counter(pages);font:9pt Tahoma}}*{box-sizing:border-box}body{font-family:Tahoma,sans-serif;font-size:11pt;color:#111;margin:0}h1{text-align:center;font-size:12pt;margin:0 0 12pt}table{width:100%;border-collapse:collapse;table-layout:fixed}thead{display:table-header-group}tr{break-inside:avoid;page-break-inside:avoid}th,td{border:1px solid #333;padding:4pt 3pt;vertical-align:top;overflow-wrap:anywhere;font-size:9pt}th{text-align:center;font-weight:bold;background:#e9eeeb!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.center{text-align:center}.num{text-align:right}.total{text-align:right;font-weight:bold;margin-top:10pt}@media screen{body{padding:16px}}</style></head><body><h1>DANH SÁCH VẬT TƯ</h1><table><colgroup><col style="width:3%"/><col style="width:8%"/><col style="width:8%"/><col style="width:15%"/><col style="width:9%"/><col style="width:8%"/><col style="width:5%"/><col style="width:6%"/><col style="width:7%"/><col style="width:10%"/><col style="width:10%"/></colgroup><thead><tr>'+headers.map(h=>'<th>'+htmlEscape(h)+'</th>').join('')+'</tr></thead><tbody>'+rows+'</tbody></table><p class="total">Tổng số: '+filteredItems.length+' vật tư</p></body></html>'
     printWindow.document.open();printWindow.document.write(html);printWindow.document.close();printWindow.focus();printWindow.onafterprint=()=>printWindow.close();printWindow.print()
   }
   const exportTasks = () => exportRows(tasks.map(t => ({ 'Thiết bị':assets.find(a=>a.id===t.assetId)?.name ?? '', 'Công việc':t.title,'Ngày đến hạn':t.dueDate?dateText(t.dueDate):'','Chu kỳ':t.frequency,'Trạng thái':t.status,'Checklist':t.checklist??'','Thông số':t.readings??'','Ghi chú':t.notes??'' })), 'lich-bao-duong-dinh-ky.xlsx', 'LỊCH BẢO DƯỠNG ĐỊNH KỲ', 'Lịch bảo dưỡng', ['Thiết bị','Công việc','Ngày đến hạn','Chu kỳ','Trạng thái','Checklist','Thông số','Ghi chú'], 'landscape')
@@ -921,7 +1135,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
   const backup = async () => {
     if (blockViewer('sao lưu dữ liệu')) return
     const data = {
-      backupVersion: 2,
+      backupVersion: 3,
       exportedAt: now(),
       database: 'baotri-local-v1',
       assets: await db.assets.toArray(),
@@ -947,31 +1161,71 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
       if (!data || typeof data !== 'object' || tableKeys.some(key => data[key] !== undefined && !Array.isArray(data[key]))) {
         throw new Error('Invalid backup structure')
       }
-      await db.transaction('rw', [db.assets, db.inventory, db.tasks, db.logs, db.movements, db.maintenancePlans, db.checklistTemplates, db.checklistVersions, db.checklistResults, db.syncQueue], async () => {
-        await db.assets.bulkPut(data.assets ?? []); await db.inventory.bulkPut(data.inventory ?? [])
-        await db.tasks.bulkPut(data.tasks ?? []); await db.logs.bulkPut(data.logs ?? []); await db.movements.bulkPut(data.movements ?? [])
+      setPendingRestore({ fileName: file.name, data })
+    } catch {
+      setPendingRestore(null)
+      flash('File sao lưu không hợp lệ hoặc không thể đọc')
+    }
+  }
+  const cancelRestore = () => setPendingRestore(null)
+  const applyRestore = async () => {
+    if (!pendingRestore || blockViewer('khôi phục dữ liệu từ bản sao lưu')) return
+    try {
+      const { data } = pendingRestore
+      const restoredAssets = (data.assets ?? []) as Asset[]
+      // Khôi phục thay thế toàn bộ dữ liệu Local, không phải gộp (merge).
+      // Kiểm tra liên kết và mutation trong cùng transaction để tránh race với tab khác.
+      await db.transaction('rw', [
+        db.assets, db.inventory, db.tasks, db.logs, db.movements, db.maintenancePlans,
+        db.checklistTemplates, db.checklistVersions, db.checklistResults, db.syncQueue,
+        db.assetCloudLinks, db.assetMutations
+      ], async () => {
+        const [links, unresolvedMutations, currentAssets] = await Promise.all([
+          db.assetCloudLinks.toArray(),
+          db.assetMutations.where('status').anyOf('pending', 'processing', 'conflict').toArray(),
+          db.assets.toArray()
+        ])
+        if (unresolvedMutations.length) {
+          throw new Error('Không thể khôi phục backup khi còn giao dịch thiết bị Cloud chưa xác nhận hoặc đang xung đột.')
+        }
+        if (links.length) {
+          const currentById = new Map(currentAssets.map(asset => [asset.id, asset]))
+          const restoredById = new Map(restoredAssets.map(asset => [asset.id, asset]))
+          for (const link of links) {
+            const current = currentById.get(link.assetId)
+            const restored = restoredById.get(link.assetId)
+            if (link.status !== 'linked' || !current || !restored ||
+                assetMasterRestoreSnapshot(current) !== assetMasterRestoreSnapshot(restored)) {
+              throw new Error('Backup sẽ thay đổi hoặc loại bỏ thiết bị đã liên kết Cloud (' + link.cloudCode + '). Hãy dùng bản backup có cùng hồ sơ thiết bị hoặc xử lý liên kết trước.')
+            }
+          }
+        }
+        // Xóa và nạp lại trong cùng transaction để tránh trạng thái nửa chừng.
+        await Promise.all([
+          db.assets.clear(), db.inventory.clear(), db.tasks.clear(), db.logs.clear(),
+          db.movements.clear(), db.maintenancePlans.clear(), db.checklistTemplates.clear(),
+          db.checklistVersions.clear(), db.checklistResults.clear(), db.syncQueue.clear()
+        ])
+        await db.assets.bulkPut(restoredAssets.map(asset => ({ ...asset, identityStatus: asset.identityStatus ?? 'legacy' })))
+        await db.inventory.bulkPut((data.inventory ?? []).map((item: InventoryItem) => ({ ...item, identityStatus: item.identityStatus ?? 'legacy' })))
+        await db.tasks.bulkPut(data.tasks ?? [])
+        await db.logs.bulkPut(data.logs ?? [])
+        await db.movements.bulkPut(data.movements ?? [])
         await db.maintenancePlans.bulkPut(data.maintenancePlans ?? [])
         await db.checklistTemplates.bulkPut(data.checklistTemplates ?? [])
         await db.checklistVersions.bulkPut(data.checklistVersions ?? [])
         await db.checklistResults.bulkPut(data.checklistResults ?? [])
-        const restoredCollections: Array<[string, Array<{ id: string }>]> = [
-          ['assets', data.assets ?? []], ['inventory', data.inventory ?? []],
-          ['tasks', data.tasks ?? []], ['logs', data.logs ?? []],
-          ['movements', data.movements ?? []], ['maintenancePlans', data.maintenancePlans ?? []],
-          ['checklistTemplates', data.checklistTemplates ?? []],
-          ['checklistVersions', data.checklistVersions ?? []],
-          ['checklistResults', data.checklistResults ?? []]
-        ]
-        for (const [tableName, records] of restoredCollections) {
-          for (const record of records) await queueChange(tableName, record.id)
-        }
+        await db.syncQueue.bulkPut(data.syncQueue ?? [])
       })
       if (Array.isArray(data.customAssetCategories)) {
         localStorage.setItem('baotri-custom-asset-categories', JSON.stringify(data.customAssetCategories))
         setCustomAssetCategories(data.customAssetCategories)
       }
-      flash('Đã nhập dữ liệu sao lưu')
-    } catch { flash('File sao lưu không hợp lệ hoặc không thể khôi phục') }
+      setPendingRestore(null)
+      flash('Đã khôi phục dữ liệu sao lưu')
+    } catch (error) {
+      flash(error instanceof Error ? error.message : 'Không thể khôi phục file sao lưu; dữ liệu Local được giữ nguyên nếu giao dịch chưa hoàn tất')
+    }
   }
 
   const nav = [
@@ -1042,15 +1296,39 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
           </div></div>
           <div className="asset-result-count">{showArchived?'Đang lưu kho: '+filteredArchivedAssets.length+'/'+archivedAssets.length+' thiết bị':'Hiển thị '+filteredAssets.length+'/'+activeAssets.length+' thiết bị đang hoạt động'}</div>
           <div className="table-wrap"><table><thead><tr><th>Mã / Tên thiết bị</th><th>Nhóm</th><th>Vị trí</th><th>Ngày sử dụng</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
-          {(showArchived?filteredArchivedAssets:filteredAssets).map(a=><tr key={a.id}><td><button className="asset-name-link" onClick={()=>{setChecklistAccess(false);setDetailAsset(a)}}><b>{a.code}</b><small>{a.name}</small></button></td><td>{a.category}</td><td>{a.location||'—'}</td><td>{dateText(a.commissionedAt)}</td><td><span className={'status '+(a.archivedAt?'gray':a.status==='Đang hoạt động'?'green':a.status==='Đang sửa chữa'?'orange':a.status==='Thanh lý'?'red':'gray')}>{a.archivedAt?'Đã lưu kho':a.status}</span></td><td className="actions">{showArchived?<><button className="text-btn success-text" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>restoreAsset(a)}>Khôi phục</button><button className="text-btn danger" title="Chỉ Admin sau khi có đăng nhập và xác thực máy chủ" disabled><Trash2 size={14}/> Xóa vĩnh viễn</button></>:<><button className="text-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>{setEditingAsset({...a,images:a.images??[]});setModal('asset')}}>Sửa</button><details className="asset-row-menu"><summary>Thao tác</summary><div><button disabled={isViewer} onClick={e=>{changeAssetStatus(a,'Đang hoạt động');e.currentTarget.closest('details')?.removeAttribute('open')}}>Đánh dấu đang hoạt động</button><button disabled={isViewer} onClick={e=>{changeAssetStatus(a,'Đang sửa chữa');e.currentTarget.closest('details')?.removeAttribute('open')}}>Đang sửa chữa / hỏng</button><button disabled={isViewer} onClick={e=>{changeAssetStatus(a,'Ngừng sử dụng');e.currentTarget.closest('details')?.removeAttribute('open')}}>Ngừng sử dụng</button><button disabled={isViewer} onClick={e=>{archiveAsset(a);e.currentTarget.closest('details')?.removeAttribute('open')}}>Đưa vào Lưu kho</button><button disabled={isViewer} onClick={e=>{changeAssetStatus(a,'Thanh lý');e.currentTarget.closest('details')?.removeAttribute('open')}}>Thanh lý / bán ve chai</button><button className="danger" disabled title="Chờ đăng nhập Admin và xác thực máy chủ">Xóa vĩnh viễn (Admin)</button></div></details></>}</td></tr>)}
+          {(showArchived?filteredArchivedAssets:filteredAssets).map(a=><tr key={a.id}><td><button className="asset-name-link" onClick={()=>{setChecklistAccess(false);setDetailAsset(a)}}><b>{a.code}</b><small>{a.name}</small></button></td><td>{a.category}</td><td>{a.location||'—'}</td><td>{dateText(a.commissionedAt)}</td><td><span className={'status '+(a.archivedAt?'gray':a.status==='Đang hoạt động'?'green':a.status==='Đang sửa chữa'?'orange':a.status==='Thanh lý'?'red':'gray')}>{a.archivedAt?'Đã lưu kho':a.status}</span></td><td className="actions">{showArchived?<><button className="text-btn success-text" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>restoreAsset(a)}>Khôi phục</button><button className="text-btn danger" title="Chỉ Admin sau khi có đăng nhập và xác thực máy chủ" disabled><Trash2 size={14}/> Xóa vĩnh viễn</button></>:<><button className="text-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>{void openAssetEditor(a)}}>Sửa</button><details className="asset-row-menu"><summary>Thao tác</summary><div><button disabled={isViewer} onClick={e=>{changeAssetStatus(a,'Đang hoạt động');e.currentTarget.closest('details')?.removeAttribute('open')}}>Đánh dấu đang hoạt động</button><button disabled={isViewer} onClick={e=>{changeAssetStatus(a,'Đang sửa chữa');e.currentTarget.closest('details')?.removeAttribute('open')}}>Đang sửa chữa / hỏng</button><button disabled={isViewer} onClick={e=>{changeAssetStatus(a,'Ngừng sử dụng');e.currentTarget.closest('details')?.removeAttribute('open')}}>Ngừng sử dụng</button><button disabled={isViewer} onClick={e=>{archiveAsset(a);e.currentTarget.closest('details')?.removeAttribute('open')}}>Đưa vào Lưu kho</button><button disabled={isViewer} onClick={e=>{changeAssetStatus(a,'Thanh lý');e.currentTarget.closest('details')?.removeAttribute('open')}}>Thanh lý / bán ve chai</button><button className="danger" disabled title="Chờ đăng nhập Admin và xác thực máy chủ">Xóa vĩnh viễn (Admin)</button></div></details></>}</td></tr>)}
           </tbody></table>{(showArchived?filteredArchivedAssets:filteredAssets).length===0&&<Empty text={showArchived?'Chưa có thiết bị nào trong Lưu kho.':'Chưa có thiết bị phù hợp.'}/>}</div>
           {showArchived&&<p className="archive-security-note">Xóa vĩnh viễn sẽ chỉ mở khi BAOTRI có đăng nhập và xác thực Admin ở máy chủ. Bản thử nghiệm lưu cục bộ chưa có bảo mật tài khoản thật.</p>}
         </section>}
         {page==='assets' && showCloudAssets && <CloudAssetsPanel client={cloudClient} organizationId={organizationId} organizationName={organizationName} organizationRole={organizationRole} onBack={()=>setShowCloudAssets(false)}/>}
-         {page==='inventory' && <section className="panel"><div className="panel-head"><div><h2>Kho vật tư</h2><p>Nhập xuất tồn và cảnh báo mức tồn tối thiểu</p></div><div className="asset-photo-actions"><button className="soft-btn" disabled={isViewer} title={isViewer?'Viewer không được xuất Excel':undefined} onClick={exportInventory}><Download size={16}/> Xuất Excel</button><button className="soft-btn" onClick={printInventory}><Printer size={16}/> In danh sách</button></div></div>
-          <div className="table-wrap"><table><thead><tr><th>Mã / Tên vật tư</th><th>Nhóm</th><th>Tồn kho</th><th>Tồn tối thiểu</th><th>Vị trí</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
-          {filteredItems.map(i=><tr key={i.id}><td><button type="button" className="inventory-name-link" onClick={()=>setDetailItem(i)}><b>{i.code}</b><small>{i.name}</small></button></td><td>{i.group}</td><td><b>{i.quantity} {i.unit}</b></td><td>{i.minQuantity} {i.unit}</td><td>{i.location||'—'}</td><td><span className={`status ${i.quantity<=i.minQuantity?'red':'green'}`}>{i.quantity<=i.minQuantity?'Sắp hết':'Đủ tồn'}</span></td><td className="actions"><button className="text-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>addMovement(i,'Nhập',Number(prompt('Số lượng nhập?','1')))}>Nhập</button><button className="text-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>addMovement(i,'Xuất',Number(prompt('Số lượng xuất?','1')))}>Xuất</button><button className="text-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>{setEditingItem(i);setModal('item')}}>Sửa</button></td></tr>)}
-          </tbody></table>{filteredItems.length===0&&<Empty text="Chưa có vật tư."/ >}</div></section>}
+         {page==='inventory' && <>
+          <section className="panel">
+            <div className="panel-head"><div><h2>Kho Vật Tư Bảo Trì</h2><p>Quản lý vật tư nội bộ, nhập – xuất – tồn và cảnh báo tồn tối thiểu</p></div><div className="asset-photo-actions"><button className="soft-btn" disabled={isViewer} title={isViewer?'Viewer không được xuất Excel':undefined} onClick={exportInventory}><Download size={16}/> Xuất Excel</button><button className="soft-btn" onClick={printInventory}><Printer size={16}/> In danh sách</button></div></div>
+            <div className="table-wrap"><table><thead><tr><th>Mã / Tên vật tư</th><th>Nhóm</th><th>Tồn kho</th><th>Tồn tối thiểu</th><th>Vị trí</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
+            {filteredItems.map(i=><tr key={i.id}><td><button type="button" className="inventory-name-link" onClick={()=>setDetailItem(i)}><b>{i.code}</b><small>{i.name}</small></button></td><td>{i.group}</td><td><b>{i.quantity} {i.unit}</b></td><td>{i.minQuantity} {i.unit}</td><td>{i.location||'—'}</td><td><span className={'status '+(i.quantity<=i.minQuantity?'red':'green')}>{i.quantity<=i.minQuantity?'Sắp hết':'Đủ tồn'}</span></td><td className="actions">
+              <button className="text-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>{const raw=prompt('Số lượng nhập?','1');if(raw===null)return;const qty=Number(raw);if(!Number.isFinite(qty)||qty<=0)return alert('Số lượng phải lớn hơn 0.');const note=prompt('Ghi chú nhập kho (có thể để trống):','')??'';void addMovement(i,'Nhập',qty,note)}}>Nhập</button>
+              <button className="text-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>{const raw=prompt('Số lượng xuất?','1');if(raw===null)return;const qty=Number(raw);if(!Number.isFinite(qty)||qty<=0)return alert('Số lượng phải lớn hơn 0.');const note=prompt('Ghi chú xuất kho (có thể để trống):','')??'';void addMovement(i,'Xuất',qty,note)}}>Xuất</button>
+              <button className="text-btn" disabled={isViewer} title={isViewer?'Viewer chỉ có quyền xem':undefined} onClick={()=>{setEditingItem(i);setModal('item')}}>Sửa</button>
+            </td></tr>)}
+            </tbody></table>{filteredItems.length===0&&<Empty text="Chưa có vật tư."/ >}</div>
+          </section>
+          <section className="panel">
+            <div className="panel-head"><div><h2>Lịch sử kho</h2><p>Lưu riêng từng lần nhập và xuất, có người thực hiện và ghi chú</p></div><label className="plan-period-control"><span>Tháng</span><input type="month" value={movementMonth} onChange={event=>setMovementMonth(event.target.value)}/></label></div>
+            {(() => {
+              const monthRows = movements.filter(entry=>entry.date.slice(0,7)===movementMonth)
+              const totalIn = monthRows.filter(entry=>entry.type==='Nhập').reduce((sum,entry)=>sum+entry.quantity,0)
+              const totalOut = monthRows.filter(entry=>entry.type==='Xuất').reduce((sum,entry)=>sum+entry.quantity,0)
+              const byPerson = [...new Set(monthRows.map(entry=>entry.performedBy||'Chưa ghi nhận người thực hiện'))].sort((a,b)=>a.localeCompare(b,'vi'))
+              return <>
+                <div className="report-summary"><span><b>{monthRows.length}</b> giao dịch</span><span><b>{totalIn}</b> tổng nhập</span><span><b>{totalOut}</b> tổng xuất</span></div>
+                {byPerson.length>0&&<div className="table-wrap"><table><thead><tr><th>Kỹ thuật viên</th><th>Tổng nhập</th><th>Tổng xuất</th><th>Số giao dịch</th></tr></thead><tbody>{byPerson.map(person=>{const rows=monthRows.filter(entry=>(entry.performedBy||'Chưa ghi nhận người thực hiện')===person);return <tr key={person}><td><b>{person}</b></td><td>{rows.filter(entry=>entry.type==='Nhập').reduce((sum,entry)=>sum+entry.quantity,0)}</td><td>{rows.filter(entry=>entry.type==='Xuất').reduce((sum,entry)=>sum+entry.quantity,0)}</td><td>{rows.length}</td></tr>})}</tbody></table></div>}
+                <div className="table-wrap"><table><thead><tr><th>Ngày</th><th>Người thực hiện</th><th>Vật tư</th><th>Loại giao dịch</th><th>Số lượng</th><th>Ghi chú</th></tr></thead><tbody>
+                  {monthRows.map(entry=>{const item=inventory.find(row=>row.id===entry.itemId);return <tr key={entry.id}><td>{dateText(entry.date)}</td><td>{entry.performedBy||'Chưa ghi nhận'}</td><td>{item?.name||'Vật tư đã xóa'}{item?.code?' · '+item.code:''}</td><td><span className={'status '+(entry.type==='Nhập'?'green':'orange')}>{entry.type}</span></td><td>{entry.quantity} {item?.unit||''}</td><td>{entry.note||entry.reason||'—'}</td></tr>})}
+                </tbody></table>{monthRows.length===0&&<Empty text="Chưa có giao dịch kho trong tháng này."/ >}</div>
+              </>
+            })()}
+          </section>
+        </>}
         {page==='planning' && <section className="panel maintenance-plan-panel">
           <div className="panel-head">
             <div><h2>Kế hoạch bảo trì</h2><p>Lập lịch bảo trì thiết bị, phân công nội bộ hoặc thuê ngoài</p></div>
@@ -1155,9 +1433,24 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
           </section>
           {organizationRole.trim().toLowerCase()==='admin'&&<OrganizationMembersPanel client={cloudClient} organizationId={organizationId}/>}
           <section className="panel"><div className="panel-head"><div><h2>Dữ liệu và sao lưu</h2><p>Phiên bản thử nghiệm lưu dữ liệu cục bộ trong trình duyệt này</p></div><HardDrive/></div>
+            <div className="setting-row"><div><b>Tạo dữ liệu mẫu Local</b><small>Tạo đúng 30 thiết bị và 30 vật tư tại máy này. Chỉ dùng khi cả hai danh sách đang trống; dữ liệu sẽ được đưa vào hàng đợi chờ đồng bộ, không tự gửi lên Cloud.</small></div><button className="soft-btn" disabled={isViewer} onClick={()=>{if(confirm('Tạo 30 thiết bị và 30 vật tư mẫu tại Local? Chỉ thực hiện khi hai danh sách đang trống.'))void createDemoData()}}>Tạo 30 + 30</button></div>
+            <div className="setting-row"><div><b>Tạo thêm thiết bị mẫu</b><small>Tạo thêm 15 thiết bị dựa trên mẫu hiện có, cấp mã mới theo bộ cấp mã Local; không thêm vật tư và không gửi Cloud.</small></div><button className="soft-btn" disabled={isViewer} onClick={()=>{if(confirm('Tạo thêm 15 thiết bị mẫu tại Local? Dữ liệu hiện có sẽ được giữ nguyên.'))void createAdditionalDemoAssets()}}>Tạo thêm 15 thiết bị</button></div>
             <div className="setting-row"><div><b>Xuất bản sao lưu</b><small>Tải đầy đủ thiết bị, vật tư, kế hoạch, nhật ký, Checklist, ảnh, danh mục tự tạo và dữ liệu hàng đợi thành JSON.</small></div><button className="primary-btn" disabled={isViewer} title={isViewer?'Viewer không được sao lưu dữ liệu':undefined} onClick={backup}><Download size={16}/> Sao lưu</button></div>
-            <div className="setting-row"><div><b>Khôi phục bản sao lưu</b><small>Nhập file JSON đã xuất từ ứng dụng.</small></div><label className={`soft-btn file-btn ${isViewer?'disabled':''}`} title={isViewer?'Viewer không được khôi phục dữ liệu':undefined}>Chọn file<input type="file" accept=".json,application/json" disabled={isViewer} onChange={e=>e.target.files?.[0]&&restore(e.target.files[0])}/></label></div>
+            <div className="setting-row"><div><b>Khôi phục bản sao lưu</b><small>Chọn file để xem trước. Dữ liệu chỉ bị thay thế sau khi bạn bấm Xác nhận khôi phục.</small></div><label className={`soft-btn file-btn ${isViewer?'disabled':''}`} title={isViewer?'Viewer không được khôi phục dữ liệu':undefined}>Chọn file<input type="file" accept=".json,application/json" disabled={isViewer} onChange={e=>{const selected=e.target.files?.[0];if(selected)void restore(selected);e.target.value=''}}/></label></div>
+            {pendingRestore && <div className="setting-row restore-preview"><div><b>Đã chọn: {pendingRestore.fileName}</b><small>File sẽ THAY THẾ toàn bộ dữ liệu Local hiện tại, gồm cả hàng đợi đồng bộ.</small><small>Thiết bị: {pendingRestore.data.assets?.length ?? 0} · Vật tư: {pendingRestore.data.inventory?.length ?? 0} · Công việc: {pendingRestore.data.tasks?.length ?? 0} · Nhật ký: {pendingRestore.data.logs?.length ?? 0} · Checklist: {pendingRestore.data.checklistResults?.length ?? 0}</small></div><div className="setting-inline-actions"><button className="primary-btn" disabled={isViewer} onClick={()=>void applyRestore()}>Xác nhận khôi phục</button><button className="soft-btn" onClick={cancelRestore}>Hủy</button></div></div>}
             <div className="setting-row"><div><b>Trạng thái dữ liệu</b><small>{queueCount} thay đổi cục bộ đang chờ. Đăng nhập, tổ chức và phép thử ghi/đọc thiết bị đã kết nối Supabase; dữ liệu nghiệp vụ chính vẫn đang lưu trong trình duyệt, chưa đồng bộ tự động.</small></div><span className="status orange">Chưa đồng bộ nghiệp vụ</span></div>
+            <details className="queue-diagnostics">
+              <summary>Kiểm tra hàng đợi đồng bộ local · tối đa 50 mục gần nhất</summary>
+              {queueItems.length === 0 ? <p className="muted">Chưa có thay đổi nào trong hàng đợi trên trình duyệt này.</p> : <div className="table-wrap"><table>
+                <thead><tr><th>Phân hệ</th><th>ID bản ghi</th><th>Thao tác</th><th>Trạng thái</th><th>Số lần thử</th><th>Thời điểm ghi nhận</th><th>Lỗi gần nhất</th></tr></thead>
+                <tbody>{queueItems.map(item => <tr key={item.id}>
+                  <td>{item.tableName}</td><td><code>{item.recordId}</code></td>
+                  <td>{item.operation === 'delete' ? 'Xóa' : 'Tạo / cập nhật'}</td>
+                  <td><span className={`status ${item.status === 'failed' ? 'red' : 'orange'}`}>{item.status === 'pending' ? 'Đang chờ' : item.status === 'processing' ? 'Đang xử lý' : 'Thất bại'}</span></td>
+                  <td>{item.attempts}</td><td>{new Date(item.queuedAt).toLocaleString('vi-VN')}</td><td>{item.lastError || '—'}</td>
+                </tr>)}</tbody>
+              </table></div>}
+            </details>
             <div className="setting-row"><div><b>Giao diện</b><small>Chuyển đổi giữa tối/ sáng và thu gọn thông tin chính.</small></div><div className="setting-inline-actions"><button className={`soft-btn ${theme === 'light' ? 'active' : ''}`} onClick={()=>setTheme('light')}>Sáng</button><button className={`soft-btn ${theme === 'dark' ? 'active' : ''}`} onClick={()=>setTheme('dark')}>Tối</button><button className={`soft-btn ${compact ? 'active' : ''}`} onClick={()=>setCompact(v=>!v)}>{compact ? 'Thu gọn' : 'Mở rộng'}</button></div></div>
           </section>
           <section className="panel about-panel">
@@ -1188,9 +1481,9 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
     {notice&&<div className="toast"><Check size={17}/>{notice}</div>}
     {profileEditOpen&&<EmployeeProfileEditModal email={userEmail} profile={profile} close={()=>setProfileEditOpen(false)} onSave={async value=>{await onSaveProfile(value);setNotice('Đã lưu hồ sơ nhân viên')}}/>}
     {detailItem&&<InventoryDetailModal value={detailItem} readOnly={isViewer} close={()=>setDetailItem(null)} edit={()=>{setEditingItem(detailItem);setDetailItem(null);setModal('item')}}/>}
-    {detailAsset&&<AssetDetailModal value={detailAsset} logs={logs.filter(l=>l.assetId===detailAsset.id)} allowChecklist={!isViewer && (checklistAccess || (CHECKLIST_TEST_MODE && page==='checklist'))} checklistOccurrence={activeChecklistOccurrence} createRequestFromChecklist={createRequestFromChecklist} readOnly={isViewer} editLog={(entry:Log)=>{if(isViewer)return;setEditingLog(entry);setModal('log')}} close={()=>{setDetailAsset(null);setChecklistAccess(false);setActiveChecklistOccurrence(null)}} edit={()=>{setEditingAsset({...detailAsset,images:detailAsset.images??[]});setDetailAsset(null);setChecklistAccess(false);setModal('asset')}} addLog={()=>{setEditingLog({id:uid(),assetId:detailAsset.id,date:today(),kind:'Sửa chữa',description:'',parts:'',readings:'',requestedBy:userName,result:'',performedBy:''});setModal('log')}}/>}
-    {modal==='asset'&&editingAsset&&<AssetModal value={editingAsset} close={()=>{setModal(null);setEditingAsset(null)}} save={saveAsset} assets={assets} customCategories={customAssetCategories} onAddCategory={addAssetCategory} onExportConvention={exportAssetCodeConvention}/>}
-    {modal==='item'&&editingItem&&<ItemModal value={editingItem} close={()=>{setModal(null);setEditingItem(null)}} save={saveItem}/>}
+    {detailAsset&&<AssetDetailModal value={detailAsset} userName={userName} isAdmin={organizationRole.trim().toLowerCase()==='admin'} logs={logs.filter(l=>l.assetId===detailAsset.id)} allowChecklist={!isViewer && (checklistAccess || (CHECKLIST_TEST_MODE && page==='checklist'))} checklistOccurrence={activeChecklistOccurrence} createRequestFromChecklist={createRequestFromChecklist} readOnly={isViewer} editLog={(entry:Log)=>{if(isViewer)return;setEditingLog(entry);setModal('log')}} close={()=>{setDetailAsset(null);setChecklistAccess(false);setActiveChecklistOccurrence(null)}} edit={()=>{void openAssetEditor(detailAsset)}} addLog={()=>{setEditingLog({id:uid(),assetId:detailAsset.id,date:today(),kind:'Sửa chữa',description:'',parts:'',readings:'',requestedBy:userName,result:'',performedBy:''});setModal('log')}}/>}
+    {modal==='asset'&&editingAsset&&<AssetModal value={editingAsset} close={closeAssetEditor} save={saveAsset} assets={assets} customCategories={customAssetCategories} onAddCategory={addAssetCategory} onExportConvention={exportAssetCodeConvention} lockLost={Boolean(assetEditLease?.assetId===editingAsset.id && assetEditLease.lost)}/>}
+    {modal==='item'&&editingItem&&<ItemModal value={editingItem} close={()=>{setModal(null);setEditingItem(null)}} save={saveItem} isAdmin={isAdmin} locations={[...new Set([...inventoryLocations,...inventory.map(item=>item.location).filter(Boolean)])].sort((a,b)=>a.localeCompare(b,'vi'))} onAddLocation={addInventoryLocation} locationEnabled={inventoryLocationEnabled} onToggleLocation={toggleInventoryLocation}/>}
     {modal==='task'&&editingTask&&<TaskModal value={editingTask} assets={assets} close={()=>{setModal(null);setEditingTask(null)}} save={saveTask}/>}
     {modal==='plan'&&editingPlan&&<MaintenancePlanModal value={editingPlan} assets={assets} close={()=>{setModal(null);setEditingPlan(null)}} save={saveMaintenancePlans}/>}
     {modal==='planExport'&&<Modal title="Xuất kế hoạch bảo trì Excel" close={()=>setModal(null)}>
@@ -1223,7 +1516,7 @@ function AppWorkspace({ userName, userEmail, profile, onSaveProfile, onSignOut, 
 function Dashboard({assets,tasks,dueToday,dueTodayCount,dueChecklistToday=[],pendingRequests=[],lowStock,overdue,go,complete,inventory,readOnly=false}:any) {
   const completed = tasks.filter((t:Task)=>t.status==='Hoàn thành').length
   const repairCount = assets.filter((a:Asset)=>a.status==='Đang sửa chữa').length
-  const inventoryValue = (inventory as InventoryItem[]).reduce((sum:number, item:InventoryItem) => sum + item.quantity * item.unitPrice, 0)
+  const inventoryCount = (inventory as InventoryItem[]).length
   const completionRate = tasks.length ? Math.round((completed / tasks.length) * 100) : 0
   const categoryStats: [string, number][] = (Object.entries(
     (assets as Asset[]).reduce((acc:Record<string, number>, asset:Asset) => {
@@ -1253,7 +1546,7 @@ function Dashboard({assets,tasks,dueToday,dueTodayCount,dueChecklistToday=[],pen
         <div className="mini-stat-list">
           <div className="mini-stat"><span>Hoàn thành</span><strong>{completed}</strong></div>
           <div className="mini-stat"><span>Đang sửa</span><strong>{repairCount}</strong></div>
-          <div className="mini-stat"><span>Giá trị kho</span><strong>{money(inventoryValue)}</strong></div>
+          <div className="mini-stat"><span>Số loại vật tư</span><strong>{inventoryCount}</strong></div>
         </div>
         <div className="bar-chart">
           {categoryStats.map(([label, count]) => (
@@ -1481,15 +1774,16 @@ function OrganizationMembersPanel({client,organizationId}:{client:SupabaseClient
   </section>
 }
 
-function AssetDetailModal({value,logs,allowChecklist,checklistOccurrence,createRequestFromChecklist,editLog,close,edit,addLog,readOnly=false}:any){
+function AssetDetailModal({value,logs,allowChecklist,checklistOccurrence,createRequestFromChecklist,editLog,close,edit,addLog,readOnly=false,isAdmin=false,userName='Tài khoản'}:any){
   const [showPhotos,setShowPhotos]=useState(false)
   const [activePhoto,setActivePhoto]=useState<string|null>(null)
   const [printMode,setPrintMode]=useState<null|'sticker'|'detail'|'history'>(null)
   const photos: string[] = value.images ?? []
-  const rows = [['Mã định danh',value.code],['Tên thiết bị',value.name],['Nhóm',value.category],['Vị trí',value.location],['Hãng',value.brand],['Model',value.model],['Serial',value.serial],['Ngày đưa vào sử dụng',dateText(value.commissionedAt)],['Công suất / thông số',value.power],['Chu kỳ Bảo trì – Checklist',value.cycle],['Tình trạng',value.status],['Ghi chú',value.notes]]
+  const rows = [['Mã định danh',value.code],['Tên thiết bị',value.name],['Người thêm',value.createdByLabel],['Nhóm',value.category],['Vị trí',value.location],['Hãng',value.brand],['Model',value.model],['Serial',value.serial],['Ngày đưa vào sử dụng',dateText(value.commissionedAt)],['Công suất / thông số',value.power],['Chu kỳ Bảo trì – Checklist',value.cycle],['Tình trạng',value.status],['Ghi chú',value.notes]]
   const print = (mode:'sticker'|'detail'|'history') => { setPrintMode(mode); window.setTimeout(()=>window.print(),180) }
   return <Modal title="Chi tiết thiết bị" close={()=>{setPrintMode(null);close()}}>
-    <div className="asset-qr-panel"><div><small>MÃ QR THIẾT BỊ</small><b>{value.code}</b><span>Quét mã để mở đúng hồ sơ thiết bị</span></div><QRCodeSVG value={`ASSET:${value.id}`} size={116} level="M" includeMargin/></div>
+    <div className="asset-qr-panel"><div><small>MÃ QR THIẾT BỊ</small><b>{value.code}</b><span>Quét mã để mở đúng hồ sơ thiết bị</span></div><QRCodeSVG value={value.code} size={116} level="M" includeMargin/></div>
+    {isAdmin&&<small style={{display:'block',marginTop:6,color:'var(--muted,#87929b)',fontSize:10,overflowWrap:'anywhere'}}>UUID nội bộ: {value.id}</small>}
     <div className="asset-detail-grid">{rows.map(([label,val])=><div className="asset-detail-field" key={label}><small>{label}</small><b>{val||'—'}</b></div>)}</div>
     <div className="asset-photo-actions">
       <button type="button" className="soft-btn" onClick={()=>setShowPhotos(v=>!v)}><ImageIcon size={16}/> {showPhotos?'Ẩn ảnh':'Xem ảnh ('+photos.length+')'}</button>
@@ -1498,15 +1792,15 @@ function AssetDetailModal({value,logs,allowChecklist,checklistOccurrence,createR
       <button type="button" className="primary-btn" disabled={readOnly} title={readOnly?'Viewer chỉ có quyền xem':undefined} onClick={addLog}><Wrench size={16}/> Tạo Phiếu YC Bảo dưỡng – Sửa chữa</button>
       <button type="button" className="primary-btn" disabled={readOnly} title={readOnly?'Viewer chỉ có quyền xem':undefined} onClick={edit}>Sửa hồ sơ</button>
     </div>
-    <AssetChecklist asset={value} allowActions={allowChecklist} scheduledFor={checklistOccurrence?.scheduledFor} isMakeup={checklistOccurrence?.isMakeup} createRequestFromChecklist={createRequestFromChecklist}/>
+    <AssetChecklist asset={value} userName={userName} allowActions={allowChecklist} scheduledFor={checklistOccurrence?.scheduledFor} isMakeup={checklistOccurrence?.isMakeup} createRequestFromChecklist={createRequestFromChecklist}/>
     <section className="asset-maintenance-history"><div className="panel-head"><div><h3>Lý lịch Bảo dưỡng – Sửa chữa</h3><p>{logs.length} Phiếu YC gắn với thiết bị này</p></div><button type="button" className="soft-btn" disabled={!logs.length} onClick={()=>print('history')}><Printer size={15}/> In lịch sử sửa chữa</button></div>
       {logs.length?<div className="maintenance-history-list">{logs.slice().sort((a:any,b:any)=>b.date.localeCompare(a.date)).map((entry:any)=><article key={entry.id}><time>{dateText(entry.date)}</time><div><b>{entry.kind}</b><p>{entry.description||'Không có mô tả'}</p>{entry.parts&&<small>Vật tư/phụ tùng: {entry.parts}</small>}{entry.readings&&<small>Thông số: {entry.readings}</small>}<small>Trạng thái: {entry.result?'Hoàn thành':'CHƯA HOÀN THÀNH'}</small><small>Người yêu cầu: {entry.requestedBy||'—'}</small><small>Người hoàn thành: {entry.performedBy||'—'}</small>{entry.result&&<small>Hoàn thành lúc: {dateTimeText(entry.completedAt)}</small>}{entry.editHistory?.map((event:any)=><small key={event.id}>Lịch sử: {event.action} · Người sửa: {event.editedBy} · {dateTimeText(event.editedAt)}{event.previousCompletedAt?' · Hoàn thành trước đó: '+dateTimeText(event.previousCompletedAt):''}</small>)}{entry.checklistResultId&&<small>Phát sinh từ Checklist không đạt · liên kết phiếu nguồn</small>}<button type="button" className="text-btn" disabled={readOnly} title={readOnly?'Viewer chỉ có quyền xem':undefined} onClick={()=>editLog(entry)}>{entry.result?'Sửa phiếu':'Cập nhật Phiếu YC'}</button></div></article>)}</div>:<p className="muted">Chưa có lịch sử. Hãy chọn “Tạo Phiếu YC Bảo dưỡng – Sửa chữa” sau khi thực hiện công việc.</p>}
     </section>
     {showPhotos&&<div className="asset-photo-grid">{photos.length?photos.map((src:string,i:number)=><button type="button" className="asset-photo-thumb" key={i} onClick={()=>setActivePhoto(src)}><img src={src} alt={'Ảnh '+(i+1)+' của '+value.name}/><span>Ảnh {i+1}</span></button>):<p className="muted">Thiết bị này chưa có ảnh. Chọn “Sửa hồ sơ” để bổ sung ảnh.</p>}</div>}
     {activePhoto&&<div className="photo-lightbox" onClick={()=>setActivePhoto(null)}><button type="button" className="icon-btn" onClick={()=>setActivePhoto(null)}><X/></button><img src={activePhoto} alt={'Ảnh thiết bị '+value.name}/></div>}
     {printMode&&<div className={'asset-print-sheet print-'+printMode}>
-      {printMode==='sticker'&&<div className="asset-sticker"><QRCodeSVG value={`ASSET:${value.id}`} size={78} level="M"/><strong>{value.code}</strong></div>}
-      {printMode==='detail'&&<div className="asset-print-report"><h1 className="asset-print-form-title">BẢNG CHI TIẾT THIẾT BỊ</h1><div className="asset-print-header"><div className="company-logo-placeholder"><span className="company-logo-mark">BT</span><span className="company-logo-wording"><strong>BAOTRI</strong><small>LOGO THỬ NGHIỆM</small></span></div><QRCodeSVG className="asset-print-header-qr" value={`ASSET:${value.id}`} size={104} level="M"/></div><h2 className="asset-print-device-name">{value.name}</h2><table><tbody>{rows.map(([label,val])=><tr key={label}><th>{label}</th><td>{val||'—'}</td></tr>)}</tbody></table></div>}
+      {printMode==='sticker'&&<div className="asset-sticker"><QRCodeSVG value={value.code} size={78} level="M"/><strong>{value.code}</strong></div>}
+      {printMode==='detail'&&<div className="asset-print-report"><h1 className="asset-print-form-title">BẢNG CHI TIẾT THIẾT BỊ</h1><div className="asset-print-header"><div className="company-logo-placeholder"><span className="company-logo-mark">BT</span><span className="company-logo-wording"><strong>BAOTRI</strong><small>LOGO THỬ NGHIỆM</small></span></div><QRCodeSVG className="asset-print-header-qr" value={value.code} size={104} level="M"/></div><h2 className="asset-print-device-name">{value.name}</h2><table><tbody>{rows.map(([label,val])=><tr key={label}><th>{label}</th><td>{val||'—'}</td></tr>)}</tbody></table></div>}
       {printMode==='history'&&<div className="asset-print-report print-history-report"><h1>LỊCH SỬ BẢO DƯỠNG – SỬA CHỮA</h1><h2>{value.name}</h2><b>Mã thiết bị: {value.code}</b><table className="print-history-table"><colgroup><col style={{width:'8%'}}/><col style={{width:'11%'}}/><col style={{width:'22%'}}/><col style={{width:'14%'}}/><col style={{width:'12%'}}/><col style={{width:'10%'}}/><col style={{width:'12%'}}/><col style={{width:'11%'}}/></colgroup><thead><tr><th>Ngày lập phiếu</th><th>Loại</th><th>Nội dung</th><th>Phụ tùng</th><th>Thông số</th><th>Kết quả</th><th>Hoàn thành lúc</th><th>Người thực hiện</th></tr></thead><tbody>{logs.map((entry:any)=><tr key={entry.id}><td>{dateText(entry.date)}</td><td>{entry.kind}</td><td>{entry.description}</td><td>{entry.parts||'—'}</td><td>{entry.readings||'—'}</td><td>{entry.result||'Chưa hoàn thành'}</td><td>{dateTimeText(entry.completedAt)}</td><td>{entry.performedBy||'—'}</td></tr>)}</tbody></table></div>}
     </div>}
   </Modal>
@@ -1937,7 +2231,7 @@ async function ensureDefaultChecklist(asset: Asset) {
   })
 }
 
-function AssetChecklist({asset,allowActions,scheduledFor,isMakeup,createRequestFromChecklist}:{asset:Asset;allowActions:boolean;scheduledFor?:string;isMakeup?:boolean;createRequestFromChecklist:(entry:ChecklistResult)=>void}) {
+function AssetChecklist({asset,userName,allowActions,scheduledFor,isMakeup,createRequestFromChecklist}:{asset:Asset;userName:string;allowActions:boolean;scheduledFor?:string;isMakeup?:boolean;createRequestFromChecklist:(entry:ChecklistResult)=>void}) {
   const template = useLiveQuery(() => db.checklistTemplates.where('assetId').equals(asset.id).first(), [asset.id])
   useEffect(() => {
     if (!allowActions) return
@@ -1952,7 +2246,6 @@ function AssetChecklist({asset,allowActions,scheduledFor,isMakeup,createRequestF
   const [draftItems,setDraftItems] = useState<ChecklistTemplateItem[]>([])
   const [answers,setAnswers] = useState<Record<string,string>>({})
   const [itemNotes,setItemNotes] = useState<Record<string,string>>({})
-  const [performedBy,setPerformedBy] = useState('Người sử dụng')
   const [resultNotes,setResultNotes] = useState('')
   const [printEntry,setPrintEntry] = useState<ChecklistResult|null>(null)
   const currentVersion = versions?.find(v=>v.version===template?.currentVersion)
@@ -2004,7 +2297,7 @@ function AssetChecklist({asset,allowActions,scheduledFor,isMakeup,createRequestF
     if(items.some(item=>item.required&&!item.answer.trim())) return alert('Vui lòng hoàn thành các hạng mục bắt buộc')
     const failed=items.some(item=>item.answer==='Không đạt'||item.answer==='Không')
     const performedAt=now()
-    const entry: ChecklistResult = {id:uid(),assetId:asset.id,templateId:template.id,templateVersionId:currentVersion.id,templateVersion:currentVersion.version,templateTitle:currentVersion.title,performedAt,performedBy:performedBy.trim()||'Người sử dụng',result:failed?'Không đạt':'Đạt',scheduledFor:scheduledFor||undefined,isMakeup:Boolean(scheduledFor && (isMakeup || performedAt.slice(0,10)>scheduledFor)),notes:resultNotes,items,createdAt:performedAt}
+    const entry: ChecklistResult = {id:uid(),assetId:asset.id,templateId:template.id,templateVersionId:currentVersion.id,templateVersion:currentVersion.version,templateTitle:currentVersion.title,performedAt,performedBy:userName.trim()||'Tài khoản',result:failed?'Không đạt':'Đạt',scheduledFor:scheduledFor||undefined,isMakeup:Boolean(scheduledFor && (isMakeup || performedAt.slice(0,10)>scheduledFor)),notes:resultNotes,items,createdAt:performedAt}
     await addAndQueue(db.checklistResults, 'checklistResults', entry)
     setRunOpen(false)
     alert(scheduledFor && (isMakeup || performedAt.slice(0,10)>scheduledFor)?'Đã lưu phiếu Checklist bù cho ngày '+dateText(scheduledFor)+'. Kỳ này đã được ghi nhận hoàn thành.':'Đã lưu phiếu Checklist. Kết quả được lưu thành một lần thực hiện riêng.')
@@ -2042,7 +2335,7 @@ function AssetChecklist({asset,allowActions,scheduledFor,isMakeup,createRequestF
     </form></Modal>}
     {allowActions&&runOpen&&currentVersion&&<Modal title="Thực hiện Checklist" close={()=>setRunOpen(false)}><form className="form-grid" onSubmit={saveResult}>
       <div className="form-hint"><b>{asset.code} – {asset.name}</b><br/>{currentVersion.title} · Phiên bản {currentVersion.version}</div>
-      <Field label="Người thực hiện"><input value={performedBy} onChange={e=>setPerformedBy(e.target.value)}/></Field>
+      <Field label="Người thực hiện"><input value={userName} readOnly/></Field>
       {currentVersion.items.map((item,index)=><div className="panel" key={item.id}><b>{index+1}. {item.label}{item.required?' *':''}</b>{item.description&&<small>{item.description}</small>}{item.answerType==='pass-fail-na'?<Field label="Kết quả"><select required={item.required} value={answers[item.id]??''} onChange={e=>setAnswers(a=>({...a,[item.id]:e.target.value}))}><option value="">-- Chọn kết quả --</option><option>Đạt</option><option>Không đạt</option><option>Không áp dụng</option></select></Field>:item.answerType==='yes-no'?<Field label="Kết quả"><select required={item.required} value={answers[item.id]??''} onChange={e=>setAnswers(a=>({...a,[item.id]:e.target.value}))}><option value="">-- Chọn --</option><option>Có</option><option>Không</option></select></Field>:<Field label="Giá trị ghi nhận"><input required={item.required} type={item.answerType==='number'?'number':'text'} value={answers[item.id]??''} onChange={e=>setAnswers(a=>({...a,[item.id]:e.target.value}))}/></Field>}<Field label="Ghi chú"><input value={itemNotes[item.id]??''} onChange={e=>setItemNotes(a=>({...a,[item.id]:e.target.value}))}/></Field></div>)}
       <Field label="Ghi chú chung"><textarea value={resultNotes} onChange={e=>setResultNotes(e.target.value)}/></Field>
       <div className="modal-actions"><button type="button" className="soft-btn" onClick={()=>setRunOpen(false)}>Hủy</button><button className="primary-btn"><Check size={16}/> Lưu phiếu kết quả</button></div>
@@ -2079,7 +2372,7 @@ function LogEntryModal({value,close,save,assets,userName,isExisting}:{value:Log;
     <div className="form-actions"><button type="button" className="soft-btn" onClick={close}>Hủy</button><button type="submit" className="primary-btn">{completing?'Xác nhận hoàn thành và lưu phiếu':isExisting?'Lưu cập nhật Phiếu YC':'Tạo Phiếu YC'}</button></div>
   </form></Modal>
 }
-function AssetModal({value,close,save,assets,customCategories=[],onAddCategory,onExportConvention}:any){
+function AssetModal({value,close,save,assets,customCategories=[],onAddCategory,onExportConvention,lockLost=false}:any){
   const [v,setV]=useState<Asset>(value)
   const [showAddCategory,setShowAddCategory]=useState(false)
   const [newGroupName,setNewGroupName]=useState('')
@@ -2094,7 +2387,7 @@ function AssetModal({value,close,save,assets,customCategories=[],onAddCategory,o
   const previewCode=isNew&&categoryCodes[v.category]?buildAssetCode(v,assets,customCategories):''
   const suggestedCategory=suggestAssetCategory(v.name)
   const showCategoryWarning=Boolean(suggestedCategory)&&suggestedCategory!==v.category
-  return <Modal title={isNew?'Thêm thiết bị':'Thông tin thiết bị'} close={close}><form onSubmit={e=>{e.preventDefault();if(!v.name.trim())return alert('Nhập tên thiết bị');if(!categoryCodes[v.category])return alert('Chọn nhóm thiết bị hợp lệ');save(v)}} className="form-grid">
+  return <Modal title={isNew?'Thêm thiết bị':'Thông tin thiết bị'} close={close}><form onSubmit={e=>{e.preventDefault();if(lockLost)return;if(!v.name.trim())return alert('Nhập tên thiết bị');if(!categoryCodes[v.category])return alert('Chọn nhóm thiết bị hợp lệ');save(v)}} className="form-grid">{lockLost&&<div className="form-hint warning-hint" role="alert">Lease Cloud đã mất hoặc không còn xác minh được. Form bị khóa lưu; hãy đóng và mở lại sau khi kiểm tra trạng thái Cloud.</div>}
     <Field label="Tên thiết bị *"><input required value={v.name} placeholder="Ví dụ: Quạt hút khu vực đóng gói số 1" onChange={e=>set('name',e.target.value)}/></Field>
     <Field label="Loại thiết bị *"><select required disabled={!isNew} value={v.category} onChange={e=>set('category',e.target.value)}><option value="">-- Chọn loại thiết bị --</option>{ASSET_CATEGORY_GROUPS.map(group=><optgroup key={group.label} label={group.label}>{group.items.map(item=><option key={item.name} value={item.name}>{item.name} · {item.code}</option>)}</optgroup>)}{customCategories.map((group:CustomAssetCategoryGroup)=><optgroup key={group.label} label={group.label}>{group.items.map(item=><option key={item.name} value={item.name}>{item.name} · {item.code}</option>)}</optgroup>)}</select>{isNew&&<button type="button" className="soft-btn" style={{marginTop:8}} onClick={()=>setShowAddCategory(x=>!x)}><Plus size={15}/> Thêm nhóm / loại thiết bị</button>}{showAddCategory&&isNew&&<div className="panel" style={{marginTop:10,display:'grid',gap:8}}><Field label="Thêm vào nhóm đã có (không bắt buộc)"><select value={selectedCustomGroup} onChange={e=>{setSelectedCustomGroup(e.target.value);setNewGroupName('')}}><option value="">-- Tạo nhóm mới --</option>{customCategories.map((group:CustomAssetCategoryGroup)=><option key={group.label} value={group.label}>{group.label}</option>)}</select></Field>{!addingToExistingGroup&&<Field label="Tên nhóm mới *"><input value={newGroupName} onChange={e=>setNewGroupName(e.target.value)} placeholder="Ví dụ: TB Y TẾ"/></Field>}<Field label="Tên loại thiết bị *"><input value={newCategoryName} onChange={e=>setNewCategoryName(e.target.value)} placeholder="Ví dụ: Máy làm răng"/></Field><Field label="Mã loại thiết bị *"><input value={newCategoryCode} onChange={e=>setNewCategoryCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,''))} maxLength={5} placeholder="Ví dụ: MLR"/><small className="muted">2–5 ký tự chữ không dấu hoặc số, dùng làm tiền tố mã định danh.</small></Field><div className="form-hint">Mã nhóm/loại tự tạo được lưu trên trình duyệt này. Sau khi thêm, dùng nút xuất để cập nhật danh mục vào tài liệu Quy ước chuẩn.</div><div style={{display:'flex',gap:8,flexWrap:'wrap'}}><button type="button" className="primary-btn" onClick={()=>{if(onAddCategory(activeGroupName,newCategoryName,newCategoryCode,addingToExistingGroup)){set('category',newCategoryName.trim());setNewGroupName('');setSelectedCustomGroup('');setNewCategoryName('');setNewCategoryCode('');setShowAddCategory(false)}}}>Lưu danh mục và chọn loại</button><button type="button" className="soft-btn" onClick={onExportConvention}><Download size={15}/> Xuất file Quy ước mã</button><button type="button" className="soft-btn" onClick={()=>setShowAddCategory(false)}>Hủy</button></div></div>}{!isNew&&<small className="muted">Loại thiết bị đã khóa sau khi cấp mã để tránh mã định danh không còn đúng loại.</small>}</Field>
     {showCategoryWarning&&<div className="form-hint warning-hint">Theo tên thiết bị, hệ thống gợi ý nhóm “{suggestedCategory}”. Nhóm hiện tại là “{v.category||'chưa chọn'}”. Hãy kiểm tra và chọn nhóm phù hợp; hệ thống không tự đổi nhóm hay mã định danh.</div>}
@@ -2105,31 +2398,33 @@ function AssetModal({value,close,save,assets,customCategories=[],onAddCategory,o
     <Field label="Tình trạng thiết bị"><select value={v.status} onChange={e=>set('status',e.target.value)}>{['Đang hoạt động','Đang sửa chữa','Ngừng sử dụng','Thanh lý'].map(x=><option key={x}>{x}</option>)}</select></Field>
     <Field label="Ghi chú"><input value={v.notes} onChange={e=>set('notes',e.target.value)}/></Field>
     {isNew&&<div className="asset-transfer-option"><label><input type="checkbox" checked={!!v.transferredFromOtherFacility} onChange={e=>set('transferredFromOtherFacility',e.target.checked)}/> Thiết bị được chuyển từ cơ sở khác đến</label><small>Cơ sở tiếp nhận hiện tại: {RECEIVING_FACILITY_CODE}. Khi đánh dấu, hệ thống tự thêm đúng một dấu * vào cuối mã quản lý hiển thị.</small></div>}
-    {isNew&&<div className="asset-code-preview"><span>MÃ ĐỊNH DANH DỰ KIẾN</span><strong>{previewCode||'— Chọn nhóm thiết bị để xem mã —'}</strong><small>Mã quản lý được cấp khi lưu. QR dùng ID nội bộ ổn định nên không đổi khi mã quản lý thay đổi.</small></div>}
+    {isNew&&<div className="asset-code-preview"><span>MÃ ĐỊNH DANH DỰ KIẾN</span><strong>{previewCode||'— Chọn nhóm thiết bị để xem mã —'}</strong><small>Mã quản lý được cấp khi lưu. QR mã hóa trực tiếp mã quản lý này; nếu đổi mã quản lý thì cần in lại tem QR.</small></div>}
     <div className="asset-images-field"><label className="field"><span>Ảnh thiết bị (có thể chọn nhiều ảnh)</span><input type="file" accept="image/*" multiple onChange={async e=>{const files=Array.from(e.target.files??[]);const current=v.images??[];const remaining=Math.max(0,8-current.length);const selected=files.slice(0,remaining);const loaded=await Promise.all(selected.map(file=>new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=reject;reader.readAsDataURL(file)})));set('images',[...current,...loaded]);e.target.value=''}}/></label>
       <div className="asset-photo-grid">{(v.images??[]).map((src:string,i:number)=><div className="asset-photo-thumb" key={i}><img src={src} alt={'Ảnh thiết bị '+(i+1)}/><button type="button" className="text-btn danger" onClick={()=>set('images',(v.images??[]).filter((_:string,index:number)=>index!==i))}>Xóa ảnh</button></div>)}</div>
       <small className="muted">Tối đa 8 ảnh/hồ sơ. Ảnh được lưu cùng dữ liệu thiết bị trong trình duyệt hiện tại; khi chuyển sang máy chủ sẽ cần chuyển ảnh lên kho lưu trữ trực tuyến.</small>
     </div>
-    <div className="modal-actions"><button type="button" className="soft-btn" onClick={close}>Hủy</button><button className="primary-btn" disabled={isNew&&!previewCode}><Check size={16}/> {isNew?'Lưu và tạo mã thiết bị':'Lưu thiết bị'}</button></div>
+    <div className="modal-actions"><button type="button" className="soft-btn" onClick={close}>Hủy</button><button className="primary-btn" disabled={lockLost||(isNew&&!previewCode)}><Check size={16}/> {isNew?'Lưu và tạo mã thiết bị':'Lưu thiết bị'}</button></div>
   </form></Modal>
 }
-function ItemModal({value,close,save}:any){
+function ItemModal({value,close,save,isAdmin,locations,onAddLocation,locationEnabled,onToggleLocation}:any){
   const [v,setV]=useState<InventoryItem>(value); const set=(k:keyof InventoryItem,x:any)=>setV(p=>({...p,[k]:x}))
+  const [newLocation,setNewLocation]=useState('')
+  const isNew = !value.code
   const units=['Cái','Con','Cuộn','m','mm','cm','Lít','ml','Kg','g','Bộ','Chai','Hộp','Túi','Thùng','Tấm','Ống','Viên','Đôi','Mét','Cuộn dây','Bao','Thanh','Can']
   const groups=['Vật tư điện','Linh kiện điện tử','Cơ khí','Khí nén','Điện lạnh','Dầu mỡ bôi trơn','Vòng bi - bạc đạn','Phớt - gioăng','Vật tư đường ống','Vật tư tiêu hao','Vật tư hàn cắt','Dây cáp điện','Khác']
-  return <Modal title="Thông tin vật tư" close={close}><form className="form-grid" onSubmit={e=>{e.preventDefault();if(!v.code||!v.name)return alert('Nhập mã vật tư và tên vật tư');save(v)}}>
+  return <Modal title={isNew?"Thêm vật tư":"Sửa thông tin vật tư"} close={close}><form className="form-grid" onSubmit={e=>{e.preventDefault();if(!v.code.trim()||!v.name.trim())return alert('Nhập mã vật tư và tên vật tư');save(v)}}>
+    <div className="form-hint">Số lượng tồn không chỉnh sửa tại đây. Muốn thay đổi tồn kho, dùng thao tác Nhập hoặc Xuất.</div>
     <Field label="Mã vật tư *"><input required value={v.code} onChange={e=>set('code',e.target.value.toUpperCase())}/></Field><Field label="Mã số"><input value={v.partNumber??''} onChange={e=>set('partNumber',e.target.value)}/></Field>
     <Field label="Tên vật tư *"><input required value={v.name} onChange={e=>set('name',e.target.value)}/></Field><Field label="Nhóm"><select value={v.group} onChange={e=>set('group',e.target.value)}>{groups.map(x=><option key={x}>{x}</option>)}</select></Field>
     <Field label="Kích cỡ / quy cách"><input placeholder="Ví dụ: DN50, M10, 6204, 2.5 mm..." value={v.size??''} onChange={e=>set('size',e.target.value)}/></Field>
     <Field label="Đơn vị tính"><select value={v.unit} onChange={e=>set('unit',e.target.value)}>{!units.includes(v.unit)&&<option value={v.unit}>{v.unit}</option>}{units.map(x=><option key={x} value={x}>{x}</option>)}</select></Field>
-    <Field label="Số lượng tồn"><input type="number" min="0" value={v.quantity} onChange={e=>set('quantity',Number(e.target.value))}/></Field><Field label="Tồn tối thiểu"><input type="number" min="0" value={v.minQuantity} onChange={e=>set('minQuantity',Number(e.target.value))}/></Field>
-    <Field label="Vị trí lưu kho"><input value={v.location} onChange={e=>set('location',e.target.value)}/></Field><Field label="Nhà cung cấp"><input value={v.supplier} onChange={e=>set('supplier',e.target.value)}/></Field>
-    <Field label="Đơn giá tham khảo"><input type="number" min="0" value={v.unitPrice} onChange={e=>set('unitPrice',Number(e.target.value))}/></Field>
-    <div className="modal-actions"><button type="button" className="soft-btn" onClick={close}>Hủy</button><button className="primary-btn"><Check size={16}/> Lưu vật tư</button></div>
+    <Field label="Tồn tối thiểu">{isAdmin?<input type="number" min="0" value={v.minQuantity} onChange={e=>set('minQuantity',Number(e.target.value))}/>:<><input type="number" value={v.minQuantity} readOnly/><small className="muted">Chỉ Admin được thay đổi mức tồn tối thiểu.</small></>}</Field>
+    <Field label="Vị trí lưu kho">{isAdmin&&<label className="inline-check"><input type="checkbox" checked={locationEnabled} onChange={e=>onToggleLocation(e.target.checked)}/> Quản lý vị trí lưu kho (bỏ chọn nếu chỉ có một kho chung)</label>}<select value={locationEnabled?v.location:''} disabled={!locationEnabled} required={locationEnabled} style={!locationEnabled?{opacity:0.45,cursor:'not-allowed',background:'#eee'}:undefined} onChange={e=>set('location',e.target.value)}><option value="">{locationEnabled?'-- Chọn vị trí đã có --':'Không áp dụng – một kho chung'}</option>{locationEnabled&&locations.map((x:string)=><option key={x} value={x}>{x}</option>)}{locationEnabled&&v.location&&!locations.includes(v.location)&&<option value={v.location}>{v.location} · vị trí cũ</option>}</select>{!locationEnabled&&<small className="muted">Đang dùng một kho chung. Không cần khai báo vị trí cho từng vật tư.</small>}{isAdmin&&locationEnabled&&<div className="inline-location-add"><input value={newLocation} onChange={e=>setNewLocation(e.target.value)} placeholder="Thêm vị trí mới, ví dụ: Tầng 1 - Kệ A"/><button type="button" className="soft-btn" onClick={()=>{if(onAddLocation(newLocation)){set('location',newLocation.trim().replace(/\s+/g,' '));setNewLocation('')}}}>Thêm vào danh mục</button></div>}</Field><Field label="Nhà cung cấp"><input value={v.supplier} onChange={e=>set('supplier',e.target.value)}/></Field>
+    <div className="modal-actions"><button type="button" className="soft-btn" onClick={close}>Hủy</button><button className="primary-btn"><Check size={16}/> {isNew?'Thêm vật tư':'Lưu thông tin'}</button></div>
   </form></Modal>
 }
 function InventoryDetailModal({value,close,edit,readOnly=false}:any){
-  const rows=[['Mã vật tư',value.code],['Mã số',value.partNumber],['Tên vật tư',value.name],['Nhóm',value.group],['Kích cỡ / quy cách',value.size],['Đơn vị tính',value.unit],['Số lượng tồn',String(value.quantity)+' '+value.unit],['Tồn tối thiểu',String(value.minQuantity)+' '+value.unit],['Vị trí lưu kho',value.location],['Nhà cung cấp',value.supplier],['Đơn giá tham khảo',Number(value.unitPrice||0).toLocaleString('vi-VN')+' VNĐ'],['Cập nhật lần cuối',value.updatedAt?new Date(value.updatedAt).toLocaleString('vi-VN'):'—']]
+  const rows=[['Mã vật tư',value.code],['Mã số',value.partNumber],['Tên vật tư',value.name],['Người thêm',value.createdByLabel],['Nhóm',value.group],['Kích cỡ / quy cách',value.size],['Đơn vị tính',value.unit],['Số lượng tồn',String(value.quantity)+' '+value.unit],['Tồn tối thiểu',String(value.minQuantity)+' '+value.unit],['Vị trí lưu kho',value.location],['Nhà cung cấp',value.supplier],['Cập nhật lần cuối',value.updatedAt?new Date(value.updatedAt).toLocaleString('vi-VN'):'—']]
   const print=()=>{window.setTimeout(()=>window.print(),100)}
   return <Modal title="Chi tiết vật tư" close={close}><div className="asset-detail-grid">{rows.map(([label,val])=><div className="asset-detail-field" key={label}><small>{label}</small><b>{val||'—'}</b></div>)}</div><div className="asset-photo-actions"><button className="soft-btn" onClick={print}><Printer size={16}/> In chi tiết</button><button className="primary-btn" disabled={readOnly} title={readOnly?'Viewer chỉ có quyền xem':undefined} onClick={edit}>Sửa vật tư</button></div><div className="asset-print-sheet print-detail"><div className="asset-print-report"><h1 className="asset-print-form-title">BẢNG CHI TIẾT VẬT TƯ</h1><div className="asset-print-header"><div className="company-logo-placeholder"><span className="company-logo-mark">BT</span><span className="company-logo-wording"><strong>BAOTRI</strong><small>LOGO THỬ NGHIỆM</small></span></div></div><h2 className="asset-print-device-name">{value.name}</h2><table><tbody>{rows.map(([label,val])=><tr key={label}><th>{label}</th><td>{val||'—'}</td></tr>)}</tbody></table></div></div></Modal>
 }
@@ -2202,30 +2497,42 @@ function MaintenancePlanModal({value,assets,close,save}:{value:MaintenancePlan;a
 function ScanModal({close,assets,openAsset,expectedAssetId}:any){
   const [result,setResult]=useState('')
   const [manualCode,setManualCode]=useState('')
+  const assetsRef=useRef(assets)
+  const expectedAssetIdRef=useRef(expectedAssetId)
+  const openAssetRef=useRef(openAsset)
+  assetsRef.current=assets
+  expectedAssetIdRef.current=expectedAssetId
+  openAssetRef.current=openAsset
   const resolveAsset=(raw:string):{ok:true;asset:Asset}|{ok:false;error:string}=>{
     const value=raw.trim()
     const payload=value.startsWith('ASSET:')?value.slice(6).trim():value
     if(!payload)return {ok:false,error:'Vui lòng nhập mã thiết bị.'}
-    const found=assets.find((asset:Asset)=>asset.id===payload)||assets.find((asset:Asset)=>asset.code.toLocaleLowerCase('vi')===payload.toLocaleLowerCase('vi'))
+    const found=assetsRef.current.find((asset:Asset)=>asset.id===payload)||assetsRef.current.find((asset:Asset)=>asset.code.toLocaleLowerCase('vi')===payload.toLocaleLowerCase('vi'))
     if(!found)return {ok:false,error:'Không tìm thấy thiết bị với mã vừa nhập. Hãy kiểm tra lại mã.'}
-    if(expectedAssetId&&found.id!==expectedAssetId)return {ok:false,error:'Mã thiết bị không đúng với công việc Checklist này. Hãy nhập mã của đúng thiết bị.'}
+    if(expectedAssetIdRef.current&&found.id!==expectedAssetIdRef.current)return {ok:false,error:'Mã thiết bị không đúng với công việc Checklist này. Hãy nhập mã của đúng thiết bị.'}
     return {ok:true,asset:found}
   }
   const submitManual=(event:FormEvent<HTMLFormElement>)=>{
     event.preventDefault()
     const match=resolveAsset(manualCode)
     if(!match.ok){setResult(match.error);return}
-    openAsset(match.asset)
+    openAssetRef.current(match.asset)
   }
   useEffect(()=>{
+    let active=true
     const scanner = new Html5QrcodeScanner('qr-reader',{fps:10,qrbox:{width:220,height:220}},false)
     scanner.render((text)=>{
+      if(!active)return
       const match=resolveAsset(text)
       if(!match.ok){setResult(match.error);return}
+      active=false
       scanner.clear().catch(()=>{})
-      openAsset(match.asset)
+      openAssetRef.current(match.asset)
     },()=>{})
-    return ()=>{scanner.clear().catch(()=>{})}
+    return ()=>{
+      active=false
+      scanner.clear().catch(()=>{})
+    }
   },[])
   return <Modal title="Truy cập thiết bị" close={close}>
     <div className="scan-modal">
@@ -2409,6 +2716,7 @@ export default function App() {
     organizationId={organizationContext.id}
     organizationName={organizationContext.name}
     organizationRole={organizationContext.role}
+    userId={session.user.id}
     userName={userName}
     userEmail={userEmail}
     profile={profile}

@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { Asset } from './db'
+import { db, now, type Asset, type AssetCloudLink } from './db'
 import {
-  createCloudAsset, getCloudAssetCodeConfig, listCloudAssets, saveCloudAssetCodeConfig,
-  setCloudAssetArchived, updateCloudAsset, type AssetCodeConfig
+  getCloudAssetCodeConfig, importCloudAssetPreservingIdentity, listCloudAssets, saveCloudAssetCodeConfig,
+  type AssetCodeConfig
 } from './lib/assetsCloud'
+import {
+  listAssetEditLocks, type AssetEditLock
+} from './lib/assetEditLocks'
 
 type Props = {
   client: SupabaseClient
@@ -42,6 +45,68 @@ const entriesToMap = (entries: CodeEntry[], label: string, maxLength: number, re
   return result
 }
 
+const sameTimestamp = (left?: string | null, right?: string | null): boolean => {
+  if (!left && !right) return true
+  if (!left || !right) return false
+  const leftTime = Date.parse(left)
+  const rightTime = Date.parse(right)
+  return Number.isFinite(leftTime) && Number.isFinite(rightTime) && leftTime === rightTime
+}
+
+
+const localAssetImportSnapshot = (assets: Asset[]): string => JSON.stringify(
+  [...assets]
+    .sort((left, right) => left.id.localeCompare(right.id))
+    .map(asset => ({
+      id: asset.id,
+      code: asset.code,
+      name: asset.name,
+      category: asset.category,
+      brand: asset.brand ?? '',
+      model: asset.model ?? '',
+      serial: asset.serial ?? '',
+      location: asset.location ?? '',
+      commissionedAt: asset.commissionedAt || null,
+      power: asset.power ?? '',
+      cycle: asset.cycle ?? '',
+      cycleStartedAt: asset.cycleStartedAt || null,
+      transferredFromOtherFacility: Boolean(asset.transferredFromOtherFacility),
+      status: asset.status,
+      notes: asset.notes ?? '',
+      archivedAt: asset.archivedAt || null,
+      createdAt: asset.createdAt,
+      updatedAt: asset.updatedAt
+    }))
+)
+
+const localAssetHasCurrentCloudLink = (asset: Asset, link?: AssetCloudLink): boolean =>
+  Boolean(link &&
+    link.status === 'linked' &&
+    link.cloudCode === asset.code &&
+    sameTimestamp(link.cloudUpdatedAt, asset.updatedAt) &&
+    sameTimestamp(link.lastSyncedLocalUpdatedAt, asset.updatedAt))
+
+const localAssetMatchesCloud = (asset: Asset, row: Record<string, unknown>): boolean =>
+  row.id === asset.id &&
+  row.code === asset.code &&
+  row.name === asset.name &&
+  row.category === asset.category &&
+  (row.brand ?? '') === (asset.brand ?? '') &&
+  (row.model ?? '') === (asset.model ?? '') &&
+  (row.serial ?? '') === (asset.serial ?? '') &&
+  (row.location ?? '') === (asset.location ?? '') &&
+  (row.commissioned_at ?? null) === (asset.commissionedAt || null) &&
+  (row.power ?? '') === (asset.power ?? '') &&
+  (row.cycle ?? '') === (asset.cycle ?? '') &&
+  (row.cycle_started_at ?? null) === (asset.cycleStartedAt || null) &&
+  Boolean(row.transferred_from_other_facility) === Boolean(asset.transferredFromOtherFacility) &&
+  row.status === asset.status &&
+  (row.notes ?? '') === (asset.notes ?? '') &&
+  sameTimestamp(row.archived_at as string | null | undefined, asset.archivedAt || null) &&
+  sameTimestamp(row.created_at as string | null | undefined, asset.createdAt) &&
+  sameTimestamp(row.updated_at as string | null | undefined, asset.updatedAt)
+
+
 export default function CloudAssetsPanel({ client, organizationId, organizationName, organizationRole, onBack }: Props) {
   const [assets, setAssets] = useState<Asset[]>([])
   const [loading, setLoading] = useState(true)
@@ -54,26 +119,16 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
   const [locationEntries, setLocationEntries] = useState<CodeEntry[]>([{ name: '', code: '' }])
   const [savingConfig, setSavingConfig] = useState(false)
   const [showConfig, setShowConfig] = useState(false)
-  const [creating, setCreating] = useState(false)
-  const [showCreate, setShowCreate] = useState(false)
-  const [editDraft, setEditDraft] = useState<Asset | null>(null)
-  const [savingEdit, setSavingEdit] = useState(false)
-  const [busyAssetId, setBusyAssetId] = useState('')
-  const [canUpdateAssets, setCanUpdateAssets] = useState(false)
-  const [canCreateAssets, setCanCreateAssets] = useState(false)
+  const [locks, setLocks] = useState<Record<string, AssetEditLock>>({})
+  const [lockStateKnown, setLockStateKnown] = useState(false)
+  const [lockError, setLockError] = useState('')
+  const [isOnline, setIsOnline] = useState(() => typeof navigator !== 'undefined' && navigator.onLine)
+  const [canImportAssets, setCanImportAssets] = useState(false)
   const [canManageSettings, setCanManageSettings] = useState(false)
   const [permissionsLoading, setPermissionsLoading] = useState(true)
-  const [name, setName] = useState('')
-  const [category, setCategory] = useState('')
-  const [location, setLocation] = useState('')
-  const [commissionedAt, setCommissionedAt] = useState(new Date().toISOString().slice(0, 10))
-  const [brand, setBrand] = useState('')
-  const [model, setModel] = useState('')
-  const [serial, setSerial] = useState('')
-  const [power, setPower] = useState('')
-  const [cycle, setCycle] = useState('')
-  const [notes, setNotes] = useState('')
-
+  const [localImportPreview, setLocalImportPreview] = useState<{ total: number; toInsert: number; alreadyPresent: number; toLink: number; localSnapshot: string } | null>(null)
+  const [checkingLocalImport, setCheckingLocalImport] = useState(false)
+  const [importingLocalAssets, setImportingLocalAssets] = useState(false)
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
@@ -104,30 +159,66 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
 
   useEffect(() => { void load() }, [load])
 
+  const refreshLocks = useCallback(async () => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setLockStateKnown(false)
+      setLockError('Mất kết nối Internet. Không thể xác nhận quyền chỉnh sửa thiết bị.')
+      return
+    }
+    try {
+      const rows = await listAssetEditLocks(client, organizationId)
+      const next: Record<string, AssetEditLock> = {}
+      for (const row of rows) next[row.asset_id] = row
+      setLocks(next)
+      setLockStateKnown(true)
+      setLockError('')
+    } catch (cause) {
+      setLockStateKnown(false)
+      setLockError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }, [client, organizationId])
+
+  useEffect(() => {
+    const onOnline = () => {
+      setIsOnline(true)
+      void refreshLocks()
+    }
+    const onOffline = () => {
+      setIsOnline(false)
+      setLockStateKnown(false)
+      setLockError('Mất kết nối Internet. Không thể xác nhận trạng thái khóa thiết bị.')
+    }
+    window.addEventListener('online', onOnline)
+    window.addEventListener('offline', onOffline)
+    void refreshLocks()
+    const timer = window.setInterval(() => { if (navigator.onLine) void refreshLocks() }, 5000)
+    return () => {
+      window.removeEventListener('online', onOnline)
+      window.removeEventListener('offline', onOffline)
+      window.clearInterval(timer)
+    }
+  }, [refreshLocks])
+
   useEffect(() => {
     let active = true
     const loadPermissions = async () => {
       setPermissionsLoading(true)
       try {
-        const [updateResult, createResult, settingsResult] = await Promise.all([
-          client.rpc('has_org_permission', { p_organization_id: organizationId, p_permission_code: 'assets.update' }),
-          client.rpc('has_org_permission', { p_organization_id: organizationId, p_permission_code: 'assets.create' }),
+        const [importResult, settingsResult] = await Promise.all([
+          client.rpc('has_org_permission', { p_organization_id: organizationId, p_permission_code: 'assets.import' }),
           client.rpc('has_org_permission', { p_organization_id: organizationId, p_permission_code: 'settings.manage' })
         ])
-        if (updateResult.error) throw updateResult.error
-        if (createResult.error) throw createResult.error
+        if (importResult.error) throw importResult.error
         if (settingsResult.error) throw settingsResult.error
         if (active) {
-          setCanUpdateAssets(updateResult.data === true)
-          setCanCreateAssets(createResult.data === true)
+          setCanImportAssets(importResult.data === true)
           setCanManageSettings(settingsResult.data === true)
         }
       } catch (cause) {
         if (active) {
-          setCanUpdateAssets(false)
-          setCanCreateAssets(false)
+          setCanImportAssets(false)
           setCanManageSettings(false)
-          setError('Không xác định được quyền thao tác thiết bị từ Supabase: ' + (cause instanceof Error ? cause.message : String(cause)))
+          setError('Không xác định được quyền quản trị Cloud: ' + (cause instanceof Error ? cause.message : String(cause)))
         }
       } finally {
         if (active) setPermissionsLoading(false)
@@ -139,8 +230,6 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
 
   const active = assets.filter(asset => !asset.archivedAt)
   const archived = assets.filter(asset => Boolean(asset.archivedAt))
-  const categoryOptions = useMemo(() => Object.keys(config?.category_codes ?? {}).sort((a, b) => a.localeCompare(b, 'vi')), [config])
-  const locationOptions = useMemo(() => Object.keys(config?.location_codes ?? {}).filter(x => x !== '__UNASSIGNED__').sort((a, b) => a.localeCompare(b, 'vi')), [config])
 
   const saveConfig = async (event: FormEvent) => {
     event.preventDefault()
@@ -168,61 +257,149 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
     }
   }
 
-  const submitEdit = async (event: FormEvent) => {
-    event.preventDefault()
-    if (!editDraft) return
-    setSavingEdit(true)
+  const checkLocalAssetImport = async () => {
+    setCheckingLocalImport(true)
     setError('')
     setMessage('')
+    setLocalImportPreview(null)
     try {
-      const saved = await updateCloudAsset(client, organizationId, editDraft)
-      setAssets(current => current.map(asset => asset.id === saved.id ? saved : asset).sort((a, b) => a.name.localeCompare(b.name, 'vi')))
-      setEditDraft(null)
-      setMessage('Đã cập nhật hồ sơ thiết bị ' + saved.code + '.')
+      const localRows = await db.assets.toArray()
+      if (!localRows.length) throw new Error('PC không có thiết bị Local để đồng bộ.')
+      const localIds = new Set<string>()
+      const localCodes = new Set<string>()
+      for (const asset of localRows) {
+        if (!asset.id || !asset.code.trim() || !asset.name.trim() || !asset.category.trim()) {
+          throw new Error('Có thiết bị Local thiếu UUID, mã quản lý, tên hoặc nhóm thiết bị. Không thể đồng bộ an toàn.')
+        }
+        if (localIds.has(asset.id)) throw new Error('Local có UUID thiết bị bị trùng: ' + asset.id)
+        if (localCodes.has(asset.code)) throw new Error('Local có mã quản lý bị trùng: ' + asset.code)
+        localIds.add(asset.id)
+        localCodes.add(asset.code)
+      }
+      const { data, error } = await client.from('assets')
+        .select('*')
+        .eq('organization_id', organizationId)
+      if (error) throw new Error('Không thể kiểm tra thiết bị hiện có trên Cloud: ' + error.message)
+      const cloudRows = (data ?? []) as unknown as Record<string, unknown>[]
+      const cloudById = new Map(cloudRows.map(row => [String(row.id), row]))
+      const cloudByCode = new Map(cloudRows.map(row => [String(row.code), String(row.id)]))
+      const savedLinks = await db.assetCloudLinks.where('organizationId').equals(organizationId).toArray()
+      const linksByAssetId = new Map(savedLinks.map(link => [link.assetId, link]))
+      let alreadyPresent = 0
+      let toInsert = 0
+      let toLink = 0
+      for (const asset of localRows) {
+        const existing = cloudById.get(asset.id)
+        const existingId = cloudByCode.get(asset.code)
+        if (existing) {
+          if (existing.code !== asset.code) {
+            throw new Error('UUID đã tồn tại trên Cloud nhưng mã quản lý khác: ' + asset.code)
+          }
+          if (!localAssetMatchesCloud(asset, existing)) {
+            throw new Error('Thiết bị đã có đúng UUID/mã trên Cloud nhưng nội dung khác Local: ' + asset.code + '. Không tự ghi đè.')
+          }
+          alreadyPresent++
+          if (!localAssetHasCurrentCloudLink(asset, linksByAssetId.get(asset.id))) toLink++
+          continue
+        }
+        if (existingId !== undefined && existingId !== asset.id) {
+          throw new Error('Mã quản lý đã thuộc UUID khác trên Cloud: ' + asset.code)
+        }
+        toInsert++
+        toLink++
+      }
+      setLocalImportPreview({ total: localRows.length, toInsert, alreadyPresent, toLink, localSnapshot: localAssetImportSnapshot(localRows) })
+      setMessage('Đã kiểm tra Local PC và Cloud. Chưa ghi dữ liệu nào lên Cloud.')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
-      setSavingEdit(false)
+      setCheckingLocalImport(false)
     }
   }
 
-  const toggleArchive = async (asset: Asset, archived: boolean) => {
-    const action = archived ? 'đưa thiết bị vào lưu kho' : 'khôi phục thiết bị'
-    if (!window.confirm('Bạn có chắc muốn ' + action + ' ' + asset.code + ' – ' + asset.name + '?')) return
-    setBusyAssetId(asset.id)
+  const confirmLocalAssetImport = async () => {
+    if (!localImportPreview || !localImportPreview.toLink) return
+    if (!window.confirm('Xác nhận nhập mới hoặc tạo liên kết Cloud cho ' + localImportPreview.toLink + ' thiết bị Local? Giữ nguyên UUID và mã quản lý. Không đồng bộ vật tư hoặc dữ liệu khác.')) return
+    setImportingLocalAssets(true)
     setError('')
     setMessage('')
+    let importedCount = 0
     try {
-      const saved = await setCloudAssetArchived(client, organizationId, asset.id, archived)
-      setAssets(current => current.map(item => item.id === saved.id ? saved : item).sort((a, b) => a.name.localeCompare(b.name, 'vi')))
-      setMessage(archived ? 'Đã đưa ' + saved.code + ' vào lưu kho.' : 'Đã khôi phục ' + saved.code + ' về danh sách đang quản lý.')
-      if (editDraft?.id === saved.id) setEditDraft(null)
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
-    } finally {
-      setBusyAssetId('')
-    }
-  }
+      // Re-read both sources after confirmation; the preview is not trusted as a write snapshot.
+      const localRows = await db.assets.toArray()
+      if (localRows.length !== localImportPreview.total ||
+          localAssetImportSnapshot(localRows) !== localImportPreview.localSnapshot) {
+        throw new Error('Dữ liệu Local PC đã thay đổi sau bước kiểm tra. Hãy kiểm tra lại trước khi xác nhận import.')
+      }
+      const { data: existing, error: readError } = await client.from('assets')
+        .select('*')
+        .eq('organization_id', organizationId)
+      if (readError) throw new Error('Không thể kiểm tra lại Cloud trước khi ghi: ' + readError.message)
+      const cloudRows = (existing ?? []) as unknown as Record<string, unknown>[]
+      const cloudById = new Map(cloudRows.map(row => [String(row.id), row]))
+      const cloudByCode = new Map(cloudRows.map(row => [String(row.code), String(row.id)]))
+      const savedLinks = await db.assetCloudLinks.where('organizationId').equals(organizationId).toArray()
+      const linksByAssetId = new Map(savedLinks.map(link => [link.assetId, link]))
+      const rowsToLink: Asset[] = []
+      for (const asset of localRows) {
+        const existingRow = cloudById.get(asset.id)
+        const existingId = cloudByCode.get(asset.code)
+        if (existingRow) {
+          if (existingRow.code !== asset.code) {
+            throw new Error('UUID đã có trên Cloud nhưng mã quản lý không khớp: ' + asset.code)
+          }
+          if (!localAssetMatchesCloud(asset, existingRow)) {
+            throw new Error('Thiết bị Cloud đã tồn tại nhưng nội dung khác Local: ' + asset.code + '. Không tự ghi đè.')
+          }
+          if (!localAssetHasCurrentCloudLink(asset, linksByAssetId.get(asset.id))) rowsToLink.push(asset)
+          continue
+        }
+        if (existingId !== undefined && existingId !== asset.id) {
+          throw new Error('Mã quản lý bị trùng với thiết bị Cloud khác: ' + asset.code)
+        }
+        rowsToLink.push(asset)
+      }
+      if (rowsToLink.length !== localImportPreview.toLink) {
+        throw new Error('Trạng thái Cloud hoặc liên kết Local đã thay đổi sau bước kiểm tra. Hãy kiểm tra lại trước khi xác nhận.')
+      }
 
-  const submitCreate = async (event: FormEvent) => {
-    event.preventDefault()
-    if (!config) return
-    setCreating(true)
-    setError('')
-    setMessage('')
-    try {
-      const created = await createCloudAsset(client, organizationId, {
-        id: crypto.randomUUID(), name, category, location, commissionedAt,
-        brand, model, serial, power, cycle, notes
-      })
-      setAssets(current => [...current, created].sort((a, b) => a.name.localeCompare(b.name, 'vi')))
-      setMessage('Đã tạo thiết bị Cloud: ' + created.code)
-      setName(''); setBrand(''); setModel(''); setSerial(''); setPower(''); setCycle(''); setNotes('')
-      setShowCreate(false)
+      const codesNeedingCounterReview: string[] = []
+      let newlyImportedCount = 0
+      for (let index = 0; index < rowsToLink.length; index++) {
+        const asset = rowsToLink[index]
+        const existedBeforeImport = cloudById.has(asset.id)
+        const imported = await importCloudAssetPreservingIdentity(client, organizationId, asset)
+        if (!imported.counterReconciled) codesNeedingCounterReview.push(asset.code)
+        if (!existedBeforeImport && !imported.alreadyPresent) newlyImportedCount++
+        const timestamp = now()
+        await db.assetCloudLinks.put({
+          id: organizationId + ':' + asset.id,
+          organizationId,
+          assetId: asset.id,
+          cloudCode: imported.asset.code,
+          cloudUpdatedAt: imported.asset.updatedAt,
+          lastSyncedLocalUpdatedAt: asset.updatedAt,
+          status: 'linked',
+          linkedAt: linksByAssetId.get(asset.id)?.linkedAt ?? timestamp,
+          lastVerifiedAt: timestamp
+        })
+        importedCount++
+        setMessage('Đang xác nhận liên kết ' + importedCount + '/' + rowsToLink.length + ': ' + asset.code)
+      }
+
+      await load()
+      setLocalImportPreview(null)
+      const baseMessage = 'Đã xác nhận ' + importedCount + ' liên kết thiết bị; thêm mới Cloud ' + newlyImportedCount + ' thiết bị. UUID và mã quản lý được giữ nguyên; ảnh thiết bị chưa đồng bộ.'
+      setMessage(codesNeedingCounterReview.length
+        ? baseMessage + ' Cần rà soát bộ đếm mã thủ công cho các mã chưa khớp cấu hình: ' + codesNeedingCounterReview.join(', ') + '.'
+        : baseMessage)
     } catch (cause) {
+      if (importedCount > 0) {
+        setMessage('Đã nhập ' + importedCount + ' thiết bị trước khi gặp lỗi. Hãy kiểm tra lại dữ liệu; lần chạy tiếp theo sẽ bỏ qua các thiết bị đã nhập chính xác.')
+      }
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
-      setCreating(false)
+      setImportingLocalAssets(false)
     }
   }
 
@@ -230,7 +407,7 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
     <div className="panel-head">
       <div>
         <h2>Thiết bị trên Cloud</h2>
-        <p>Tổ chức: {organizationName} · Dữ liệu đọc/ghi trực tiếp từ Supabase, độc lập với IndexedDB.</p>
+        <p>Tổ chức: {organizationName} · Cloud chỉ hiển thị dữ liệu đã được nhập từ Local và trạng thái khóa; hồ sơ nghiệp vụ được quản lý tại Local.</p>
       </div>
       <div className="asset-photo-actions">
         <button type="button" className="soft-btn" onClick={onBack}>Quay lại dữ liệu cục bộ</button>
@@ -245,14 +422,28 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
     </div>
     {message && <div className="form-hint" role="status">{message}</div>}
     {error && <div className="form-hint warning-hint" role="alert">{error}</div>}
+    {(!lockStateKnown || !isOnline) && <div className="form-hint warning-hint" role="status">{!isOnline ? 'Mất Internet: không thể tải dữ liệu Cloud hoặc xác nhận trạng thái khóa mới nhất.' : lockError || 'Chưa xác nhận được trạng thái khóa từ Cloud; thông tin khóa hiển thị có thể chưa cập nhật.'}</div>}
+
+    {canImportAssets && !permissionsLoading && <div className="panel" style={{ margin: '12px 0', padding: 14 }}>
+      <h3>Đồng bộ thiết bị từ Local PC lên Cloud</h3>
+      <p className="muted">Chỉ lấy thiết bị trên máy đang mở ứng dụng. Giữ nguyên UUID và mã quản lý Local; không tạo mã mới, không đồng bộ vật tư hoặc phân hệ khác. Ảnh thiết bị chưa được đưa lên Storage.</p>
+      <div className="asset-photo-actions" style={{ flexWrap: 'wrap' }}>
+        <button type="button" className="soft-btn" disabled={checkingLocalImport || importingLocalAssets} onClick={() => void checkLocalAssetImport()}>
+          {checkingLocalImport ? 'Đang kiểm tra Local và Cloud…' : 'Kiểm tra dữ liệu Local PC'}
+        </button>
+        {localImportPreview && <button type="button" className="primary-btn" disabled={importingLocalAssets || localImportPreview.toLink === 0} onClick={() => void confirmLocalAssetImport()}>
+          {importingLocalAssets ? 'Đang đồng bộ…' : 'Xác nhận nhập/liên kết ' + localImportPreview.toLink + ' thiết bị'}
+        </button>}
+      </div>
+      {localImportPreview && <p className="form-hint" role="status">
+        Local PC: {localImportPreview.total} thiết bị · Cần nhập mới lên Cloud: {localImportPreview.toInsert} · Đã có đúng UUID/mã trên Cloud: {localImportPreview.alreadyPresent} · Cần tạo/cập nhật liên kết: {localImportPreview.toLink}. Chưa ghi dữ liệu cho đến khi bạn xác nhận.
+      </p>}
+    </div>}
 
     <div className="asset-photo-actions" style={{ margin: '12px 0', flexWrap: 'wrap' }}>
-      {canManageSettings && !permissionsLoading && <button type="button" className="soft-btn" onClick={() => { setShowConfig(v => !v); setShowCreate(false); setEditDraft(null) }}>
-        {showConfig ? 'Đóng cấu hình mã' : config ? 'Cấu hình mã thiết bị' : 'Thiết lập mã thiết bị Cloud'}
+      {canManageSettings && !permissionsLoading && <button type="button" className="soft-btn" onClick={() => setShowConfig(v => !v)}>
+        {showConfig ? 'Đóng cấu hình mã' : config ? 'Cấu hình mã thiết bị' : 'Thiết lập mã thiết bị'}
       </button>}
-      <button type="button" className="primary-btn" disabled={!config || permissionsLoading || !canCreateAssets} title={!canCreateAssets ? 'Tài khoản không có quyền tạo thiết bị.' : undefined} onClick={() => { setShowCreate(v => !v); setShowConfig(false); setEditDraft(null) }}>
-        {showCreate ? 'Đóng biểu mẫu' : 'Thêm thiết bị Cloud'}
-      </button>
     </div>
 
     {showConfig && canManageSettings && <form className="panel" onSubmit={saveConfig} style={{ marginBottom: 16 }}>
@@ -286,62 +477,18 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
       <button type="submit" className="primary-btn" disabled={savingConfig || !canManageSettings}>{savingConfig ? 'Đang lưu…' : 'Lưu cấu hình Cloud'}</button>
     </form>}
 
-    {editDraft && <form className="panel" onSubmit={submitEdit} style={{ marginBottom: 16 }}>
-      <h3>Sửa hồ sơ thiết bị: {editDraft.code}</h3>
-      <p className="muted">Mã định danh và loại thiết bị được giữ nguyên. Ảnh chưa được chỉnh sửa trên Cloud.</p>
-      <div className="form-grid">
-        <label>Mã thiết bị<input value={editDraft.code} disabled /></label>
-        <label>Loại thiết bị<input value={editDraft.category} disabled /></label>
-        <label>Tên thiết bị<input required value={editDraft.name} onChange={e => setEditDraft(current => current ? { ...current, name: e.target.value } : current)} /></label>
-        <label>Vị trí<input value={editDraft.location} onChange={e => setEditDraft(current => current ? { ...current, location: e.target.value } : current)} /></label>
-        <label>Ngày đưa vào sử dụng<input type="date" value={editDraft.commissionedAt || ''} onChange={e => setEditDraft(current => current ? { ...current, commissionedAt: e.target.value } : current)} /></label>
-        <label>Hãng<input value={editDraft.brand} onChange={e => setEditDraft(current => current ? { ...current, brand: e.target.value } : current)} /></label>
-        <label>Model<input value={editDraft.model} onChange={e => setEditDraft(current => current ? { ...current, model: e.target.value } : current)} /></label>
-        <label>Serial<input value={editDraft.serial} onChange={e => setEditDraft(current => current ? { ...current, serial: e.target.value } : current)} /></label>
-        <label>Công suất<input value={editDraft.power} onChange={e => setEditDraft(current => current ? { ...current, power: e.target.value } : current)} /></label>
-        <label>Chu kỳ bảo trì<input value={editDraft.cycle} onChange={e => setEditDraft(current => current ? { ...current, cycle: e.target.value } : current)} /></label>
-        <label>Trạng thái<select value={editDraft.status} onChange={e => setEditDraft(current => current ? { ...current, status: e.target.value as Asset['status'] } : current)}>{['Đang hoạt động', 'Đang sửa chữa', 'Ngừng sử dụng', 'Thanh lý'].map(value => <option key={value}>{value}</option>)}</select></label>
-      </div>
-      <label>Ghi chú<textarea rows={3} value={editDraft.notes} onChange={e => setEditDraft(current => current ? { ...current, notes: e.target.value } : current)} /></label>
-      <div className="asset-photo-actions"><button type="button" className="soft-btn" onClick={() => setEditDraft(null)}>Hủy</button><button type="submit" className="primary-btn" disabled={savingEdit}>{savingEdit ? 'Đang lưu…' : 'Lưu thay đổi'}</button></div>
-    </form>}
-
-    {showCreate && config && <form className="panel" onSubmit={submitCreate} style={{ marginBottom: 16 }}>
-      <h3>Tạo thiết bị mới trên Cloud</h3>
-      <div className="form-grid">
-        <label>Tên thiết bị<input value={name} onChange={e => setName(e.target.value)} required /></label>
-        <label>Loại thiết bị<select value={category} onChange={e => setCategory(e.target.value)} required><option value="">Chọn loại thiết bị</option>{categoryOptions.map(x => <option key={x} value={x}>{x} · {config.category_codes[x]}</option>)}</select></label>
-        <label>Vị trí<select value={location} onChange={e => setLocation(e.target.value)}><option value="">Chưa phân loại</option>{locationOptions.map(x => <option key={x} value={x}>{x} · {config.location_codes[x]}</option>)}</select></label>
-        <label>Ngày đưa vào sử dụng<input type="date" value={commissionedAt} onChange={e => setCommissionedAt(e.target.value)} /></label>
-        <label>Hãng<input value={brand} onChange={e => setBrand(e.target.value)} /></label>
-        <label>Model<input value={model} onChange={e => setModel(e.target.value)} /></label>
-        <label>Serial<input value={serial} onChange={e => setSerial(e.target.value)} /></label>
-        <label>Công suất<input value={power} onChange={e => setPower(e.target.value)} /></label>
-        <label>Chu kỳ bảo trì<input value={cycle} onChange={e => setCycle(e.target.value)} placeholder="Ví dụ: Hàng tháng" /></label>
-      </div>
-      <label>Ghi chú<textarea rows={3} value={notes} onChange={e => setNotes(e.target.value)} /></label>
-      <p className="muted">Mã thiết bị được cấp tại Supabase trong cùng transaction tạo hồ sơ. Không sử dụng bộ đếm ở trình duyệt.</p>
-      <button type="submit" className="primary-btn" disabled={creating || !category}>{creating ? 'Đang tạo…' : 'Tạo thiết bị trên Cloud'}</button>
-    </form>}
-
     {loading ? <p className="muted">Đang tải danh sách thiết bị từ Supabase…</p> : <>
       <h3>Đang quản lý ({active.length})</h3>
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Mã / Tên thiết bị</th><th>Nhóm</th><th>Vị trí</th><th>Ngày sử dụng</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+          <thead><tr><th>Mã / Tên thiết bị</th><th>Nhóm</th><th>Vị trí</th><th>Ngày sử dụng</th><th>Trạng thái / Khóa</th></tr></thead>
           <tbody>
             {active.map(asset => <tr key={asset.id}>
               <td><b>{asset.code}</b><small>{asset.name}</small></td>
               <td>{asset.category}</td>
               <td>{asset.location || '—'}</td>
               <td>{dateText(asset.commissionedAt)}</td>
-              <td>{asset.status}</td>
-              <td className="actions">
-                {canUpdateAssets ? <>
-                  <button type="button" className="text-btn" onClick={() => { setEditDraft({ ...asset }); setShowConfig(false); setShowCreate(false) }}>Sửa</button>
-                  <button type="button" className="text-btn" disabled={busyAssetId === asset.id} onClick={() => void toggleArchive(asset, true)}>{busyAssetId === asset.id ? 'Đang xử lý…' : 'Lưu kho'}</button>
-                </> : <span className="muted">Chỉ xem</span>}
-              </td>
+              <td>{asset.status}{locks[asset.id] && <small className="status red">Đang khóa · {locks[asset.id].holder_label}</small>}</td>
             </tr>)}
           </tbody>
         </table>
@@ -351,23 +498,20 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
       <h3 style={{ marginTop: 24 }}>Đã lưu kho ({archived.length})</h3>
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Mã / Tên thiết bị</th><th>Nhóm</th><th>Vị trí</th><th>Ngày sử dụng</th><th>Ngày lưu kho</th><th>Thao tác</th></tr></thead>
+          <thead><tr><th>Mã / Tên thiết bị</th><th>Nhóm</th><th>Vị trí</th><th>Ngày sử dụng</th><th>Ngày lưu kho / Khóa</th></tr></thead>
           <tbody>
             {archived.map(asset => <tr key={asset.id}>
               <td><b>{asset.code}</b><small>{asset.name}</small></td>
               <td>{asset.category}</td>
               <td>{asset.location || '—'}</td>
               <td>{dateText(asset.commissionedAt)}</td>
-              <td>{dateText(asset.archivedAt)}</td>
-              <td className="actions">
-                {canUpdateAssets ? <button type="button" className="text-btn success-text" disabled={busyAssetId === asset.id} onClick={() => void toggleArchive(asset, false)}>{busyAssetId === asset.id ? 'Đang xử lý…' : 'Khôi phục'}</button> : <span className="muted">Chỉ xem</span>}
-              </td>
+              <td>{dateText(asset.archivedAt)}{locks[asset.id] && <small className="status red">Đang khóa · {locks[asset.id].holder_label}</small>}</td>
             </tr>)}
           </tbody>
         </table>
         {archived.length === 0 && <p className="muted">Chưa có thiết bị nào trong lưu kho.</p>}
       </div>
     </>}
-    <p className="muted">Quyền tạo và cập nhật được đọc trực tiếp từ RPC has_org_permission của Supabase (assets.create / assets.update); nếu không xác định được quyền, giao diện mặc định chỉ xem. Không có thao tác xóa cứng; dữ liệu IndexedDB và ảnh local không bị thay đổi.</p>
+    <p className="muted">Màn hình Cloud chỉ xem và nhập dữ liệu đã có từ Local. Không tạo, sửa, lưu kho hoặc khôi phục hồ sơ thiết bị tại đây; các thao tác nghiệp vụ phải thực hiện tại Local và được xác thực bằng khóa Cloud.</p>
   </section>
 }

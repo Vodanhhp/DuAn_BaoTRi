@@ -31,6 +31,21 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Test Cloud sync mapping safety
+        run: npm run test:sync-mapping
+
+      - name: Test Local identity rekey safety
+        run: npm run test:local-identity
+
+      - name: Validate template release JSON Schema
+        run: npx --yes ajv-cli@5 validate -s docs/schemas/baotri-template-release.schema.json -d templates/HOTEL_SMALL_BASIC/1.0.0.json --spec=draft2020 --all-errors
+
+      - name: Test template release references
+        run: npm run test:template-release
+
+      - name: Validate hotel template package
+        run: npm run validate:template
+
       - name: Generate shared 247 favicon and PWA icons
         run: |
           python -m pip install pillow
