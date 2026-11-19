@@ -4429,3 +4429,36 @@ Chỉ đọc Supabase skill/docs và GitHub files. Không SQL writes/DDL/RPC/gra
 
 ### Trạng thái
 Chỉ đọc Supabase docs/KB và catalog ACL/owner; không đọc secret value. Không SQL writes, DDL, RPC, grants, role, secret, Auth user hoặc Supabase config changes. Tiếp tục đánh giá function owner và test plan trước prototype.
+
+
+## 80. Candidate tách owner cho Auth/Vault helper và membership RPC – 20/11/2026
+
+### Bằng chứng ACL bổ sung (chỉ đọc)
+- `auth.users` owner `supabase_auth_admin`; `postgres` có SELECT với grant option và có quyền UPDATE hiện hành, nhưng không phải owner.
+- Các bảng `organizations`, `organization_members`, `member_roles` được kiểm tra owner `postgres`; authenticated chỉ có SELECT theo ACL đang kiểm tra; service_role có DML rộng.
+- Vault objects owner/grantor `supabase_admin`; postgres SELECT grant option; service_role SELECT không grant option.
+- Không có custom acceptance owner hiện tại; không tạo role hoặc cấp quyền.
+
+### Candidate phân tách hai trust boundary
+A. Private identity/HMAC helper (owner postgres theo pattern Vault được Supabase tài liệu hóa):
+- Không nhận tham số actor/email/digest từ client.
+- Tự gọi `auth.uid()` trong PostgREST request context; từ chối NULL.
+- Đọc và khóa đúng `auth.users` row của actor, kiểm tra email hiện tại đã xác minh; chuẩn hóa email theo một quy tắc duy nhất.
+- Đọc một Vault key theo tên cố định, tính HMAC-SHA-256 bên trong DB; chỉ trả `actor_user_id` + recipient digest, không trả email hoặc raw key.
+- Schema không expose; EXECUTE chỉ cho role owner của acceptance RPC; revoke PUBLIC/anon/authenticated/service_role. Không trở thành HMAC oracle.
+
+B. Public membership acceptance wrapper/transaction function (candidate owner riêng `member_rpc_owner`):
+- Role NOLOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOREPLICATION, BYPASSRLS; không membership vào role khác, không credential/DB login.
+- Chỉ được USAGE schema cần thiết; EXECUTE đúng helper identity/HMAC; table grants chỉ trên đúng các bảng membership/organization/role/invite operation/receipt/audit cần cho transaction. Không có Auth/Vault privileges và không dùng service_role.
+- Function SECURITY DEFINER, fixed `search_path = ''`, fully-qualified names, input tối thiểu (opaque invitation ID + mutation ID); lấy actor/digest từ helper; kiểm tra toàn bộ tenant, invitation, inviter authority, role, idempotency; ghi membership + role + audit + Shared Receipt + Saga atomically.
+- Vì owner BYPASSRLS, mọi authorization phải kiểm tra tường minh; không dựa vào RLS. Hạn chế table grants là bắt buộc. Không có function khác do role này sở hữu nếu chưa audit.
+
+### Ưu điểm và điều kiện chưa giải quyết
+- Tách việc đọc Auth/Vault khỏi business write: acceptance owner không thể SELECT Auth users hoặc Vault; helper chỉ phát actor ID và digest.
+- Giảm quyền của transaction function so với postgres trực tiếp, nhưng BYPASSRLS vẫn là đặc quyền mạnh. Phải kiểm tra chính xác mọi table grant, FK/trigger side effects, role membership/SET ROLE, schema USAGE, default ACL và toàn bộ function owner surface.
+- Cần xác minh trong PostgREST runtime rằng request JWT context (auth.uid()) vẫn nguyên vẹn khi wrapper SECURITY DEFINER gọi helper SECURITY DEFINER; chưa tạo test function và chưa chạy API test.
+- Cần đối chiếu Foundation Lock Matrix để chốt thứ tự khóa Organization/Membership/Role/Auth/Invitation và tránh deadlock.
+- Đây là candidate thiết kế để đánh giá tiếp, không phải quyết định cuối và không phải phê duyệt DDL/role/grant/RPC.
+
+### Trạng thái
+Chỉ đọc ACL/catalog và tài liệu. Không SQL write, DDL, role, grant, RPC, secret value, Auth user hoặc cấu hình Supabase thay đổi.
