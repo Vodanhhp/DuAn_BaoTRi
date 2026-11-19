@@ -4371,3 +4371,37 @@ Các commit gần nhất:
 7. Tiếp tục chỉ đọc catalog/tài liệu và cập nhật thiết kế; KHÔNG tạo DDL/RPC/Edge Function, grant, secret, migration hoặc cấu hình Supabase.
 
 **Trạng thái dừng:** Không có SQL write, DDL, grant, migration, secret access/value, Auth user modification hoặc Supabase configuration change trong phiên. Dừng tại checkpoint này để tiếp tục ngày mai.
+
+
+---
+
+## 78. TIẾP TỤC NGHIÊN CỨU RPC VÀ HMAC – 20/11/2026
+
+### Đọc lại trạng thái
+- Đã đọc lại checkpoint §77 và phần liên quan trong Member Management RPC Design (§§52–61), Foundation Drafts Review (§§60–64), Progress §§72–77.
+- Chưa có quyết định kiến trúc cuối cùng; authenticated PostgREST RPC chỉ là phương án ưu tiên prototype.
+
+### Vault secret-access boundary
+- Đọc Supabase Vault docs: `vault.decrypted_secrets` là view giải mã secret; người có quyền SELECT view có thể đọc decrypted secrets. Catalog Test cho thấy service_role/postgres có quyền đọc; browser roles không có.
+- Không đọc secret value, không tạo secret, không thay đổi Vault/ACL.
+- Không cấp quyền đọc Vault rộng cho role nghiệp vụ, Edge runtime hoặc service_role như cách đơn giản hóa.
+- Candidate nghiên cứu: một private capability rất hẹp (fixed projection/view hoặc SECURITY DEFINER helper) chỉ truy cập đúng HMAC key và chỉ trả digest, không trả key. Phải kiểm tra owner/privilege chain, view security semantics, schema exposure, execute ACL, và khả năng Vault lifecycle/managed migration; chưa kết luận cách này an toàn hoặc khả thi.
+- HMAC helper không được thành oracle công khai cho email tùy ý. Chỉ acceptance function được phép gọi; input phải lấy từ email Auth hiện tại đã lock/verified, không phải email client gửi.
+
+### Candidate authenticated PostgREST acceptance RPC
+- Ưu tiên prototype qua normal authenticated Supabase client để PostgREST xác minh JWT và thiết lập request context.
+- Wrapper lấy actor từ `auth.uid()`; không nhận UID/email/tenant/role/digest từ client làm căn cứ phân quyền.
+- Wrapper chỉ nhận opaque invitation ID và mutation/idempotency ID; tự đọc Auth user/email verified, lock Auth row, compute recipient digest nội bộ, lock invitation, revalidate toàn bộ điều kiện rồi ghi membership + role + audit + Shared Receipt + Saga atomically.
+- `SECURITY DEFINER` owner đặc quyền (đặc biệt postgres/BYPASSRLS) là trust boundary nghiêm ngặt; explicit business checks, fixed empty search_path, fully qualified names, default/overload ACL review và minimal return là bắt buộc.
+- Private schema không expose; wrapper duy nhất trong schema được expose có chủ đích; xác minh Dashboard API Settings trước khi triển khai.
+
+### Test plan chưa thực hiện
+1. Gọi RPC qua API thật bằng authenticated session; xác nhận `auth.uid()` trong wrapper/definer context khớp token subject. Không tạo test function hay ghi DB lúc chưa duyệt.
+2. Anonymous bị từ chối; authenticated không membership không có quyền tenant; client không thể giả actor/email/role/digest.
+3. Invite đúng verified email, wrong recipient, expired/revoked, tenant khác, inviter mất quyền, role không hợp lệ, membership tồn tại, cross-actor replay.
+4. HMAC helper không trả key, không thể gọi bởi anon/authenticated ngoài acceptance; không có oracle cho email arbitrary.
+5. Race email-change và acceptance hai thứ tự; row-lock thật, lock timeout, transaction rollback. Chỉ chạy với fixture user/org/invite disposable ở Test khi có phê duyệt riêng.
+6. Recheck exposed schema, function ownership, security mode, ACL, default ACL, overload, RLS/trigger và schema cache.
+
+### Trạng thái
+Chỉ đọc Supabase skill/docs và GitHub files. Không SQL writes/DDL/RPC/grants, không secret values, không thay đổi Auth user/email, không deployment/configuration. Tiếp tục nghiên cứu; phương án secret isolation và function owner chưa chốt.
