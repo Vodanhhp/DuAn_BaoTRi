@@ -694,3 +694,60 @@ Một transaction business mutation thành công phải commit đồng thời: b
 5. Chỉ sau PASS mới nhân rộng RPC theo từng vertical và cutover client.
 
 **Trạng thái:** đây là hợp đồng kiến trúc thống nhất và danh sách kiểm chứng. Không sửa source code, không sửa SQL draft 015/020, không tạo migration Change Feed, không chạy SQL/RPC, không bật worker và không thay đổi Supabase Test/Production hoặc dữ liệu.
+
+
+## 17. Review draft 015 — row_version foundation
+
+Đã đối chiếu draft 015 với schema nghiệp vụ 002, identity schema 001 và migration 019 điều chỉnh Asset updated_at. Đây là static review trên GitHub; chưa chạy PostgreSQL, chưa xác minh migration nào đã được apply vào Supabase Test/Production.
+
+### 17.1 Phạm vi bảng: khớp schema hiện tại
+
+Draft 015 thêm row_version cho sáu bảng mutable hiện có:
+- assets
+- inventory_items
+- maintenance_tasks
+- maintenance_plans
+- checklist_templates
+- organization_settings
+
+Cả sáu bảng đều có updated_at trong business schema 002; organization_settings là singleton theo organization_id, không có id riêng nhưng row_version vẫn dùng bình thường trên row đó.
+
+Không thêm version cho các bảng append-only/history như inventory_movements, maintenance_logs, checklist_template_versions, checklist_results. Phạm vi này phù hợp với thiết kế hiện tại. Asset_images chưa đưa vào là hợp lý vì hiện là metadata insert/delete, không phải mutable master row trong hợp đồng này.
+
+### 17.2 Trigger behavior: ý tưởng đúng, cần giữ các điều kiện
+
+- Hàm set_business_row_version dùng SECURITY INVOKER mặc định, search_path rỗng và chỉ thay đổi NEW; không cần SECURITY DEFINER.
+- INSERT ép row_version = 1, không tin giá trị client.
+- UPDATE so sánh JSONB sau khi bỏ row_version và updated_at; business field thay đổi thì tăng OLD.row_version đúng một, chỉ đổi updated_at thì giữ version.
+- Tên trigger dạng [table]_set_row_version đứng trước [table]_set_updated_at theo thứ tự alphabetic của PostgreSQL. Trigger updated_at ở schema 002 dùng set_updated_at; Asset có migration 019 thay bằng set_asset_updated_at dùng clock_timestamp(). Vì row_version comparison loại updated_at nên cả hai kiểu timestamp đều không làm tăng version giả.
+- Mỗi SQL UPDATE chỉ chạy trigger một lần; nếu RPC UPDATE cùng row hai lần thì version tăng hai lần. Đây là behavior đã biết, phải tránh trong RPC chứ không sửa bằng cách làm trigger phức tạp hơn.
+
+### 17.3 Những điểm draft 015 chưa và không thể tự giải quyết
+
+1. **Không có optimistic concurrency enforcement:** draft chỉ thêm cột/trigger. RLS policy và direct UPDATE grants trong schema 002 vẫn cho phép một số client update trực tiếp. Trigger không kiểm tra expected_version. Không được coi draft 015 là đã ngăn lost update.
+2. **Không khóa quyền ghi trực tiếp:** assets, maintenance_tasks, maintenance_plans có grant UPDATE; checklist_templates có grant UPDATE; organization_settings có grant UPDATE; inventory_items có column-level UPDATE. Khi từng vertical chuyển sang RPC, migration cutover phải thu hồi direct INSERT/UPDATE phù hợp và chỉ cấp EXECUTE RPC đã kiểm tra Auth, membership, permission, expected version và Receipt. Không thu hồi đồng loạt trước khi client cutover.
+3. **Asset chưa chuyển token:** Asset hiện dùng expected_cloud_updated_at + Edit Lease + Asset-specific Receipt. Thêm row_version không thay thế các cơ chế này; không đổi client hoặc RPC Asset trong migration nền.
+4. **Trigger chỉ so sánh toàn bộ row:** mọi cột nghiệp vụ mới thêm sau này tự động được tính vào version. Điều này tốt cho default fail-safe nhưng cần kiểm tra các cột kỹ thuật/audit mới; nếu có cột không đại diện thay đổi business thì phải quyết định rõ có loại khỏi phép so sánh hay không.
+5. **No-op UPDATE:** nếu RPC gửi UPDATE nhưng giá trị business không đổi, version giữ nguyên; tuy nhiên vẫn có thể kích hoạt updated_at trigger và tạo write/WAL. RPC phải phát hiện no-op trước UPDATE, không dùng UPDATE vô ích làm cơ chế kiểm tra.
+6. **INSERT version:** trigger đặt 1 ngay cả khi client gửi giá trị khác. Khi RPC tạo row, snapshot trả về phải lấy row_version từ database sau INSERT, không dựng version phía client.
+
+### 17.4 Kiểm tra migration và thứ tự triển khai
+
+- Draft 015 dùng ALTER TABLE ADD COLUMN NOT NULL DEFAULT 1. Với PostgreSQL hiện đại, constant default thường được tối ưu không cần rewrite toàn bảng, nhưng vẫn cần lock DDL và phải đo trên quy mô dữ liệu thật trước promotion.
+- Tên constraint và trigger đang cụ thể, không dùng IF NOT EXISTS. Đây là migration một lần, không idempotent; chỉ chạy qua migration ledger chuẩn, không chạy lại thủ công.
+- Draft tạo function trước trigger và revoke EXECUTE khỏi PUBLIC/anon/authenticated; trigger vẫn gọi function. Cần kiểm tra quyền thực thi trigger function dưới owner/role thực tế trong môi trường Test, nhất là nếu sau này đổi function owner hoặc security mode.
+- Cần thêm rollback/forward-fix plan. Không tùy tiện DROP row_version sau khi RPC/client đã bắt đầu phụ thuộc.
+- Không sửa migration 002 hoặc 019 đã có; chỉ sửa draft 015 trước khi promotion.
+
+### 17.5 Kết luận review
+
+**Kết luận: chấp nhận hướng thiết kế, chưa chấp nhận promotion draft 015 ở trạng thái hiện tại.** Không thấy sai lệch rõ ràng giữa sáu bảng và schema 002; cách tăng version bằng trigger phù hợp với hợp đồng đã chốt. Nhưng draft chỉ là lớp version nền, không phải concurrency/security cutover.
+
+Điều kiện trước promotion:
+1. Kiểm thử trigger trên PostgreSQL clone với cả sáu bảng: insert, update business, update timestamp-only, no-op, client cố giả mạo row_version.
+2. Kiểm thử hai transaction cùng expected_version ở RPC mẫu: đúng một applied, một conflict; không có partial write.
+3. Chốt từng vertical RPC và thời điểm thu hồi direct grants; không để client cũ mất quyền ghi trước cutover.
+4. Xác minh quyền execute trigger function, migration lock/duration và thứ tự với migration đang có.
+5. Giữ Asset Lease + expected_cloud_updated_at + Asset Receipt cho đến migration Asset riêng.
+
+**Trạng thái:** chỉ bổ sung review tài liệu. Không sửa draft 015, không tạo migration mới, không chạy SQL, không gọi RPC, không thay đổi quyền/dữ liệu Supabase.
