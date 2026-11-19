@@ -1537,3 +1537,10 @@ Chưa viết RPC SQL, chưa chạy test database, chưa thay đổi Supabase. Se
 Người dùng chốt năm nguyên tắc Auth provenance và request fingerprint tại Member design §35: (1) provenance có bốn trạng thái `created_by_operation`, `preexisting_verified`, `unknown`, `conflict`; (2) không đủ bằng chứng hoặc có xung đột thì fail closed sang `needs_review`, không tự gắn/xóa Auth user; (3) canonical request fingerprint dùng HMAC-SHA-256, secret nằm ngoài Database, chỉ lưu digest và version metadata; (4) cùng operation ID nhưng digest khác phải reject, replay dùng đúng version/key version cũ; (5) adoption không thay actor gốc hoặc fingerprint.
 
 Đây là policy kiến trúc đã được người dùng xác nhận. Các chi tiết vận hành như quy trình chứng minh `preexisting_verified`, key retention/rotation và bảo vệ/retention email vẫn cần thiết kế trước DDL implementation. Lần cập nhật này chỉ ghi nhận quyết định; không sửa DDL 021, không tạo migration/RPC, không chạy SQL và không thay đổi Supabase Test/Production.
+
+
+## 39. Schema proposal DDL 021 sau quyết định provenance/fingerprint (20/11/2026)
+
+Đã lập phương án cấu trúc dữ liệu tại Member design §36: operation thay boolean Auth provenance bằng enum/text allowlist 4 trạng thái cùng attempt/evidence/verification metadata; thay JSONB fingerprint bằng HMAC-SHA-256 digest `bytea` 32 bytes kèm fingerprint/key version; bổ sung `transition_version` riêng với row `version`; tạo append-only `organization_member_invite_attempts`; bổ sung `transition_id` + `transition_version` unique cho audit Saga transition và bắt buộc before/after saga status; giữ adopter hiện hành và lưu mọi lần handoff trong append-only audit, chưa cần adoption history table riêng.
+
+Các điểm còn mở: quy trình `preexisting_verified`, secret manager/key retention/rotation, bảo vệ và retention normalized_email, attempt immutable/event detail, stable transition ID qua retry. Đây mới là schema proposal, chưa phải DDL approval. Không sửa DDL 021, không chạy SQL, không thay đổi Supabase Test/Production.
