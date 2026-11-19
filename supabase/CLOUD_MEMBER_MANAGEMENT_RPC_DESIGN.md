@@ -836,3 +836,97 @@ Không có truy vấn nào được chạy trên Supabase trong bước này. Đ
 
 Đây là static audit repository. Không sửa migration, SQL draft, Edge Function, UI hoặc test; không chạy SQL/RPC; không thay đổi Supabase Test hay Production. Kết quả preflight Test được ghi nhận riêng, không có nghĩa các vấn đề concurrency/authorization đã được kiểm thử runtime.
 
+## 24. RPC cutover contract sau writer audit
+
+### 24.1 Mục tiêu
+
+Đây là hợp đồng thiết kế để chuẩn bị migration/cutover một role/membership. Không phải SQL thực thi. Giữ nguyên nguyên tắc:
+- member_roles là nguồn duy nhất quyết định role/permission sau cutover.
+- organization_members.role chỉ là compatibility mirror: Admin → 'admin'; Technician/Viewer → 'user'.
+- Mỗi membership có đúng một assignment active hợp lệ.
+- Tất cả membership mutation và audit/Receipt/change event liên quan phải cùng transaction.
+- Không có fallback quyền từ legacy role.
+- Không thay đổi quyền nghiệp vụ Admin/Technician/Viewer đã chốt.
+
+### 24.2 Authorization boundary
+
+Khuyến nghị các RPC nghiệp vụ nhận caller JWT và tự xác thực actor bằng auth.uid(), thay vì tin p_actor_user_id do Edge Function truyền vào cùng service_role. Trong transaction:
+1. Yêu cầu authenticated caller hợp lệ.
+2. Lấy actor duy nhất từ auth.uid(); không nhận actor ID từ client.
+3. Khóa/check Organization active.
+4. Khóa/check actor Membership active trong Organization.
+5. Kiểm tra users.manage bằng role assignment hiện hành trong cùng transaction.
+6. Khóa target Membership/Role theo operation và kiểm tra lại mọi điều kiện cấm.
+7. Ghi mutation, Receipt và audit/change event trong cùng transaction.
+
+Edge Function vẫn có thể dùng service_role cho Auth Admin API (invite email, reset password), nhưng không được dùng pre-check quyền riêng lẻ làm authorization cuối cùng cho DB mutation. Nếu giữ RPC service_role-only cho một bước nội bộ của Invite Saga, phải phân biệt rõ RPC internal-only với RPC mutation do Admin yêu cầu; không được để caller điều khiển actor ID tùy ý.
+
+### 24.3 Lock order chuẩn
+
+- Tạo membership: Organization FOR SHARE → Role đích FOR SHARE → Auth user lock/reconciliation theo Invite Saga → INSERT Membership → INSERT Assignment → Receipt/audit/event.
+- Đổi role: Organization FOR SHARE → actor Membership FOR SHARE → target Membership FOR UPDATE → current/target Role rows FOR SHARE theo thứ tự ID ổn định → Assignment mutation → legacy mirror → Receipt/audit/event.
+- Suspend/reactivate: Organization FOR SHARE → actor Membership FOR SHARE → target Membership FOR UPDATE → status mutation → Receipt/audit/event.
+- Remove: Organization FOR SHARE → actor Membership FOR SHARE → target Membership FOR UPDATE → kiểm tra role/target → DELETE Membership (FK cascade assignment) → Receipt/tombstone/audit/event.
+- Self-activation sau email confirmation: Organization FOR SHARE → own Membership FOR UPDATE → xác minh Auth email confirmation → chuyển invited → active → audit/event.
+- Mọi đường thay đổi Organization status, Membership status, Role active, Role permissions phải tuân thủ lock order tương thích. Không khóa Auth user trước rồi quay ngược lấy Organization/Membership nếu trigger Auth còn có thể thao tác tenant rows.
+
+### 24.4 Hợp đồng từng RPC
+
+**create/finalize membership**
+- Input gồm organization_id, auth_user_id đã được Invite Saga xác minh, role_code được allowlist, operation/mutation ID.
+- Actor lấy từ JWT; users.manage và Organization active được xác minh trong transaction cuối.
+- Role đích phải thuộc đúng organization, active, và nằm trong role code được phép gán.
+- Membership + đúng một assignment + legacy mirror + Receipt + Change Feed cùng transaction.
+- Unique (organization_id, user_id) xử lý duplicate; conflict không xóa Auth user. Auth user lifecycle thuộc Invite Saga riêng.
+- Nếu invite email đã gửi nhưng kết quả DB không rõ, reconcile cùng operation ID; không gọi invite lần hai, không delete Auth user để giả rollback.
+
+**change role**
+- Chỉ nhận role đích hợp lệ; không nhận role_id tùy ý nếu code allowlist có thể được server resolve.
+- Cấm tự đổi role; cấm thay đổi Admin membership theo policy hiện hành.
+- Target phải tồn tại, chưa removed; current assignment phải có đúng một dòng và role active. Zero/multiple/inactive là integrity error, không tự chọn.
+- Nếu role đích trùng role hiện tại: trả no_change Receipt; không delete/insert lại và không phát event giả.
+- Nếu khác: xóa assignment cũ + insert assignment mới + cập nhật legacy mirror trong một transaction.
+- Receipt fingerprint phải bind organization, target, role đích và actor; replay tuân Shared Receipt policy.
+
+**change status**
+- Chỉ active/suspended; không kích hoạt invitation chưa xác nhận bằng Admin status RPC.
+- Cấm tự suspend/reactivate nếu policy hiện hành yêu cầu; target Admin không được thao tác qua RPC quản lý Technician/Viewer.
+- Status transition được khóa; assignment vẫn giữ nguyên. Audit event bắt buộc.
+
+**remove membership**
+- Không xóa Auth user hoặc Profile.
+- Cấm tự xóa; cấm xóa Admin; target phải có đúng một role hợp lệ theo policy.
+- Delete membership và cascade assignment trong một transaction; Receipt + tombstone/change event phải giữ được target ID sau khi row bị xóa.
+- Không dựa pre-read Edge Function để kết luận role; kiểm tra lại trong RPC.
+
+**self activation**
+- Trigger auth.users chỉ đồng bộ Profile, không đổi membership status.
+- Sau khi email confirmation hoàn tất, người dùng gọi RPC self-activation bằng JWT của chính họ.
+- RPC kiểm tra auth.uid() khớp membership user_id và Auth email_confirmed_at khác NULL; chỉ chuyển invited → active; suspended/removed không được tự kích hoạt.
+- Idempotent: active sẵn thì no_change; không tạo role assignment mới.
+
+### 24.5 Ràng buộc một role/membership
+
+Sau precondition duplicate = 0, thêm unique (organization_id, member_id) cho member_roles. Migration phải:
+- Chạy trong transaction.
+- Re-check duplicate ngay trong migration; nếu có thì RAISE EXCEPTION và rollback toàn bộ.
+- Không tự xóa hoặc chọn assignment.
+- Kiểm tra membership cần dùng có đúng một assignment, role tồn tại/active và đúng organization.
+- Không backfill missing role bằng Technician một cách tự động.
+- Không bỏ PK hiện tại nếu unique mới có thể thêm trực tiếp; đánh giá index/constraint và query plan trước.
+- Cập nhật writer trước hoặc trong cutover theo thứ tự an toàn để không có khoảng thời gian tạo nhiều assignment.
+
+### 24.6 Bắt buộc trước khi viết migration thực thi
+
+1. Chốt chính xác operation Receipt names, mutation IDs, fingerprint fields, permission codes và Change Feed event schema theo Shared Receipt/Change Feed design.
+2. Rà soát lock matrix với các RPC thay đổi Organization, Membership, Role, Role Permissions và Auth confirmation.
+3. Chốt API boundary Edge Function ↔ caller JWT RPC ↔ Auth Admin API cho Invite Saga.
+4. Chốt cách xử lý custom role: hiện RPC membership chỉ cho Technician/Viewer; không tự mở custom role nếu chưa có policy.
+5. Viết SQL migration riêng, có precondition fail-closed, grants/revokes, RLS, comments và rollback/forward-fix plan.
+6. Viết test SQL cho concurrent role changes, permission revoke race, org suspend race, duplicate/missing assignment, inactive role, replay, self/admin restrictions, Auth confirmation/suspend/remove race.
+7. Static review migration và test trước khi người dùng phê duyệt chạy trên Supabase Test.
+
+### 24.7 Ranh giới
+
+Chỉ chốt hợp đồng thiết kế. Chưa viết SQL migration thực thi, chưa sửa migration 013/014, chưa sửa Edge Function, chưa chạy SQL/RPC, chưa áp dụng unique constraint và chưa thay đổi Supabase.
+
