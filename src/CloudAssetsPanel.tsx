@@ -583,6 +583,6 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
         {archived.length === 0 && <p className="muted">Chưa có thiết bị nào trong lưu kho.</p>}
       </div>
     </>}
-    <p className="muted">Màn hình Cloud chỉ xem và nhập dữ liệu đã có từ Local. Không tạo, sửa, lưu kho hoặc khôi phục hồ sơ thiết bị tại đây; các thao tác nghiệp vụ phải thực hiện tại Local và được xác thực bằng khóa Cloud.</p>
+    <p className="muted">Màn hình Cloud không tạo hoặc sửa hồ sơ nghiệp vụ. Có thể nhận có chọn lọc một Asset Cloud về Local; việc nhận này không thay đổi dữ liệu Cloud. Tạo, sửa, lưu kho hoặc khôi phục trạng thái hồ sơ vẫn phải thực hiện tại Local và được xác thực bằng khóa Cloud.</p>
   </section>
 }
