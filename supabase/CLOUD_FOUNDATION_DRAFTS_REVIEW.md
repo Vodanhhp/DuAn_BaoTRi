@@ -1263,3 +1263,12 @@ Schema member_roles cho phép nhiều role trên một membership, trong khi UI 
 ### Ranh giới
 
 Policy Viewer không xem roster đã được chốt cho thiết kế. Chưa tạo migration/draft SQL, chưa sửa code/Edge Function/UI, chưa chạy SQL/RPC và chưa thay đổi Supabase.
+
+
+## §27 — Chốt mô hình một role hiện hành trên mỗi membership
+
+Người dùng đồng ý dùng một role hiện hành cho mỗi membership trong phiên bản hiện tại; chưa hỗ trợ multi-role.
+
+Migration 005 hiện dùng PK `(organization_id, member_id, role_id)`, nên database đang cho phép nhiều role. UI chỉ biểu diễn một role. Khi triển khai cần unique constraint/index `(organization_id, member_id)`, nhưng trước đó phải preflight duplicate và dừng migration nếu có dữ liệu nhiều role; không tự xóa/chọn role. Đổi role phải atomic DELETE+INSERT trong một transaction, có lock và audit/Receipt theo chuẩn. `member_roles` là nguồn quyền; legacy `organization_members.role` chỉ là mirror tương thích cho tới khi audit hết nơi đọc.
+
+Roster RPC trả một role duy nhất; thiếu assignment là integrity error, không fallback tùy tiện. Chưa tạo migration, chưa sửa code hay DB.
