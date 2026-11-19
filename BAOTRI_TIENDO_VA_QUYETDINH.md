@@ -4154,3 +4154,40 @@ Edge Function phải xác thực bearer token phía server (ví dụ Auth getUse
 Dùng DB login/secret riêng cho luồng acceptance, không chia sẻ với Edge Function khác và tuyệt đối không đưa xuống browser. Phải kiểm tra toàn bộ function mà role có thể gọi, kể cả EXECUTE kế thừa từ PUBLIC và các SECURITY DEFINER trong schema role có USAGE. Chỉ grant EXECUTE một function cụ thể chưa đủ chứng minh không còn callable surface khác. Nếu dùng signed actor assertion thì phải thiết kế rõ key lifecycle, audience, expiry, replay binding và nơi xác minh chữ ký; không tin GUC/JWT claim tự đặt nếu chưa xác minh chữ ký.
 
 Đây là hạng mục bắt buộc rà soát trước khi tạo role/function.
+
+## 71. Ma trận quyền tối thiểu cho Edge DB role và private acceptance function
+
+### Kết quả catalog chỉ đọc trên BAOTRI-Mini-Test
+Project ref `oyzhxgzltpdebpymuicb`, PostgreSQL 17.12:
+- Schema `public` đang cấp USAGE cho anon, authenticated và service_role.
+- Có các function SECURITY DEFINER trong public; một số cấp EXECUTE cho authenticated, một số function quản trị chỉ cho service_role.
+- Default ACL của function khác nhau theo owner và schema; các context owner postgres/supabase_admin được kiểm tra có quyền EXECUTE mặc định cho một số API role. Phải kiểm tra ACL hiệu lực của đúng function sau khi tạo, không suy đoán.
+- Quyền SELECT/UPDATE trực tiếp trên auth.users vẫn như mục §53: postgres có, browser roles không có, service_role không có.
+- Hiện chưa có Edge DB login riêng và private acceptance function. Không có SQL write hoặc thay đổi quyền.
+
+### Ma trận đề xuất — chưa áp dụng
+| Chủ thể | Kết nối DB | USAGE schema private | EXECUTE acceptance | Quyền bảng trực tiếp |
+|---|---|---|---|---|
+| Browser anon | Không có DB credential | Không | Không | Không đọc/ghi Auth/Saga/attempt/membership/role/audit/receipt |
+| Browser authenticated | Không có DB credential | Không | Không | Không đọc/ghi bảng workflow private |
+| service_role | Không dùng làm DB login | Không, trừ dependency được duyệt riêng | Không | Không cấp thêm |
+| Edge DB login riêng | Có, TLS/pooler | Một schema private | Một function signature chính xác | Không SELECT/INSERT/UPDATE/DELETE bảng Auth/nghiệp vụ; không BYPASSRLS |
+| Function owner (postgres chỉ là ứng viên cần xác minh Production) | Không dùng trực tiếp bởi Edge | Quyền owner | Owner function | Chỉ quyền cần thiết cho thân function; đây là ranh giới đặc quyền cao |
+
+### Điều kiện hardening
+- Role LOGIN riêng cho đúng endpoint; NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOREPLICATION, NOBYPASSRLS; không membership vào postgres/service_role/authenticated/anon hay nhóm đặc quyền; không được SET ROLE sang principal khác.
+- Secret mạnh, xoay vòng, chỉ lưu ở Edge Function secrets; không đưa vào browser/repository/log. TLS, giới hạn kết nối, ưu tiên credential pooler chuyên dụng nếu được hỗ trợ.
+- CONNECT đúng database nếu chính sách cho phép thu hẹp; USAGE đúng một private schema. Không cấp USAGE public/auth/storage/vault/extensions nếu chưa có dependency được duyệt.
+- EXECUTE chỉ đúng function signature. Revoke rõ ràng từ PUBLIC, anon, authenticated, service_role; sau migration kiểm tra has_function_privilege cho từng role.
+- Schema USAGE và function EXECUTE là hai lớp riêng. Private schema không được expose qua Data API.
+- Kiểm tra pg_auth_members, pg_roles, pg_namespace.nspacl, pg_proc.proacl, pg_default_acl và quyền hiệu lực; tính cả PUBLIC ACL, role membership, quyền kế thừa và owner.
+- Default privileges phụ thuộc owner + schema. Revoke default EXECUTE cho PUBLIC/API roles ở đúng owner/schema trước khi tạo function; không giả định thay đổi của postgres ảnh hưởng function do supabase_admin tạo.
+- Edge DB login không có quyền bảng trực tiếp. SECURITY DEFINER function owner thực hiện giao dịch nguyên tử, search_path rỗng cố định, tên object fully-qualified, validate tham số, tránh dynamic SQL, trả projection tối thiểu.
+- Audit mọi function có thể gọi trong mọi schema role được USAGE, kể cả EXECUTE từ PUBLIC và SECURITY DEFINER. Tốt nhất private schema chỉ chứa đúng function cần thiết, không expose API.
+
+### Vấn đề danh tính actor — còn chặn triển khai
+Kết nối PostgreSQL trực tiếp không tự thiết lập JWT GUC như PostgREST; không mặc định auth.uid()/auth.jwt() đại diện người gọi. Nếu Edge Function xác thực JWT rồi truyền UID, DB đang tin Edge Function + DB credential; credential bị chiếm có thể giả UID nếu DB không tự xác minh assertion chữ ký.
+
+Trước khi triển khai phải chọn và đánh giá threat model: (A) chấp nhận Edge Function là ranh giới xác thực tin cậy, kèm bảo vệ deploy/secret/audit; hoặc (B) thiết kế signed actor assertion ngắn hạn để DB xác minh chữ ký, audience, expiry và replay. Không dùng GUC tùy tiện hoặc UID client gửi làm bằng chứng.
+
+Đây là ma trận thiết kế và bằng chứng đọc catalog, không phải phê duyệt tạo role/grant/schema/function/secret/migration.
