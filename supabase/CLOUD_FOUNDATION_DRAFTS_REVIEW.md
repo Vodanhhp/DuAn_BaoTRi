@@ -1181,3 +1181,28 @@ Static design review ngày 19/11/2026. Đã bổ sung mục 15 trong `CLOUD_MEMB
 5. Không có SQL draft hoặc runtime test; chưa xác minh migrations đang áp dụng ở Supabase.
 
 Không sửa Edge Function/migration, không chạy SQL/RPC, không thay đổi Supabase.
+
+
+## §24 — Quyết định Invite Saga và email confirmation lock review
+
+### Quyết định người dùng xác nhận
+
+- Admin khác được adoption Invite unresolved bằng RPC riêng, authorization hiện tại + reason + append-only audit; không đổi actor/fingerprint/Receipt gốc.
+- Giai đoạn đầu không có worker nền; recovery thủ công có kiểm soát từ Admin UI/Edge Function.
+- Nếu không chứng minh được Auth user ownership, giữ user và chuyển needs_review; không tự xóa/gắn membership.
+
+### Phát hiện migration 013
+
+Trigger `sync_auth_user_profile()` AFTER UPDATE trên `auth.users` đồng bộ Profile và trực tiếp UPDATE `organization_members` invited → active. Đây là membership writer thứ hai bên trong Auth transaction và chưa theo lock matrix Organization → Membership. Khi Finalize Invite khóa tenant/member rồi chờ Auth user trong khi Auth trigger giữ Auth row rồi chờ membership, có nguy cơ deadlock.
+
+### Hướng thiết kế đề xuất
+
+- Không để Auth trigger trực tiếp cập nhật organization_members.
+- Finalize tạo membership active nếu email đã confirmed tại thời điểm kiểm tra, nếu chưa thì invited.
+- Nếu confirmation chạy đồng thời và membership vẫn invited, user sau khi có Auth session gọi RPC `activate_my_confirmed_membership(organization_id)` để tự kích hoạt membership của chính mình; RPC xác minh email_confirmed_at, khóa Organization → Membership, idempotent.
+- Trigger có thể tiếp tục đồng bộ Profile nhưng không được thực hiện tenant membership mutation.
+- Cần review riêng Profile sync lock interaction, quyền đọc Auth column, SECURITY DEFINER/grants và test race trên Supabase Test.
+
+### Ranh giới
+
+Đây là thiết kế, không phải kết luận runtime đã chứng minh. Chưa sửa migration 013, chưa tạo SQL draft, chưa chạy SQL/RPC, chưa thay đổi Supabase. Cần chốt audit semantics của self-activation (đề xuất append-only audit tối thiểu, không Receipt/Change Feed payload chứa PII).
