@@ -46,6 +46,7 @@ alter table public.inventory_movements
         and created_by_user_id is null
         and mutation_id is null
         and expected_item_version is null
+        and performed_by_label is null
       )
       or
       (
