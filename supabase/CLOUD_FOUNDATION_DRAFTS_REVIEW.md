@@ -2084,3 +2084,46 @@ Chỉ đọc function definitions trên BAOTRI-Mini-Test và migration/source Gi
 - Invite compensation phải dựa trên operation state và xác minh membership/profile/receipt trước khi xóa; không xóa Auth user chỉ vì RPC trả lỗi.
 - Cần thiết kế Organization suspension serialization, Auth deletion policy/retention và test deadlock candidate Auth ↔ Lease ↔ Asset/Receipt trước khi có bất kỳ writer mới.
 - Chỉ đọc catalog, ACL, FK, triggers và GitHub source. Không chạy DELETE/UPDATE, không thay SQL, grants, RPC, Auth hoặc dữ liệu.
+
+## 78. Concurrency test matrix – Organization, Auth, Membership và Asset – 20/11/2026
+
+### Mục tiêu và nguyên tắc
+- Thiết kế test hai transaction độc lập, điều phối bằng barrier tại client/test harness để giữ khóa ở thời điểm xác định. Không dùng dữ liệu Production; mỗi case cần tenant/user/Asset tổng hợp có thể disposable.
+- Chạy baseline để quan sát hiện trạng trước; sau khi có protocol sửa mới chạy lại cùng kịch bản. Không coi một lần PASS là chứng minh không deadlock toàn hệ thống.
+- Ghi transaction timeline, lock wait, SQLSTATE, deadlock log, trạng thái cuối của rows/Receipt/Lease và tính toàn vẹn FK. Phân biệt deadlock `40P01`, lock timeout `55P03`, business denial và lỗi FK.
+- Không tạo test function/migration chỉ để điều phối. Chưa chạy test trong checkpoint này; mọi test có ghi dữ liệu cần được cho phép riêng.
+
+### C1 – Organization suspend ↔ Asset mutation
+- Actors: T1 gọi Asset mutation (ví dụ `apply_asset_mutation_with_lock`); T2 chuyển Organization active → suspended.
+- Baseline hiện tại: Asset helper chỉ đọc Organization status; chưa có Organization row lock chung với thao tác suspend. Test cần xác định Asset mutation đã qua permission precheck có tiếp tục sau khi T2 suspend hay không.
+- Protocol đích: cả hai transaction khóa cùng Organization row trước Membership/domain locks. Nếu T1 lấy khóa và xác minh active trước, T1 được commit rồi T2 suspend; nếu T2 commit trước, T1 phải từ chối do Organization không active.
+- Assertions: không có Asset mutation mới commit sau điểm suspend đã commit; không có Receipt thành công nếu Asset mutation bị từ chối; Organization cuối cùng suspended.
+
+### C2 – Auth deletion ↔ Asset Lease/Receipt
+- Actors: T1 thực hiện Asset mutation với actor U, khóa Lease → Asset rồi ghi Asset Receipt có FK actor U; T2 Auth Admin xóa U, có thể cascade Lease holder.
+- Chỉ dùng user/tenant/Asset tổng hợp; không xóa user thật hoặc user đang dùng. Phải kiểm tra trước các FK RESTRICT khác để test không dừng sớm vì constraint.
+- Baseline candidate: T1 giữ Lease và chờ/insert Receipt tham chiếu Auth; T2 giữ Auth user row và cascade Lease. Quan sát wait graph/deadlock log, không giả định FK lock mode nếu chưa đo.
+- Target policy: không hard-delete Auth user đồng thời với business mutation. Deactivate/revoke, chặn request mới, drain/release Lease và xử lý retention/Receipt trước; account erasure là workflow riêng sau khi không còn in-flight operations và dependency hợp lệ.
+- Assertions: không mất Receipt/Lease ngoài dự kiến; không orphan actor reference; không deadlock không xử lý; kết quả erasure tuân FK/retention policy.
+
+### C3 – Membership revoke ↔ Asset mutation
+- Actors: T1 Asset mutation của user U; T2 Admin đổi status U sang suspended, đổi role/revoke permission hoặc remove membership.
+- Baseline hiện tại: Asset permission helper chỉ đọc; Member legacy writers chưa cùng protocol actor-membership lock. Test các nhánh status, role và remove riêng.
+- Protocol đích: Asset RPC khóa actor Membership và xác minh active + permission trong cùng transaction; Admin revoke khóa đúng Membership row trước thay đổi. Nếu T1 khóa trước, mutation được hoàn tất rồi revoke; nếu T2 khóa/commit trước, T1 phải fail authorization. Không cho phép T1 qua precheck cũ rồi commit sau khi revoke đã thắng.
+- Assertions: không có mutation commit sau revoke thắng; không có Receipt thành công cho mutation bị từ chối; member_roles/status đúng và không có assignment thiếu/nhiều.
+
+### C4 – Asset hard-delete ↔ Lease update
+- Actors: T1 gọi update/archive/mutation khóa Lease → Asset; T2 thực hiện direct DELETE Asset, hiện có thể khóa Asset rồi cascade Lease.
+- Baseline: dùng Asset tổng hợp không có FK RESTRICT history, có Lease hợp lệ; đồng bộ barrier để T1 giữ Lease và T2 đi vào DELETE. Ghi nhận deadlock victim/SQLSTATE và trạng thái rollback.
+- Protocol đích: không cho direct PostgREST DELETE; mọi delete RPC phải khóa Lease → Asset, kiểm tra token/permission/history/FK và xóa trong cùng transaction. Nếu update thắng thì delete chạy sau và kiểm tra lại; nếu delete thắng thì update sau phải trả not-found/lease-invalid, không deadlock.
+- Assertions: Asset hoặc còn nguyên sau rollback, hoặc bị xóa hoàn toàn theo policy; Lease không mồ côi; không xóa lịch sử; không có partial Receipt.
+
+### Cách chạy và tiêu chí đánh giá
+1. Tạo fixture độc lập cho từng case; snapshot trước test.
+2. Dùng hai DB sessions/transactions riêng, barrier xác nhận từng session đã đạt điểm khóa dự kiến rồi mới thả session còn lại.
+3. Chạy từng thứ tự thắng (T1 trước/T2 trước), sau đó lặp nhiều vòng với lịch xen kẽ; không dựa vào `pg_sleep` đơn thuần để khẳng định thứ tự.
+4. Thu `pg_stat_activity`, `pg_locks`, deadlock log và kết quả transaction; áp dụng lock timeout có kiểm soát để test không treo.
+5. PASS chỉ khi outcome đúng winner semantics, không orphan/partial write, không vi phạm FK/Receipt, và không có deadlock trong protocol đích ở ma trận đã chạy. Ghi rõ số vòng và giới hạn phạm vi; không tuyên bố global deadlock-free.
+
+### Trạng thái
+Đây là test design, không phải test result. Chưa chạy SQL transaction có ghi dữ liệu, chưa tạo fixture, chưa tạo function/migration và chưa thay đổi Supabase.
