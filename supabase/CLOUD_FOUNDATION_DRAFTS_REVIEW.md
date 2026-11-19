@@ -882,3 +882,143 @@ Thứ tự xử lý đề xuất:
 7. Test concurrency: suspend/remove Admin trong lúc mutation; revoke users.manage/permission trong lúc mutation; đổi role đồng thời; disable organization đồng thời với invite/confirm; hai request quản trị cùng membership.
 
 **Trạng thái:** chỉ cập nhật review. Không sửa migration 005/013/014, Edge Function, không tạo migration mới, không chạy SQL/RPC, không deploy Edge Function và không thay đổi Supabase.
+
+## 20. Review Change Feed và đồng bộ khóa authorization – 19/11/2026
+
+Phạm vi: đối chiếu CLOUD_RPC_IDEMPOTENCY_CHANGEFEED_DESIGN.md, CLOUD_SYNC_SCHEMA_PROTOCOL_DESIGN.md, migrations 005/006 và các kết quả review Shared Receipt/member lifecycle. Đây là static review trên repository main; không có change-feed migration/RPC đang được xác nhận triển khai trong repo. Không truy cập hoặc thay đổi Supabase.
+
+### 20.1 Kết luận
+
+**Giữ thiết kế counter theo organization và transaction commit-order, nhưng chưa đủ điều kiện viết migration change feed.** Cần chốt thêm semantics phân trang có lọc permission, payload disclosure, retention/device cursor, và phối hợp khóa permission với mutation.
+
+Ba cơ chế phải giữ đúng vai trò:
+- Organization/Membership/Role locks: ổn định phạm vi tenant và quyết định authorization trong transaction.
+- Shared Receipt + row_version: nhận diện/replay mutation và phát hiện ghi đè đồng thời.
+- Change Feed + cursor: phân phối thay đổi đã commit đến các thiết bị; không thay thế Receipt hoặc authorization.
+
+### 20.2 Những điểm thiết kế đang đúng
+
+1. Counter riêng từng organization, khóa row trong transaction ghi nghiệp vụ, cấp cursor rồi insert event trong cùng transaction. Transaction khác cùng organization phải chờ lock, vì vậy cursor cấp sau không thể commit trước transaction cấp trước.
+2. Không dùng PostgreSQL sequence độc lập làm cursor commit-order.
+3. Một logical mutation nhiều record tạo một Receipt và một event cho mỗi record thực sự thay đổi; Task + Log là ví dụ hai event cùng transaction.
+4. Conflict/no_change có Receipt nhưng không có event; rollback không để lại counter/event.
+5. Delete cần tombstone không phụ thuộc FK tới record đã xóa.
+6. Client apply nguyên page vào một Dexie transaction; chỉ cập nhật local cursor sau khi toàn bộ page thành công.
+7. Không overwrite Local record đang có mutation pending/processing/conflict; cần tạo trạng thái conflict/reconciliation.
+8. Pull RPC phải xác thực Auth, organization active, active membership và quyền xem; client không được quyết định organization scope chỉ bằng payload.
+
+### 20.3 P0 – Cursor phải tiến qua event bị lọc quyền
+
+Thiết kế hiện nói pull trả events theo permission và next_cursor, nhưng chưa định nghĩa trường hợp một page có event mà actor không được xem.
+
+Nếu server chỉ trả event nhìn thấy và đặt cursor bằng cursor của event cuối cùng trả về, client có thể đọc lặp vô hạn hoặc không tiến qua vùng event bị ẩn. Nếu server nhảy cursor qua event ẩn nhưng không báo rõ ranh giới đã quét, client không thể phân biệt “không có event” với “có event nhưng bị lọc”.
+
+**Hợp đồng cần chốt:**
+- Phân biệt scanned_through_cursor (ranh giới server đã quét) với danh sách event được phép trả.
+- Server quét theo cursor tăng dần, giới hạn số event đã quét, không chỉ số event trả về.
+- Response phải cho client biết cursor an toàn để tiếp tục, kể cả page không có event hiển thị.
+- Nếu dùng opaque cursor thì token phải mang được ranh giới quét và high-watermark; không để client tự tăng cursor tùy ý.
+- Khi page rỗng do tất cả event bị lọc, cursor vẫn phải tiến đến ranh giới đã quét.
+- Test liên tiếp nhiều page có event xen kẽ được phép/không được phép; không lặp vô hạn, không bỏ sót event có quyền.
+
+Không được dùng một next_cursor mơ hồ vừa là last returned event vừa là scan boundary.
+
+### 20.4 P0 – Payload phải được lọc theo từng capability
+
+Không được trả nguyên payload JSONB chỉ vì người dùng có một quyền view chung. Mỗi event phải ánh xạ rõ bảng/aggregate và permission tương ứng:
+- assets → assets.view
+- inventory_items / inventory_movements → inventory.view
+- maintenance_tasks / maintenance_plans → maintenance.view
+- checklist_templates / versions / results → checklist.view
+- maintenance_logs / revisions → logs.view
+- organization_settings → settings.view hoặc capability hẹp hơn nếu dữ liệu có trường nhạy cảm.
+
+Nếu một mutation tạo nhiều loại record (ví dụ Task + Log), quyền đọc từng event có thể khác nhau. Phải lọc độc lập từng event, không để quyền xem Task vô tình mở snapshot Log.
+
+Với payload snapshot:
+- Chỉ chứa allowlist cột đã duyệt, không serialize toàn bộ row một cách mặc định.
+- Không đưa token, dữ liệu Auth, thông tin bí mật, hoặc trường quản trị không thuộc permission view.
+- Delete tombstone chỉ chứa identity/version/metadata tối thiểu cần xóa đúng Local record.
+- Quyền đọc được đánh giá tại thời điểm pull; Receipt replay và Change Feed pull là hai đường riêng, cùng tuân theo quyền hiện tại.
+
+Cần chốt rõ snapshot event hay reference-only event. Không trộn hai mô hình tùy từng RPC. Snapshot giúp apply đúng lịch sử; reference-only cần quy tắc latest-state fetch/coalescing và xử lý update/delete xen kẽ.
+
+### 20.5 P0 – Khóa authorization phải bao phủ cả role và permission
+
+Migration 005 hiện có has_org_permission() là SQL STABLE SECURITY DEFINER, đọc Organization, Membership, member_roles, roles và role_permissions nhưng không khóa các row này. Migration 006 dùng helper trong RLS policy. Vì vậy helper hiện tại là phép kiểm tra quyền phục vụ RLS/read, không phải cơ chế serialize authorization với business mutation.
+
+Đề xuất cho mọi business RPC dùng Shared Receipt và Change Feed:
+1. Xác thực auth.uid().
+2. Khóa Organization trước, xác nhận active.
+3. Khóa Membership của actor sau, xác nhận active.
+4. Khóa các dòng member_roles/roles/role_permissions liên quan đến capability cần thiết theo thứ tự cố định; xác nhận role active và permission còn được cấp.
+5. Sau khi authorization đã ổn định mới xử lý Receipt, business rows, counter, events và finalize Receipt.
+
+Các thao tác quản trị có thể làm thay đổi trạng thái/quyền phải tuân cùng thứ tự khóa Organization → Membership → Role assignment/Role → Role permission. Cần rà soát riêng thao tác xóa membership, suspend, đổi role, deactivate role và revoke permission để tránh đường quản trị bỏ qua lock protocol.
+
+Lưu ý:
+- FOR SHARE trên Organization/Membership ngăn UPDATE/DELETE tương ứng chen vào cho đến khi mutation kết thúc; phải xác minh bằng concurrency test trên đúng PostgreSQL/Supabase.
+- Khóa row permission đang được cấp để ngăn DELETE/UPDATE revoke chen giữa check và commit. Nếu permission không tồn tại, request có thể bị từ chối; một grant đồng thời không được phép làm request đã kiểm tra deny tự động thành allow.
+- Không đổi has_org_permission() thành helper khóa dùng chung cho RLS nếu chưa phân tích volatility, RLS recursion và lock ordering. Nên có authorization routine riêng cho RPC transaction, với schema-qualified SQL và quyền EXECUTE giới hạn.
+- Permission được thu hồi sau khi RPC đã lấy đủ locks và authorize thì không hồi tố mutation đó; thao tác revoke phải chờ transaction đã authorize kết thúc. Đây là ranh giới hiệu lực cần ghi rõ trong tài liệu và test.
+
+### 20.6 Counter contention và multi-record event ordering
+
+Một counter row mỗi organization là lựa chọn đơn giản, dễ chứng minh đúng nhưng biến thành điểm tuần tự hóa mọi mutation trong tenant. Điều này có thể giới hạn throughput khi doanh nghiệp có nhiều thiết bị ghi đồng thời.
+
+Giai đoạn đầu có thể chấp nhận trade-off để ưu tiên correctness. Trước khi scale cần đo:
+- Thời gian chờ lock counter và transaction duration.
+- Số event trung bình / mutation, đặc biệt Task + Log và inventory.
+- Tác động khi RPC giữ counter lock trong lúc làm validation hoặc truy vấn phụ.
+
+Quy tắc thực thi:
+- Không lấy counter lock trước khi đã xác thực và khóa business rows cần thiết; không giữ lock trong khi làm tác vụ mạng/ngoài transaction.
+- Một mutation nhiều event cấp các cursor liên tiếp dưới cùng một lock; tất cả event commit/rollback cùng Receipt và business rows.
+- Chốt thứ tự event ổn định trong một mutation (ví dụ theo thứ tự loại record đã quy định trong RPC), không phụ thuộc thứ tự trả về ngẫu nhiên của query.
+- Tất cả RPC phải tuân cùng lock order; kiểm tra deadlock khi hai mutation chạm nhiều business rows.
+
+### 20.7 Retention, device cursor và resync
+
+Tài liệu hiện nêu retention và resync_required nhưng chưa có mô hình dữ liệu đủ cụ thể để xóa an toàn:
+- Cần định danh từng device/install độc lập (PC và Mobile không dùng chung cursor).
+- Lưu cursor đã apply thành công và last_seen của từng device trong tenant.
+- Xác định thiết bị nào được xem là active, thời gian grace, quy trình revoke device và xử lý thiết bị mất.
+- Chỉ xóa events khi mọi device còn trong chính sách retention đã vượt qua cursor tương ứng, hoặc đã đánh dấu device stale/revoked và buộc full resync.
+- Full resync cần snapshot boundary/high-watermark nhất quán; dữ liệu snapshot và cursor phải cùng một mốc logic.
+- Khi cursor cũ hơn retention, trả resync_required; tuyệt đối không trả page rỗng như thể không có thay đổi.
+
+Không triển khai cleanup job trước khi có chính sách device lifecycle và snapshot boundary.
+
+### 20.8 Phân biệt ba cursor và nguyên tắc apply Local
+
+Cần phân biệt rõ:
+- last_committed_cursor: counter cao nhất đã commit ở Cloud.
+- scanned_through_cursor: ranh giới pull server đã quét/đánh giá quyền.
+- applied_cursor: cursor Local đã apply thành công trong Dexie.
+
+Không đồng nhất ba giá trị. Client chỉ advance applied_cursor cùng transaction Dexie áp dụng page. Nếu crash trước commit Dexie, lần pull sau phải lấy lại page cũ. Nếu event bị lọc quyền, server vẫn phải cung cấp scan boundary an toàn nhưng không được làm client đánh dấu đã apply snapshot mà họ chưa được phép đọc.
+
+### 20.9 Test bắt buộc trước khi tạo migration thực thi
+
+- Hai transaction cùng organization cấp cursor; cursor thấp commit trước cursor cao.
+- Transaction giữ counter rồi rollback: không có lỗ cursor đã commit.
+- Một mutation Task + Log phát đúng hai event, một Receipt; lỗi ở bất kỳ bước nào rollback cả hai event và business rows.
+- Event xen kẽ quyền cho phép/không cho phép qua nhiều page; scan cursor tiến đúng, không lặp/skip.
+- User có maintenance.view nhưng không có logs.view không nhận payload Log.
+- Tombstone không lộ payload đã xóa và xóa đúng record Local.
+- Permission bị revoke đồng thời: revoke chờ mutation đã authorize; mutation đến sau revoke bị deny.
+- Role assignment/deactivation/revoke permission đồng thời với RPC; không có mutation commit dựa trên permission đã bị thu hồi trước authorization point.
+- Hai mutation nhiều record với lock order nhất quán không deadlock.
+- Client lỗi khi apply event giữa page: Dexie rollback và applied_cursor không tiến.
+- PC và Mobile có cursor riêng; một thiết bị offline lâu không làm thiết bị kia bị lùi cursor.
+- Cursor hết retention, device revoked, full resync snapshot boundary.
+- Pull retry cùng cursor/opaque token trả cùng phạm vi event và scan boundary, không có side effect.
+
+### 20.10 Trạng thái và thứ tự tiếp theo
+
+- Change Feed hiện vẫn ở mức thiết kế; chưa tìm thấy migration, bảng, RPC hoặc worker tương ứng trong repository main.
+- Không tạo migration change feed ở bước này.
+- Không sửa has_org_permission(), RPC thành viên, Edge Function hoặc client sync.
+- Không chạy SQL, không gọi RPC, không ghi dữ liệu hoặc quyền Cloud.
+- Trước khi viết SQL draft, cần cập nhật hợp đồng Change Feed để chốt scan cursor, permission filtering, snapshot model, device cursor/retention; đồng thời lập lock matrix cho mọi RPC nghiệp vụ và RPC quản trị thành viên/role/permission.
+
