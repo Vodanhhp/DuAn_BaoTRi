@@ -2149,3 +2149,30 @@ RLS predicates và helper permission chỉ đọc không tự tạo shared seria
 
 ### Trạng thái
 Static inventory từ migration/main, chưa phải runtime call graph đầy đủ. Chưa chạy test, chưa ghi DB và chưa sửa Supabase.
+
+## 80. Lock-order map mở rộng – Counter/Settings/Inventory/Maintenance/Checklist – 20/11/2026
+
+### Asset create và import
+- `create_asset_with_code`: permission helper đọc trước; đọc `organization_settings.asset_code_config`; đọc MAX code từ Asset; UPSERT `asset_code_counters` (điểm serialize theo organization/category); INSERT Asset. Thứ tự ghi chính: Settings read → Counter → Asset. MAX Asset được đọc trước Counter nên cần giữ logic `greatest(counter, existing_max)+1`.
+- `import_asset_preserving_identity`: advisory transaction lock theo organization + mutation_id (chỉ serialize retry cùng mutation ID); đọc import ledger; đọc Settings; UPSERT Counter nếu code nhận diện; Asset FOR UPDATE hoặc INSERT; INSERT import ledger. Thứ tự chính: advisory claim → Settings read → Counter → Asset → import ledger. Advisory lock khác mutation_id không serialize các import khác nhau; Counter mới là điểm đồng bộ với create cho cùng category.
+- Cả hai luồng hiện đọc Settings không khóa row. Nếu cần cấu hình nhất quán tại thời điểm tạo/import, protocol đề xuất Settings `FOR SHARE` trước Counter; thao tác settings update lấy row UPDATE lock. Winner semantics: create/import giữ shared lock thì dùng cấu hình đó và hoàn tất trước settings update; settings update thắng thì luồng sau đọc cấu hình mới. Chưa thay đổi code.
+
+### Inventory
+- `inventory_items.quantity` là số dư; schema comment nêu mọi movement và cập nhật số dư phải atomic qua RPC được review.
+- Migration 006 chỉ tạo SELECT policy cho `inventory_movements`, ghi rõ INSERT bị withheld cho tới khi có atomic stock RPC. Vì vậy hiện chưa có writer Cloud được phép ghi movement qua authenticated RLS; không lập concurrency test movement như thể RPC đã tồn tại.
+- Khi thiết kế stock RPC tương lai: khóa Inventory Item `FOR UPDATE` → validate số dư/loại movement → update quantity → insert movement trong cùng transaction. Mọi điều chỉnh số dư khác phải cùng protocol. Item delete phải bị FK RESTRICT nếu có movement.
+
+### Maintenance
+- `maintenance_tasks` và `maintenance_plans` đều FK Asset ON DELETE RESTRICT.
+- `maintenance_logs` là append-only theo RLS, FK tới Asset, Task và Checklist Result đều RESTRICT. Cặp có ý nghĩa là Task delete/update ↔ Log insert; Plan không có FK trực tiếp từ Log nên không được gộp Plan ↔ Log nếu không có quan hệ nghiệp vụ khác.
+- Target protocol cho ghi log: khóa Task (nếu log gắn task) → khóa/kiểm tra Asset → khóa Checklist Result (nếu gắn) theo thứ tự ID ổn định → INSERT log. Task delete khóa Task trước; nếu log writer thắng, delete phải bị FK RESTRICT; nếu delete thắng, log phải fail vì task không còn. Chỉ áp dụng nếu caller/RPC thực tế xác nhận cần serialize; FK đã cung cấp integrity nhưng chưa thay thế nghiệp vụ validation.
+
+### Checklist
+- Template có unique một template/Asset; Version FK RESTRICT tới Template; Result FK RESTRICT tới Asset + Template + đúng Version. RLS cho phép template INSERT/UPDATE, version INSERT, result INSERT; result là immutable history.
+- Khi publish version mới và cập nhật `checklist_templates.current_version`, cần một transaction khóa Template `FOR UPDATE`, xác định version kế tiếp, INSERT version row và UPDATE current_version nguyên tử.
+- Khi submit result, đọc/chọn version cụ thể và INSERT result tham chiếu đúng version; không được âm thầm đổi version giữa lúc người dùng thực hiện checklist. Nếu cần bảo đảm chỉ submit current version, khóa Template `FOR SHARE` rồi xác minh current_version, sau đó INSERT result. Nếu nghiệp vụ cho phép hoàn tất phiên bản cũ đã bắt đầu, phải truyền version ID cố định và chỉ kiểm tra version đó tồn tại.
+
+### Giới hạn và ưu tiên
+- Inventory movement concurrency chưa khả thi cho authenticated cho đến khi có stock RPC; đây là design gate, không phải test thiếu.
+- Ưu tiên bổ sung test: Settings update ↔ Asset create/import; Counter create ↔ import cùng category; Task delete ↔ Log insert; Checklist publish ↔ Result submit; Asset delete ↔ các child inserts (ảnh/task/plan/template/result/log/movement).
+- Chưa có bằng chứng runtime caller đầy đủ cho các module; static RLS/schema không chứng minh UI đang gọi Cloud. Chưa chạy test và chưa thay đổi Supabase.
