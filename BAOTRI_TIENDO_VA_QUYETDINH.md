@@ -3889,3 +3889,13 @@ Người dùng đồng ý chốt: giai đoạn đầu để trống allowlist pr
 - Nếu không hỗ trợ atomic create-time correlation, giữ needs_review/manual recovery; không chữa bằng update metadata sau create vì vẫn có crash window.
 
 Đây là proposal chưa chốt. Chưa sửa DDL 021, chưa tạo RPC/worker, không chạy SQL hoặc thay đổi Supabase.
+
+
+## 57. Kết quả kiểm chứng Supabase Auth create-time marker (20/11/2026)
+
+Đã xác minh source hiện hành:
+- `admin.createUser`: SDK `AdminUserAttributes` có `app_metadata`; GoTrue `adminUserCreate` ghi AppMetaData trong cùng DB transaction tạo Auth user. Có cơ sở source-level cho marker nguyên tử trong createUser, nhưng cần pin version thực tế.
+- `admin.inviteUserByEmail`: SDK chỉ gửi `{email,data}` tới `/invite`; GoTrue InviteParams chỉ nhận Email/Data, Data là user_metadata. Native invite endpoint không có create-time app_metadata marker. Không dùng user_metadata làm bằng chứng.
+- `generateLink(type:'invite')` chưa xác minh có hỗ trợ app_metadata.
+
+Kết luận: không được áp dụng createUser marker cho Invite Saga native invite flow. Cần nghiên cứu hook/correlation server-trusted hoặc giữ outcome_unknown/needs_review/manual review; thay đổi quy trình provisioning cần được duyệt riêng. Nguồn: supabase/auth-js `GoTrueAdminApi.ts`, `lib/types.ts`; supabase/auth `internal/api/admin.go`, `internal/api/invite.go` trên master. Chưa pin version dự án, chưa sửa DDL/RPC/worker, không chạy SQL/Supabase.
