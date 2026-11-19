@@ -1800,3 +1800,14 @@ This confirms RPC is only the transport/identity boundary; all business authoriz
 ## 64. Membership trigger side-effect inventory
 
 Read-only Test inspection found only updated_at triggers on organizations, organization_members and profiles; no non-internal triggers on member_roles or roles/role_permissions, and no trigger that creates roles, audit, invitation state or receipts. Acceptance must explicitly write membership, member_roles, audit, Shared Receipt and Saga completion in one transaction. Reinspect trigger inventory before deployment because future migrations may change it. No trigger/table change.
+
+
+## 65. Vault ownership/grantor clarification and digest-only helper candidate (20/11/2026)
+
+Supabase KB updated 04 Nov 2026 states that Vault schema objects are owned by `supabase_admin`; postgres cannot revoke grants it did not make. Its documented least-exposure pattern is a `SECURITY DEFINER` function in a non-exposed schema that returns one intended secret to a specifically granted role without granting that role direct Vault access. Database Functions docs require fixed/empty search_path and explicit schema qualification, and warn that functions are EXECUTE-granted broadly by default.
+
+Read-only Test catalog verification: vault schema, secrets table and decrypted_secrets view are owned by supabase_admin; grantor is supabase_admin; postgres has SELECT with grant option; service_role has SELECT without grant option. This explains why revoking service_role's Vault access as postgres is ineffective. No secret values read; no changes made.
+
+BAOTRI candidate: a private SECURITY DEFINER helper owned by a Vault-capable owner reads one fixed-name HMAC key, computes HMAC-SHA-256 internally and returns only a digest. EXECUTE is restricted to the internal acceptance-function owner; no browser/API role or service_role access; helper schema is not exposed. The acceptance flow supplies only the current verified email read under lock after actor is derived from auth.uid(). This must not become a caller-controlled HMAC oracle.
+
+This resolves a documented pattern for secret isolation, not the acceptance function owner problem. Compare a single postgres-owned privileged transaction function against a split design with a narrower acceptance owner and dedicated Vault helper. Revalidate effective ACL, schema USAGE, owner/membership chain, default ACL, overloads and callable SECURITY DEFINER surface. No DDL/RPC/grants/secrets/config changes.
