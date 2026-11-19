@@ -1463,3 +1463,17 @@ Sau khi các contract này nhất quán mới viết migration riêng; migration
 ### 31.5 Ranh giới
 
 Chỉ chuẩn hóa tài liệu. Không sửa migration 013/014, draft SQL, Edge Function, client hoặc Dexie; không chạy SQL/RPC và không thay đổi Supabase Test/Production, quyền hay dữ liệu.
+
+
+## 32. Inventory audit và Invite Saga schema trước Member SQL (19/11/2026)
+
+Cross-reference Member design §28:
+
+- Static repository search chưa tìm thấy audit table đã triển khai; audit hiện mới là contract tài liệu. Đây không chứng minh Supabase schema ngoài repo không có bảng audit. Cần inventory Test read-only trước khi chọn tên/bảng mới.
+- `organization_member_invite_operations` mới là thiết kế, chưa có DDL/migration. Giữ riêng Saga workflow (Auth API nhiều pha, PII email, recovery/adoption) và Shared Receipt (DB mutation finalize đã commit).
+- Saga table phải private: RLS bật, không direct client CRUD; email là PII, auth_user_id là internal identity; không đưa vào Receipt/audit/feed/error/telemetry. Chốt retention và backup window, giữ unresolved operation.
+- Audit cần append-only, same-transaction với membership transition + Receipt, không FK cascade tới target membership, before/after allowlist role/status. Quyền đọc audit chưa được quyết định; không mặc định `users.view` là đủ. Cần quyết định permission riêng như `users.audit.view` hoặc `audit.view`.
+- Migration 005 hiện chưa enforce một role/membership: PK member_roles gồm role_id. Unique constraint chỉ sau preflight fail-closed.
+- Migration 013/014 là writer cũ chưa có Receipt/audit, service_role-only và nhận actor ID input; Auth trigger còn ghi membership status. Chưa được xem là tương thích contract mới.
+
+Cổng trước executable Member SQL: Test schema inventory read-only; chốt audit read permission + retention; chốt Saga PII lifecycle; thiết kế riêng audit/Saga DDL; thay/cutover toàn bộ membership writers và Auth trigger theo lock order; concurrency/RLS/grants tests. Chưa chạy SQL, chưa sửa code và chưa thay đổi Supabase.
