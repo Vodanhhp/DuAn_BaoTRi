@@ -1811,3 +1811,14 @@ Read-only Test catalog verification: vault schema, secrets table and decrypted_s
 BAOTRI candidate: a private SECURITY DEFINER helper owned by a Vault-capable owner reads one fixed-name HMAC key, computes HMAC-SHA-256 internally and returns only a digest. EXECUTE is restricted to the internal acceptance-function owner; no browser/API role or service_role access; helper schema is not exposed. The acceptance flow supplies only the current verified email read under lock after actor is derived from auth.uid(). This must not become a caller-controlled HMAC oracle.
 
 This resolves a documented pattern for secret isolation, not the acceptance function owner problem. Compare a single postgres-owned privileged transaction function against a split design with a narrower acceptance owner and dedicated Vault helper. Revalidate effective ACL, schema USAGE, owner/membership chain, default ACL, overloads and callable SECURITY DEFINER surface. No DDL/RPC/grants/secrets/config changes.
+
+
+## 66. Split-owner design candidate for invitation acceptance
+
+Read-only catalog results: auth.users is owned by supabase_auth_admin; postgres has SELECT with grant option and UPDATE privilege. Inspected business membership tables are owned by postgres. Vault schema/objects are owned by supabase_admin; postgres has SELECT with grant option, while service_role has a managed SELECT grant. No custom acceptance role exists.
+
+Candidate split design:
+- Private postgres-owned SECURITY DEFINER helper derives actor from auth.uid() in the verified PostgREST context, locks and validates the current confirmed Auth user/email, computes recipient HMAC using one fixed-name Vault key, and returns only actor UUID + digest. It accepts no client UID/email and never returns the key or raw email. EXECUTE only to the internal acceptance owner; no exposed schema or API-role access.
+- A separate NOLOGIN membership RPC owner owns the narrow exposed wrapper; candidate privileges include BYPASSRLS but only exact table grants required for membership/role/invitation/receipt/audit operations, schema USAGE, and EXECUTE on the private helper. It receives no Auth/Vault access and no login credential. Its SECURITY DEFINER wrapper accepts opaque invitation ID + mutation ID and performs explicit authorization checks plus atomic writes.
+
+BYPASSRLS remains a strong privilege even on a NOLOGIN role; exact grants, role membership/SET ROLE, default ACL, function ownership, foreign-key/trigger effects and lock order must be verified. Nested SECURITY DEFINER preservation of PostgREST JWT context must be tested through the real API before implementation. This is a candidate only; no DDL/role/grant/RPC or API test.
