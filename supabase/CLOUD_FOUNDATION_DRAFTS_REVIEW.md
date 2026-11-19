@@ -2054,3 +2054,33 @@ Read-only effective privilege/policy catalog, FK catalog và static GitHub searc
 
 ### Trạng thái
 Chỉ đọc function definitions trên BAOTRI-Mini-Test và migration/source GitHub. Không chạy concurrency test, không thay đổi SQL, grants, RLS, RPC, Auth hoặc dữ liệu.
+
+## 77. Organization state writers, hard-delete FK và Auth deletion lock path – 20/11/2026
+
+### Organization state và quyền ghi
+- Catalog Test: bảng `organizations` chỉ có trigger BEFORE UPDATE `organizations_set_updated_at`; không có trigger nghiệp vụ thay đổi trạng thái.
+- Function inventory public không tìm thấy RPC/function chuyên cập nhật hoặc xóa Organization. Static search GitHub cũng chưa tìm thấy caller cập nhật/xóa `organizations`; App chỉ SELECT Organization đang active khi thiết lập context.
+- Effective privilege Test: anon/authenticated không có INSERT/UPDATE/DELETE trên `organizations`; service_role có DELETE. Không thấy bằng chứng một luồng server hiện hành dùng quyền này. Do đó chưa có cơ chế Organization state mutation được xác nhận trong runtime, nhưng service_role vẫn là capability cần quản trị.
+- Các RPC Asset/Member hiện đọc Organization status/permission mà không khóa Organization row. Nếu sau này có thao tác suspend/deactivate Organization, chỉ SELECT status không tuần tự hóa với business mutation đang chạy.
+
+### Organization hard-delete và FK
+- Organization có FK RESTRICT từ organization_members, roles, organization_settings, assets, asset_code_counters, asset_images, asset_import_mutations, checklist templates/versions/results, inventory items/movements, maintenance plans/tasks/logs.
+- Hard-delete Organization sẽ bị FK RESTRICT chặn khi còn các dữ liệu phụ thuộc. Không có cascade cleanup tổng thể.
+- Hướng thiết kế an toàn hơn cho vòng đời tenant là state transition (suspend/disabled) và retention/archive có chủ đích; không coi hard-delete là thao tác thông thường. State transition cần được đưa vào shared Organization lock/version protocol trước khi có writer.
+
+### Auth user deletion và profile dependency
+- FK `profiles.id -> auth.users.id` là ON DELETE CASCADE; tuy nhiên profile được tham chiếu bởi Organization.created_by, organization_members.user_id/invited_by_user_id và member_roles.assigned_by_user_id đều ON DELETE RESTRICT.
+- Auth user còn được tham chiếu trực tiếp bởi asset_import_mutations.actor_user_id và asset_mutation_receipts.applied_by_user_id (RESTRICT). asset_edit_locks.holder_user_id tham chiếu Auth user ON DELETE CASCADE.
+- Vì vậy Auth hard-delete không phải thao tác dọn tài khoản đơn giản: có thể bị chặn bởi membership, tổ chức do user tạo, role audit provenance và Asset receipt/import history. Remove membership hiện tại chỉ xóa membership/role mapping; không xóa Auth identity/profile.
+
+### Lock-order candidate Auth deletion ↔ Asset mutation
+- Auth deletion bắt đầu từ Auth user row và có thể cascade xóa asset_edit_locks (Lease).
+- Asset mutation khóa Lease trước, sau đó Asset, rồi INSERT Asset Receipt có FK applied_by_user_id -> auth.users.
+- Đây là candidate đảo chiều Auth → Lease so với Lease → Asset/Receipt → Auth; có thể hình thành chu trình chờ khi hai transaction cùng user/Asset. Chưa tái hiện bằng concurrency test; FK checks/row-lock mode và timing thực tế cần được kiểm chứng trên Test.
+- Chỉ có một caller Auth hard-delete được tìm thấy trong Edge Function invite compensation: nếu RPC tạo membership trả lỗi sau khi vừa tạo Auth user, code gọi deleteUser. Caller không kiểm tra kết quả delete; không có bằng chứng deleteUser được gọi trong Remove/Suspend/Activate/Role change/Reset.
+
+### Kết luận và việc còn mở
+- Không bật Organization hard-delete hoặc Auth hard-delete như luồng nghiệp vụ thông thường.
+- Invite compensation phải dựa trên operation state và xác minh membership/profile/receipt trước khi xóa; không xóa Auth user chỉ vì RPC trả lỗi.
+- Cần thiết kế Organization suspension serialization, Auth deletion policy/retention và test deadlock candidate Auth ↔ Lease ↔ Asset/Receipt trước khi có bất kỳ writer mới.
+- Chỉ đọc catalog, ACL, FK, triggers và GitHub source. Không chạy DELETE/UPDATE, không thay SQL, grants, RPC, Auth hoặc dữ liệu.
