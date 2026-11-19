@@ -1901,3 +1901,45 @@ Người dùng đã đồng ý chốt nguyên tắc:
 Quyết định này bổ sung cho policy ở §39; không thay đổi nguyên tắc `needs_review/conflict` khi provenance/identity không rõ.
 
 **Phạm vi:** quyết định policy đã chốt; chưa sửa DDL 021, chưa tạo RPC/worker, không chạy SQL hoặc thay đổi Supabase.
+
+
+### 41. Proposal: bằng chứng reconciliation gắn đúng Auth attempt (20/11/2026)
+
+Mục tiêu chứng minh chuỗi `operation_id → attempt_id → auth_user_id`; email match đơn thuần không phải provenance.
+
+#### 41.1 Correlation marker có điều kiện
+
+Ưu tiên khảo sát khả năng gắn một marker do server tạo ngay trong chính thao tác Auth user creation, ở vùng metadata chỉ Admin/server quản lý (ví dụ `app_metadata`, nếu đúng endpoint/SDK đang dùng hỗ trợ atomic create-time write). Marker nên là opaque random token đủ entropy (ít nhất 256-bit), tạo server-side; chỉ lưu digest của marker trong attempt record trước khi dispatch; raw marker chỉ truyền trong Auth create request và không ghi log. Marker phải gắn đúng operation + attempt trong DB thông qua digest. Không dùng `user_metadata`, client metadata, email, tên, thời gian gần nhau hoặc metadata do user chỉnh sửa làm bằng chứng.
+
+**Điều kiện bắt buộc trước khi chọn giải pháp:** xác minh bằng docs/API type/source của đúng phiên bản Supabase Auth endpoint và `supabase-js` rằng Admin create operation hỗ trợ ghi metadata server-managed ngay trong cùng lệnh tạo user, không phải bước update sau khi tạo. Tài liệu `auth.admin.createUser` hiện được tra cứu mô tả create user và ví dụ `user_metadata`, chưa đủ để khẳng định khả năng create-time `app_metadata`; vì vậy đây mới là hướng khảo sát, chưa được coi là khả thi/chốt. Không triển khai dựa trên giả định.
+
+#### 41.2 Reconciliation khi có marker
+
+1. Recovery actor claim reconciliation lease bằng CAS/version; không gọi create/invite lại.
+2. Dùng Auth Admin API server-side để tìm candidate theo email đã chuẩn hóa chỉ như locator; phân trang đầy đủ theo API contract, không dừng ở trang đầu.
+3. Với mỗi candidate, lấy bản ghi Auth hiện hành từ Auth server và kiểm tra marker server-managed; so digest constant-time với digest đã commit trên đúng attempt. Email không tham gia chứng minh ownership.
+4. Chính xác một Auth user có marker khớp, attempt không mâu thuẫn và marker thuộc đúng project/environment: ghi event `reconciled_created`, gắn `observed_auth_user_id`, xác lập `auth_provenance='created_by_operation'` và tiếp tục finalize theo transaction/policy.
+5. Không có candidate/marker: không kết luận no-side-effect ngay; Auth có thể chưa hiển thị hoặc API listing chưa nhất quán. Giữ `outcome_unknown`, tiếp tục reconciliation theo bounded schedule/manual review. Chỉ kết luận no-side-effect khi có bằng chứng provider-specific đáng tin cậy, không chỉ vì search trả rỗng.
+6. Marker sai, nhiều candidate, marker trùng ở attempt khác, candidate đã tồn tại trước attempt, hoặc evidence mâu thuẫn: `conflict`/`needs_review`; không attach/delete.
+
+#### 41.3 Nếu Auth API không hỗ trợ atomic create-time marker
+
+Không thể đóng crash window bằng cách tạo user trước rồi gọi update metadata sau: crash giữa hai bước vẫn không chứng minh được ownership. Auth trigger chỉ có thể làm correlation nếu marker đã có sẵn trên row tại thời điểm INSERT và trigger có thể xác thực marker; không tự suy ra operation từ email. Nếu không có cơ chế marker/correlation đáng tin cậy được ghi nguyên tử cùng việc tạo Auth user, trường hợp Auth tạo xong nhưng response mất phải giữ `needs_review`; không auto attach. Có thể yêu cầu Admin xử lý thủ công qua quy trình xác minh độc lập.
+
+#### 41.4 Không được dùng làm bằng chứng
+
+- Trùng email, cùng tên/số điện thoại, cùng thời điểm tạo, `created_at` gần lúc request.
+- `user_metadata` hoặc bất kỳ metadata nào client/user có thể tự sửa.
+- Client-supplied operation/attempt ID không được server xác thực.
+- Chỉ có HTTP success log nếu không có Auth user ID/response được xác thực và log có thể bị mất.
+- Không tìm thấy user trong một lần list/search; đây không phải bằng chứng không có side effect.
+
+#### 41.5 Test bắt buộc trước khi triển khai
+
+- Marker được gắn atomically tại create-time; crash ngay sau khi Auth commit nhưng trước khi operation ghi result vẫn tìm lại đúng user.
+- User không thể sửa marker; client metadata không thể giả marker.
+- Marker của attempt A không thể xác minh cho attempt B, operation khác hoặc project khác.
+- Pagination/listing, eventual consistency, duplicate email, concurrent requests, Auth API timeout, trigger failure, marker missing/modified/duplicated.
+- Không log raw marker, access token, service key, email hoặc payload nhạy cảm.
+
+**Trạng thái:** proposal cần review; marker create-time support chưa được xác minh cho endpoint/SDK cụ thể. Fail-closed: nếu không có bằng chứng correlation, `needs_review`. Chưa sửa DDL 021, chưa viết RPC/worker, không chạy SQL hoặc thay đổi Supabase.
