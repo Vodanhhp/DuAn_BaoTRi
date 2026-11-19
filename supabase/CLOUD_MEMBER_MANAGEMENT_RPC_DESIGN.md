@@ -2151,3 +2151,55 @@ Use **in-app pending invitations as the authoritative channel**. Treat email as 
 ### Decision status
 
 Recommended order: (1) build the authenticated in-app inbox and explicit accept flow; (2) add optional email notification only after a secure outbox and sender are approved; (3) Realtime is an optimization, never a dependency. This is a design recommendation, not implementation approval. No DDL 021, RPC, Edge Function, worker, SQL or Supabase changes are authorized by this section.
+
+
+## 51. In-app Invitation Inbox — dữ liệu, quyền và RPC (design proposal)
+
+### Mục tiêu và nguyên tắc
+- In-app Inbox là kênh hiển thị lời mời hiện có cho đúng người nhận; không phải nguồn trạng thái độc lập và không cấp quyền tenant.
+- Không tạo bảng Inbox riêng ở giai đoạn đầu. Dùng `organization_member_invite_operations` làm nguồn trạng thái gốc; Inbox là projection qua API/RPC hẹp. Tránh duplicate state và reconciliation giữa hai bảng.
+- `organization_member_invite_attempts` và `organization_member_invite_attempt_events` tiếp tục là dữ liệu nội bộ; không xuất hiện trong response Inbox.
+- Chỉ hiển thị trạng thái dẫn xuất `pending` cho lời mời đang chờ người nhận. Không trả enum Saga nội bộ như `auth_outcome_unknown`, `needs_review`, `failed_terminal`, `auth_calling` hoặc thông tin xử lý Auth.
+
+### Response allowlist
+Ban đầu chỉ trả:
+- `invitation_id`: opaque operation UUID dùng làm tham chiếu lời mời; không phải bearer token/secret.
+- `organization_name`: tên hiển thị tổ chức, nếu có.
+- `requested_role_label`: nhãn vai trò đã được xác định là an toàn để hiển thị.
+- `created_at`, `expires_at`.
+- `display_status`: giá trị dẫn xuất cố định `pending`.
+
+Không trả email đích, Auth UUID, member ID, fingerprint/digest/key version, invite token/URL, receipt ID, attempt ID/events, provider response, raw Saga state hoặc dữ liệu riêng tư khác. Tạm thời không trả inviter label để giảm PII và phụ thuộc join hồ sơ.
+
+### Quyền và ranh giới truy cập
+- Unauthenticated/anon: không được đọc hoặc chấp nhận Inbox.
+- Authenticated nhưng email chưa xác minh: không được đọc hoặc chấp nhận.
+- Tài khoản đã đăng nhập và email được Auth xác minh: chỉ thấy lời mời khớp với email xác minh hiện tại của chính tài khoản.
+- Inviter/Admin không được đọc Inbox của người nhận chỉ vì họ tạo lời mời.
+- Không có API nhận email tùy ý để dò lời mời hoặc dò sự tồn tại của Auth account.
+- Client không được SELECT trực tiếp bảng Saga, attempts hoặc attempt events; các bảng này giữ quyền truy cập server-only và chính sách RLS phòng thủ phù hợp.
+- Không dùng user_metadata/client metadata/JWT user-editable claims làm căn cứ xác thực email hoặc phân quyền.
+
+### Đọc Inbox và chấp nhận
+- List là snapshot chỉ đọc; không reserve invitation, không activate membership, không cấp tenant access.
+- Accept phải revalidate trong transaction: danh tính người chấp nhận; email Auth authoritative đã xác minh; lời mời đúng người nhận, còn pending, chưa hết hạn/thu hồi; tổ chức active; role hợp lệ; không có membership xung đột.
+- Khi thành công, membership + single role + audit + Shared Receipt + Saga completion commit nguyên tử.
+- Client chỉ gửi invitation/operation ID và mutation/idempotency key ổn định. Không nhận actor Auth UID, email, organization ID hay role từ client làm căn cứ cấp quyền.
+- Accept replay cùng invitation và cùng actor phải idempotent; cùng invitation nhưng actor khác phải từ chối. Việc xác định chi tiết mutation ID và receipt gắn với acceptance cần thống nhất với Shared Receipt design trước DDL.
+- Mọi lỗi/điều kiện không còn hợp lệ phải fail closed; không tạo membership/role một phần.
+
+### Điểm chặn kỹ thuật: HMAC fingerprint
+Saga lưu HMAC digest, còn key material nằm ngoài Database. PostgreSQL không thể tự tính lại HMAC nếu không có cơ chế cung cấp key đáng tin cậy. Không được giải quyết bằng email client gửi hoặc so khớp email không xác minh.
+- Phương án cần nghiên cứu: Edge Function xác thực bearer token bằng Auth server-side, lấy authoritative user/email verification, tính HMAC bằng secret manager, rồi gọi RPC nội bộ truyền actor UID và digest.
+- RPC nội bộ chỉ cho server role gọi; không expose cho anon/authenticated. Edge Function là trust boundary cần review riêng: xác minh JWT/Auth user, chống replay, rate limit, secret handling và không log PII.
+- RPC vẫn phải revalidate trạng thái lời mời và thực hiện toàn bộ acceptance transaction nguyên tử.
+- Chưa chốt phương án này; cần kiểm chứng khả năng triển khai và threat model trước khi thiết kế DDL/RPC cuối.
+
+### Pagination, enumeration và trạng thái
+- Dùng keyset pagination, giới hạn page size; không OFFSET/COUNT.
+- Không trả tổng số lời mời hoặc khác biệt lỗi giúp dò email/Auth account.
+- Realtime nếu có chỉ là wake-up hint; client phải gọi lại endpoint được bảo vệ. Poll/on-demand refresh vẫn hoạt động khi Realtime mất kết nối.
+- Không cần Inbox table/cache độc lập ban đầu. Nếu sau này cần projection vật lý vì tải, phải có owner, invalidation và reconciliation design riêng.
+
+### Trạng thái
+Đây là design proposal. Chưa phê duyệt DDL, RPC, Edge Function, worker, SQL hoặc thay đổi Supabase. Các điểm cần giải quyết trước implementation: HMAC trust boundary; contract idempotency/Shared Receipt cho acceptance; expiry/revoke/decline policy; rate limit và audit retention.
