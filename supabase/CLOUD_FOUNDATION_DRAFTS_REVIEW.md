@@ -198,3 +198,58 @@ Dùng một role kỹ thuật riêng, **NOLOGIN**, chỉ dành cho việc kiểm
 ### Kết luận cập nhật cho draft 015
 
 **Có thể giữ nguyên SQL draft 015 ở mức thiết kế; không phát hiện lỗi cần sửa qua đối chiếu baseline.** Chưa đủ điều kiện promotion vì chưa chạy DDL/test trên Test và chưa có các RPC expected-version hoàn chỉnh. Không thay đổi SQL draft trong lượt rà soát này.
+
+
+## 9. Rà soát sâu draft 018 — kết quả constraint và audit semantics
+
+Đã đối chiếu draft 018 với schema `inventory_movements` hiện tại và quyết định nghiệp vụ đã chốt.
+
+### 9.1 Lỗi cú pháp xác nhận
+
+- Dòng `expected_item_version bigint,\\n  add column performed_by_label text` chứa literal backslash + n.
+- Đây là lỗi cú pháp chắc chắn; phải thay bằng dấu phẩy và xuống dòng SQL thật trước khi chạy parser.
+- Chưa sửa file draft trong lượt này.
+
+### 9.2 Các constraint hiện tại phù hợp
+
+- Giữ `quantity > 0` của movement cũ; cột `quantity_delta` mới mới là delta có dấu.
+- Legacy row được phép để toàn bộ audit snapshot mới NULL; không backfill số dư không có căn cứ.
+- Khi audit snapshot đã có, `balance_before`, `balance_after`, actor và mutation ID phải có; delta khác 0; `balance_after = balance_before + quantity_delta`; `quantity = abs(quantity_delta)`.
+- Nhập yêu cầu delta dương; Xuất yêu cầu delta âm; Điều chỉnh yêu cầu counted_quantity không NULL, bằng balance_after và delta bằng counted - before.
+- Điều chỉnh về tồn 0 vẫn hợp lệ nếu delta khác 0; kiểm kê không chênh lệch không được tạo movement.
+- Unique partial index `(organization_id, mutation_id)` phù hợp với hợp đồng hiện tại: mỗi mutation tạo tối đa một movement. Nếu một logical mutation trong tương lai cần nhiều movement, phải đổi khóa idempotency ở thiết kế trước khi triển khai.
+
+### 9.3 Phát hiện cần bổ sung vào thiết kế — numeric NaN
+
+PostgreSQL coi `NaN` lớn hơn mọi giá trị numeric thông thường. Vì vậy các CHECK kiểu `quantity_delta <> 0`, `balance_before >= 0` và `counted_quantity >= 0` không tự loại trừ NaN. Kiểu `numeric(18,4)` loại được Infinity do precision hữu hạn, nhưng vẫn có thể lưu NaN.
+
+Yêu cầu trước khi promote:
+- RPC phải từ chối NaN cho initial_quantity, quantity, counted_quantity và mọi numeric đầu vào liên quan.
+- Constraint trên các cột numeric audit mới phải loại NaN một cách tường minh, không chỉ kiểm tra dấu hoặc phép bằng.
+- Test INSERT/UPDATE trực tiếp qua test harness cho NaN ở từng cột audit; tất cả phải bị từ chối.
+- Kiểm tra thêm trường hợp numeric vượt precision/scale; không tự làm tròn âm thầm ngoài quy tắc đã thống nhất.
+
+Nguồn: PostgreSQL Numeric Types ghi rõ NaN được xem bằng nhau và lớn hơn mọi numeric không phải NaN; xem tài liệu chính thức ở phần nguồn cuối tài liệu.
+
+### 9.4 expected_item_version: RPC bắt buộc, DDL hiện chưa phân biệt đủ
+
+- Draft cho phép `expected_item_version IS NULL` trong nhánh audit snapshot mới.
+- Điều này cần thiết cho opening movement vì Item được tạo cùng transaction và chưa có version cũ.
+- Nhưng cùng điều kiện đó cũng cho phép một movement Nhập/Xuất/Điều chỉnh thông thường bị ghi thiếu expected version nếu RPC/đường ghi không kiểm soát.
+- Không nên suy luận opening movement chỉ từ nhãn reason ở CHECK constraint. RPC phải phân biệt operation context: opening movement chỉ được tạo bên trong `create_inventory_item`; các movement thay đổi Item đã tồn tại phải nhận và kiểm tra expected version.
+- Test bắt buộc: movement thường thiếu expected version bị từ chối; opening movement có version NULL được chấp nhận; opening movement không thể được tạo độc lập qua RPC movement thông thường.
+
+### 9.5 created_by_user_id và vòng đời Auth user
+
+- FK `created_by_user_id REFERENCES auth.users(id) ON DELETE RESTRICT` giữ được dấu vết actor và ngăn xóa Auth user đã tạo movement.
+- Đây có thể là chủ ý tốt cho audit, nhưng là một quyết định vòng đời tài khoản: xóa Auth user có thể bị chặn nếu còn movement tham chiếu.
+- Cần ghi rõ chính sách sản phẩm: tài khoản nhân viên nghỉ việc nên bị suspend/deactivate thay vì xóa Auth user; nếu vẫn cần xóa tài khoản thì phải có quy trình lưu actor audit không phụ thuộc FK. Không tự đổi sang SET NULL vì sẽ mất liên kết actor đã xác thực.
+
+### 9.6 Kết luận draft 018
+
+Draft 018 **chưa đạt để chạy** vì lỗi cú pháp. Ngoài sửa lỗi đó, cần bổ sung xử lý NaN và làm rõ quy tắc expected version ở RPC/test. Các constraint hiện tại về dấu delta, balance và legacy preservation nhìn chung đúng với nghiệp vụ đã chốt. FK actor cần chốt chính sách xóa tài khoản trước khi promote.
+
+### Nguồn kỹ thuật bổ sung
+
+- PostgreSQL 18 — [Numeric Types](https://www.postgresql.org/docs/18/datatype-numeric.html): NaN, Infinity và quy tắc so sánh numeric.
+- PostgreSQL — [Constraints](https://www.postgresql.org/docs/current/ddl-constraints.html): semantics của CHECK constraints.
