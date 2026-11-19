@@ -751,3 +751,72 @@ Không thêm version cho các bảng append-only/history như inventory_movement
 5. Giữ Asset Lease + expected_cloud_updated_at + Asset Receipt cho đến migration Asset riêng.
 
 **Trạng thái:** chỉ bổ sung review tài liệu. Không sửa draft 015, không tạo migration mới, không chạy SQL, không gọi RPC, không thay đổi quyền/dữ liệu Supabase.
+
+
+## 18. Review draft 020 — Shared Receipt DDL và ranh giới bảo mật
+
+Đã đọc toàn bộ draft 020 và đối chiếu với hợp đồng mục 16, review Receipt trước đó và schema identity hiện có. Đây là static review; không chạy PostgreSQL, không apply DDL, không kiểm tra trực tiếp catalog của Supabase.
+
+### 18.1 Những phần đạt
+
+- Bảng có khóa chính (organization_id, mutation_id), actor riêng, operation ổn định, JSONB fingerprint server-built, read permission list, affected refs và canonical result.
+- FK organization/auth user dùng ON DELETE RESTRICT, tránh xóa identity đang được Receipt tham chiếu.
+- RLS bật và revoke table privileges khỏi PUBLIC/anon/authenticated; không có policy client trực tiếp. Đây là private ledger, không phải bảng client CRUD.
+- Trigger bảo vệ identity/fingerprint/read permissions và chỉ cho pending → final; cấm DELETE.
+- Deferred constraint trigger kiểm tra trạng thái cuối, ngăn pending commit nếu trigger hoạt động đúng trong security context thực tế.
+- Không giả định pgcrypto; không tạo generic claim RPC; không đụng Asset-specific Receipt/Lease.
+- Algorithm dùng INSERT ... ON CONFLICT DO NOTHING RETURNING rồi SELECT ở statement kế tiếp, phù hợp tránh unique-violation làm transaction aborted.
+- Replay same actor sau khi mất write permission được giữ read-only, theo chính sách đã duyệt.
+
+### 18.2 Vấn đề P0 — deferred trigger chưa chứng minh được khả năng đọc qua RLS
+
+Function assert_organization_mutation_receipt_finalized() hiện là SECURITY INVOKER (mặc định), đặt SET row_security = off, nhưng bảng organization_mutations bật RLS và không có policy. row_security = off **không phải** cơ chế bypass RLS; với role không có quyền bypass, PostgreSQL có thể báo lỗi thay vì nhìn thấy row. Function chỉ hoạt động nếu effective role lúc trigger chạy có quyền bypass RLS/owner phù hợp và không bị FORCE ROW LEVEL SECURITY.
+
+Trước promotion phải chọn và kiểm thử rõ một phương án:
+1. Trigger function SECURITY DEFINER, owner được kiểm soát, search_path rỗng, schema-qualified references, không dynamic SQL, EXECUTE revoke khỏi client roles; đồng thời xác nhận behavior khi table FORCE RLS.
+2. Hoặc giữ SECURITY INVOKER nhưng chứng minh mọi đường DML hợp lệ đều chạy dưới effective role có quyền bypass RLS, và test cả RPC SECURITY DEFINER owner thực tế.
+
+Không mặc định table owner luôn bypass: kiểm tra owner, BYPASSRLS, FORCE ROW LEVEL SECURITY và effective role của business RPC trên Test. Đây là blocker trước promotion.
+
+### 18.3 P1 — bảo vệ trạng thái Receipt cần test sâu hơn
+
+- Guard UPDATE hiện kiểm tra OLD pending và NEW final, đồng thời khóa các trường identity. Cần kiểm tra mọi trường được phép thay đổi chỉ đúng một lần; không cho final row bị update lần hai, kể cả nếu caller cố đổi completed_at/result/refs.
+- Deferred trigger được tạo AFTER INSERT OR UPDATE và mỗi event sẽ chạy lúc commit. Một Receipt được INSERT pending rồi UPDATE final tạo hai lần deferred check; cả hai phải đọc được trạng thái final trong cùng transaction.
+- Trigger guard DELETE chặn xóa ở mức trigger; table privileges cũng revoke. Cần test owner/superuser và mọi maintenance/retention path để không có đường xóa ngoài ý muốn.
+- CREATE OR REPLACE FUNCTION trong draft không đổi owner của function đã tồn tại; trước promotion phải kiểm tra object trùng tên/owner/ACL. File không idempotent và chỉ được chạy một lần qua migration ledger.
+
+### 18.4 P1 — khóa Organization/Membership và permission race
+
+Draft mô tả active Organization/Membership nhưng DDL không khóa chúng; mục 16 đã chốt lock order Organization → Membership → Receipt. Mọi business RPC phải thực hiện SELECT FOR SHARE (hoặc chế độ khóa tương đương đã xác minh) trên Organization và Membership trước khi claim/replay Receipt, để suspend/remove/disable không race với mutation/replay.
+
+Còn một race riêng: permission role/assignment có thể bị thu hồi sau khi RPC kiểm tra permission nhưng trước khi business commit. Cần xác định permission source thực tế và khóa/đồng bộ việc thay đổi role/assignment theo cùng transaction protocol; chỉ khóa Membership là chưa đủ nếu role assignment thay đổi độc lập. Kiểm thử Admin revoke Technician permission đồng thời với mutation.
+
+### 18.5 P1 — replay race và disclosure
+
+- Khi request A lookup chưa thấy Receipt, request B claim/commit cùng key trước lúc A kiểm tra write permission hoặc claim, A phải recheck Receipt sau unique conflict; không được trả permission denied một cách máy móc nếu Receipt đã commit và A là cùng actor/fingerprint.
+- Nếu permission bị thu hồi trong lúc request đang xử lý, quy tắc replay/snapshot phải được đánh giá ở thời điểm trả kết quả; không để result_payload bị lộ chỉ vì lúc tạo Receipt actor từng có quyền đọc.
+- read_permission_codes hiện all-or-nothing cho nhiều resource. Giữ chính sách acknowledgement-only nếu thiếu một quyền đọc; không trả một phần snapshot cho tới khi thiết kế per-record permission hoàn chỉnh.
+- Affected refs cũng là dữ liệu nhạy cảm tối thiểu: chỉ chứa loại resource, ID/version cần thiết; không chứa tên, mô tả, số lượng hay dữ liệu nghiệp vụ nhạy cảm. Kiểm thử cross-tenant và actor khác không thể suy ra Receipt tồn tại.
+
+### 18.6 P2 — fingerprint, payload và vận hành
+
+- JSONB equality phù hợp tránh phụ thuộc thứ tự key object, nhưng không tự chuẩn hóa semantics. Mỗi RPC phải chuẩn hóa số, chuỗi, null/default, timezone, enum và danh sách trước khi dựng fingerprint.
+- Giới hạn kích thước fingerprint, affected refs và result_payload; không đưa base64 ảnh, bí mật, access token hoặc thông tin không cần vào Receipt.
+- Xác định schema_version cho operation/result envelope để thay đổi format trong tương lai không khiến client cũ replay sai.
+- created_at dùng clock_timestamp() là thời điểm claim, không phải commit order; không dùng nó thay cursor Change Feed.
+- Retention ban đầu giữ Receipt vô thời hạn như mục 16; mọi cleanup/archive sau này cần chính sách retry horizon, backup/restore và idempotency key expiry được duyệt.
+- Index actor_created có thể hữu ích cho tra cứu/audit nhưng không thay thế PK lookup. Đánh giá vacuum/bloat khi Receipt tăng; không thêm index tùy tiện vào payload JSONB.
+
+### 18.7 Kết luận
+
+**Kết luận: cấu trúc Receipt đạt về hướng thiết kế; draft 020 chưa đủ điều kiện promotion.** Blocker chính là xác minh deferred trigger có thể đọc final row trong RLS/security context thực tế. Các blocker tiếp theo là lock Organization/Membership và đồng bộ permission revocation; replay race; kiểm thử immutable state và giới hạn payload.
+
+Checklist trước promotion:
+1. Kiểm tra owner, ACL, RLS, FORCE RLS, BYPASSRLS và SECURITY DEFINER owner của mọi business RPC.
+2. Test insert pending → finalize → commit; pending commit phải rollback; rollback business mutation phải rollback Receipt.
+3. Test hai request cùng key đồng thời, claimant rollback, response mất, permission revoke, membership/org disable và role revoke race.
+4. Test actor khác, cross-org, fingerprint mismatch, permission đọc bị thu hồi và acknowledgement không rò dữ liệu.
+5. Test final Receipt không thể sửa/xóa, kể cả đường maintenance; xác nhận deferred trigger chỉ chạy dưới security context dự kiến.
+6. Chốt schema_version, giới hạn payload và retention trước production.
+
+**Trạng thái:** chỉ cập nhật review. Không sửa draft 020, không tạo migration, không chạy SQL/RPC, không thay đổi Supabase Test/Production, quyền hoặc dữ liệu.
