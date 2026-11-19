@@ -1883,3 +1883,22 @@ Chỉ đọc function definitions và ACL. Không sửa function, grant, role ho
 - Migration 005, UI và luồng đổi role đang theo mô hình một role hiện hành. Tài liệu RPC đã chốt policy phiên bản hiện tại là đúng một role/membership và đề xuất UNIQUE `(organization_id, member_id)` sau preflight; chưa áp dụng constraint.
 - Read-only preflight trên BAOTRI-Mini-Test tại thời điểm rà soát: 4 memberships; 4 có đúng một assignment; 0 thiếu assignment; 0 có nhiều assignment; 0 membership có assignment nhưng không có active role. Đây chỉ là snapshot Test, không thay thế preflight trước migration và không đại diện Production.
 - Không sửa dữ liệu, schema, RPC, Edge Function, grants hoặc cấu hình. 
+
+
+## 70. Shared Receipt contract và lock-order inversion với Auth trigger – 20/11/2026
+
+### Receipt contract
+- Đối chiếu Member design §25/§27 và Shared Receipt review: operation code ổn định, mutation ID riêng cho mỗi logical intent; Invite Saga operation_id độc lập với Shared Receipt mutation_id.
+- Fingerprint phải mô tả request intent canonical do server dựng. Áp dụng §27.7: không dựng fingerprint từ mutable role/status hiện tại sau commit; expected-current-state nếu có chỉ là precondition kiểm tra ở nhánh mutation mới.
+- Replay yêu cầu Auth hợp lệ + Organization active + actor membership active + cùng actor/operation/fingerprint. Replay không yêu cầu lại write permission cũ; snapshot chỉ trả theo read permission hiện tại. Remove chỉ acknowledgement tối thiểu. Mutation mới mới kiểm tra write permission và claim Receipt.
+- Receipt claim dùng unique key, INSERT ... ON CONFLICT DO NOTHING rồi SELECT ở statement kế tiếp theo READ COMMITTED. Receipt, business write và audit phải atomic; Saga Auth API là quy trình nhiều transaction riêng. Member hiện không bật Change Feed.
+- Catalog Test hiện chỉ có asset_mutation_receipts; organization_mutations, organization_member_invite_operations và organization_member_audit_events chưa tồn tại. Draft 020/021 chưa áp dụng.
+
+### Lock-order conflict cần xử lý trước implementation
+- Member §25.1 và Shared Receipt review §6.3 thống nhất proposed order: Organization → actor/target Membership (UUID tăng dần) → member_roles → Role → Role Permission → Auth user → Receipt → business rows → sync counter/events → Receipt finalize.
+- Nhưng Auth trigger hiện tại còn tự chuyển invited → active, nên đường khóa là Auth user → Profile → Membership. Đây là inversion với proposed Member order; khi hai transaction đồng thời có thể hình thành deadlock (transaction Auth giữ Auth chờ Membership, transaction Member giữ Membership chờ Auth).
+- Proposed order chỉ an toàn sau khi trigger không còn ghi Membership (chỉ sync Profile), hoặc có protocol concurrency khác được chứng minh. Cần xem đây là prerequisite trước khi triển khai acceptance/finalize RPC; chưa sửa trigger.
+- Candidate Auth-first trong ghi chú §67/§81 mô tả đường trigger cũ; §25.1 là canonical proposal sau khi loại side effect. Phải phân biệt rõ hai giai đoạn và không áp dụng lẫn lộn.
+
+### Trạng thái
+Chỉ đọc tài liệu và catalog. Không SQL write, DDL, RPC, grants, role, Auth/data, secrets hoặc cấu hình Supabase thay đổi.
