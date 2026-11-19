@@ -1544,3 +1544,10 @@ Người dùng chốt năm nguyên tắc Auth provenance và request fingerprint
 Đã lập phương án cấu trúc dữ liệu tại Member design §36: operation thay boolean Auth provenance bằng enum/text allowlist 4 trạng thái cùng attempt/evidence/verification metadata; thay JSONB fingerprint bằng HMAC-SHA-256 digest `bytea` 32 bytes kèm fingerprint/key version; bổ sung `transition_version` riêng với row `version`; tạo append-only `organization_member_invite_attempts`; bổ sung `transition_id` + `transition_version` unique cho audit Saga transition và bắt buộc before/after saga status; giữ adopter hiện hành và lưu mọi lần handoff trong append-only audit, chưa cần adoption history table riêng.
 
 Các điểm còn mở: quy trình `preexisting_verified`, secret manager/key retention/rotation, bảo vệ và retention normalized_email, attempt immutable/event detail, stable transition ID qua retry. Đây mới là schema proposal, chưa phải DDL approval. Không sửa DDL 021, không chạy SQL, không thay đổi Supabase Test/Production.
+
+
+## 40. Attempt History và phục hồi timeout/crash (20/11/2026)
+
+Đã cụ thể hóa proposal tại Member design §37: dùng immutable `organization_member_invite_attempts` header và append-only `organization_member_invite_attempt_events`; claim/commit attempt trước Auth call; lease expiry chỉ cho phép takeover reconciliation, không cho provider retry; `outcome_unknown` phải reconcile, không tự retry; chỉ retry sau definitive no-side-effect evidence; kết quả/mismatch/pre-existing đều lưu event allowlist và evidence code; không lưu raw Auth response/token/email. Manual recovery trước, chưa cần background worker.
+
+Các chi tiết còn mở: provider-specific correlation/evidence chứng minh không có side effect, phân loại definitive failure, lease duration và quyền takeover. Default fail-closed nếu không chứng minh được. Đây là proposal, không sửa DDL 021 và không chạy SQL/Supabase.
