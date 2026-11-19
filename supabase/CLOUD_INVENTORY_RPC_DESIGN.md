@@ -145,3 +145,45 @@ Trạng thái: **ĐÃ CHỐT**. Nội dung mục này thay thế các câu hỏi
 - Xác định row_version migration và cách lấy expected_version cho Item.
 - Xác minh unique code hiện tại: schema hiện chưa có unique (organization_id, code); create RPC phải kiểm tra trùng dưới cơ chế chống race và bổ sung constraint phù hợp sau khi xử lý dữ liệu trùng hiện có.
 - Chưa sửa SQL/migration, UI, RPC hoặc dữ liệu; chưa chạy Supabase SQL/runtime test.
+
+
+## 9. Hợp đồng request/response chi tiết (thiết kế)
+
+### 9.1 Quy tắc chung
+- Mọi request có `organization_id`, `mutation_id` UUID ổn định; server luôn lấy actor từ `auth.uid()`, không nhận actor từ client.
+- `organization_id` client gửi chỉ là scope yêu cầu; server phải xác minh membership active và quyền trong đúng organization.
+- Mọi request update balance có `expected_version`; không tự rebase payload cũ khi conflict.
+- Response thành công trả canonical snapshot từ Cloud, không lấy lại payload client làm nguồn xác nhận.
+- Shared Receipt lưu kết quả `applied`, `no_change` hoặc `conflict` để retry cùng mutation_id cho kết quả ổn định. Mutation ID đã dùng không được tái sử dụng cho payload khác.
+
+### 9.2 Request theo nghiệp vụ
+
+| RPC | Các trường nghiệp vụ bắt buộc | Permission |
+|---|---|---|
+| `create_inventory_item` | `item_id`, `mutation_id`, `code`, `name`, metadata allowlist, `initial_quantity >= 0` | `inventory.create` |
+| `update_inventory_item_metadata` | `item_id`, `mutation_id`, `expected_version`, metadata allowlist; không có quantity | `inventory.update` |
+| `post_inventory_movement` | `item_id`, `movement_id`, `mutation_id`, `expected_version`, `movement_type` Nhập/Xuất, `quantity > 0`, `movement_date`, `reason`, optional `linked_asset_id` | `inventory.adjust` |
+| `adjust_inventory_count` | `item_id`, `movement_id`, `mutation_id`, `expected_version`, `counted_quantity >= 0`, `movement_date`, nonblank `reason` | `inventory.adjust` |
+
+### 9.3 Canonical response
+- `status`: `applied` | `no_change` | `conflict`.
+- `mutation_id`, `item_id`, `current_version`.
+- `item`: canonical Item snapshot; luôn có khi request đã xác định được Item.
+- `movement`: canonical Movement snapshot hoặc null (null khi create initial_quantity = 0 hoặc adjustment delta = 0).
+- `balance_before`, `balance_after`, `quantity_delta` cho movement mới; không suy diễn các giá trị lịch sử không có trong database.
+- Với conflict, trả canonical current Item snapshot và version; không ghi business mutation.
+- Với lỗi Auth/permission/membership/validation/idempotency mismatch, RPC từ chối bằng lỗi phân biệt ổn định; không trả snapshot ngoài phạm vi quyền.
+- `no_change` vẫn có Receipt để bảo đảm replay; không tăng row_version, không insert movement, không phát change event.
+
+### 9.4 Transaction boundary
+- Create: Item + optional opening Movement + Receipt + Change events (cho các row thực sự tạo) cùng transaction.
+- Nhập/Xuất/Điều chỉnh có chênh lệch: Item balance/version + Movement + Receipt + Change events cùng transaction.
+- Điều chỉnh không chênh lệch: Receipt `no_change` cùng transaction; không business row/event.
+- Metadata update: Item + Receipt + Change event cùng transaction.
+- Không có đường PostgREST trực tiếp cho quantity hoặc Movement. Local Dexie chỉ được cập nhật sau response Cloud hợp lệ; nếu response mất, replay cùng mutation ID.
+
+### 9.5 Data integrity và legacy
+- `quantity` movement giữ dương để tương thích constraint hiện tại; `quantity_delta` mới là signed delta chuẩn cho các Movement mới.
+- Với Nhập: delta dương; Xuất: delta âm; Điều chỉnh: delta = counted - balance_before.
+- `balance_before`, `balance_after`, `counted_quantity`, `quantity_delta` có thể NULL với dữ liệu legacy không đủ chứng cứ; các RPC mới bắt buộc ghi đầy đủ trường phù hợp.
+- Không tự suy diễn opening balance của dữ liệu cũ từ danh sách movement nếu chưa chứng minh ledger đầy đủ.
