@@ -4191,3 +4191,14 @@ Kết nối PostgreSQL trực tiếp không tự thiết lập JWT GUC như Post
 Trước khi triển khai phải chọn và đánh giá threat model: (A) chấp nhận Edge Function là ranh giới xác thực tin cậy, kèm bảo vệ deploy/secret/audit; hoặc (B) thiết kế signed actor assertion ngắn hạn để DB xác minh chữ ký, audience, expiry và replay. Không dùng GUC tùy tiện hoặc UID client gửi làm bằng chứng.
 
 Đây là ma trận thiết kế và bằng chứng đọc catalog, không phải phê duyệt tạo role/grant/schema/function/secret/migration.
+
+### Xác minh thêm thuộc tính role PostgreSQL
+Catalog chỉ đọc trên BAOTRI-Mini-Test cho thấy:
+- `postgres`: LOGIN, không phải SUPERUSER, nhưng có CREATEDB, CREATEROLE, REPLICATION và BYPASSRLS. Không phù hợp làm credential runtime cho Edge Function.
+- `service_role`: NOLOGIN, BYPASSRLS; là role API đặc quyền, không phải DB login tối thiểu.
+- `anon`, `authenticated`: NOLOGIN, không BYPASSRLS.
+- `authenticator`: LOGIN, NOINHERIT, phục vụ cơ chế đổi role của PostgREST; không dùng làm Edge DB identity.
+- `supabase_auth_admin`: LOGIN và CREATEROLE trên Test, dành cho Auth nội bộ; tuyệt đối không tái sử dụng.
+Tài liệu Supabase Postgres Roles khuyến nghị tạo database user riêng cho từng dịch vụ bên ngoài thay vì chia sẻ mật khẩu postgres.
+
+Với Edge DB login sau này, ưu tiên không có role membership nào, không chỉ đặt NOINHERIT. NOINHERIT ngăn kế thừa tự động nhưng membership vẫn có thể cho phép SET ROLE tùy membership options/version. Phải xác minh không có đường membership, SET ROLE và kiểm tra quyền hiệu lực. Đây vẫn là đề xuất, chưa áp dụng.
