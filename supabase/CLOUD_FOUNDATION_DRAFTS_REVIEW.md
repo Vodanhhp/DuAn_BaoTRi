@@ -1780,3 +1780,11 @@ Implications: a normal authenticated Supabase RPC call can rely on PostgREST's v
 Vault: authenticated users cannot directly read Vault. A tightly scoped SECURITY DEFINER path may read a secret, but a postgres-owned function is a high-privilege boundary; evaluate a narrower owner. Vault schema absence from pg_extension does not mean Vault is absent; schema and objects exist. Managed packaging/lifecycle remains to verify.
 
 Authenticated PostgREST RPC is now the preferred candidate to prototype before direct Edge DB login, but not approved architecture. Need real API-path JWT-context test, exposed-schema inspection, secret access design and Auth email-change concurrency tests. No DDL/RPC/grants/secrets/config changes.
+
+## 62. PostgREST exposure and invitation RPC placement
+
+Catalog inspection of pg_settings and pg_db_role_setting did not reveal pgrst.db_schemas. This does not prove no schemas are exposed; actual API Settings → Exposed schemas must be checked in Dashboard or supported management API. The queried repository path supabase/config.toml does not exist, so deployment exposure cannot be inferred from repo config. Existing Test app tables in public have RLS enabled, but that does not establish RPC schema exposure or function ACL safety.
+
+Candidate layout: private tables and implementation in a non-exposed private schema; exactly one narrow RPC wrapper in a deliberately exposed schema (likely public after Dashboard verification). Wrapper SECURITY DEFINER only if needed; fixed search_path='', fully qualified objects, actor from auth.uid(), no trusted actor/email/org/role arguments. Private implementation callable only by wrapper owner. Revoke wrapper EXECUTE from PUBLIC/anon, grant authenticated only; no browser USAGE on private or direct table access. Keep entire acceptance in one PostgREST RPC transaction; plan schema-cache reload and rollback.
+
+Preflight: confirm exposed schemas separately in Test/Production; verify private is not exposed; confirm only wrapper appears in RPC discovery; test anon denied/authenticated allowed; test private/Auth/Vault direct access denied; verify JWT context inside SECURITY DEFINER; check overloads/default ACL; rerun privilege/RLS tests for anon, no-membership, valid/expired/revoked invitee and unrelated user. No exposure/schema/function/grant/config/data change.
