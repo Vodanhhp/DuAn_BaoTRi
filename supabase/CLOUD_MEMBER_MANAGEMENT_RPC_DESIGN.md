@@ -930,3 +930,115 @@ Sau precondition duplicate = 0, thêm unique (organization_id, member_id) cho me
 
 Chỉ chốt hợp đồng thiết kế. Chưa viết SQL migration thực thi, chưa sửa migration 013/014, chưa sửa Edge Function, chưa chạy SQL/RPC, chưa áp dụng unique constraint và chưa thay đổi Supabase.
 
+
+
+## 25. Hợp đồng thống nhất Member RPC – lock, Receipt và Change Feed (19/11/2026)
+
+Trạng thái: **đề xuất kỹ thuật để chuẩn hóa §§21, 24 và cross-review Foundation §30; chưa phải SQL contract đã triển khai**. Mục này làm rõ thứ tự xử lý; các operation/event code cần được duyệt trước executable migration.
+
+### 25.1 Một lock order duy nhất
+
+Áp dụng thứ tự tương đối sau cho mọi RPC quản trị thành viên/role và mọi business RPC có dùng các lớp lock tương ứng:
+
+1. **Organization** — khóa và xác nhận active.
+2. **Membership rows** — actor và target cần thiết; khóa theo UUID tăng dần, actor=target chỉ khóa một lần. Xác nhận actor active; kiểm tra target state sau khi khóa.
+3. **member_roles assignments** — khóa các assignment cần thiết theo organization_id, member_id, role_id tăng dần. Với mô hình một role/membership, phải xác nhận đúng một assignment, không chọn tùy tiện.
+4. **Role rows** — khóa theo role ID tăng dần; xác nhận role active và thuộc đúng organization.
+5. **Role Permission rows** — khóa theo role ID và permission code tăng dần; xác nhận permission cần thiết cho operation. Các lớp 2–5 phải được lấy theo cùng thứ tự ở mọi RPC, kể cả RPC revoke/deactivate.
+6. **Auth user row**, chỉ khi Invite Saga/finalize thực sự cần; không gọi Auth Admin API hoặc network khi đang giữ DB locks. Trigger Auth chỉ được đồng bộ Profile, không được ghi Membership.
+7. **Receipt** — replay lookup/claim theo §25.2; không được khóa business row trước rồi mới quay lại claim Receipt.
+8. **Business/target rows** — theo table-rank rồi primary key tăng dần. Nếu nhiều bảng, mọi RPC dùng cùng table-rank.
+9. **Asset Lease** — chỉ theo bridge contract riêng đã thống nhất với Asset RPC; chưa đưa Asset vào cutover này.
+10. **Organization Sync Counter** → **Change events** → **Receipt finalize**.
+
+Các RPC được phép bỏ qua lớp không sử dụng, nhưng không được đảo thứ tự tương đối. Nếu một thao tác FK/cascade/trigger tự lấy lock ngoài thứ tự này, phải phân tích và concurrency-test; không coi bảng lock order tự nó là bằng chứng không deadlock.
+
+**Đính chính tài liệu:** thứ tự cũ ở §24.3 (Role đích trước Membership trong create; target Membership trước Role trong change-role) và bảng Foundation §21.2 không còn là thứ tự độc lập. Khi review/cutover, dùng §25.1 làm thứ tự chuẩn đề xuất; cần đồng bộ lại §21 và §24 trước khi viết SQL.
+
+### 25.2 Receipt replay và claim — hai nhánh tách biệt
+
+**A. Replay lookup (read-only):**
+1. Xác thực auth.uid() khác NULL.
+2. Khóa Organization và actor Membership theo §25.1; yêu cầu Organization active và actor Membership active.
+3. Tra Receipt theo (organization_id, mutation_id).
+4. Nếu Receipt đã final: xác minh actor_user_id, operation code và fingerprint server-side. Nếu không khớp, từ chối mà không tiết lộ result.
+5. Nếu khớp: không yêu cầu write permission cũ; kiểm tra read permission hiện tại. Theo chính sách đã chấp thuận, đủ toàn bộ read permissions mới trả snapshot đầy đủ; thiếu bất kỳ quyền nào chỉ trả acknowledgement tối thiểu.
+6. Replay không cập nhật business rows, không tăng row_version, không phát Change Feed event và không tạo Receipt mới.
+
+**B. Mutation mới:**
+1. Nếu replay lookup không tìm thấy Receipt, tiếp tục khóa assignment/Role/Role Permission theo §25.1.
+2. Xác minh write permission trong cùng transaction; không dùng has_org_permission() STABLE hiện tại như authorization lock.
+3. Chuẩn hóa payload và dựng fingerprint từ dữ liệu server đã xác thực.
+4. Claim unique key (organization_id, mutation_id); chỉ request claim thành công được thực hiện side effect.
+5. Nếu claim thua do request đồng thời: đọc Receipt ở statement tiếp theo, xác minh actor/operation/fingerprint và đi theo nhánh replay. Không chạy side effect lần hai.
+6. Nếu write permission bị deny sau lần lookup đầu: thực hiện recheck Receipt an toàn trước khi trả lỗi. Chỉ replay nếu Receipt final cùng actor/operation/fingerprint đã thực sự tồn tại; tuyệt đối không claim hoặc thực hiện mutation trong nhánh deny.
+7. Business mutation, row_version, counter, events và Receipt final cùng commit/rollback.
+
+**Điều kiện isolation cần xác minh:** flow INSERT ... ON CONFLICT DO NOTHING rồi SELECT Receipt ở statement kế tiếp được thiết kế theo READ COMMITTED. Nếu function/transaction chạy isolation khác, phải xác định cách xử lý serialization failure và retry; không giả định statement sau luôn nhìn thấy transaction vừa commit. Không dùng exception unique violation rồi tiếp tục trong transaction đã bị abort.
+
+### 25.3 Bảng operation và fingerprint cho Member RPC
+
+Các operation code dưới đây là **đề xuất ổn định**, không dùng tên SQL function làm operation code. UUID mutation ID do client tạo một lần cho một logical intent; khi timeout/unknown outcome phải replay cùng ID và cùng payload, không tạo ID mới.
+
+| RPC intent | Operation code đề xuất | Fingerprint tối thiểu do server dựng | Kết quả/event |
+|---|---|---|---|
+| Tạo/finalize membership | member.create | organization, actor, target auth user đã được Invite Saga xác minh, role code, invite operation ID | applied hoặc duplicate/no_change; membership event nếu tạo mới |
+| Đổi role | member.role.change | organization, actor, target member, role code hiện tại, role code đích | applied hoặc no_change; role-change event nếu thực sự đổi |
+| Suspend/reactivate | member.status.change | organization, actor, target member, status hiện tại/đích | applied hoặc no_change; status event nếu đổi |
+| Remove | member.remove | organization, actor, target member, target role/state đã xác thực | applied hoặc no_change; tombstone nếu xóa |
+| Self-activation | member.self.activate | organization, actor/auth.uid, target membership, trạng thái invited, email-confirmed condition | applied hoặc no_change; activation event nếu đổi |
+
+Fingerprint phải bind operation code, organization scope, actor scope, target identity, toàn bộ trường nghiệp vụ đã chuẩn hóa, role/status đích và expected version/revision nếu có. Với Invite Saga, bind operation ID nội bộ đã được xác minh; không đưa email thô, token, invite URL hay Auth metadata vào event payload. Client không được cung cấp fingerprint, affected refs hoặc read permission list làm căn cứ server.
+
+Nếu một intent cùng mutation ID nhưng khác operation, target hoặc payload, phải từ chối key reuse; không diễn giải thành mutation mới. Nếu operation trả no_change, lưu Receipt no_change nhưng không tạo event giả.
+
+### 25.4 Membership Change Feed — event contract cần chốt
+
+Đề xuất một aggregate roster thuộc organization, với event schema chung thay vì mỗi RPC tự tạo JSON riêng. Các operation dưới đây là tên dự kiến, chưa được duyệt cuối:
+
+| Thay đổi | Event code đề xuất | Payload allowlist tối thiểu |
+|---|---|---|
+| Membership được tạo | membership.created | membership_id, role_code, status |
+| Membership được kích hoạt | membership.activated | membership_id, status |
+| Membership đổi trạng thái | membership.status_changed | membership_id, old_status, new_status |
+| Membership đổi role | membership.role_changed | membership_id, old_role_code, new_role_code |
+| Membership bị xóa | membership.removed | tombstone: membership_id, organization scope, event identity/cursor, operation |
+
+Không đưa email, phone, Auth user metadata/ID, invite URL, access/refresh token hoặc thông tin xác thực vào payload Change Feed. Nếu UI roster cần email hiển thị, phải thiết kế một read RPC riêng với users.view, allowlist và disclosure policy; không mở rộng payload feed ngầm.
+
+Mỗi event cần schema field thống nhất: event_id, organization_id, cursor, aggregate_type, aggregate_id, operation, revision/version nếu có, required_permission, payload, created_at. Tên field và kiểu dữ liệu cuối cùng phải khớp draft schema trước khi tạo migration.
+
+- Quyền xem roster là users.view; không suy ra từ users.manage.
+- Role catalog nếu cần đồng bộ phải có quyết định riêng về roles.view; không mặc định roster permission cho phép đọc toàn bộ role/permission catalog.
+- Membership/Role chưa có row_version contract thì phải dùng revision/event sequence riêng hoặc chỉ dựa event cursor; không tự giả định row_version đã tồn tại.
+- Remove phải ghi tombstone trước khi DELETE/cascade trong cùng transaction; tombstone không có FK tới membership đã bị xóa.
+- Audit quản trị append-only vẫn riêng biệt, có actor/action/target/reason/time; Change Feed không thay thế audit.
+- Event bị lọc quyền phải tuân scanned_through_cursor contract của Change Feed; không để client kẹt cursor hoặc nhận payload ngoài capability.
+
+### 25.5 Thu hồi quyền và cache Local — điều kiện cho roster sync
+
+Change Feed permission filtering không tự thu hồi dữ liệu đã tải xuống trước đó. Trước khi bật roster sync hoặc bất kỳ feed nào có dữ liệu theo permission, cần thiết kế authorization revision/epoch hoặc control event để client nhận biết visibility scope thay đổi.
+
+Khi quyền users.view bị thu hồi, client phải ngừng hiển thị và xử lý cache roster theo chính sách purge/retention đã chốt. Khi Membership suspended/removed hoặc Organization inactive, client phải khóa tenant session và không tiếp tục mở cache như thể quyền hiện tại vẫn còn.
+
+Thiết bị offline không thể nhận revoke ngay. Do đó phải chốt chính sách: khi reconnect phải re-auth/kiểm tra authorization revision trước khi mở cache tenant; thời hạn đọc cache offline và cách xử lý thiết bị không quay lại cần được quy định rõ. Điều này không thay đổi nguyên tắc hiện hành: offline chỉ đọc cached snapshots, không business write.
+
+### 25.6 Test matrix tối thiểu trước SQL
+
+- Actor và target Membership khóa ngược thứ tự ở hai request; kết quả không deadlock.
+- Change-role đồng thời suspend/remove target; chỉ một transition hợp lệ commit.
+- Permission revoke/Role deactivate đồng thời member mutation; mutation đã authorize giữ điểm hiệu lực theo lock, request đến sau revoke bị deny.
+- Organization deactivate đồng thời create/change/remove/replay; kết quả tuân trạng thái và lock boundary.
+- Replay Receipt sau revoke write; actor khác, fingerprint khác, organization khác bị deny.
+- Receipt commit giữa lookup đầu và permission-denied branch; recheck chỉ replay, không chạy mutation lần hai.
+- Hai request cùng mutation ID: một execution; request thua nhận cùng kết quả qua replay.
+- Request đầu rollback: request sau có thể claim và thực hiện.
+- no_change không tăng revision/cursor và không phát event giả.
+- Remove ghi tombstone và event trước cascade; client nhận được tombstone qua nhiều page.
+- Roster event thiếu users.view bị lọc nhưng scan cursor vẫn tiến; không lộ payload.
+- Revoke users.view làm Local ẩn/purge cache theo policy; offline device phải reauthorize trước khi mở cache khi reconnect.
+- Kiểm thử Auth confirmation/self-activation không có trigger ghi membership và không tạo deadlock với Organization/Membership locks.
+
+### 25.7 Ranh giới
+
+Mục §25 là contract thiết kế đề xuất để chuẩn hóa; không phải phê duyệt triển khai. Chưa sửa các mục §21/§24 cũ, chưa tạo SQL draft/migration, chưa sửa Edge Function/client/Dexie, chưa chạy SQL/RPC và chưa thay đổi Supabase Test/Production. Trước executable SQL cần cross-review lại §21, §24, Foundation §30 và Change Feed schema theo contract này; các operation/event code phải được chốt rõ ràng.
