@@ -1846,3 +1846,22 @@ BYPASSRLS remains a strong privilege even on a NOLOGIN role; exact grants, role 
 - PostgreSQL 17 Explicit Locking: https://www.postgresql.org/docs/17/explicit-locking.html (deadlocks có thể phát sinh từ row-level locks; phòng ngừa bằng thứ tự khóa nhất quán).
 - Supabase Database Functions: https://supabase.com/docs/guides/database/functions (SECURITY DEFINER, search_path và EXECUTE grants cần được kiểm soát rõ).
 - Không có thay đổi database trong lần rà soát này.
+
+
+## 68. Legacy membership writers và các đường ghi song song – 20/11/2026
+
+### Inventory SECURITY DEFINER liên quan
+- admin_create_org_membership: owner postgres, SECURITY DEFINER, EXECUTE postgres/service_role; khóa auth.users FOR UPDATE rồi tạo organization_members + member_roles. Không ghi Saga/audit/Shared Receipt.
+- admin_remove_org_membership: owner postgres, SECURITY DEFINER, EXECUTE postgres/service_role; khóa membership FOR UPDATE, xóa membership và FK cascade member_roles.
+- admin_update_org_member_role: owner postgres, SECURITY DEFINER, EXECUTE postgres/service_role; đọc membership/role rồi DELETE/INSERT member_roles, chưa có SELECT FOR UPDATE trên membership ở bước đầu.
+- admin_update_org_member_status: owner postgres, SECURITY DEFINER, EXECUTE postgres/service_role; đọc membership rồi UPDATE trạng thái, row lock được lấy ở UPDATE.
+- has_org_permission/has_org_role/is_org_member là read helpers SECURITY DEFINER, không ghi membership.
+
+### Hệ quả
+- Legacy create function đã dùng Auth -> Membership lock order, phù hợp với cảnh báo không lấy membership lock trước rồi mới lấy Auth lock. Nhưng nó là đường tạo membership quản trị bằng service_role, không có recipient digest/Saga/audit/receipt; phải phân biệt rõ với self-acceptance.
+- Remove path khóa membership và cascade member_roles nhưng không chạm Auth. Role update chưa khóa tường minh parent membership; cần concurrency test và xác định role cardinality mong muốn trước khi khẳng định một role/membership.
+- Khi triển khai acceptance mới, phải kiểm kê và quyết định giữ, giới hạn hoặc retire các server-only writer cũ; không để đường cũ vô tình thay thế invitation acceptance mới. ACL hiện tại không cấp các hàm ghi này cho anon/authenticated.
+- Global lock order chưa được xác nhận; cần rà caller/transaction composition ngoài định nghĩa hàm và các đường update Auth/Profile/Membership.
+
+### Trạng thái
+Chỉ đọc function definitions và ACL. Không sửa function, grant, role hoặc dữ liệu.
