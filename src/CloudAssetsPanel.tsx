@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { db, now, type Asset, type AssetCloudLink } from './db'
 import {
-  getCloudAssetCodeConfig, importCloudAssetPreservingIdentity, listCloudAssets, saveCloudAssetCodeConfig,
+  getCloudAssetById, getCloudAssetCodeConfig, importCloudAssetPreservingIdentity, listCloudAssets, saveCloudAssetCodeConfig,
   type AssetCodeConfig
 } from './lib/assetsCloud'
 import {
@@ -129,6 +129,7 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
   const [localImportPreview, setLocalImportPreview] = useState<{ total: number; toInsert: number; alreadyPresent: number; toLink: number; localSnapshot: string } | null>(null)
   const [checkingLocalImport, setCheckingLocalImport] = useState(false)
   const [importingLocalAssets, setImportingLocalAssets] = useState(false)
+  const [restoringCloudAssetId, setRestoringCloudAssetId] = useState<string | null>(null)
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
@@ -230,6 +231,74 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
 
   const active = assets.filter(asset => !asset.archivedAt)
   const archived = assets.filter(asset => Boolean(asset.archivedAt))
+
+  const restoreOneCloudAssetToLocal = async (summary: Asset) => {
+    if (!canImportAssets || permissionsLoading) {
+      setError('Tài khoản chưa được xác nhận quyền nhận thiết bị từ Cloud.')
+      return
+    }
+    if (!isOnline) {
+      setError('Cần có Internet để đọc lại và xác nhận phiên bản thiết bị Cloud.')
+      return
+    }
+    if (!window.confirm('Nhận duy nhất thiết bị ' + summary.code + ' – ' + summary.name + ' từ Cloud về Local trên thiết bị này? Dữ liệu Local hiện có sẽ không bị ghi đè.')) return
+    setRestoringCloudAssetId(summary.id)
+    setError('')
+    setMessage('')
+    try {
+      // Never trust the previously loaded list as the write snapshot.
+      const cloudAsset = await getCloudAssetById(client, organizationId, summary.id)
+      if (cloudAsset.id !== summary.id || cloudAsset.code !== summary.code) {
+        throw new Error('UUID hoặc mã thiết bị Cloud đã thay đổi. Hãy tải lại danh sách và kiểm tra lại.')
+      }
+
+      await db.transaction('rw', [db.assets, db.assetCloudLinks, db.assetMutations, db.syncQueue], async () => {
+        const existing = await db.assets.get(cloudAsset.id)
+        if (existing) {
+          throw new Error('Local đã có UUID thiết bị này. Không ghi đè hoặc tự cập nhật; hãy đối chiếu dữ liệu Local/Cloud riêng.')
+        }
+        const localRows = await db.assets.toArray()
+        const duplicateCode = localRows.find(item => item.code.trim().toUpperCase() === cloudAsset.code.trim().toUpperCase())
+        if (duplicateCode) {
+          throw new Error('Mã quản lý ' + cloudAsset.code + ' đã thuộc thiết bị Local khác (' + duplicateCode.id + '). Không tự ghép.')
+        }
+        const linkId = organizationId + ':' + cloudAsset.id
+        if (await db.assetCloudLinks.get(linkId)) {
+          throw new Error('Đã tồn tại mapping Cloud cho UUID này nhưng Local không có hồ sơ tương ứng. Cần đối chiếu trước khi nhận lại.')
+        }
+        const unresolved = await db.assetMutations.where('[organizationId+assetId]')
+          .equals([organizationId, cloudAsset.id])
+          .filter(item => item.status === 'pending' || item.status === 'processing' || item.status === 'conflict')
+          .first()
+        if (unresolved) throw new Error('Thiết bị có mutation chưa được xử lý (' + unresolved.status + '). Không nhận về Local.')
+        const queued = await db.syncQueue.where('recordId').equals(cloudAsset.id)
+          .filter(item => item.tableName === 'assets')
+          .first()
+        if (queued) throw new Error('Thiết bị có mục trong hàng đợi Local (' + queued.status + '). Không nhận về để tránh xung đột.')
+
+        const timestamp = now()
+        const restoredAsset: Asset = { ...cloudAsset, identityStatus: 'synced', images: [] }
+        const link: AssetCloudLink = {
+          id: linkId,
+          organizationId,
+          assetId: cloudAsset.id,
+          cloudCode: cloudAsset.code,
+          cloudUpdatedAt: cloudAsset.updatedAt,
+          lastSyncedLocalUpdatedAt: cloudAsset.updatedAt,
+          status: 'linked',
+          linkedAt: timestamp,
+          lastVerifiedAt: timestamp
+        }
+        await db.assets.add(restoredAsset)
+        await db.assetCloudLinks.add(link)
+      })
+      setMessage('Đã nhận thiết bị ' + cloudAsset.code + ' về Local trên thiết bị này. UUID, mã quản lý và phiên bản Cloud được giữ nguyên; ảnh chưa được khôi phục.')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setRestoringCloudAssetId(null)
+    }
+  }
 
   const saveConfig = async (event: FormEvent) => {
     event.preventDefault()
@@ -481,7 +550,7 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
       <h3>Đang quản lý ({active.length})</h3>
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Mã / Tên thiết bị</th><th>Nhóm</th><th>Vị trí</th><th>Ngày sử dụng</th><th>Trạng thái / Khóa</th></tr></thead>
+          <thead><tr><th>Mã / Tên thiết bị</th><th>Nhóm</th><th>Vị trí</th><th>Ngày sử dụng</th><th>Trạng thái / Khóa</th><th>Nhận về Local</th></tr></thead>
           <tbody>
             {active.map(asset => <tr key={asset.id}>
               <td><b>{asset.code}</b><small>{asset.name}</small></td>
@@ -489,6 +558,7 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
               <td>{asset.location || '—'}</td>
               <td>{dateText(asset.commissionedAt)}</td>
               <td>{asset.status}{locks[asset.id] && <small className="status red">Đang khóa · {locks[asset.id].holder_label}</small>}</td>
+              <td>{canImportAssets && !permissionsLoading && <button type="button" className="soft-btn" disabled={!isOnline || Boolean(restoringCloudAssetId) || importingLocalAssets} onClick={() => void restoreOneCloudAssetToLocal(asset)}>{restoringCloudAssetId === asset.id ? 'Đang nhận…' : 'Nhận về Local'}</button>}</td>
             </tr>)}
           </tbody>
         </table>
@@ -498,7 +568,7 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
       <h3 style={{ marginTop: 24 }}>Đã lưu kho ({archived.length})</h3>
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Mã / Tên thiết bị</th><th>Nhóm</th><th>Vị trí</th><th>Ngày sử dụng</th><th>Ngày lưu kho / Khóa</th></tr></thead>
+          <thead><tr><th>Mã / Tên thiết bị</th><th>Nhóm</th><th>Vị trí</th><th>Ngày sử dụng</th><th>Ngày lưu kho / Khóa</th><th>Nhận về Local</th></tr></thead>
           <tbody>
             {archived.map(asset => <tr key={asset.id}>
               <td><b>{asset.code}</b><small>{asset.name}</small></td>
@@ -506,6 +576,7 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
               <td>{asset.location || '—'}</td>
               <td>{dateText(asset.commissionedAt)}</td>
               <td>{dateText(asset.archivedAt)}{locks[asset.id] && <small className="status red">Đang khóa · {locks[asset.id].holder_label}</small>}</td>
+              <td>{canImportAssets && !permissionsLoading && <button type="button" className="soft-btn" disabled={!isOnline || Boolean(restoringCloudAssetId) || importingLocalAssets} onClick={() => void restoreOneCloudAssetToLocal(asset)}>{restoringCloudAssetId === asset.id ? 'Đang nhận…' : 'Nhận về Local'}</button>}</td>
             </tr>)}
           </tbody>
         </table>
