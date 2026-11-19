@@ -3833,3 +3833,15 @@ Người dùng đã chốt năm nguyên tắc kiến trúc:
 - Adoption không thay đổi actor gốc hoặc fingerprint.
 
 Đã ghi quyết định tại Member design §35 và Foundation review §38. Các chi tiết vận hành còn phải thiết kế trước DDL: quy trình xác minh tài khoản pre-existing, key retention/rotation và bảo vệ/retention email. Chưa sửa DDL 021; chưa tạo migration/RPC/Edge Function; không chạy SQL; không thay đổi Supabase Test/Production.
+
+
+## 51. Thiết kế cấu trúc dữ liệu DDL 021 sau khi chốt provenance/fingerprint (20/11/2026)
+
+Đã lập schema proposal tại Member design §36 và Foundation review §39:
+- Invite operation: thay boolean Auth provenance bằng 4 trạng thái có evidence/attempt/verification metadata; thay JSONB fingerprint bằng HMAC-SHA-256 digest 32 bytes cùng version metadata; thêm `transition_version` riêng với row version.
+- Tạo append-only attempt history `organization_member_invite_attempts`, giữ observed Auth ID là bằng chứng quan sát chứ không tự động liên kết Auth user.
+- Audit Saga transition có `transition_id`, `transition_version`, unique idempotency và before/after saga status bắt buộc.
+- Giữ một adopter hiện hành; audit append-only lưu mọi lần adoption/handoff; chưa cần bảng adoption history riêng.
+- Còn mở: quy trình preexisting verification, secret/key retention/rotation, email encryption/retention, attempt event model và stable transition ID.
+
+Đây là thiết kế, chưa sửa DDL 021, chưa tạo migration/RPC, không chạy SQL và không thay đổi Supabase Test/Production.
