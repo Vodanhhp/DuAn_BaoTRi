@@ -217,35 +217,39 @@ commit;
 -- (intentionally not implemented as a generic callable RPC here):
 --
 -- 1. Require auth.uid(); verify organization exists and is active, and the
---    caller has active organization_members membership. For a NEW mutation,
---    also verify the operation-specific write permission.
+--    caller has active organization_members membership. Do NOT require the
+--    operation's write permission yet: an existing committed Receipt is a
+--    read-only replay and must remain recoverable after write permission revoke.
 -- 2. Validate and normalize the operation payload using a strict allowlist.
 --    Build request_fingerprint on the server; include operation, org, actor
 --    scope, all resource IDs, expected row/revision version and normalized
 --    payload. Never accept a client fingerprint as authoritative.
--- 3. Attempt to INSERT one pending Receipt with actor_user_id = auth.uid()
+-- 3. Look up the Receipt by (organization_id, mutation_id), locking it when
+--    found. If present, require same actor + exact operation/fingerprint, then
+--    replay read-only. Do not require the old write permission again.
+-- 4. If no Receipt exists, require the operation-specific write permission.
+--    Then attempt to INSERT one pending Receipt with actor_user_id = auth.uid()
 --    and ON CONFLICT (organization_id, mutation_id) DO NOTHING.
--- 4. If INSERT did not claim the key, issue a subsequent SELECT ... FOR UPDATE
+-- 5. If INSERT did not claim the key, issue a subsequent SELECT ... FOR UPDATE
 --    for that key. The unique-key conflict serializes concurrent requests:
 --      a. Require the stored actor to equal auth.uid().
 --      b. Require exact operation + request_fingerprint equality; otherwise
 --         reject idempotency_key_reuse without executing side effects.
---      c. If the stored Receipt is final, replay it read-only. Do NOT require
---         the old write permission again. Require Auth, active organization
+--      c. Replay the final Receipt read-only. Require Auth, active organization
 --         and active membership. Return full result_payload only if the actor
 --         currently has EVERY permission in read_permission_codes via
 --         has_org_permission; otherwise return only acknowledgement plus
 --         affected_record_refs, never the stored snapshots.
 --      d. Different actor, cross-organization, inactive membership or inactive
 --         organization: deny without revealing whether a Receipt exists.
--- 5. If this request claimed the key, execute the business mutation, update
+-- 6. If this request claimed the key, execute the business mutation, update
 --    affected rows, row_version and change events in this same transaction.
 --    Then UPDATE this pending Receipt exactly once to applied/no_change/
 --    conflict, set affected_record_refs, result_payload and completed_at.
--- 6. Commit all business rows, receipt and events together. Any exception
+-- 7. Commit all business rows, receipt and events together. Any exception
 --    rolls all of them back, including the pending claim. The deferred trigger
 --    prevents accidental commit of pending.
--- 7. conflict and no_change are final replayable results; they do not create
+-- 8. conflict and no_change are final replayable results; they do not create
 --    change events. Applied mutations create one event per changed record.
 --
 -- CONCURRENCY NOTE
