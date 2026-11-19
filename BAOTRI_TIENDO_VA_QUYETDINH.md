@@ -3934,3 +3934,15 @@ Nguồn kiểm tra: Supabase Auth `internal/api/invite.go`, `internal/api/signup
 - Correlation token trong user_metadata chỉ là transport, không dùng giá trị metadata đọc lại để phân quyền/provenance. Digest được lưu trước dispatch; Hook xác minh signed payload + digest + project + attempt state + email fingerprint; ghi receipt qua server-only RPC; không log raw token.
 
 Kết luận: ưu tiên After User Created Hook làm receipt point; Before Hook không phải bằng chứng commit. Đây mới là source-level feasibility; chưa xác minh hook availability trên Supabase Cloud/plan, retry/delivery semantics hoặc version thực tế. Cần pin Auth/SDK, test post-commit hook failure, replay, timeout, exact-ID lookup. Chưa duyệt implementation; không sửa DDL/RPC/Edge Function, không chạy SQL/Supabase.
+
+
+## 61. Giới hạn Supabase Cloud Hooks và retry/timeout
+
+Đối chiếu tài liệu Supabase Auth Hooks ngày 20/11/2026:
+- Danh sách hook hosted theo plan hiện công bố Before User Created, Custom Access Token, Send SMS, Send Email, MFA Verification và Password Verification. Không liệt kê After User Created. Source GoTrue có implementation After Hook không chứng minh hosted project có thể cấu hình hook này. Không phụ thuộc After Hook cho production BAOTRI Mini nếu chưa có xác nhận chính thức từ Supabase.
+- Before User Created có tài liệu hỗ trợ Free/Pro nhưng chạy trước Auth insert, không chứng minh user đã commit.
+- HTTP Hook xác minh Standard Webhooks trên raw body với `webhook-id`, `webhook-timestamp`, `webhook-signature`; secret `v1,whsec_...` giữ trong secret store.
+- Tài liệu nêu 429/503 + `retry-after` không rỗng được retry tối đa 3 lần, backoff 2 giây, tổng time budget 5 giây. `Retry-After` không thực hiện đầy đủ RFC. Timeout/retry yêu cầu handler idempotent theo attempt_id + Auth user ID, unique constraint, chống replay và commit receipt trước success.
+- Kết luận tạm thời: After Hook chưa xác nhận hosted availability; Before Hook không phải proof-of-commit. Tiếp tục fail-closed/manual review cho đến khi có post-commit correlation channel được Supabase Cloud hỗ trợ chính thức hoặc provisioning flow khác được duyệt.
+
+Chưa sửa DDL/RPC/Edge Function, không chạy SQL, không thay đổi Supabase.
