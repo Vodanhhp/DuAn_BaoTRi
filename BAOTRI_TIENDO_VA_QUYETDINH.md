@@ -4787,3 +4787,29 @@ RLS chỉ kiểm tra điều kiện quyền; không tự serialize quyền với
 
 ### Trạng thái
 Lock-order map dựa trên migration/function trên main; caller runtime và behavior trên Test vẫn cần xác minh. Inventory movement là chưa đủ điều kiện test vì chưa có INSERT policy/RPC. Chưa chạy SQL ghi dữ liệu, không tạo fixture, không thay đổi Supabase.
+
+## 95. Runtime caller audit – trạng thái Cloud writer thực sự đang được gọi – 20/11/2026
+
+### Cloud writer đang có caller
+1. Linked Asset edit: `App.tsx::saveAsset` gọi `applyAssetMutationWithEditLock`; mở form có `acquireAssetEditLock`; lưu/đóng form gọi `releaseAssetEditLock`. Đây là Cloud mutation runtime chính.
+2. Asset import: `CloudAssetsPanel.tsx` gọi `importCloudAssetPreservingIdentity` trong vòng lặp `rowsToLink`; đây là batch import có chủ đích Local → Cloud, không phải background sync.
+3. Settings: `CloudAssetsPanel.tsx` gọi `saveCloudAssetCodeConfig`; helper ghi `organization_settings` qua PostgREST INSERT/UPDATE và chờ response. RLS `settings.manage` bảo vệ quyền nhưng chưa serialize với create/import đọc config.
+
+### Có helper/RPC nhưng không thấy caller runtime
+- `createCloudAsset()` gọi `create_asset_with_code`, nhưng không tìm thấy call site ngoài định nghĩa helper. Handler `saveAsset` tạo Asset mới vẫn Local-first, tự build code và ghi Dexie + queue.
+- `cloudSync.ts` là legacy JSON sync; không thấy caller hiện hành. Không bật lại.
+
+### Module đang Local-first, chưa phải Cloud writer
+- Inventory `saveItem` và `addMovement`: Dexie transaction + syncQueue; quantity/movement được ghi Local atomically.
+- Maintenance `saveTask`, `saveLog`, save/delete plan: Dexie + syncQueue.
+- Checklist chưa thấy Cloud RPC/table writer runtime trong App call sites.
+- Inventory movement INSERT policy chưa được cấp; không có Cloud stock RPC hiện hành.
+
+### Ưu tiên concurrency thực tế
+- P0: linked Asset mutation ↔ Lease heartbeat/release/acquire; Lease ↔ direct Asset DELETE capability.
+- P1: Cloud Asset import batch ↔ create/import cùng Counter/category và collision UUID/code; import retry/replay.
+- P1: settings PostgREST update ↔ import/create đọc asset_code_config; hiện không shared row lock và create helper không có caller runtime.
+- P2/điều kiện tiên quyết: Inventory/Maintenance/Checklist chỉ test Cloud sau khi có RPC + caller được duyệt. Hiện chỉ cần test Local Dexie transaction riêng nếu có yêu cầu; không nhầm với DB concurrency.
+
+### Giới hạn
+Kết luận dựa trên static search và các call sites đã mở, không phải dynamic runtime trace đầy đủ. Chưa chạy test, chưa ghi DB, không thay đổi code hoặc Supabase.
