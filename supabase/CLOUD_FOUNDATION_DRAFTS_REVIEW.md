@@ -1865,3 +1865,21 @@ BYPASSRLS remains a strong privilege even on a NOLOGIN role; exact grants, role 
 
 ### Trạng thái
 Chỉ đọc function definitions và ACL. Không sửa function, grant, role hoặc dữ liệu.
+
+
+## 69. Server caller và role cardinality – 20/11/2026
+
+### Caller đã xác minh
+- Static search toàn repo tìm thấy một Edge Function gọi bốn membership writer legacy: `supabase/functions/manage-organization-members/index.ts`. Không tìm thấy caller khác trong kết quả search hiện tại; đây là kết quả static search, không phải chứng minh runtime không có caller ngoài repo.
+- Edge Function xác thực Bearer bằng caller client, kiểm tra `has_org_permission(users.manage)`, sau đó mới tạo service_role client và gọi RPC. Vì permission preflight và mutation là hai request riêng, RPC vẫn phải tự xác minh actor, organization, quyền hiện tại và target trong transaction; không được tin actor UUID do caller truyền vào hoặc kết quả preflight cũ.
+- Action list đọc membership, profiles, member_roles và roles bằng nhiều truy vấn riêng, không phải một snapshot transaction. `Map(member_id -> role_id)` chỉ giữ một role cho mỗi member; nếu có nhiều assignment thì một role bị ghi đè theo thứ tự trả về.
+- UI `OrganizationMemberView` chỉ có scalar `roleCode/roleName` và một select role đơn. Reset/remove preflight xử lý danh sách roleCodes, nhưng UI/list API không biểu diễn được multi-role.
+- Invite tạo Auth user trước khi gọi `admin_create_org_membership`; khi RPC trả lỗi, Edge Function gọi `deleteUser` nếu Auth user vừa tạo nhưng không kiểm tra kết quả xóa. Với outcome không chắc chắn, compensation phải recheck cùng operation/membership state trước khi xóa Auth user; không được coi lỗi RPC là bằng chứng membership chưa commit.
+- Reset/remove đọc membership và role assignments trước RPC bằng nhiều request. Các điều kiện chống xóa Admin/kiểm tra target ở Edge Function chỉ là preflight; RPC phải khóa và kiểm tra lại invariant trong transaction.
+- Supabase hiện báo Edge Function `manage-organization-members` ACTIVE, version 5, verify_jwt=true. Metadata này không chứng minh source deployed trùng tuyệt đối với file GitHub; chưa đọc được deployed source.
+
+### Cardinality và dữ liệu Test
+- Schema `member_roles` hiện có PK `(organization_id, member_id, role_id)`, không có UNIQUE `(organization_id, member_id)`; database hiện cho phép nhiều role/membership.
+- Migration 005, UI và luồng đổi role đang theo mô hình một role hiện hành. Tài liệu RPC đã chốt policy phiên bản hiện tại là đúng một role/membership và đề xuất UNIQUE `(organization_id, member_id)` sau preflight; chưa áp dụng constraint.
+- Read-only preflight trên BAOTRI-Mini-Test tại thời điểm rà soát: 4 memberships; 4 có đúng một assignment; 0 thiếu assignment; 0 có nhiều assignment; 0 membership có assignment nhưng không có active role. Đây chỉ là snapshot Test, không thay thế preflight trước migration và không đại diện Production.
+- Không sửa dữ liệu, schema, RPC, Edge Function, grants hoặc cấu hình. 
