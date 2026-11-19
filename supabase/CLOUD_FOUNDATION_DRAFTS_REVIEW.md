@@ -1796,3 +1796,7 @@ Read-only Test inspection: RLS is enabled but not FORCE on organizations, organi
 If acceptance SECURITY DEFINER runs as postgres/BYPASSRLS, it bypasses RLS. The function must explicitly revalidate actor from auth.uid(), current confirmed Auth email, recipient digest/version, pending/unexpired/unrevoked invite, active org, valid role, inviter authority, target binding, no conflicting membership and idempotency actor+invite+mutation+payload. Lock deterministically and commit membership+role+audit+Shared Receipt+Saga atomically; return only minimal outcome. Add negative tests for cross-tenant IDs, wrong recipient, suspended/removed user, expired/revoked invite, invalid role, demoted inviter, existing membership and cross-actor replay. Do not weaken RLS or use FORCE RLS as a shortcut without assessing owner/FK/trigger semantics.
 
 This confirms RPC is only the transport/identity boundary; all business authorization remains explicit in the transaction. No RLS/grant/function/data change.
+
+## 64. Membership trigger side-effect inventory
+
+Read-only Test inspection found only updated_at triggers on organizations, organization_members and profiles; no non-internal triggers on member_roles or roles/role_permissions, and no trigger that creates roles, audit, invitation state or receipts. Acceptance must explicitly write membership, member_roles, audit, Shared Receipt and Saga completion in one transaction. Reinspect trigger inventory before deployment because future migrations may change it. No trigger/table change.
