@@ -106,3 +106,34 @@ Không để frontend gọi update task và insert log bằng hai request độc
 ## 7. Kết luận
 
 Không thể giải quyết đúng bằng cách thêm ba cột vào `maintenance_logs` rồi bật UPDATE: cách đó làm mất mô hình append-only và audit. Cần giữ Log ID ổn định, lưu từng snapshot vào bảng revision append-only, và dùng RPC giao dịch cho sửa phiếu cũng như hoàn thành task + tạo Log.
+
+## 8. Quyết định nghiệp vụ đã được người dùng chốt (19/11/2026)
+
+Trạng thái: **ĐÃ CHỐT**. Nội dung mục này thay thế câu hỏi permission ở mục 5.
+
+### 8.1 Quyền sửa nhật ký đã lưu
+- Chỉ Admin được sửa Log đã Cloud commit.
+- Technician được tạo Log theo `logs.create`, nhưng không được tạo revision/sửa phiếu đã lưu.
+- Không cấp `logs.revise.own` cho Technician.
+- Permission catalog cần có permission riêng `logs.revise`, chỉ gán cho role Admin. Không tái sử dụng `logs.create` để cho phép sửa.
+- Admin sửa bằng cách thêm revision mới, không UPDATE/DELETE revision cũ; bắt buộc lý do sửa không rỗng.
+- Draft chưa gửi Cloud vẫn được người lập chỉnh sửa trong form UI. Draft chưa phải business record và không được ghi IndexedDB business tables trước Cloud confirmation.
+- Không hard-delete Log. Nếu cần hủy/đính chính trạng thái, tạo revision/event riêng có action và lý do.
+
+### 8.2 Data model và RPC
+- Giữ `maintenance_logs` làm root identity ổn định; thêm `created_by_user_id` bất biến để audit nguồn tạo (legacy import có thể null và phải đánh dấu imported).
+- `maintenance_log_revisions` append-only, unique (organization_id, log_id, revision_no), lưu snapshot đầy đủ gồm due_date, requested_by và các trường nghiệp vụ khác hiện bị mapper từ chối.
+- Revision 1 được tạo cùng root trong `create_maintenance_log` hoặc `complete_maintenance_task`.
+- RPC `revise_maintenance_log`: kiểm tra Auth + active membership + `logs.revise`, lock root/latest revision, so `expected_revision_no`, bắt buộc reason, insert revision tiếp theo, ghi shared receipt/change event cùng transaction.
+- RLS/grants không cho client UPDATE/DELETE root/revision hoặc INSERT revision trực tiếp; chỉ RPC được kiểm soát thực hiện.
+- Đọc Log trả root + revision mới nhất; lịch sử revisions vẫn truy vấn được theo thứ tự. Pull/change feed phải cho phép người có `logs.view` đọc đúng phạm vi organization.
+- `complete_maintenance_task` kiểm tra `maintenance.update` + `logs.create`, cập nhật Task và tạo Log root + revision 1 atomic; việc revise sau đó là mutation riêng với `logs.revise`.
+
+### 8.3 Kiểm thử bắt buộc
+- Technician tạo Log: allow; Technician revise Log đã lưu: deny.
+- Admin revise: allow; revision_no tăng đúng một, revision cũ không đổi.
+- Admin không có active membership hoặc sai organization: deny.
+- Thiếu reason, expected revision cũ, mutation ID trùng payload khác: reject/conflict đúng contract.
+- Timeout sau commit rồi replay cùng mutation ID: trả revision đã commit, không tạo revision thứ hai.
+- Task completion + Log creation rollback cùng nhau khi một bước thất bại.
+- Chưa thêm permission/migration hoặc triển khai RPC cho đến khi thiết kế schema/grants và có lệnh triển khai riêng.
