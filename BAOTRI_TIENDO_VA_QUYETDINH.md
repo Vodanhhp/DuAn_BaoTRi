@@ -3852,3 +3852,10 @@ Người dùng đã chốt năm nguyên tắc kiến trúc:
 Đã lập proposal tại Member design §37, Foundation review §40: immutable attempt header + append-only attempt events; claim/commit attempt trước Auth call; lease expiry chỉ mở quyền reconciliation, không tự cho phép gọi Auth lần nữa; outcome_unknown không phải definitive failure; chỉ retry khi có bằng chứng không phát sinh side effect. Mỗi kết quả/reconciliation/mismatch được append event, không ghi đè lịch sử. Manual recovery trước, chưa xây worker.
 
 Còn mở: provider evidence/correlation, definitive failure classification, lease duration và quyền takeover reconciliation. Default fail-closed. Chưa sửa DDL 021, chưa tạo RPC/worker, không chạy SQL và không thay đổi Supabase.
+
+
+## 53. Chốt Attempt History và lease recovery cho Invite Saga (20/11/2026)
+
+Người dùng đồng ý mô hình hai bảng: `organization_member_invite_attempts` là immutable attempt header; `organization_member_invite_attempt_events` là append-only event history. Attempt phải được commit trước Auth call. Lease expiry chỉ cho phép takeover reconciliation, không tự động gọi Auth lại. `outcome_unknown` không phải definitive failure; chỉ retry khi có bằng chứng đáng tin cậy rằng attempt trước không tạo side effect; nếu không đủ bằng chứng thì unresolved/`needs_review`.
+
+Còn mở: provider evidence/correlation, definitive failure classification, lease duration và quyền Admin takeover. Chưa sửa DDL 021, chưa tạo RPC/worker, không chạy SQL và không thay đổi Supabase.
