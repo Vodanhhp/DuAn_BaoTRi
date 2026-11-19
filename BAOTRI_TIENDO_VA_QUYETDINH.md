@@ -4761,3 +4761,29 @@ RLS chỉ kiểm tra điều kiện quyền; không tự serialize quyền với
 
 ### Trạng thái
 Đây là static writer inventory từ migration và code search, chưa phải call graph runtime đầy đủ. Chưa chạy concurrency tests, chưa tạo fixture, không ghi DB, không thay đổi Supabase.
+
+## 94. Bản đồ lock-order mở rộng – Settings/Counter/Inventory/Maintenance/Checklist – 20/11/2026
+
+### Kết quả rà schema và function
+1. Asset create: đọc Settings + MAX code → UPSERT Counter theo organization/category → INSERT Asset.
+2. Asset import: advisory lock theo mutation ID → đọc ledger/Settings → reconcile Counter nếu nhận diện được code → Asset FOR UPDATE/INSERT → ghi import ledger. Advisory lock chỉ serialize cùng mutation ID; Counter mới đồng bộ create/import cùng category.
+3. Inventory: schema yêu cầu quantity và movement phải atomic qua RPC. Migration 006 chỉ cấp SELECT policy cho inventory_movements, INSERT bị withheld. Chưa có writer movement authenticated để chạy concurrency test.
+4. Maintenance: Task/Plan FK Asset RESTRICT. Maintenance Log append-only, FK Asset/Task/Checklist Result RESTRICT. Cặp đúng cần test là Task delete ↔ Log insert; không có FK trực tiếp Plan ↔ Log.
+5. Checklist: Version FK RESTRICT tới Template; Result FK RESTRICT tới Asset, Template và đúng Version. Publish version phải serialize với current_version; result phải gắn version ID cố định hoặc khóa Template để chỉ nhận current version.
+
+### Lock order đề xuất (chưa triển khai)
+- Settings update ↔ Asset create/import: Settings `FOR SHARE` trong create/import → Counter → Asset; update Settings lấy row UPDATE lock. Quy định transaction nào giữ khóa trước sẽ dùng cấu hình tương ứng.
+- Counter: mọi create/import cùng organization/category phải UPSERT cùng counter row trước khi ghi Asset.
+- Inventory RPC tương lai: Item `FOR UPDATE` → validate/update quantity → insert movement.
+- Maintenance log: Task (nếu có) → Asset → Checklist Result (nếu có), theo ID ổn định → INSERT log. Task delete khóa Task trước; FK RESTRICT bảo vệ lịch sử.
+- Checklist publish: Template `FOR UPDATE` → insert Version → update current_version. Submit current-only: Template `FOR SHARE` → validate current_version → insert Result. Nếu cho phép hoàn tất bản cũ, submit theo version ID đã chụp và kiểm tra FK.
+
+### Ma trận test bổ sung
+- Settings update ↔ create_asset_with_code/import_asset_preserving_identity.
+- Create ↔ import cùng organization/category, cả code được nhận diện và không nhận diện.
+- Maintenance Task delete ↔ Log insert; đồng thời thử Task update trạng thái ↔ Log insert nếu business rule yêu cầu.
+- Checklist publish version ↔ submit result; cả trường hợp submit version hiện hành và version cũ đã bắt đầu.
+- Asset delete ↔ child insert cho từng bảng FK RESTRICT.
+
+### Trạng thái
+Lock-order map dựa trên migration/function trên main; caller runtime và behavior trên Test vẫn cần xác minh. Inventory movement là chưa đủ điều kiện test vì chưa có INSERT policy/RPC. Chưa chạy SQL ghi dữ liệu, không tạo fixture, không thay đổi Supabase.
