@@ -2536,3 +2536,17 @@ Supabase KB updated 04 Nov 2026 clarifies that Vault objects are owned by `supab
 A private helper may be created under a Vault-capable owner (postgres is the documented pattern) to read one fixed-name secret, compute HMAC-SHA-256 inside the function, and return only the digest. Revoke EXECUTE from PUBLIC, anon, authenticated and service_role; grant it only to the internal acceptance-function owner. The helper schema must not be exposed. The helper must not accept a client-controlled email or become a callable HMAC oracle; the acceptance function supplies only the current verified email read/locked from auth.users after deriving actor from auth.uid().
 
 This improves secret isolation but does not decide the acceptance function owner. A postgres-owned acceptance function remains a high-privilege/BYPASSRLS boundary requiring explicit business checks. Compare a single privileged function against a split owner design; verify effective ACL, schema USAGE, owner chain, membership/SET ROLE, default ACL, all callable SECURITY DEFINER functions and caller reachability before prototype. No implementation or architecture approval.
+
+
+## 63. Split-owner candidate: Auth/Vault identity helper + membership RPC owner
+
+Read-only ACL inspection on BAOTRI-Mini-Test:
+- `auth.users` is owned by `supabase_auth_admin`; postgres has SELECT with grant option and current UPDATE privilege, but is not the table owner.
+- Inspected business tables `organizations`, `organization_members`, and `member_roles` are owned by postgres. authenticated has SELECT; service_role has broad DML. No custom acceptance owner exists.
+- Vault schema and objects are owned/granted by supabase_admin; postgres has SELECT with grant option; service_role has SELECT without grant option.
+
+Candidate split:
+1. Private postgres-owned SECURITY DEFINER helper, with no caller-controlled actor/email input: derive actor from `auth.uid()` in the verified PostgREST context; lock and validate the actor's current confirmed Auth email; read one fixed-name Vault HMAC key; compute HMAC-SHA-256 internally; return only actor UUID + recipient digest. EXECUTE is restricted to the internal acceptance owner; no API roles/service_role; no exposed schema; no raw key/email return.
+2. A separate NOLOGIN `member_rpc_owner` owns the exposed narrow acceptance wrapper. Candidate attributes: NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOREPLICATION, BYPASSRLS; no role memberships or DB credential. Grant only schema usage, EXECUTE on the helper, and exact SELECT/DML privileges on the organization/membership/role/invitation/receipt/audit tables required. No Auth/Vault grants. Wrapper accepts opaque invitation ID + mutation ID only, consumes actor/digest from helper, enforces all business predicates and performs atomic membership + role + audit + Shared Receipt + Saga writes.
+
+This narrows the business function's object privileges compared with a postgres-owned acceptance function, while BYPASSRLS remains powerful and requires explicit authorization checks. Still unresolved: exact table grant list, FK/trigger requirements, role membership/SET ROLE surface, owner/default ACL, global lock order, and real PostgREST JWT-context preservation through nested SECURITY DEFINER calls. No test function or API test has been created/run. This is a candidate only, not approved DDL or final architecture.
