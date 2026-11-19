@@ -4663,3 +4663,26 @@ Authenticated hiện có DELETE trên 5 bảng: `assets`, `asset_images`, `inven
 - Asset DELETE có deadlock candidate Lease ↔ Asset đã ghi ở §88. Maintenance Plan/Task direct UPDATE/DELETE cần review FK/history và transaction semantics riêng.
 - Tiếp theo: lập ma trận theo từng vertical (Asset, Inventory, Maintenance, Checklist, Logs/Movements), ghi rõ DML grant, RLS, RPC, Receipt, FK, Local caller và Cloud caller; chỉ sau đó mới chốt phạm vi cutover.
 - Chỉ đọc/nghiên cứu. Không SQL write, DDL, RPC, grant, role, Auth/data, secrets, Edge Function deployment hoặc Supabase config change.
+
+
+## 90. Asset RPC lock path và TOCTOU khi thu hồi quyền – 20/11/2026
+
+### Đã xác minh trên BAOTRI-Mini-Test
+- `apply_asset_mutation_with_lock`: permission precheck → fast Asset Receipt lookup → Lease FOR UPDATE → Receipt recheck → Asset FOR UPDATE → Asset UPDATE → Asset Receipt INSERT.
+- `update_asset_with_lock` và `set_asset_archived_with_lock`: permission precheck → Lease FOR UPDATE → Asset UPDATE.
+- `acquire_asset_edit_lock`: permission precheck → Asset read không khóa → Lease INSERT/UPSERT. Heartbeat: permission precheck → Lease UPDATE.
+- `create_asset_with_code`: permission precheck → settings/Asset aggregate reads → Counter UPSERT → Asset INSERT.
+- `import_asset_preserving_identity`: permission precheck → advisory mutation lock → import ledger lookup → settings → Counter UPSERT (nếu cần) → Asset FOR UPDATE/INSERT → import ledger INSERT.
+
+### Kết luận
+- `has_org_permission` là read helper, không khóa Membership/Role/Role Permission. Admin status/role/remove và Asset writes chưa có shared membership-row serialization protocol.
+- Vì vậy tồn tại TOCTOU candidate: Asset RPC có thể kiểm tra quyền trước, rồi tiếp tục domain write trong khi Admin đang thu hồi quyền. Cần concurrency test để xác định winner semantics và xác nhận protocol sửa.
+- Domain lock order hiện thấy: Lease → Asset; Counter → Asset; import advisory key → Counter → Asset → import ledger. Direct Asset DELETE vẫn có hướng Asset → cascade Lease, đảo Lease → Asset.
+- Asset Receipt replay hiện yêu cầu write permission trước lookup; khác Shared Receipt draft đề xuất replay sau Auth + active organization + active membership, với disclosure theo read permissions hiện tại. Không tự chuyển đổi hoặc dual-write.
+
+### Candidate protocol cần review
+- Business RPC khóa Membership actor trước khi kiểm tra active + permission và trước domain locks; Admin role/status/remove khóa cùng membership row trước khi thay đổi. Xem thêm organization status lock/version để xử lý suspension.
+- Sau membership authorization lock, áp dụng domain order cố định và kiểm tra FK cascade/restrict; không tuyên bố global deadlock-free cho tới khi rà đủ writers và chạy concurrency tests.
+
+### Trạng thái
+Chỉ đọc catalog/function definitions và GitHub source. Không chạy concurrency test, SQL write, DDL, RPC, grants, role, Auth/data, secrets, Edge Function deployment hoặc Supabase config change.
