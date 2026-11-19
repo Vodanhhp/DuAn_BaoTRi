@@ -3650,3 +3650,17 @@ Rà soát tiếp các child component/modal và xác định transaction boundar
 
 ### Bước tiếp theo
 Rà nốt các child/modal và permission gating; sau đó chốt transaction contract, mutation receipt/idempotency và kế hoạch xử lý queue/restore cho từng vertical. Không triển khai code trước khi thiết kế được thống nhất.
+
+
+## 36. Bản đồ transaction Cloud-first (bản đề xuất, chưa triển khai)
+
+- Đã lập transaction boundary theo từng vertical: Asset create/update/status/archive/restore; Inventory metadata và movement atomic; Task và complete Task + Log; Maintenance Plan; Checklist Template + Version; Checklist Result; Maintenance Log + revision; organization settings; quản lý thành viên.
+- Mỗi business mutation cần Cloud authorization + transaction + idempotency receipt trong cùng commit; Local snapshot chỉ cập nhật sau Cloud confirmation. Timeout phải replay/tra receipt bằng cùng mutation ID + payload; Local commit lỗi sau Cloud commit phải phục hồi từ canonical snapshot/receipt.
+- Asset Edit Lease vẫn là khóa độc quyền riêng; receipt hiện tại chỉ chuyên cho Asset update có lease, chưa đủ làm receipt chung cho toàn bộ vertical.
+- Đã đối chiếu sơ bộ migration business schema 002, permission 005/006, Asset lease/receipt và tài liệu Inventory/Log revision.
+- Các điểm còn phải chốt: receipt tổng quát hay riêng từng vertical; row version cho các bảng ngoài Asset; quy tắc Điều chỉnh/tồn đầu kỳ kho; Log revisions; batch Maintenance Plan; phục hồi Local sau Cloud commit; xử lý queue Local-first cũ.
+- Đã ghi bản thiết kế đề xuất tại mục 12 của `supabase/CLOUD_FIRST_WRITE_AUDIT.md`.
+- Đây chưa phải quyết định cuối cùng; chưa tạo migration/RPC, chưa sửa code, chưa chạy SQL hoặc runtime test.
+
+### Bước tiếp theo
+Review transaction boundary và chốt các quyết định còn mở trước khi viết hợp đồng RPC chi tiết. Không triển khai code/SQL khi các quy tắc nghiệp vụ còn chưa rõ.
