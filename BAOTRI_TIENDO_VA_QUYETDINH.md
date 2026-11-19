@@ -4405,3 +4405,27 @@ Các commit gần nhất:
 
 ### Trạng thái
 Chỉ đọc Supabase skill/docs và GitHub files. Không SQL writes/DDL/RPC/grants, không secret values, không thay đổi Auth user/email, không deployment/configuration. Tiếp tục nghiên cứu; phương án secret isolation và function owner chưa chốt.
+
+
+## 79. Vault ACL owner/grantor xác minh và HMAC helper candidate – 20/11/2026
+
+### Tài liệu Supabase mới được đối chiếu
+- Supabase Knowledge Base, cập nhật 04/11/2026: “Revoking privileges on Storage, pg_cron, Vault, and extension objects has no effect”. Tài liệu nêu Vault objects do `supabase_admin` sở hữu; `postgres` không thể thu hồi các grant do `supabase_admin` cấp; `service_role` có các grant Vault riêng. Không tạo function trong schema expose trả decrypted secret.
+- Cùng tài liệu đưa ra pattern “Give a dedicated role access to one secret”: function `SECURITY DEFINER` ở schema không expose, fixed `search_path = ''`, revoke EXECUTE khỏi PUBLIC và chỉ grant EXECUTE cho role được chỉ định. Role gọi function không cần USAGE/SELECT trực tiếp trên Vault. Function mẫu do postgres tạo nên chạy với quyền postgres.
+- Supabase Database Functions docs nhắc mặc định function có EXECUTE cho mọi role; phải revoke PUBLIC và API roles cụ thể; SECURITY DEFINER luôn cần search_path cố định/rỗng và schema-qualified names.
+- Nguồn: https://supabase.com/kb/troubleshooting/revoking-privileges-on-storage-pg_cron-vault-and-extension-objects-has-no-effect-916576 ; https://supabase.com/docs/guides/database/functions ; https://supabase.com/docs/guides/database/vault
+
+### Xác minh chỉ đọc trên BAOTRI-Mini-Test
+- Schema `vault` owner = `supabase_admin`.
+- Hai object `vault.secrets` và `vault.decrypted_secrets` đều owner = `supabase_admin`.
+- Grantor của các quyền Vault được kiểm tra là `supabase_admin`; `postgres` có SELECT với grant option; `service_role` có SELECT không grant option.
+- Kết quả khớp giải thích trong KB. Không truy vấn secret/decrypted_secret values; không sửa grant, role, function, schema hoặc dữ liệu.
+
+### HMAC helper candidate (chưa chốt/triển khai)
+- Nghiên cứu helper private kiểu `private.compute_invite_recipient_digest(email)` được tạo dưới owner có quyền đọc Vault (candidate postgres theo pattern Supabase), đọc đúng một Vault secret theo tên cố định, tính HMAC-SHA-256 bên trong DB và chỉ trả digest; không trả raw key.
+- Schema private không expose. Revoke EXECUTE khỏi PUBLIC, anon, authenticated, service_role; chỉ grant EXECUTE cho owner/role của acceptance function nội bộ. Acceptance function chỉ gọi helper sau khi actor lấy từ `auth.uid()`, Auth user row được lock và email hiện tại đã xác minh. Client không thể gọi helper, không cung cấp email tùy ý, không có HMAC oracle công khai.
+- Cần xác minh quyền EXECUTE/schema USAGE thực tế, owner chain, role membership, mọi SECURITY DEFINER/function có thể gọi, default ACL và khả năng caller reachability. Không dùng service_role làm caller hoặc cấp Vault access mới cho service_role.
+- Pattern helper Vault chỉ giải quyết secret-read boundary; KHÔNG tự giải quyết function owner cho acceptance transaction. Owner của wrapper/acceptance vẫn là trust boundary lớn, đặc biệt nếu postgres/BYPASSRLS. Cần so sánh: một function owner đặc quyền duy nhất với business checks tường minh, so với tách vault helper owner và acceptance function owner hạn chế hơn. Chưa chọn.
+
+### Trạng thái
+Chỉ đọc Supabase docs/KB và catalog ACL/owner; không đọc secret value. Không SQL writes, DDL, RPC, grants, role, secret, Auth user hoặc Supabase config changes. Tiếp tục đánh giá function owner và test plan trước prototype.
