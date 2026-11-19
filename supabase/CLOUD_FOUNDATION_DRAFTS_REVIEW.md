@@ -1561,3 +1561,8 @@ Người dùng đã đồng ý mô hình hai bảng `organization_member_invite_
 ## 42. Phân loại lỗi Auth và điều kiện retry (20/11/2026)
 
 Đã lập policy proposal tại Member design §39: ba nhóm `definitive_no_side_effect`, `outcome_unknown`, `needs_review/conflict`. Không phân loại bằng HTTP status chung chung; 4xx/429/5xx đều không tự chứng minh không có side effect. Timeout, mất kết nối, crash hoặc response không đầy đủ sau dispatch mặc định unknown. Duplicate/existing email không phải `created_by_operation`, cần claim/ownership verification độc lập. Chỉ retry khi có evidence allowlist chứng minh request chưa dispatch hoặc endpoint contract cụ thể bảo đảm không side effect; allowlist provider rejection để trống cho tới khi kiểm chứng endpoint/version thực tế. Không sửa DDL, không chạy SQL/Supabase.
+
+
+## 43. Quyết định đã chốt: fail-closed retry policy cho Auth (20/11/2026)
+
+Người dùng đã chốt: ban đầu để trống allowlist provider error codes có thể retry. Chỉ local preflight có bằng chứng chắc chắn chưa dispatch mới là `definitive_no_side_effect`; mọi lỗi sau dispatch hoặc không rõ dispatch state mặc định `outcome_unknown`, phải reconciliation, không gọi Auth lại. Chỉ mở allowlist khi review đúng endpoint/provider/version và có test evidence no-side-effect. Không dùng HTTP status, duplicate email, Retry-After, timeout hay lease expiry làm bằng chứng no-side-effect. Chưa sửa DDL, không chạy SQL/Supabase.
