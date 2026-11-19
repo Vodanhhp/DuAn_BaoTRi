@@ -4686,3 +4686,28 @@ Authenticated hiện có DELETE trên 5 bảng: `assets`, `asset_images`, `inven
 
 ### Trạng thái
 Chỉ đọc catalog/function definitions và GitHub source. Không chạy concurrency test, SQL write, DDL, RPC, grants, role, Auth/data, secrets, Edge Function deployment hoặc Supabase config change.
+
+## 91. Organization lifecycle, FK hard-delete và Auth deletion lock review – 20/11/2026
+
+### Organization
+- Catalog Test: organizations chỉ có trigger BEFORE UPDATE cập nhật updated_at; không tìm thấy RPC/function nghiệp vụ đổi trạng thái hoặc xóa Organization.
+- authenticated không có INSERT/UPDATE/DELETE trên organizations; service_role có DELETE. GitHub search chưa tìm thấy caller runtime thay đổi/xóa Organization; App chỉ đọc Organization active để thiết lập context.
+- Organization được tham chiếu bằng FK RESTRICT từ Membership, Role, Settings, Asset, Counter, Import ledger, Checklist, Inventory và Maintenance. Hard-delete bị chặn khi còn dữ liệu phụ thuộc; không thiết kế cascade tenant deletion.
+- Asset/Member authorization hiện đọc Organization status mà không khóa row. Nếu thêm suspend/disable Organization, cần Organization row/version serialization dùng chung với mọi business mutation.
+
+### Auth user deletion
+- profiles cascade từ auth.users, nhưng Organization.created_by, Membership.user_id/invited_by_user_id, member_roles.assigned_by_user_id, Asset import actor và Asset Receipt actor là FK RESTRICT.
+- asset_edit_locks.holder_user_id cascade từ auth.users. Remove membership không xóa Auth user/profile.
+- Chỉ tìm thấy một caller deleteUser trong nhánh invite compensation khi vừa tạo Auth user nhưng RPC tạo membership trả lỗi; code không kiểm tra kết quả delete. Cần đọc operation/membership state và chỉ compensation khi chứng minh an toàn.
+
+### Deadlock candidate
+- Auth deletion có thể giữ Auth user row rồi cascade Lease; Asset mutation giữ Lease → Asset rồi insert Asset Receipt tham chiếu Auth user. Đây là candidate lock inversion Auth ↔ Lease/Receipt; chưa tái hiện.
+- Không kết luận Organization/Auth hard-delete an toàn chỉ dựa trên FK hoặc không thấy caller.
+
+### Bước tiếp theo
+- Hoàn tất ma trận lock: Organization state transition ↔ Asset/Member mutation; Auth deletion ↔ Lease/Asset Receipt; Membership revoke ↔ Asset mutation; Asset DELETE ↔ Lease update.
+- Xác định chính sách retention/erasure và server-only writer trước khi thiết kế RPC.
+- Chỉ thiết kế test matrix; chưa chạy concurrency test hoặc mutation trên Test.
+
+### Trạng thái
+Checkpoint §91. Chỉ đọc catalog, ACL, FK, trigger và GitHub source. Không SQL write, DDL, RPC, grants, role, Auth/data, secrets, Edge Function deployment hoặc Supabase config change.
