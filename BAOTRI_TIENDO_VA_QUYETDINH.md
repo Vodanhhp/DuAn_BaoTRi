@@ -4555,3 +4555,25 @@ Tiếp tục audit toàn bộ caller và các writer khác liên quan Auth/Profi
 - Đã ghi nhận caller, role cardinality, Shared Receipt contract và lock-order prerequisite.
 - Bước kế tiếp: audit writer/revoker Organization, Role, Role Permission và Auth/Profile còn lại để xác định mọi lock path; sau đó mới chốt lock matrix và rà payload/result Receipt cụ thể cho từng operation.
 - Chỉ đọc/nghiên cứu, cập nhật tài liệu. Không SQL write, DDL, RPC, grant, role, Auth/data, secrets, Edge Function deployment hoặc cấu hình Supabase thay đổi.
+
+
+## 85. Rà writer/revoker Organization, Role và Role Permission – 20/11/2026
+
+### Kết quả catalog Test
+- `organizations`, `organization_members`, `member_roles`, `roles`, `role_permissions` đều bật RLS. Authenticated chỉ có SELECT, không có INSERT/UPDATE/DELETE; policies cũng chỉ có SELECT theo `is_org_member(...)`.
+- Service_role có INSERT/UPDATE/DELETE trên cả năm bảng; vì vậy service_role là đường privileged DML và không được dựa vào RLS để giới hạn quyền.
+- Trigger trên Organization và Membership chỉ cập nhật `updated_at`; không có trigger trên `member_roles`, `roles`, `role_permissions`.
+- Catalog không có SECURITY DEFINER RPC tạo/sửa Organization, Role hoặc Role Permission. Các RPC ghi hiện tại chỉ quản lý membership/assignment/status; permission helpers là read-only. Built-in roles/permissions được seed trong migration 005.
+- Supabase hiện liệt kê một Edge Function ACTIVE là `manage-organization-members`; chưa thấy Edge Function riêng quản lý Organization/Role/Permission.
+- Static search GitHub không tìm thấy các caller trực tiếp insert/update Organization/Role hoặc insert/delete Role Permission. Kết luận này giới hạn trong repo/code search hiện tại.
+
+### Hệ quả
+- Hiện chưa có runtime writer/revoker nghiệp vụ tương ứng để concurrency-test trên Organization, Role và Role Permission; chủ yếu là seed/migration hoặc privileged SQL.
+- Mọi Edge Function mới dùng service_role phải được xem là privileged writer; RLS không bảo vệ các thao tác đó.
+- Trước khi triển khai `roles.manage` hoặc quản lý trạng thái Organization, cần RPC authorization trong transaction, khóa theo Member §25.1/Shared Receipt §6.3 và test grant/revoke đồng thời với business mutation. Không cấp DML trực tiếp cho authenticated.
+- `has_org_permission()` chỉ đọc quyền hiện tại; không thay thế lock các row Membership/assignment/Role/Role Permission trong transaction cần bảo đảm quyền không bị thu hồi giữa chừng.
+
+### Trạng thái và bước tiếp
+- Hoàn tất inventory writer/revoker hiện có ở mức catalog Test và static repo search.
+- Bước kế tiếp: rà soát cụ thể các RPC Asset đang dùng `has_org_permission` và thứ tự lock Asset Lease/business row để xác định có tương tác với Member lock order hay không; tiếp tục read-only.
+- Không SQL write, DDL, RPC, grant, role, Auth/data, secrets, Edge Function deployment hoặc Supabase config change.
