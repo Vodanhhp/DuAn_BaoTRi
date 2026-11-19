@@ -1293,3 +1293,22 @@ Kế hoạch: preflight mọi membership/assignment; dừng nếu duplicate/conf
 Mapping mirror tạm thời: Admin → legacy admin; Technician/Viewer → legacy user. Legacy field không còn quyền authorize sau cutover.
 
 Chưa sửa code/migration/RLS/Edge Function/tests/bootstrap; chưa tạo SQL draft hay chạy SQL/RPC.
+
+
+## §29 — Preflight dữ liệu role: phạm vi, ngoại lệ và cổng cutover
+
+Đã đối chiếu schema migration 005, member-management migration 013, removal migration 014 và Edge Function.
+
+- member_roles hiện có PK (organization_id, member_id, role_id), nên cho phép nhiều role trên một membership; FK kép ràng buộc organization/member và organization/role, ON DELETE CASCADE khi membership bị xóa.
+- Migration 005 backfill assignment theo legacy role tại thời điểm migration: legacy Admin → role Admin; mọi giá trị còn lại → Technician. Đây chỉ là logic backfill lịch sử, không chứng minh assignment hiện tại luôn phản ánh đúng ý định của người quản trị.
+- Migration 013 tạo membership mới với legacy role user và thêm đúng một assignment Technician/Viewer. Đổi role hiện xóa assignment cũ rồi insert assignment mới trong transaction, nhưng không cập nhật legacy mirror. Đây có thể vẫn đúng với mapping Technician/Viewer → user; cần cập nhật mirror nếu có role Admin/Custom Role thay đổi.
+- Migration 014 xóa membership và để FK cascade xóa assignments. RPC hiện kiểm tra legacy và assignment theo cách kết hợp, nên dữ liệu lệch có thể ảnh hưởng quyết định chặn thao tác.
+- Edge Function list dựng Map theo member_id; nếu có nhiều assignment, kết quả cuối có thể phụ thuộc thứ tự dữ liệu trả về. Đây là lỗi không xác định, không được giữ khi mô hình một role.
+
+**Giới hạn quan trọng:** chỉ đọc repository, không có truy vấn trực tiếp dữ liệu Supabase. Không có số liệu thực tế về duplicate/missing/mismatch và không được tuyên bố dữ liệu DB sạch.
+
+Preflight bắt buộc thống kê assignment count 0/1/>1; role inactive; legacy Admin thiếu/không khớp assignment; legacy user gán Admin; role code ngoài danh sách được duyệt; trạng thái membership/organization; và scope consistency. FK hiện có hỗ trợ bảo vệ scope nhưng vẫn cần kiểm tra hậu điều kiện.
+
+Cổng cutover: không còn duplicate; mỗi membership cần truy cập có đúng một assignment active hợp lệ; mọi legacy mismatch được phê duyệt và xử lý có audit; snapshot/backup và báo cáo trước-sau sẵn sàng. Không tự chọn role, không mặc định missing assignment thành Technician. Chỉ thêm unique (organization_id, member_id) sau khi preflight đạt.
+
+Đây là kế hoạch preflight, không phải migration. Chưa chạy truy vấn, chưa sửa code/SQL/DB, chưa thay đổi Supabase.
