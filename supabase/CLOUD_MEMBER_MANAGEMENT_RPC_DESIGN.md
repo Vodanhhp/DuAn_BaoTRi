@@ -2116,3 +2116,38 @@ Supabase docs/API review (20/11/2026):
 Invitation notification/delivery for existing accounts; whether pending invites are surfaced in-app only or via a separate email; expiry and resend policy; decline/revoke states; handling changed email and multiple pending invitations; whether original inviter must retain users.manage or an Admin can reapprove; rate limits and audit retention; exact RPC response shape and enumeration controls. Verify current Auth API behavior against pinned versions before implementing any delivery mechanism.
 
 **Status:** recommended workflow for design review only. It is not yet an approved schema/state-machine change. Do not add the candidate state to DDL 021, do not implement RPC/Edge Function, do not run SQL, and do not modify Supabase. Current native inviteUserByEmail + fail-closed/manual review remains unchanged.
+
+
+## 50. Existing-account invitation notification channels (proposal, 20/11/2026)
+
+### Recommendation
+
+Use **in-app pending invitations as the authoritative channel**. Treat email as an optional, secondary notification only. Neither channel is proof of identity, account ownership, email verification, or acceptance. The only acceptance authority is the signed-in invitee's authenticated session and the server-side acceptance transaction defined in §49.
+
+### A. In-app inbox — primary
+
+- After sign-in, the client calls a narrow authenticated RPC to list pending invitations for the current Auth UID, matched server-side against the authoritative currently verified email. Derive identity from auth.uid(); never accept client-supplied email or Auth UID.
+- Return only minimum display fields: opaque invitation/operation identifier, organization display name, requested role label if approved for disclosure, inviter display label if safe, created/expiry timestamps, and current pending state. Never return target email, Auth UUID, internal fingerprints, receipt IDs, tokens, secret material, or private Saga/attempt details.
+- Listing is read-only. It does not reserve, accept, activate or grant tenant access. Accept invokes the separate transactional RPC and rechecks every invariant from §49.
+- Refresh on app launch, login, and inbox navigation. A Realtime event may be used only as a wake-up hint; client then fetches the authorized inbox via RPC. Do not broadcast invitation row contents or treat a Realtime payload as authorization.
+- If Realtime is unavailable, polling/on-demand refresh remains sufficient. Correctness must not depend on websocket delivery.
+
+### B. Email notification — optional secondary
+
+- Send a generic notification that an invitation is waiting, with a link to the application's normal sign-in page/inbox. Do not put an acceptance bearer token, Auth confirmation token, password-reset link, raw Auth UUID, or secret in the notification.
+- Opening the email link only opens the application. The recipient must authenticate normally, load the in-app inbox, and explicitly accept. A forwarded email or link must not confer access.
+- Do not call Auth invite/recovery APIs to notify an existing account. This is a business notification, not an Auth activation or verification message.
+- Use a separately configured transactional email provider through a trusted server-side sender (for example, a controlled SMTP provider or a reviewed provider API integration). Supabase custom SMTP is relevant to Auth mail delivery; Send Email Auth Hook replaces Auth email sending and should not be repurposed as the generic BAOTRI invitation-notification bus. Keep Auth security mail and business notification streams logically separate.
+- Never expose provider credentials in the client. Disable open/click tracking where possible; do not place sensitive invitation data in URLs or provider metadata. Configure sender-domain SPF, DKIM and DMARC and monitor bounce/complaint rates.
+- Avoid account-enumeration responses: the Admin UI should report only that the invitation intent was recorded, not whether a target address has an Auth account. Email send success/failure must not reveal account existence to an unauthenticated requester.
+
+### Delivery consistency and PII
+
+- If email is enabled, use a transactional outbox: commit invitation intent and a minimal notification job atomically; a trusted worker sends after commit. The worker must be idempotent by notification_id, record attempt/result metadata without raw provider response, and use bounded retry/backoff. Delivery failure never changes membership, Auth provenance, or invitation acceptance state.
+- The outbox needs a securely recoverable recipient address. Do not store raw email in a broadly readable queue or logs. Before implementation, decide whether to keep encrypted recipient PII in a narrowly privileged private record with explicit key/retention policy, or to use a separately reviewed delivery handoff that avoids persistent plaintext. The existing email fingerprint alone cannot be used as a delivery address.
+- Do not send before the invitation transaction commits. Do not claim delivery means inbox receipt; provider acceptance is not recipient receipt. Do not auto-resend indefinitely. Rate-limit per organization and recipient; audit who requested/resend and why.
+- Current project policy is manual recovery initially and no background worker unless separately approved. Therefore email delivery remains disabled/not implemented until outbox, worker ownership, provider, secrets, retention, retries and operational monitoring are designed and approved.
+
+### Decision status
+
+Recommended order: (1) build the authenticated in-app inbox and explicit accept flow; (2) add optional email notification only after a secure outbox and sender are approved; (3) Realtime is an optimization, never a dependency. This is a design recommendation, not implementation approval. No DDL 021, RPC, Edge Function, worker, SQL or Supabase changes are authorized by this section.
