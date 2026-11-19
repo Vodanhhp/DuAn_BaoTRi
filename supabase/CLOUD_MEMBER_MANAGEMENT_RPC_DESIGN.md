@@ -2412,3 +2412,28 @@ Read-only `pg_roles` inspection confirms:
 Supabase's Postgres Roles guide recommends creating a separate database user for each external service rather than sharing the postgres password.
 
 For the future dedicated login, prefer no role memberships at all (not merely NOINHERIT). NOINHERIT prevents automatic privilege inheritance but a granted membership may still permit SET ROLE depending on membership options/version. Verify no membership paths, no SET ROLE path, and effective privileges. This remains an unapplied proposal.
+
+## 57. PostgreSQL 17 crypto/Vault capability check and safer caller-identity alternative (20/11/2026)
+
+### Read-only Test project findings
+- PostgreSQL 17.12 has `pgcrypto` 1.3 installed in schema `extensions`.
+- `pgjwt` is not installed. Current Supabase documentation explicitly marks pgjwt deprecated on PostgreSQL 17; do not introduce it for new JWT verification.
+- The `vault` schema exists with `secrets` and `decrypted_secrets` objects, but `vault` did not appear as an installed extension in `pg_extension` during this inspection. Treat actual managed Vault lifecycle/availability as unresolved.
+- Catalog grants show `service_role` has SELECT on `vault.secrets` and `vault.decrypted_secrets`, and schema USAGE. Do not use service_role as a generic secret-reading identity; do not expose the vault schema through Data API. The actual exposed-schema configuration was not inspected.
+- No secret values were queried. No writes or privilege changes occurred.
+
+### Cryptographic implications
+- Installed `pgcrypto` provides a plausible HMAC primitive for the recipient email lookup digest inside a database function, provided the HMAC key can be retrieved through a separately approved secret boundary and is never exposed to the caller.
+- pgcrypto HMAC is not, by itself, a complete JWT/JWS verifier. Do not mistake HMAC digest support for verification of Supabase's asymmetric ES256/RS256 access tokens.
+- Supabase JWT docs describe asymmetric signing/JWKS verification; JavaScript `getClaims()` verifies JWT against JWKS when asymmetric signing is configured. This is appropriate in Edge/server code, but does not make JWT context available to a separate direct Postgres connection.
+- Vault is documented as a secret store, but its feature status, current installation model, key access and service_role grants require a separate security review before using it for the invitation HMAC key. Never expose `vault.decrypted_secrets` to browser roles.
+
+### Alternative architecture worth evaluating before accepting direct DB login
+A narrow authenticated PostgREST RPC wrapper may avoid a direct Edge DB credential and its actor-UID spoofing boundary:
+1. Client calls one explicitly designed invitation RPC using its normal authenticated Supabase session. PostgREST verifies JWT and switches to the authenticated database role.
+2. The exposed wrapper derives actor via `auth.uid()` (never an argument), validates current Auth user/email confirmation from `auth.users`, and performs or delegates to a private function.
+3. A private SECURITY DEFINER implementation locks the Auth row and invitation and performs the atomic membership/role/audit/receipt/Saga transaction. The public wrapper is the only intentionally callable endpoint; revoke EXECUTE from PUBLIC and anon, grant authenticated only, with strict validation and minimal output.
+4. Recipient HMAC may be calculated inside DB using pgcrypto only if a secret can be read securely by the function owner without granting browser/service_role access to decrypted secrets. Otherwise this alternative is not yet complete.
+5. The RPC being callable by authenticated users is not itself a vulnerability if it derives actor from verified PostgREST JWT and enforces every invariant server-side; direct calls must be safe by design.
+
+This alternative may be simpler and safer than a dedicated Edge DB login, but requires exact verification of PostgREST JWT context inside SECURITY DEFINER, exposed-schema configuration, wrapper/inner function ACLs, Vault secret isolation, and concurrent email-change tests. No architecture choice is finalized.
