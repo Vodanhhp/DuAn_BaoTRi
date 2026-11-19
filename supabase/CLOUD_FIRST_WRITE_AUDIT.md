@@ -388,3 +388,12 @@ Người dùng xác nhận:
 - Snapshot chỉ trả theo read permission hiện tại; nếu thiếu quyền đọc, trả acknowledgement tối thiểu, không lộ dữ liệu record.
 - Chính sách này áp dụng cho thiết kế shared Receipt. Asset-specific Receipt/Lease và RPC hiện tại chưa bị thay đổi; cần migration riêng, không dual-write.
 - Chưa sửa code/SQL/RPC, chưa thay đổi permission, dữ liệu Cloud/Local hoặc chạy test.
+
+
+## 21. Shared Receipt SQL draft 020 (19/11/2026)
+
+- Đã tạo `supabase/drafts/020_organization_mutations_receipt_DRAFT.sql` để review DDL bảng `organization_mutations` và cơ chế bảo vệ trạng thái Receipt.
+- Bảng dùng một Receipt cho mỗi logical mutation, có thể mô tả nhiều affected records; lưu actor, operation, canonical fingerprint JSONB, read permission codes, affected refs, result payload và trạng thái `pending/applied/no_change/conflict`.
+- Claim algorithm ưu tiên tra Receipt trước khi yêu cầu write permission: Receipt cũ cùng actor/fingerprint được replay read-only sau kiểm tra Auth + active organization + active membership; snapshot phụ thuộc toàn bộ read permission hiện tại. Chỉ mutation mới mới cần write permission và claim unique key.
+- `pending` chỉ được tồn tại trong cùng transaction; deferred constraint trigger chặn commit chưa finalize. Trigger bảo vệ identity/fingerprint và chỉ cho phép finalize một lần.
+- Không giả định pgcrypto, không dual-write với Asset Receipt, không sửa Asset RPC/Lease. DDL chưa được áp dụng; chưa tạo business RPC, chưa chạy SQL, chưa đổi dữ liệu/quyền hoặc code.
