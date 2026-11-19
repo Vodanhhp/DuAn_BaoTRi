@@ -254,7 +254,7 @@ create table public.organization_member_audit_events (
     check (not (after_state ? 'saga_status') or coalesce(after_state->>'saga_status' in (
       'requested', 'auth_calling', 'auth_outcome_unknown', 'auth_user_resolved',
       'finalize_pending', 'completed', 'needs_review', 'failed_terminal', 'cancelled'
-    ))
+    ), false))
 );
 
 comment on table public.organization_member_audit_events is
