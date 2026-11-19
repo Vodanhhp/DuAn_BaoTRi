@@ -2550,3 +2550,35 @@ Candidate split:
 2. A separate NOLOGIN `member_rpc_owner` owns the exposed narrow acceptance wrapper. Candidate attributes: NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOREPLICATION, BYPASSRLS; no role memberships or DB credential. Grant only schema usage, EXECUTE on the helper, and exact SELECT/DML privileges on the organization/membership/role/invitation/receipt/audit tables required. No Auth/Vault grants. Wrapper accepts opaque invitation ID + mutation ID only, consumes actor/digest from helper, enforces all business predicates and performs atomic membership + role + audit + Shared Receipt + Saga writes.
 
 This narrows the business function's object privileges compared with a postgres-owned acceptance function, while BYPASSRLS remains powerful and requires explicit authorization checks. Still unresolved: exact table grant list, FK/trigger requirements, role membership/SET ROLE surface, owner/default ACL, global lock order, and real PostgREST JWT-context preservation through nested SECURITY DEFINER calls. No test function or API test has been created/run. This is a candidate only, not approved DDL or final architecture.
+
+
+## 64. Auth profile-sync trigger tạo side effect lên membership – 20/11/2026
+
+### Bằng chứng catalog và function definition (BAOTRI-Mini-Test, chỉ đọc)
+- Trigger auth.on_auth_user_profile_sync_update chạy AFTER UPDATE OF email, raw_user_meta_data, email_confirmed_at trên auth.users; trigger function là public.sync_auth_user_profile(), owner postgres, SECURITY DEFINER, search_path = ''.
+- Function upsert public.profiles (email/display_name), sau đó nếu NEW.email_confirmed_at IS NOT NULL, chạy UPDATE public.organization_members SET status='active' WHERE user_id=NEW.id AND status='invited'.
+- Cùng function cũng được gắn vào AFTER INSERT ON auth.users. Trigger on_auth_user_created gọi public.handle_new_auth_user() để tạo profile nếu chưa có.
+- organization_members có trigger BEFORE UPDATE set_updated_at; không có trigger nghiệp vụ khác trên organization_members, member_roles, roles hoặc role_permissions trong inventory hiện tại. member_roles không có trigger tự tạo role/audit/receipt.
+- Đây là side effect thực tế, không phải giả định trong thiết kế. Điều kiện chỉ kiểm tra email_confirmed_at khác NULL và user_id; không kiểm tra invitation ID, recipient digest, expiry, revoke, organization status, role, inviter authority hoặc acceptance mutation ID.
+
+### Hệ quả bảo mật và nghiệp vụ
+- Auth email/metadata/confirmation update có thể tự chuyển mọi membership invited của cùng user thành active, ngoài luồng acceptance RPC. Điều này có thể bypass các điều kiện recipient/invitation/idempotency mà thiết kế mới yêu cầu.
+- Trigger chỉ cập nhật organization_members.status; không tự tạo member_roles, audit, Shared Receipt hoặc Saga completion. Vì vậy có thể tạo trạng thái active nhưng thiếu role mapping/audit/receipt nếu nó tác động vào một membership thuộc luồng mới.
+- Draft 021_member_audit_and_invite_saga_DRAFT.sql chưa được áp dụng; các bảng organization_member_invite_operations và organization_member_audit_events hiện chưa xuất hiện trong catalog Test. Không được viết thiết kế như thể các bảng này đã tồn tại.
+- Đề xuất trước khi triển khai acceptance mới: tách trigger profile-sync khỏi thay đổi trạng thái membership. Trigger Auth chỉ đồng bộ profiles; mọi chuyển invited -> active thuộc riêng acceptance transaction sau khi xác minh actor/email, recipient digest, invitation state, tenant, role và idempotency. Đây là đề xuất cần review/migration riêng, chưa được phép áp dụng.
+- Phải kiểm tra dữ liệu/luồng legacy trước khi bỏ side effect này; không được tự động sửa trạng thái membership cũ.
+
+### Lock-order implication
+- Đường khóa ẩn hiện tại của Auth update là auth.users row -> profiles row (upsert/update) -> các organization_members row phù hợp (UPDATE). set_updated_at chạy trong lần update membership.
+- Acceptance không được khóa membership trước rồi mới khóa Auth user; thứ tự đảo chiều có thể tạo chu trình chờ với Auth trigger. Candidate acceptance phải khóa Auth actor trước, xét profile row tiếp theo nếu cần lock tường minh, rồi mới khóa Organization/Saga/Membership/Role và ghi audit/receipt.
+- Thứ tự cụ thể giữa Organization và Saga vẫn phải đối chiếu tất cả writer hiện hữu; chưa tuyên bố lock matrix toàn hệ thống đã hoàn tất.
+
+### FK và cascade đã xác minh
+- organization_members.organization_id -> organizations.id và user_id/invited_by_user_id -> profiles.id đều ON DELETE RESTRICT.
+- member_roles(organization_id,member_id) -> organization_members(organization_id,id) và member_roles(organization_id,role_id) -> roles(organization_id,id) đều ON DELETE CASCADE.
+- member_roles.assigned_by_user_id -> profiles.id là ON DELETE RESTRICT; roles.organization_id -> organizations.id là ON DELETE RESTRICT.
+- Khi acceptance INSERT membership/role mapping, FK checks sẽ tham chiếu/khóa các parent rows; cần tính các khóa FK ngầm này vào lock-order review. Cascade chỉ phát sinh khi xóa parent, không phải side effect của acceptance INSERT; vẫn phải giữ trong grant/cleanup review.
+- PostgreSQL khuyến nghị mọi transaction khóa nhiều object theo cùng thứ tự; deadlock có thể xảy ra cả qua row locks. Tham khảo PostgreSQL 17 Explicit Locking: https://www.postgresql.org/docs/17/explicit-locking.html
+
+### Trạng thái
+Chỉ đọc catalog/function definitions và tài liệu. Không SQL write, không thay trigger/function, không DDL/RPC/grant/role/Auth user/data/config change.
