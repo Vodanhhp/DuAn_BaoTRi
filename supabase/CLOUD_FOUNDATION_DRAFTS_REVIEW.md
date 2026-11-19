@@ -1551,3 +1551,8 @@ Các điểm còn mở: quy trình `preexisting_verified`, secret manager/key re
 Đã cụ thể hóa proposal tại Member design §37: dùng immutable `organization_member_invite_attempts` header và append-only `organization_member_invite_attempt_events`; claim/commit attempt trước Auth call; lease expiry chỉ cho phép takeover reconciliation, không cho provider retry; `outcome_unknown` phải reconcile, không tự retry; chỉ retry sau definitive no-side-effect evidence; kết quả/mismatch/pre-existing đều lưu event allowlist và evidence code; không lưu raw Auth response/token/email. Manual recovery trước, chưa cần background worker.
 
 Các chi tiết còn mở: provider-specific correlation/evidence chứng minh không có side effect, phân loại definitive failure, lease duration và quyền takeover. Default fail-closed nếu không chứng minh được. Đây là proposal, không sửa DDL 021 và không chạy SQL/Supabase.
+
+
+## 41. Quyết định đã chốt về Attempt History và lease recovery (20/11/2026)
+
+Người dùng đã đồng ý mô hình hai bảng `organization_member_invite_attempts` (immutable header) và `organization_member_invite_attempt_events` (append-only history). Attempt được claim trước Auth call; không giữ DB transaction trong network call. Lease expiry chỉ cho phép takeover reconciliation, không cho phép gọi Auth lần nữa. `outcome_unknown` không phải definitive failure; chỉ retry khi có bằng chứng đáng tin cậy không có side effect, nếu không thì fail closed. Các chi tiết provider evidence, error classification, lease duration và quyền Admin takeover còn phải thiết kế. Chưa sửa DDL 021, không chạy SQL/Supabase.
