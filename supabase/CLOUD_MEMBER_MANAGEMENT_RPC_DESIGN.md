@@ -2489,3 +2489,23 @@ Authenticated PostgREST RPC is now the preferred candidate to prototype before d
 7. Recheck effective privileges and RLS after migration; test with anon, authenticated without membership, valid invitee, expired/revoked invitee and unrelated authenticated user.
 
 No API exposure settings, schemas, functions, grants, SQL data or Supabase configuration were changed.
+
+## 60. Current membership RLS and SECURITY DEFINER bypass review (20/11/2026)
+
+### Read-only Test catalog findings
+- RLS is enabled (but FORCE ROW LEVEL SECURITY is false) on `organizations`, `organization_members`, `member_roles`, `roles`, `role_permissions`, and `profiles`; owner is postgres.
+- Existing SELECT policies for organization membership/roles generally require `is_org_member(organization_id)`; profile policies restrict self or same-organization visibility.
+- Authenticated has SELECT grants on organization membership/role tables, with RLS filtering rows. It has no direct DML grants on these inspected tables.
+- service_role has broad table DML/SELECT privileges and BYPASSRLS. postgres also BYPASSRLS. Do not use service_role as the acceptance actor or expose it to browser clients.
+- Existing `organization_members` and `member_roles` policies do not provide the special pending-invitation inbox projection; a user without active membership cannot be assumed to discover their invitation through these tables.
+- These are Test-only observations; no data or policies were changed.
+
+### Consequence for SECURITY DEFINER acceptance
+- If the function owner is postgres (or another BYPASSRLS/owner role), table RLS is bypassed unless FORCE RLS applies and owner is not exempt. Therefore the acceptance function MUST implement all authorization predicates explicitly; RLS is not a safety net.
+- Revalidate: exact actor from auth.uid(); current auth.users email and confirmed state; recipient digest/version; invitation pending/unexpired/unrevoked; organization active; role valid/assignable; inviter's current authority; no conflicting membership; invitation target bound to actor; idempotency actor+invite+mutation+payload.
+- Lock rows in a deterministic order and commit membership + role + audit + Shared Receipt + Saga state atomically. Every failure aborts the transaction.
+- Do not return raw table rows. Return only minimal outcome/receipt fields.
+- Add negative tests for cross-tenant invitation ID, wrong recipient, suspended/removed member, revoked/expired invite, invalid role, inviter demoted/suspended, existing membership, replay by another actor, and direct RPC attempts with forged actor parameters.
+- Consider a dedicated non-BYPASSRLS function owner only if it can safely receive the exact underlying table/Auth privileges needed; do not weaken RLS globally or FORCE RLS as a shortcut without checking owner/foreign-key/trigger semantics.
+
+This reinforces that authenticated RPC is only a transport/identity boundary. Business authorization must be enforced explicitly inside the transaction. No RLS, grants, function, or data changed.
