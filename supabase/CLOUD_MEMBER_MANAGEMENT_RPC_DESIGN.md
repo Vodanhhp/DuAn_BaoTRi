@@ -627,3 +627,42 @@ Migration 005 hiện seed Viewer bằng `p.action = 'view'`, do đó Viewer đan
 ### 19.7 Ranh giới
 
 Đây là thiết kế đã chốt policy mặc định Viewer không xem roster. Chưa tạo SQL migration/draft, chưa sửa migration 005/013, Edge Function hoặc UI, chưa chạy RPC/SQL và chưa thay đổi Supabase. Trước khi viết SQL cần quyết định schema có cho phép nhiều role trên một membership và nếu có thì API biểu diễn danh sách role như thế nào.
+
+
+## 20. Chốt một vai trò hiện hành cho mỗi membership
+
+Theo xác nhận tiếp tục của người dùng, phiên bản hiện tại áp dụng nguyên tắc **mỗi membership có đúng một role hiện hành**. Không triển khai multi-role trong phiên bản này.
+
+### Hiện trạng schema và UI
+
+- Migration 005 tạo PK `(organization_id, member_id, role_id)` cho `member_roles`, vì vậy hiện cho phép một membership có nhiều role.
+- Seed ban đầu ánh xạ mỗi membership sang một role; luồng đổi role hiện xóa assignment cũ rồi insert assignment mới.
+- UI `OrganizationMemberView` chỉ có `roleCode` và `roleName`, không hỗ trợ mảng role.
+- Vì vậy cần ràng buộc ở database, không chỉ dựa vào hành vi UI.
+
+### Thiết kế ràng buộc
+
+- Bổ sung UNIQUE `(organization_id, member_id)` cho `member_roles` (unique constraint hoặc unique index).
+- Trước khi tạo constraint, migration phải preflight đếm membership có nhiều hơn một role. Nếu có bất kỳ trường hợp nào, dừng migration và yêu cầu rà soát thủ công; không tự chọn role, không xóa assignment dư và không suy đoán role đúng.
+- Sau khi constraint được áp dụng, mọi RPC đổi role thực hiện transaction: xác minh actor + target + role hợp lệ; DELETE assignment hiện tại; INSERT đúng một assignment mới; audit/Receipt cùng transaction theo chuẩn mutation chung. Không có trạng thái commit giữa DELETE và INSERT.
+- Membership legacy không có member_roles phải được xử lý rõ trong migration/reconciliation. Không tự suy role từ dữ liệu mơ hồ; có thể dùng legacy organization_members.role chỉ khi mapping đã được kiểm chứng và nhất quán.
+- Không cho phép role assignment trỏ tới role inactive; RPC phải kiểm tra is_active trong cùng transaction và khóa role theo lock matrix.
+- `organization_members.role` hiện là legacy compatibility field. Trong giai đoạn chuyển tiếp, phải giữ đồng bộ với role_code mới ở cùng transaction hoặc xác định rõ nguồn sự thật. Khuyến nghị: member_roles là nguồn phân quyền; legacy role chỉ là mirror tương thích, không được dùng để cấp quyền mới. Cần audit toàn bộ code/RLS còn đọc legacy role trước khi bỏ mirror.
+
+### Roster API
+
+`list_organization_members` trả một `role_code` và `role_name` duy nhất. Nếu membership thiếu role assignment sau khi migration hoàn tất, coi là integrity error được ghi nhận/giám sát; không trả role ngẫu nhiên và không fallback âm thầm.
+
+### Test bắt buộc
+
+- Unique constraint chặn role thứ hai cho cùng membership.
+- Migration preflight abort nếu có duplicate assignments.
+- Đổi role thành công atomic; lỗi insert rollback cả DELETE.
+- Hai Admin đồng thời đổi role cùng target: serialize theo lock order, kết quả cuối cùng là một role hợp lệ.
+- Role bị deactivate đồng thời với assignment: khóa/check role nhất quán.
+- Legacy role mirror và member_roles không lệch sau create/change.
+- Membership thiếu assignment được phát hiện; không lộ quyền qua legacy fallback.
+
+### Ranh giới
+
+Đã chốt policy một role hiện hành/membership cho phiên bản hiện tại. Chưa tạo migration SQL, chưa thay đổi migration 005/013, RPC, Edge Function, UI hoặc Supabase. Trước khi triển khai phải preflight dữ liệu thực tế trên Test và xác định cách chuyển tiếp legacy role.
