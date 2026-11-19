@@ -1491,3 +1491,18 @@ Cổng trước executable Member SQL: Test schema inventory read-only; chốt a
 - Kết quả chỉ là snapshot Test, không suy rộng Production. API list_migrations trả rỗng dù các bảng hiện hữu; không dùng nó làm bằng chứng migration chưa chạy.
 
 Không tạo migration, không sửa RLS/grants, không đọc PII, không thay đổi database.
+
+## 34. Cross-review DDL draft 021 — Member audit và Invite Saga (19/11/2026)
+
+File: supabase/drafts/021_member_audit_and_invite_saga_DRAFT.sql. Đối chiếu Member design §30 và live Test inventory §33.
+
+- Hai bảng mới giữ tách biệt Saga workflow nhiều transaction/Auth API và audit append-only; không tái sử dụng asset-specific receipt/mutation.
+- Target membership ID là scalar không FK/cascade. Audit → Saga operation dùng composite FK RESTRICT. Organization/Profile/Auth references RESTRICT có thể ảnh hưởng lifecycle deletion, phải review retention/archive.
+- RLS bật, không tạo policy; direct table privileges bị revoke cả service_role. Chỉ purpose-specific SECURITY DEFINER RPC đã review mới được thao tác.
+- Audit trigger từ chối UPDATE/DELETE nhưng không tự ngăn owner/superuser hoặc TRUNCATE. Cần giới hạn quyền vận hành và kiểm thử role context.
+- DDL chưa triển khai RPC/state machine CAS, immutability guard cho fingerprint/actor/resolved initial status, worker/attempt history, audit read RPC hoặc retention job.
+- Các quyết định còn mở: audit scope, permission đọc audit, retention/backup, PII encryption/key management, adoption approval, worker/manual recovery và actor_kind system.
+- DDL có begin/commit và fail-closed object creation (không IF NOT EXISTS/CREATE OR REPLACE); tuy nhiên đây chỉ là draft static, chưa chứng minh cú pháp/chạy thành công trên Test.
+- Không chạy SQL, không tạo migration, không thay đổi Test/Production.
+
+**Gate:** DDL 021 chỉ được promote sau khi quyết định sản phẩm còn mở được phê duyệt, static review hoàn tất và có test plan. Tạo migration/applies SQL là một bước riêng cần chỉ thị rõ ràng.
