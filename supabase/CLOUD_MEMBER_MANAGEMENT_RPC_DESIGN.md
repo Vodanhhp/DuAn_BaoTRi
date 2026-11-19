@@ -2283,3 +2283,44 @@ Sources reviewed:
 
 ### Status
 Read-only investigation supports a viable candidate: a tightly restricted `SECURITY DEFINER` function owned by `postgres` can lock `auth.users` on the current Test project. This is not implementation approval. No DDL, RPC, Edge Function, SQL write, grant, migration or Supabase configuration was changed. Production preflight, deployed Auth version verification, live concurrency tests, and final RPC invocation path remain open.
+
+## 54. Invitation acceptance — concurrent email-change test plan (design only, 20/11/2026)
+
+### Test isolation and prerequisites
+- Use dedicated synthetic Auth users and disposable organizations/invitations in BAOTRI-Mini-Test only. Never use a real person's account/email or Production data.
+- Record exact project ref, PostgreSQL version, deployed GoTrue/Auth version/build, SDK versions, function owner, SECURITY DEFINER/INVOKER setting, fixed search_path, grants and relevant Auth email-change settings before the run.
+- Create fixture A with a verified email and one pending invitation addressed to that exact normalized email. Fixture B is a separate disposable Auth user for negative/unauthorized tests.
+- Keep fixtures isolated by IDs. Capture before/after snapshots and clean up only through separately reviewed test-fixture teardown; never automatically delete Auth users or business data.
+- Run two independent database sessions/transactions with explicit barriers. Record timestamps, transaction IDs, lock wait observations, SQLSTATE, function outcome and final state. Redact emails, access tokens, service keys and webhook secrets.
+
+### Core race tests
+1. **Acceptance locks first; email confirmation starts second:** Session A starts acceptance and locks auth.users. Pause A after lock + authoritative email verification. Session B executes normal Auth email-change confirmation for the same user. Expected: B waits; A completes against the email current at its serialization point; B proceeds only after A commits. Exactly one membership/role/audit/receipt set exists.
+2. **Email change commits first; acceptance starts second:** B completes confirmed email change first. A attempts acceptance using an old Inbox item. Expected: A sees the new DB email under lock; old recipient digest fails; acceptance rejects without business writes or automatic reassignment.
+3. **Both begin concurrently:** Start A and B from a barrier. Expected: execution serializes to case 1 or 2; no mixed state, duplicate membership/role, stale-email acceptance or deadlock.
+4. **Email changes to another fixture's address:** Expected: no cross-acceptance or invitation transfer.
+5. **Email loses verified status / unconfirmed account:** Expected: fail closed; no business writes. Cached Inbox data cannot override current Auth state.
+
+### Additional integrity and failure tests
+6. Invitation expires or is revoked while Inbox is open: acceptance rechecks and rejects atomically.
+7. Organization becomes inactive or role invalid before acceptance: reject with no partial writes.
+8. Membership already exists or concurrent acceptance wins: one canonical result; no duplicate role.
+9. Lock timeout / deadlock victim / serialization failure: entire transaction rolls back. Retry uses same mutation ID.
+10. Acceptance commits but HTTP response is lost: replay with same invitation + actor + mutation ID returns original receipt; no duplicate writes.
+11. Same mutation ID with changed payload or another actor: conflict/deny; no receipt disclosure.
+12. Function called by anon/authenticated or direct Data API: denied. Server-only invocation succeeds only with expected server identity.
+13. Direct SELECT of private Saga/attempt/Auth data from browser roles: denied. No email, Auth UUID, recipient digest, HMAC key or internal state leaks in response/errors/logs.
+14. Admin-initiated Auth email update path: verify it participates in the same row-lock serialization; otherwise do not approve the design until guarded.
+15. Email change initiated but not confirmed: old email remains authoritative only if confirmed by the deployed GoTrue behavior; acceptance checks the locked row's current verified state.
+
+### Pass criteria
+- Every interleaving is equivalent to one serial order; no acceptance uses an email that is no longer current at its serialization point.
+- Success creates exactly one atomic membership + one role + audit + Shared Receipt + Saga completion; rejection/transaction failure creates zero business writes.
+- Replay returns original receipt; no privilege escalation, cross-invite access, duplicate side effects or new mutation ID on uncertain outcome.
+- Lock waits/errors are bounded and observable without exposing PII/secrets.
+- Verify deployed Auth implementation and every supported administrative email-update path; do not infer from moving master source.
+- Initial target: at least 20 randomized interleavings per race class plus deterministic barriers for both lock orders. This is a test target, not proof by itself.
+
+### Harness constraints and status
+- Use test-only barriers; do not add production sleeps, debug endpoints, or test hooks to business RPCs.
+- A controlled SQL update can validate Postgres lock mechanics, but does not prove the real GoTrue confirmation route. Test that route separately end-to-end.
+- This is a proposed plan, not PASS evidence. No fixtures/users/invitations were created, no SQL writes were run, and no DDL/RPC/Edge Function/grants/configuration were changed.
