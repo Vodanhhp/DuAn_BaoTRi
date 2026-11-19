@@ -4533,3 +4533,25 @@ Tiếp tục audit toàn bộ caller và các writer khác liên quan Auth/Profi
 - Caller không được xem permission preflight là authorization cuối cùng; mọi RPC mutation phải tự xác thực trong transaction.
 - Cần hoàn tất rà soát Shared Receipt/mutation ID và toàn bộ lock path của các writer trước khi chốt lock matrix. Đặc biệt phải thiết kế compensation của Invite Saga theo trạng thái operation đã xác minh.
 - Chỉ đọc/nghiên cứu và cập nhật tài liệu GitHub. Không SQL write, DDL, RPC, grant, role, Auth/data, Edge Function deployment hoặc cấu hình Supabase thay đổi.
+
+
+## 84. Cross-review Shared Receipt và lock-order – 20/11/2026
+
+### Đã đối chiếu contract
+- Shared Receipt draft 020 và Member Saga draft 021 chưa được áp dụng. Catalog Test hiện chỉ có `asset_mutation_receipts`; chưa có `organization_mutations`, `organization_member_invite_operations`, `organization_member_audit_events`.
+- `operation_id` của Invite Saga và `mutation_id` của Shared Receipt là hai ID khác nhau. Saga quản lý Auth provisioning nhiều pha; Receipt chỉ xác nhận transaction finalize membership đã commit. `member.create` Receipt liên kết Saga operation đã xác minh.
+- Member operation codes: `member.create`, `member.role.change`, `member.status.change`, `member.remove`, `member.self.activate`. Retry timeout/unknown outcome dùng lại cùng mutation ID.
+- Fingerprint phải canonical, server-built và ổn định theo request intent. §27.7 được ưu tiên: không bind mutable role/status sau commit; expected-current-state nếu có là precondition chỉ kiểm tra khi Receipt chưa tồn tại.
+- Replay: Auth hợp lệ + Organization active + actor membership active + actor/operation/fingerprint khớp. Không yêu cầu lại write permission cũ; snapshot theo read permission hiện tại. Remove chỉ acknowledgement tối thiểu. Mutation mới mới kiểm tra write permission và claim Receipt.
+- Receipt claim dùng unique key; request thua concurrency đọc lại ở statement sau theo READ COMMITTED. Business mutation + Receipt finalize + audit phải cùng transaction. Saga state transition nằm transaction riêng. Member hiện không bật Change Feed.
+
+### Phát hiện lock-order inversion
+- Member §25.1 và Shared Receipt review §6.3 đã thống nhất proposed lock order: Organization → actor/target Membership theo UUID → member_roles → Role → Role Permission → Auth user → Receipt → business rows → sync counter/events → Receipt finalize.
+- Nhưng Auth trigger đang chạy theo Auth user → Profile → Membership vì `sync_auth_user_profile()` vẫn tự đổi invited thành active. Nếu Member RPC giữ Membership rồi chờ Auth, trong khi Auth confirmation giữ Auth rồi chờ Membership, có thể tạo deadlock.
+- Vì vậy proposed order chỉ có thể dùng sau khi tách membership activation khỏi Auth trigger (trigger chỉ sync Profile), hoặc thiết kế concurrency thay thế được chứng minh. Đây là prerequisite chưa hoàn thành; không sửa trigger trong phiên này.
+- Candidate Auth-first ở ghi chú §67/§81 mô tả trigger hiện tại; §25.1 là canonical proposal sau khi loại side effect. Không trộn hai thứ tự.
+
+### Trạng thái và bước tiếp
+- Đã ghi nhận caller, role cardinality, Shared Receipt contract và lock-order prerequisite.
+- Bước kế tiếp: audit writer/revoker Organization, Role, Role Permission và Auth/Profile còn lại để xác định mọi lock path; sau đó mới chốt lock matrix và rà payload/result Receipt cụ thể cho từng operation.
+- Chỉ đọc/nghiên cứu, cập nhật tài liệu. Không SQL write, DDL, RPC, grant, role, Auth/data, secrets, Edge Function deployment hoặc cấu hình Supabase thay đổi.
