@@ -1507,3 +1507,12 @@ File: supabase/drafts/021_member_audit_and_invite_saga_DRAFT.sql. Đối chiếu
 - Không chạy SQL, không tạo migration, không thay đổi Test/Production.
 
 **Gate:** DDL 021 chỉ được promote sau khi quyết định sản phẩm còn mở được phê duyệt, static review hoàn tất và có test plan. Tạo migration/applies SQL là một bước riêng cần chỉ thị rõ ràng.
+
+
+## 35. Static review vòng 1 cho DDL 021 (19/11/2026)
+
+Đối chiếu Member design §31. Draft đã siết nonblank reason, adoption cross-Admin, actor_kind system chỉ cho Saga state transition, required target/mutation ID cho membership lifecycle, required Saga operation reference và JSONB enum CHECK null-safe.
+
+Các rủi ro còn lại không được DDL đơn thuần giải quyết: immutable Saga identity/fingerprint/PII, transition CAS/version, updated_at, attempt history, reason PII filtering, audit trigger bypass bởi owner/TRUNCATE, FK retention lifecycle, RPC permission/lock order và atomic Audit + Shared Receipt.
+
+Chưa chạy parser/SQL, chưa tạo migration, chưa thay đổi Supabase.
