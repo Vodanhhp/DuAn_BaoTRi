@@ -4276,3 +4276,26 @@ Authenticated PostgREST RPC hiện là candidate ưu tiên để prototype trư�
 7. Chạy lại quyền hiệu lực/RLS với anon, authenticated không membership, invitee hợp lệ, invite hết hạn/thu hồi và user không liên quan.
 
 Không đổi API exposure, schema, function, grant, dữ liệu SQL hay cấu hình Supabase.
+
+## 75. RLS hiện tại và rủi ro SECURITY DEFINER bypass
+
+### Kết quả catalog chỉ đọc trên Test
+- RLS bật nhưng FORCE RLS tắt ở `organizations`, `organization_members`, `member_roles`, `roles`, `role_permissions`, `profiles`; owner là postgres.
+- Policy SELECT hiện tại của membership/role yêu cầu `is_org_member(organization_id)`; profiles giới hạn self hoặc cùng tổ chức.
+- authenticated có SELECT trên các bảng membership/role, được RLS lọc; không có DML trực tiếp trên các bảng vừa kiểm tra.
+- service_role có quyền DML/SELECT rộng và BYPASSRLS; postgres cũng BYPASSRLS. Không dùng service_role làm actor acceptance hoặc expose cho browser.
+- Các policy hiện tại không tạo ra inbox lời mời pending tối thiểu cho người chưa là thành viên active.
+
+### Hệ quả với SECURITY DEFINER
+Nếu function owner là postgres hoặc role BYPASSRLS, hàm có thể bỏ qua RLS. Vì vậy acceptance function bắt buộc tự kiểm tra đầy đủ:
+- Actor lấy từ auth.uid(); Auth user hiện tại, email đã xác minh và recipient digest/version.
+- Invitation đúng recipient, pending, chưa hết hạn/chưa revoke.
+- Organization active; role hợp lệ và được phép cấp.
+- Inviter vẫn có quyền hiện tại; không có membership xung đột.
+- Idempotency ràng buộc actor + invitation + mutation ID + payload.
+- Khóa theo thứ tự nhất quán; membership + role + audit + Shared Receipt + Saga commit nguyên tử; lỗi phải rollback toàn bộ.
+- Chỉ trả outcome/receipt tối thiểu, không trả raw row.
+
+Bổ sung negative test: invitation ID tenant khác, sai recipient, user suspended/removed, invite expired/revoked, role không hợp lệ, inviter bị hạ quyền/suspended, membership đã tồn tại, replay bởi actor khác, RPC giả mạo actor parameter.
+
+Không dựa vào RLS làm lớp bảo vệ cho SECURITY DEFINER; không bật FORCE RLS hoặc nới RLS toàn cục như cách chữa nhanh khi chưa đánh giá owner/FK/trigger. Đây là yêu cầu nghiệp vụ bắt buộc. Không đổi RLS/grant/function/data.
