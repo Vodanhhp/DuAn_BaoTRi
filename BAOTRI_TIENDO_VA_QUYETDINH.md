@@ -4512,3 +4512,24 @@ Chỉ đọc ACL/catalog và tài liệu. Không SQL write, DDL, role, grant, RP
 
 ### Bước kế tiếp
 Tiếp tục audit toàn bộ caller và các writer khác liên quan Auth/Profile/Membership, rà role cardinality và shared receipt contract; sau đó mới đề xuất lock matrix cuối. Tất cả vẫn chỉ đọc/nghiên cứu.
+
+
+## 83. Server caller, UI cardinality và dữ liệu Test – 20/11/2026
+
+### Đã rà soát
+- Static search repo xác định `supabase/functions/manage-organization-members/index.ts` là caller duy nhất tìm thấy của bốn RPC membership legacy. Edge Function xác thực JWT và gọi `has_org_permission(users.manage)` trước khi dùng service_role client. Đây là preflight riêng request; RPC phải tự xác minh actor, tenant, quyền và target trong transaction, không tin kết quả kiểm tra cũ hoặc actor UUID truyền vào.
+- Action list đọc membership/profile/member_roles/roles bằng nhiều truy vấn riêng, không cùng snapshot. Code tạo `Map<member_id, role_id>`, nên nhiều assignment sẽ bị co lại thành một role theo thứ tự kết quả.
+- UI `OrganizationMemberView` chỉ biểu diễn `roleCode/roleName` dạng scalar và một select role. Điều này phù hợp policy đã chốt: một role hiện hành/membership; không hỗ trợ multi-role.
+- Invite tạo Auth user trước RPC membership. Nếu RPC trả lỗi, Edge Function gọi `deleteUser` cho user vừa tạo nhưng không kiểm tra kết quả xóa. Khi outcome chưa chắc chắn, phải recheck operation/membership trước compensation; lỗi RPC không tự chứng minh membership chưa commit.
+- Reset/remove kiểm tra membership và role bằng nhiều request trước RPC. RPC vẫn phải tự kiểm tra lại các điều kiện chống xóa Admin và target trong transaction dưới lock.
+- Supabase metadata: Edge Function `manage-organization-members` đang ACTIVE, version 5, verify_jwt=true. Chưa có deployed source để xác minh nội dung đang chạy trùng GitHub.
+
+### Cardinality và preflight Test
+- PK `member_roles(organization_id, member_id, role_id)` cho phép nhiều role; hiện chưa có UNIQUE `(organization_id, member_id)`.
+- Read-only preflight trên BAOTRI-Mini-Test: tổng 4 memberships; 4 đúng một assignment; 0 thiếu assignment; 0 nhiều assignment; 0 có assignment nhưng role không active. Dữ liệu Test hiện phù hợp policy một role/membership, nhưng chỉ là snapshot tại thời điểm kiểm tra, không thay thế preflight ngay trước migration và không đại diện Production.
+- Tài liệu thiết kế đã chốt policy một role/membership cho phiên bản hiện tại; unique constraint vẫn chưa được triển khai. Cần giữ migration preflight fail-closed và xử lý mismatch thủ công, không tự chọn role.
+
+### Kết luận / bước tiếp theo
+- Caller không được xem permission preflight là authorization cuối cùng; mọi RPC mutation phải tự xác thực trong transaction.
+- Cần hoàn tất rà soát Shared Receipt/mutation ID và toàn bộ lock path của các writer trước khi chốt lock matrix. Đặc biệt phải thiết kế compensation của Invite Saga theo trạng thái operation đã xác minh.
+- Chỉ đọc/nghiên cứu và cập nhật tài liệu GitHub. Không SQL write, DDL, RPC, grant, role, Auth/data, Edge Function deployment hoặc cấu hình Supabase thay đổi.
