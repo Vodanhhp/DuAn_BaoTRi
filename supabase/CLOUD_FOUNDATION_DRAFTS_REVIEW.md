@@ -1272,3 +1272,24 @@ Người dùng đồng ý dùng một role hiện hành cho mỗi membership tro
 Migration 005 hiện dùng PK `(organization_id, member_id, role_id)`, nên database đang cho phép nhiều role. UI chỉ biểu diễn một role. Khi triển khai cần unique constraint/index `(organization_id, member_id)`, nhưng trước đó phải preflight duplicate và dừng migration nếu có dữ liệu nhiều role; không tự xóa/chọn role. Đổi role phải atomic DELETE+INSERT trong một transaction, có lock và audit/Receipt theo chuẩn. `member_roles` là nguồn quyền; legacy `organization_members.role` chỉ là mirror tương thích cho tới khi audit hết nơi đọc.
 
 Roster RPC trả một role duy nhất; thiếu assignment là integrity error, không fallback tùy tiện. Chưa tạo migration, chưa sửa code hay DB.
+
+
+## §28 — Audit consumer của legacy organization_members.role
+
+Đã rà soát migrations 001/002/005/013/014, Edge Function, App.tsx, bootstrap và tests.
+
+Phát hiện chính:
+- Migration 001 helper has_org_role đọc legacy role.
+- Migration 005 helper mới dùng legacy Admin OR member_roles assignment; do đó legacy Admin không assignment vẫn được xem là Admin.
+- Migration 002 có nhiều RLS DELETE policy gọi helper này; đổi helper ảnh hưởng Assets, Inventory, Tasks, Plans, Checklist Templates và các module tương ứng.
+- Draft 019 Admin-only logs.revise cũng dựa helper.
+- RPC 013/014 chặn sửa/xóa Admin bằng cả legacy và assignment; cần thống nhất nguồn.
+- Edge Function list fallback role Admin từ row.role nếu thiếu assignment; trong khi has_org_permission chỉ xét assignment.
+- App.tsx select legacy role nhưng xác định vai trò qua helper; có thể bỏ cột khi refactor.
+- Bootstrap/test scripts còn đọc legacy role để báo cáo.
+
+Kế hoạch: preflight mọi membership/assignment; dừng nếu duplicate/conflict/missing không giải thích được; thêm unique constraint sau preflight; cập nhật mọi mutation tạo/đổi role để ghi assignment + legacy mirror trong cùng transaction; chuyển helper member_roles-only; bỏ fallback Edge Function; kiểm thử toàn bộ RLS DELETE/Admin RPC; chỉ xóa cột legacy ở migration riêng sau khi không còn consumer.
+
+Mapping mirror tạm thời: Admin → legacy admin; Technician/Viewer → legacy user. Legacy field không còn quyền authorize sau cutover.
+
+Chưa sửa code/migration/RLS/Edge Function/tests/bootstrap; chưa tạo SQL draft hay chạy SQL/RPC.
