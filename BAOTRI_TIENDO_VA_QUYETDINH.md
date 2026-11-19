@@ -3845,3 +3845,10 @@ Người dùng đã chốt năm nguyên tắc kiến trúc:
 - Còn mở: quy trình preexisting verification, secret/key retention/rotation, email encryption/retention, attempt event model và stable transition ID.
 
 Đây là thiết kế, chưa sửa DDL 021, chưa tạo migration/RPC, không chạy SQL và không thay đổi Supabase Test/Production.
+
+
+## 52. Attempt History và phục hồi timeout/crash cho Invite Saga (20/11/2026)
+
+Đã lập proposal tại Member design §37, Foundation review §40: immutable attempt header + append-only attempt events; claim/commit attempt trước Auth call; lease expiry chỉ mở quyền reconciliation, không tự cho phép gọi Auth lần nữa; outcome_unknown không phải definitive failure; chỉ retry khi có bằng chứng không phát sinh side effect. Mỗi kết quả/reconciliation/mismatch được append event, không ghi đè lịch sử. Manual recovery trước, chưa xây worker.
+
+Còn mở: provider evidence/correlation, definitive failure classification, lease duration và quyền takeover reconciliation. Default fail-closed. Chưa sửa DDL 021, chưa tạo RPC/worker, không chạy SQL và không thay đổi Supabase.
