@@ -3679,3 +3679,23 @@ Review transaction boundary và chốt các quyết định còn mở trước k
 
 ### Bước tiếp theo
 Hoàn thiện hợp đồng quyền/replay và quyết định điều chỉnh tồn kho; sau đó mới viết các RPC draft. Không triển khai khi chưa thống nhất các quy tắc này.
+
+
+## 38. Đề xuất quy tắc Kho và Nhật ký – chờ người dùng duyệt (19/11/2026)
+
+### Kho
+- Đề xuất “Điều chỉnh” là nhập số tồn thực tế sau kiểm kê; server khóa item, đọc tồn trước, tính delta có dấu = tồn thực tế - tồn hệ thống, cập nhật balance bằng số thực tế.
+- Movement cần lưu balance_before, balance_after, counted_quantity và quantity_delta có dấu. Cột quantity hiện tại CHECK > 0 nên phải bổ sung field có dấu hoặc hướng tăng/giảm; không đổi nghĩa cột cũ âm thầm.
+- Bắt buộc lý do, actor, mutation ID, expected item version; balance + movement + receipt + event cùng transaction. Không tạo movement nếu không chênh lệch, trừ khi quyết định bổ sung biên bản kiểm kê riêng.
+- Dùng permission inventory.adjust hiện có cho Admin/Technician; tồn đầu kỳ khi tạo vật tư cần xác nhận Technician có được phép theo inventory.create.
+### Nhật ký
+- Draft trước Cloud submit có thể sửa; sau Cloud commit, revision đã lưu bất biến, mọi sửa đổi tạo revision mới và lưu lý do.
+- Catalog hiện chỉ có logs.create, không có logs.update/revise. Đề xuất ít quyền nhất: thêm logs.revise và cấp Admin-only; Technician tạo mới nhưng muốn sửa phiếu đã lưu phải gửi Admin. Không hard-delete.
+- Phương án thay thế: logs.revise.own cho Technician chỉ sửa Log do chính mình tạo, Admin sửa mọi Log; cần created_by_user_id bất biến và kiểm tra ownership ở server.
+- Chưa tự thay đổi permission. Hoàn thành Task + tạo Log revision 1 vẫn cùng transaction.
+### Cần người dùng duyệt
+1. Điều chỉnh theo số tồn thực tế sau kiểm kê?
+2. Admin-only sửa Log đã lưu, hay Technician được sửa Log do mình tạo?
+3. Technician có được tạo vật tư kèm tồn đầu kỳ?
+4. Có cần lưu biên bản kiểm kê khi không chênh lệch?
+- Đã ghi phương án tại mục 14 của CLOUD_FIRST_WRITE_AUDIT.md. Đây chưa phải quyết định đã chốt; chưa sửa code/SQL/permission hoặc dữ liệu.
