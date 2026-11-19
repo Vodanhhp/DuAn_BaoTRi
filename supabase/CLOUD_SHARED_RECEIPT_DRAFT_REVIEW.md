@@ -85,3 +85,42 @@ Trigger bảo vệ UPDATE/DELETE; quyền client cũng bị revoke. Không có c
 - Không sửa Asset-specific Receipt/Lease, không dual-write.
 - Không sửa code, migration đang áp dụng, quyền hoặc dữ liệu Supabase.
 - Các mục trong tài liệu này là yêu cầu review cho thiết kế RPC tiếp theo, không phải xác nhận rằng schema hiện tại đã được kiểm chứng trên database đang chạy.
+
+
+## 6. Thứ tự Replay/Claim và authorization locks thống nhất (19/11/2026)
+
+Trạng thái: **bổ sung hợp đồng thiết kế; chưa sửa SQL draft 020 và chưa chạy kiểm thử database**.
+
+### 6.1 Replay lookup — read-only
+
+1. Lấy actor từ auth.uid(); từ chối NULL.
+2. Khóa Organization phù hợp và xác nhận active.
+3. Khóa actor Membership trong organization và xác nhận active.
+4. Đọc Receipt theo (organization_id, mutation_id). Lookup không claim, không sửa Receipt và không khóa business row.
+5. Nếu Receipt final tồn tại, so sánh actor, operation và fingerprint do server dựng. Mismatch phải từ chối mà không tiết lộ result.
+6. Nếu khớp, không yêu cầu write permission cũ. Kiểm tra current read permissions theo chính sách all-or-nothing đã chốt: đủ tất cả quyền đọc thì trả snapshot; thiếu bất kỳ quyền nào chỉ trả acknowledgement tối thiểu.
+7. Membership inactive hoặc Organization inactive thì deny trước khi tiết lộ Receipt.
+
+### 6.2 Mutation mới — authorization rồi claim
+
+Nếu replay lookup không thấy Receipt:
+
+1. Khóa target Membership (nếu có), member role assignments, Role và Role Permission theo Lock Matrix; tất cả Membership liên quan phải được khóa trước assignment/Role. Khóa nhiều row theo UUID/ID/code tăng dần.
+2. Kiểm tra active target, role active/đúng organization và write permission trong cùng transaction. Các RPC revoke/suspend/deactivate phải dùng thứ tự khóa tương thích.
+3. Server chuẩn hóa payload và dựng fingerprint; client không được gửi actor, fingerprint, affected refs hoặc read-permission list làm căn cứ.
+4. Claim unique key (organization_id, mutation_id) sau authorization và trước business row locks/side effects. Pending Receipt, business write và finalize ở cùng transaction.
+5. Nếu unique claim bị request khác thắng, dùng statement kế tiếp dưới READ COMMITTED để đọc Receipt final và so actor/operation/fingerprint. Không dùng exception unique violation rồi tiếp tục transaction đã abort.
+6. Nếu write permission bị deny nhưng Receipt có thể vừa commit sau lookup đầu, thực hiện Receipt recheck read-only trong statement riêng trước khi trả deny. Chỉ replay Receipt final khớp hoàn toàn; không claim hoặc chạy mutation trong nhánh deny.
+7. Business rows, row_version, counter/change events (nếu loại dữ liệu đó thuộc feed đang bật), audit và Receipt phải commit/rollback nguyên tử. Conflict/no_change được lưu Receipt theo contract nhưng không phát event nếu không có record thực sự thay đổi.
+
+### 6.3 Lock order và phạm vi
+
+Với Member RPC, thứ tự chuẩn là Organization → tất cả actor/target Membership theo UUID → member role assignments → Role → Role Permission → Auth user row (chỉ nếu Invite Saga cần) → Receipt claim → business rows → sync counter/events (nếu có) → Receipt finalize.
+
+Receipt replay lookup là nhánh read-only sau Organization + actor Membership; không được hiểu là đảo thứ tự claim của mutation mới. Asset Lease/Asset-specific Receipt vẫn là ngoại lệ chuyển tiếp, không thay đổi bởi mục này.
+
+Mọi writer/revoker Organization, Membership, Role và Role Permission phải dùng thứ tự tương thích. Phải test FK/cascade/trigger implicit locks; lock order trên giấy không tự chứng minh không deadlock.
+
+### 6.4 Ranh giới
+
+Mục này chỉ chuẩn hóa review. Chưa sửa supabase/drafts/020_organization_mutations_receipt_DRAFT.sql, chưa tạo migration, chưa sửa business RPC, chưa chạy SQL/RPC và chưa thay đổi Supabase Test/Production.
