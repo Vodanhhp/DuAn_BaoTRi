@@ -133,3 +133,31 @@
 - [x] Đối chiếu quản lý thành viên, Auth profile, `CloudAssetsPanel` và `assetsCloud.ts`.
 - [ ] Chưa hoàn tất permission matrix cho từng role trên mọi component/modal.
 - [ ] Chưa xác minh toàn bộ module phụ/child components và các hành động xóa trên mọi màn hình.
+
+
+## 10. Đối chiếu phân quyền theo vai trò (19/11/2026)
+
+### 10.1 Permission catalog hiện tại được giữ nguyên, không tự đổi chính sách
+- Admin: quản lý toàn bộ nghiệp vụ và cấu hình theo permission catalog.
+- Technician: xem; tạo/cập nhật Asset, Inventory, Movement, Task/Plan, Log; thực hiện Checklist và tạo kết quả; không có quyền xóa nghiệp vụ, quản lý template Checklist hoặc quản trị tổ chức.
+- Viewer: chỉ xem, không được ghi nghiệp vụ.
+- Đây là đối chiếu theo migration 005/006 và tài liệu CLOUD_PERMISSION_UI_MATRIX.md; chưa xác minh database nào đã áp dụng migration.
+
+### 10.2 Sai lệch UI cần sửa trong phase riêng
+- UI hiện chủ yếu dùng isViewer thay vì kiểm tra permission theo action. Do đó Technician có thể thấy/nhấn một số thao tác mà permission catalog không cấp.
+- Technician có thể nhìn thấy luồng sửa/xóa Maintenance Plan; quyền hiện tại chỉ cấp maintenance.create/update, không cấp maintenance.delete.
+- Technician có thể mở sửa Checklist template; quyền checklist.template.manage hiện chỉ cấp Admin. Việc tự tạo template/version mặc định khi mở Checklist cũng phải theo quyền Admin, không phải mọi user không phải Viewer.
+- UI cần được chuyển sang permission-based gating; tuy nhiên đây chỉ là UX. RPC/RLS/Edge Function vẫn phải xác thực quyền ở server cho từng giao dịch.
+
+### 10.3 Các ranh giới quyền cần giữ trong thiết kế Cloud transaction
+- Asset: Admin/Technician create/update; Admin-only delete. Asset Edit Lease vẫn áp dụng cho sửa Asset theo quyết định đã chốt.
+- Inventory: Admin/Technician create/update/adjust; Admin-only delete. Tạo vật tư, tồn đầu kỳ và Movement phải atomic theo policy; không cho direct insert làm lệch balance khỏi ledger.
+- Task/Maintenance Plan: Admin/Technician create/update; Admin-only delete. Complete Task + tạo Maintenance Log là một Cloud transaction atomic.
+- Checklist Template/Version: Admin-only manage. Checklist Result: Admin/Technician create, append-only; Viewer read-only.
+- Maintenance Log/Request: Admin/Technician create theo permission hiện tại; giữ lịch sử append-only/revision model, không update/delete trực tiếp bản ghi lịch sử nếu schema/RLS không cho phép.
+- Organization settings, members, roles: Admin-only; Edge Function/RPC phải enforce server-side.
+
+### 10.4 Trạng thái
+- Đã có tài liệu đối chiếu chi tiết CLOUD_PERMISSION_UI_MATRIX.md; audit này bổ sung các sai lệch quan trọng cho kế hoạch Cloud-first.
+- Không thay đổi permission catalog, không cấp thêm quyền cho Technician, không thu hồi grant, không sửa UI/code/SQL.
+- Cần hoàn tất kiểm tra mọi child component/modal và test từng RPC với permission allow/deny, bao gồm quyền bị thu hồi giữa phiên.
