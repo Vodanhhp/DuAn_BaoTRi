@@ -289,3 +289,42 @@ Yêu cầu thiết kế:
 
 Không phát hiện xung đột mới giữa schema movement gốc và các quyết định nghiệp vụ đã chốt. Tuy nhiên, phạm vi chặn NaN phải bao gồm cả cột `quantity` hiện hữu và mọi numeric input tồn kho. Draft 018 vẫn chưa hợp lệ do literal `\\\\n`; chưa sửa SQL, chưa chạy parser/DDL và chưa truy cập Supabase.
 
+
+
+## 11. Chốt chính sách vòng đời Auth actor cho audit
+
+Đã đối chiếu draft 018/019 với migration identity nền `20261116000100_identity_and_organizations.sql`.
+
+### 11.1 Hiện trạng schema identity
+
+- `public.profiles.id` tham chiếu `auth.users(id) ON DELETE CASCADE`.
+- `organizations.created_by` tham chiếu `profiles(id) ON DELETE RESTRICT`.
+- `organization_members.user_id` và `invited_by_user_id` tham chiếu `profiles(id) ON DELETE RESTRICT`.
+- Vì vậy, Auth user đã tạo Organization hoặc còn được tham chiếu bởi membership thường đã không thể hard-delete an toàn; FK cascade từ Auth sang Profile không vượt qua được các FK RESTRICT đang giữ Profile.
+- Draft 018 và 019 tham chiếu trực tiếp `auth.users(id) ON DELETE RESTRICT` cho actor. Đây là cách nhất quán với mục tiêu giữ danh tính audit, đồng thời làm rõ thêm rằng actor lịch sử không được xóa khi còn movement/log tham chiếu.
+- Đây là kết luận từ file migration trong GitHub; chưa xác nhận schema đang triển khai trên Supabase.
+
+### 11.2 Quyết định thiết kế khuyến nghị
+
+**Giữ `ON DELETE RESTRICT` cho actor audit. Không đổi sang `SET NULL` hoặc `CASCADE`.**
+
+Lý do:
+1. Movement và Log là lịch sử nghiệp vụ; cần giữ liên kết tới Auth identity đã thực hiện thao tác.
+2. `performed_by_label` chỉ là snapshot tên hiển thị, không thay thế được UUID actor.
+3. Xóa Auth user không nên là cách xử lý nhân viên nghỉ việc. Nên vô hiệu hóa/ban đăng nhập Auth và chuyển membership sang suspended hoặc remove membership theo chính sách tổ chức; không xóa Auth identity nếu còn lịch sử nghiệp vụ.
+4. Nếu sản phẩm sau này bắt buộc hỗ trợ xóa định danh cá nhân theo yêu cầu pháp lý, phải thiết kế quy trình ẩn danh hóa riêng có phê duyệt, phạm vi dữ liệu rõ ràng và bảo toàn tính toàn vẹn audit; không tự đổi FK trong migration hiện tại.
+
+### 11.3 Điều kiện cần kiểm tra trong member-management flow
+
+- Phân biệt rõ remove khỏi Organization, suspend membership và hard-delete Auth user.
+- Remove/suspend membership không được xóa Auth user và không được xóa Movement/Log.
+- Nếu Edge Function có thao tác hard-delete Auth user, phải kiểm tra trước các tham chiếu Organization, Membership, Receipt, Asset Lease, Movement, Log revision và audit; thao tác phải thất bại an toàn khi còn tham chiếu RESTRICT.
+- Kiểm thử Auth user bị ban/suspended vẫn giữ nguyên actor UUID trong lịch sử; người đó không còn quyền đăng nhập hoặc thực hiện mutation mới.
+- Không cho phép UI mô tả “Xóa thành viên” như thể xóa vĩnh viễn Auth identity nếu backend thực tế chỉ remove membership.
+
+### 11.4 Kết luận
+
+Giữ FK actor `ON DELETE RESTRICT` trong draft 018 và 019 là phù hợp với schema identity hiện tại và mục tiêu audit. Chính sách vận hành nên là **deactivate/suspend thay vì hard-delete Auth user**. Không cần sửa hai SQL draft chỉ vì vòng đời actor; cần review riêng Edge Function member-management để xác nhận thao tác Remove/Suspend/ban Auth không vô tình hard-delete tài khoản.
+
+Chưa sửa SQL, chưa gọi Edge Function, chưa chạy SQL và chưa thay đổi Supabase.
+
