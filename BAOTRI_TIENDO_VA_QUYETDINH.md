@@ -4249,3 +4249,30 @@ anon/authenticated không có quyền trực tiếp vào Vault; service_role và
 
 ### Trạng thái
 Authenticated PostgREST RPC hiện là candidate ưu tiên để prototype trước direct Edge DB login, vì tận dụng actor context do PostgREST xác minh và tránh DB credential riêng. Chưa phải quyết định kiến trúc cuối cùng. Còn phải thử JWT context qua API thật bên trong SECURITY DEFINER, kiểm tra exposed schemas, thiết kế secret access và kiểm thử concurrency khi email Auth thay đổi. Không DDL/RPC/grant/secret/config nào được thay đổi.
+
+## 74. Ranh giới expose schema và vị trí RPC wrapper
+
+### Kiểm tra cấu hình expose
+- Truy vấn chỉ đọc `pg_settings`, `pg_db_role_setting` và database/role settings không tìm thấy giá trị `pgrst.db_schemas`.
+- Điều này không chứng minh không có schema nào được expose; Supabase có thể quản lý API exposure ngoài các catalog settings nhìn thấy được. Phải kiểm tra Dashboard → API Settings → Exposed schemas trên Test và Production trước khi triển khai.
+- Repo không có file `supabase/config.toml` tại đường dẫn đã thử; không suy luận cấu hình deploy từ repo.
+- Các bảng ứng dụng hiện ở public và bật RLS trên Test, nhưng không chứng minh schema RPC nào đang expose hoặc ACL function an toàn.
+
+### Vị trí wrapper đề xuất
+- Bảng private và logic nội bộ đặt trong schema không expose (candidate `private`); tuyệt đối không expose `auth` hoặc `vault`.
+- Chỉ một RPC wrapper hẹp đặt trong schema chủ đích expose cho PostgREST (có thể là `public`, nhưng phải kiểm tra Dashboard).
+- Wrapper chỉ dùng SECURITY DEFINER khi cần gọi hàm private/đọc Auth ngoài quyền trực tiếp của authenticated. Cố định `search_path = ''`, fully-qualified mọi object, lấy actor bằng `auth.uid()`, từ chối actor null; không nhận actor/email/org/role làm dữ liệu phân quyền đáng tin.
+- Hàm nội bộ không expose, chỉ wrapper owner được gọi. Revoke EXECUTE wrapper từ PUBLIC/anon, grant authenticated; browser không có USAGE schema private hoặc quyền bảng.
+- Wrapper + hàm nội bộ chạy trong cùng một transaction; mọi acceptance writes phải nằm trong một lần gọi RPC.
+- Kiểm tra PostgREST schema cache reload khi thêm/sửa wrapper; lập thứ tự deploy và rollback. Chưa thay đổi exposure.
+
+### Checklist trước triển khai
+1. Xác nhận exposed schemas trên Dashboard cho Test và Production riêng.
+2. Xác nhận private không expose; nếu chưa tồn tại thì tạo schema là DDL tương lai, chưa được duyệt.
+3. Xác minh chỉ wrapper xuất hiện trong RPC discovery đúng schema.
+4. Kiểm tra anon không gọi được, authenticated gọi được; client không đọc bảng private/Auth/Vault.
+5. Kiểm tra JWT context giữ nguyên bên trong SECURITY DEFINER và hàm private.
+6. Kiểm tra overload/default PUBLIC EXECUTE.
+7. Chạy lại quyền hiệu lực/RLS với anon, authenticated không membership, invitee hợp lệ, invite hết hạn/thu hồi và user không liên quan.
+
+Không đổi API exposure, schema, function, grant, dữ liệu SQL hay cấu hình Supabase.
