@@ -138,3 +138,16 @@ Contract áp dụng cho Member RPC theo CLOUD_MEMBER_MANAGEMENT_RPC_DESIGN.md §
 - Invite Saga operation ID là identity riêng của quy trình Auth external; `member.create` Receipt chỉ bao phủ bước finalize membership và bind Saga operation ID đã được xác minh. Không gộp Auth API side effect vào giả định PostgreSQL atomicity.
 
 Receipt DDL hiện tại chưa tự áp đặt operation-specific disclosure policy. Các Member RPC phải tự enforce policy trong SECURITY DEFINER transaction trước khi trả result. Không sửa draft 020 hoặc tạo migration trong bước review này.
+
+
+### 7.1 Fingerprint phải ổn định trước và sau commit
+
+Áp dụng Member design §27.7: fingerprint nhận diện request intent ổn định, không dựng từ live mutable state sau mutation. Nếu fingerprint chứa role/status hiện tại trước mutation rồi retry đọc state sau commit, cùng mutation_id có thể tạo fingerprint khác và không replay được Receipt.
+
+- Fingerprint bind requested target role/status và identity/intent; optional expected-current-state là precondition trong request, được kiểm tra chỉ ở nhánh mutation mới sau khi lấy locks.
+- Replay Receipt final so actor/operation/fingerprint từ intent request đã canonicalize; không đọc live state để dựng lại fingerprint và không áp dụng precondition lần hai.
+- State transition hợp lệ và expected-current-state được kiểm tra dưới lock chỉ khi Receipt chưa tồn tại.
+- Với Invite Saga, trạng thái khởi tạo phải lấy từ operation record bất biến; không suy lại từ trạng thái Auth hiện thời khi retry.
+- Test cùng mutation_id sau commit cho role change, status change, remove và self-activation; đồng thời test cùng ID khác requested target phải bị reject.
+
+Điều này không thay đổi fingerprint server-built, actor từ auth.uid(), hoặc nguyên tắc không tin client-supplied fingerprint.
