@@ -1,6 +1,6 @@
 # BAOTRI – Tiến độ và các quyết định đã chốt
 
-Cập nhật: 18/11/2026 (đồng bộ bộ icon thương hiệu 247 cho BAOTRI Mini)
+Cập nhật: 19/11/2026 (chốt nguyên tắc ghi nghiệp vụ Cloud-first)
 
 Tài liệu này ghi lại các quyết định kiến trúc và tiến độ thực tế để tiếp tục dự án ở những cuộc làm việc sau. Khi thay đổi quyết định hoặc hoàn thành chức năng, phải cập nhật tài liệu này.
 
@@ -3542,3 +3542,31 @@ Làm rõ Local-first: đối với Asset đã mapping Cloud, Local được ghi 
 - [ ] Chưa kiểm tra trực tiếp bản ghi Local `assetMutations` sau lần lưu vừa rồi.
 - [ ] Chưa nghiệm thu toàn bộ Asset Edit Lease + Mutation Receipt; chưa bật đồng bộ nghiệp vụ tổng thể.
 - **Điểm dừng phiên 19/11/2026:** giữ nguyên trạng thái hiện tại, không thao tác thêm trên Asset thử nghiệm. Khi tiếp tục, kiểm tra trạng thái mutation trong IndexedDB trước; sau đó mới quyết định cách kiểm thử replay receipt an toàn. Không tự ý chặn mạng hoặc tạo mutation mới khi chưa xác định rõ snapshot/mutation ID đang dùng.
+
+## 30. Quyết định kiến trúc: ghi nghiệp vụ Cloud-first, Local cập nhật sau (19/11/2026)
+
+### 30.1 Nguyên tắc đã thống nhất
+- Mọi thao tác **ghi nghiệp vụ** phải yêu cầu kết nối Internet và Cloud sẵn sàng. Khi offline, người dùng vẫn có thể xem dữ liệu Local đã tải (nếu màn hình hỗ trợ), nhưng các thao tác ghi nghiệp vụ phải bị vô hiệu hóa/chặn và thông báo rõ lý do.
+- Áp dụng cho các nghiệp vụ tạo mới, sửa, xóa hoặc thay đổi trạng thái dữ liệu (bao gồm thiết bị, vật tư, lịch/kế hoạch bảo trì, công việc, nhật ký và các phân hệ nghiệp vụ khác). Phạm vi chi tiết sẽ được rà soát khi triển khai từng phân hệ.
+- Khi người dùng nhập form, dữ liệu chỉ ở trạng thái tạm trong giao diện/draft; chưa cập nhật Local database chính thức.
+- Khi nhấn Lưu, gửi giao dịch lên Cloud. **Chỉ sau khi Cloud xác nhận thành công và trả dữ liệu/receipt hợp lệ, mới cập nhật Local chính thức**, đóng form và thông báo thành công.
+- Nếu Cloud xác nhận giao dịch thất bại, không cập nhật Local chính thức; báo lỗi và giữ/đóng draft theo quy tắc UX sẽ chốt khi triển khai.
+- Nếu timeout, mất kết nối hoặc response bị mất khiến kết quả Cloud chưa rõ, không được mặc định coi giao dịch thất bại hay tạo mutation mới. Phải reconcile bằng mutationId/idempotency receipt hoặc đọc trạng thái Cloud; nếu Cloud đã commit thì hoàn tất cập nhật Local theo kết quả đã xác nhận, nếu chưa commit mới cho phép retry/hủy an toàn.
+- Kiểm tra trạng thái Internet trên UI chỉ là UX. Backend/RPC và quyền truy cập Cloud vẫn phải là nơi quyết định giao dịch có được chấp nhận hay không.
+
+### 30.2 Edit Lease và Mutation Receipt tiếp tục được giữ
+- Cơ chế **Asset Edit Lease** vẫn giữ nguyên: PC/Mobile xin khóa trên Cloud; thiết bị giữ lease trước được quyền sửa; nền tảng khác bị chặn cho đến khi lease được release/hết hiệu lực theo cơ chế hiện tại. Không bỏ khóa chỉ vì nghiệp vụ ghi chuyển sang Cloud-first.
+- **Mutation Receipt/idempotency** vẫn cần để xử lý retry, timeout, response bị mất và bảo vệ khỏi áp dụng giao dịch trùng. Cloud-first không loại bỏ các tình huống kết quả giao dịch chưa rõ.
+- Việc mỗi kỹ thuật viên thường phụ trách khu vực/nhóm thiết bị riêng khiến tranh chấp sửa đồng thời không phổ biến; tuy vậy, ứng dụng vẫn phải xử lý an toàn khi tình huống này xảy ra.
+
+### 30.3 Các cơ chế cũ cần audit trước khi triển khai
+- Rà soát luồng Local-first Asset hiện tại (Local snapshot + mutation pending/processing, retry, recovery sau reload, mapping Cloud version) và xác định cách chuyển sang Cloud-confirmed → Local commit.
+- Rà soát các phân hệ khác, các nút tạo/sửa/xóa/thay đổi trạng thái, offline behavior, draft, validation, rollback, receipt/idempotency và quyền backend.
+- Không xóa code, không sửa schema/migration/RPC, không thay đổi dữ liệu Local/Cloud, không triển khai ngay trong quyết định này.
+- Việc chuyển đổi phải được thiết kế và kiểm thử riêng theo từng phân hệ; tránh làm ảnh hưởng các luồng đang hoạt động hoặc kết quả kiểm thử đã ghi nhận.
+
+### 30.4 Trạng thái
+- [x] Người dùng và trợ lý thống nhất định hướng Cloud-first cho mọi thao tác ghi nghiệp vụ; Local chính thức chỉ cập nhật sau Cloud xác nhận.
+- [x] Giữ Edit Lease PC/Mobile và Mutation Receipt/idempotency.
+- [ ] Chưa audit toàn bộ code và các phân hệ để lập kế hoạch chuyển đổi.
+- [ ] Chưa sửa code, SQL/migration, RPC, cấu hình hoặc dữ liệu; chưa triển khai cơ chế mới.
