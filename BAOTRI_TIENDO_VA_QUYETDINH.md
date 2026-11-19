@@ -4084,3 +4084,27 @@ Contract dự kiến:
 - Idempotency gắn invitation + authenticated actor + mutation ID + payload. Same key/different payload là conflict; replay trả receipt gốc; actor khác không nhận receipt hoặc membership.
 
 Open blockers: digest schema/normalization/key rotation; khả năng truy vấn/lock auth.users trong transaction hosted; state chuyển sang Inbox pending; expiry/revoke/decline; inviter authority; rate limit/audit retention; Shared Receipt key. Đây vẫn là proposal; không tạo DDL/RPC/Edge Function, không chạy SQL và không thay đổi Supabase.
+
+
+## 68. Kiểm chứng row lock auth.users trên Supabase Hosted (read-only)
+
+Đã kiểm tra catalog trên `BAOTRI-Mini-Test` (PostgreSQL 17.12), không ghi dữ liệu:
+- `auth.users` owner `supabase_auth_admin`, RLS bật, FORCE RLS tắt, không có policy tường minh.
+- `postgres` không phải superuser nhưng có BYPASSRLS, USAGE schema auth, SELECT + UPDATE trên `auth.users`.
+- `supabase_auth_admin` có SELECT + UPDATE; `service_role`, `authenticated`, `anon` không có SELECT/UPDATE.
+- `SELECT id FROM auth.users WHERE false FOR UPDATE` chạy thành công dưới postgres. Điều này kiểm tra quyền SQL, không khóa user row thật và không phải kiểm thử concurrency.
+
+PostgreSQL xác nhận `FOR UPDATE` giữ row lock đến hết transaction và chặn writer/locker xung đột. GoTrue source hiện tại cho thấy `ConfirmEmailChange` cập nhật cột `auth.users.email` trong transaction. Vì vậy có cơ sở cho phương án khóa đúng Auth user row trong acceptance transaction để tuần tự hóa với email change đã xác nhận. Phải kiểm tra version GoTrue thực tế của Hosted project trước khi dựa vào source hiện tại.
+
+Luồng candidate:
+1. Edge Function xác thực bearer với Auth server-side; lấy UID, email hiện tại chính xác và trạng thái xác minh; tính recipient HMAC bằng secret manager. Client không gửi các giá trị này.
+2. Function nội bộ hẹp, owner postgres, SECURITY DEFINER, fixed empty search_path, fully qualified names; khóa `auth.users` theo UID bằng `FOR UPDATE`.
+3. Khi đã khóa, so sánh email DB với email server vừa xác minh và yêu cầu `email_confirmed_at` không null. Sau đó khóa invitation Saga row, kiểm tra recipient digest, trạng thái, expiry/revoke, organization, role và membership conflict.
+4. Lock order cố định: Auth user → invitation/Saga → membership/role/audit/receipt. Transaction ngắn, tuyệt đối không gọi HTTP/Auth/email/provider trong lúc giữ lock.
+5. Nếu email change commit trước, acceptance thấy email mới và digest cũ không khớp. Nếu acceptance lấy lock trước, email change phải đợi đến khi acceptance commit. Lỗi lock/serialization/transaction phải rollback toàn bộ; retry dùng mutation ID cũ.
+
+Không cấp trực tiếp SELECT/UPDATE trên `auth.users` cho service_role/authenticated/client. Server role chỉ được EXECUTE function hẹp. Private schema không gọi được qua PostgREST nếu chưa expose; cần chốt direct trusted Postgres connection từ Edge Function hoặc server-only RPC wrapper có EXECUTE bị revoke khỏi PUBLIC/anon/authenticated và chỉ grant server role. Tuyệt đối không expose `auth.users` qua Data API.
+
+**Còn mở:** preflight read-only trên từng Production tenant project; xác minh GoTrue version; kiểm thử thực tế concurrent email-confirm-vs-accept, admin email update, lock timeout và rollback. Test hiện tại dùng WHERE false, chưa kiểm thử tranh chấp row lock thật.
+
+**Kết luận:** khả thi về quyền trên BAOTRI-Mini-Test, là candidate thiết kế chứ chưa phải phê duyệt triển khai. Không tạo DDL/RPC/Edge Function, không chạy SQL ghi, không grant quyền, không migration và không thay đổi Supabase.
