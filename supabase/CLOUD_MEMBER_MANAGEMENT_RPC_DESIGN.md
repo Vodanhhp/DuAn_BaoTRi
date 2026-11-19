@@ -1764,3 +1764,76 @@ Người dùng đã xác nhận chốt các nguyên tắc sau; từ thời đi�
 5. `transition_id` được sinh/giữ ổn định ở operation intent hay được truyền từ orchestration; không được tạo ID mới khi retry cùng transition.
 
 **Kết luận:** phương án khuyến nghị là bổ sung attempt history, provenance có evidence, digest versioned, transition sequence/idempotency; giữ adoption history trong audit append-only. Chưa sửa DDL 021, chưa tạo migration/RPC, chưa chạy SQL và không thay đổi Supabase Test/Production.
+
+
+### 37. Attempt History và phục hồi sau timeout/crash — schema/flow proposal (20/11/2026)
+
+Mục này cụ thể hóa §36.2. Đây là proposal để review, chưa phải DDL approval.
+
+#### 37.1 Nguyên tắc bất biến
+
+1. Mỗi lần gọi Auth bên ngoài có một `attempt_id` duy nhất, được claim và commit vào DB trước khi bắt đầu network call.
+2. Một operation chỉ có tối đa một attempt chưa được kết luận. `current_attempt_id` trỏ đến attempt đó.
+3. Lease chỉ giới hạn quyền điều phối/tiếp quản; lease hết hạn KHÔNG chứng minh request Auth đã dừng, thất bại hoặc chưa tạo user.
+4. `outcome_unknown` là trạng thái cần reconciliation, không phải retryable failure. Không tự động tạo attempt mới, không gọi Auth lần hai chỉ vì timeout, process crash hoặc lease expiry.
+5. Attempt đã tạo user hoặc có kết quả không chắc chắn không được xóa/ghi đè để “làm sạch” lịch sử.
+6. Mọi retry provider call chỉ được phép sau `definitive_failure` có bằng chứng rằng lần gọi trước không tạo user/không có side effect, hoặc sau quyết định recovery được kiểm soát và có bằng chứng độc lập. Nếu không thể chứng minh, giữ `needs_review`.
+
+#### 37.2 Mô hình lưu trữ khuyến nghị
+
+**A. `organization_member_invite_attempts` — immutable attempt header**
+- `attempt_id` PK; `(organization_id, operation_id)` FK tới operation `ON DELETE RESTRICT`.
+- `attempt_no` tăng tuần tự; unique `(organization_id, operation_id, attempt_no)`.
+- `claimed_by_kind`, `claimed_by_user_id`; `claimed_at`; `lease_expires_at`; `provider`/`provider_operation_code` nếu cần allowlist.
+- Không lưu email, raw request/response, access/refresh token, secret hoặc dữ liệu Auth không cần thiết.
+- Header không UPDATE/DELETE sau khi tạo. Không lưu một cột “kết quả cuối” có thể bị sửa ngược; kết quả nằm ở event log.
+
+**B. `organization_member_invite_attempt_events` — append-only event log**
+- `event_id` PK; `attempt_id` FK `ON DELETE RESTRICT`; `event_seq` tăng trong một attempt; unique `(attempt_id, event_seq)`.
+- `event_type` allowlist đề xuất: `claimed`, `provider_call_started`, `provider_result_created`, `provider_result_preexisting`, `provider_result_definitive_failure`, `outcome_unknown`, `reconciled_created`, `reconciled_preexisting_verified`, `reconciled_no_side_effect_proven`, `mismatch_detected`, `manual_review_required`.
+- `occurred_at`; `actor_kind` (`user`/`system`) và actor tương ứng; `evidence_code` allowlist; `observed_auth_user_id` nullable chỉ là ID quan sát được, không tự động trở thành operation.auth_user_id; `error_code` allowlist; `details` JSONB chỉ chứa metadata allowlist không PII.
+- Không UPDATE/DELETE; retry/reconciliation luôn append event mới. Unique event key/idempotency key phải ngăn ghi trùng khi response được gửi lại.
+- Event order dùng `event_seq`, không dùng timestamp. Event append phải xác thực attempt thuộc đúng operation và actor có quyền.
+
+**C. Operation pointer/state**
+- `current_attempt_id` trỏ tới attempt đang unresolved; `auth_attempt_count` phản ánh số attempt đã claim và không giảm.
+- `auth_outcome_unknown` giữ pointer và attempt history cho tới khi reconciliation kết luận.
+- Chỉ clear pointer sau khi có definitive no-side-effect outcome hoặc chuyển sang trạng thái đã resolve/needs_review theo policy; không clear chỉ vì lease expiry.
+
+#### 37.3 Luồng claim và gọi Auth
+
+1. Actor/RPC xác thực Auth, organization, active membership và permission; khóa operation theo thứ tự lock đã quy định.
+2. Nếu operation có current attempt unresolved hoặc trạng thái `auth_outcome_unknown`, từ chối claim provider call mới và trả mã `reconciliation_required`.
+3. Nếu chưa có attempt hoặc attempt trước có definitive failure đủ điều kiện retry, RPC tạo attempt header + event `claimed`, cập nhật `current_attempt_id`, count, status/version và commit nguyên tử.
+4. Worker/server orchestration thực hiện Auth call sau commit, không giữ DB transaction/row lock.
+5. Ghi event kết quả với idempotency key ổn định cho attempt. Nếu process crash trước khi ghi kết quả, trạng thái được coi là unknown; reconciler phải điều tra.
+
+#### 37.4 Lease expiry và reconciliation
+
+- Lease expiry chỉ cho phép Admin khác hoặc recovery process claim quyền reconciliation bằng CAS/version; không cấp quyền gọi Auth lần nữa.
+- Reconciler kiểm tra event log, kết quả provider có thể truy xuất bằng nguồn đáng tin cậy, và các correlation/evidence đã lưu. Email match đơn thuần không đủ để chứng minh attempt tạo user hoặc quyền sở hữu.
+- Nếu chứng minh đúng user ID được tạo bởi đúng operation + attempt: append `reconciled_created`, set provenance `created_by_operation` trong operation transaction và chuyển sang bước finalize phù hợp.
+- Nếu tìm thấy tài khoản pre-existing nhưng chưa chứng minh claim/ownership: append `reconciled_preexisting_verified` chỉ khi quy trình xác minh độc lập đạt; nếu không append `manual_review_required` và `needs_review`.
+- Nếu chứng minh chắc chắn provider không tạo side effect: append `reconciled_no_side_effect_proven`; khi đó mới có thể kết thúc attempt và cho phép Admin retry theo quyền/policy.
+- Nếu không thể xác định: giữ `outcome_unknown` hoặc `needs_review`; không tạo attempt mới.
+- Nếu Auth ID/evidence xung đột: append `mismatch_detected`, provenance `conflict`, chuyển `needs_review`; không tự gắn hoặc xóa Auth user.
+
+#### 37.5 Các tình huống crash bắt buộc test
+
+| Điểm crash | Trạng thái sau phục hồi | Hành động được phép |
+|---|---|---|
+| Trước khi claim attempt commit | Không có attempt | Claim mới có thể thực hiện |
+| Sau commit claim, trước Auth call | Attempt đã claim nhưng chưa có kết quả | Unknown/reconcile; không giả định request chưa chạy chỉ từ lease |
+| Trong Auth call hoặc timeout | `outcome_unknown` | Reconcile; không gọi lại mù quáng |
+| Auth tạo user, process crash trước khi ghi kết quả | `outcome_unknown` | Tìm bằng chứng liên kết đúng attempt; nếu không đủ thì needs_review |
+| Ghi event kết quả thành công nhưng response về client bị mất | Event đã tồn tại | Retry cùng event idempotency key, trả kết quả cũ; không gọi Auth lại |
+| Definitive failure được ghi nhận | Attempt kết thúc không side effect | Có thể tạo attempt mới theo policy và quyền hiện hành |
+| Lease hết hạn trong khi Auth call có thể vẫn chạy | Attempt unresolved | Chỉ takeover reconciliation, không takeover provider retry |
+
+#### 37.6 Quyết định đề xuất
+
+Khuyến nghị chọn **immutable attempt header + append-only attempt events** ngay từ giai đoạn manual recovery. Cách này có thêm một bảng so với attempt row có thể update, nhưng giữ được bằng chứng lịch sử, chống sửa kết quả cũ, và hỗ trợ worker sau này mà không phải thay mô hình. Không xây background worker ở giai đoạn hiện tại; recovery thủ công qua RPC có audit là đủ.
+
+**Chưa chốt:** provider-specific evidence/correlation nào có thể chứng minh “không có side effect”; danh sách error code nào là definitive failure; thời hạn lease và quyền Admin takeover reconciliation. Nếu không có bằng chứng definitive, default là unknown/needs_review, không retry.
+
+**Phạm vi:** chỉ thiết kế; chưa sửa DDL 021, chưa tạo RPC/worker, chưa chạy SQL, không thay đổi Supabase Test/Production.
