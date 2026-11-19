@@ -2069,3 +2069,16 @@ Review of the current Supabase JS Auth Admin API (20/11/2026):
 `createUser()` does not send an invite email. `generateLink({type:'invite'})` creates the user itself and does not offer trusted app_metadata input, so it is not a direct second step for an already-created user. A possible separate email/onboarding flow (e.g. a supported recovery/setup link or custom email) has not been proven to work safely with an unconfirmed user and must be tested against the pinned Supabase Auth/SDK versions before selection. Never auto-confirm email just to bypass this gap.
 
 **Conclusion:** `createUser + app_metadata marker` is a promising way to obtain positive Auth provenance without After User Created Hook, but it is not yet a complete replacement for native invite flow. Keep native `inviteUserByEmail` and fail-closed/manual review as current behavior until onboarding, reconciliation query, security, and timeout/crash tests are validated. No DDL/RPC/Edge Function changes or Supabase writes.
+
+
+## 48. createUser onboarding: recovery link is not yet proven for unconfirmed users
+
+Supabase docs/API review (20/11/2026):
+
+- `admin.generateLink({type:'recovery', email})` is a documented link-generation option; it generates an email action link/OTP for a custom email provider and does not itself send email.
+- The docs describe recovery as a password-recovery flow, but do not explicitly guarantee that a user created by `admin.createUser({email_confirm:false})` can receive/use a recovery link before email confirmation, nor that using that link confirms the email address. Do not assume recovery = invite/initial account activation.
+- Supabase Users docs state that a user with unverified email cannot sign in by default. Invite flow is explicitly described as sending a link that confirms email and lets the user finish setup (e.g. set password). That documented behavior applies to invite flow, not automatically to createUser + recovery.
+- `generateLink({type:'magiclink'})` is also not an established workaround: unverified email users cannot sign in by default, and docs do not state it confirms an unverified email created by createUser.
+- `generateLink({type:'invite'})` handles user creation itself; cannot be safely chained after createUser as a generic password-setup action and has no trusted create-time app_metadata parameter.
+
+**Conclusion:** The exact onboarding gap remains unresolved. Before considering `createUser + app_metadata marker`, a controlled isolated test on the pinned BAOTRI Supabase Auth/SDK versions must establish: (a) recovery generation for an existing unconfirmed user, (b) link verification outcome and `email_confirmed_at`, (c) ability to set password without auto-confirming, (d) expired/replayed link behavior, (e) delivery using custom SMTP/provider, and (f) whether the resulting link can be safely correlated with the Saga attempt without exposing secrets. Until then, do not implement or select this flow. Native `inviteUserByEmail` + fail-closed/manual review remains current.
