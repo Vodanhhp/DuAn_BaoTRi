@@ -3453,3 +3453,13 @@ Làm rõ Local-first: đối với Asset đã mapping Cloud, Local được ghi 
 - Đây là import/restore có chọn lọc Cloud → Local, chưa phải pull/change-feed hoặc đồng bộ hai chiều tổng thể.
 - Chưa sửa code, chưa thêm migration, chưa chạy SQL/RPC, chưa ghi hoặc thay đổi dữ liệu Cloud/Local.
 - Thiết kế cần review trước khi triển khai. Các bảng lịch sử, xung đột, tombstone, phân trang và đồng bộ nền thuộc giai đoạn sau.
+
+
+### 27.5 Chốt phạm vi triển khai code trước khi sửa
+- Chỉ bổ sung thao tác nhận một Asset Cloud được chọn về Local trong `CloudAssetsPanel` và hàm đọc lại một Asset Cloud theo organization + UUID trong `assetsCloud.ts`.
+- Tận dụng Dexie v8 hiện có; không thêm migration/schema.
+- Dùng quyền `assets.import` hiện có; không tạo quyền backend mới hoặc thay đổi RLS/RPC.
+- Trước ghi: đọc lại Cloud row; kiểm tra UUID/code Local, mapping hiện có, mutation chưa xác nhận và hàng đợi Asset chưa xử lý. Mọi xung đột phải dừng, không overwrite.
+- Ghi Asset + mapping trong một Dexie transaction; không tạo syncQueue hoặc AssetMutation; giữ nguyên UUID/code/timestamps từ Cloud, ảnh Local không được phục hồi (images=[]).
+- Không sửa App.tsx, assetEditLocks, các phân hệ khác, SQL/migration hoặc dữ liệu Cloud.
+- Sau commit, kiểm tra GitHub Actions/build; chỉ khi CI PASS mới hướng dẫn user kiểm thử trên Mobile với đúng một Asset. Runtime chưa được đánh dấu PASS trước khi user xác nhận.
