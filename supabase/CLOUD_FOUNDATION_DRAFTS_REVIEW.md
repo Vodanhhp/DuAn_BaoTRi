@@ -1516,3 +1516,10 @@ File: supabase/drafts/021_member_audit_and_invite_saga_DRAFT.sql. Đối chiếu
 Các rủi ro còn lại không được DDL đơn thuần giải quyết: immutable Saga identity/fingerprint/PII, transition CAS/version, updated_at, attempt history, reason PII filtering, audit trigger bypass bởi owner/TRUNCATE, FK retention lifecycle, RPC permission/lock order và atomic Audit + Shared Receipt.
 
 Chưa chạy parser/SQL, chưa tạo migration, chưa thay đổi Supabase.
+
+
+## 36. Invite Saga — transition/RPC test matrix (19/11/2026)
+
+Đã bổ sung Member design §32: ma trận trạng thái hợp lệ, RPC authorization/transaction boundary và test matrix Begin/Cancel/Claim/Record Result/Mark Unknown/Finalize/Adoption/Self Activation. Các điểm trọng yếu: CAS theo status+version, attempt token, manual recovery, không retry Auth mù quáng sau lease expiry, không dùng service_role giả actor, atomic membership + role + audit + Shared Receipt, và terminal state không reopen.
+
+Chưa viết RPC SQL, chưa chạy test database, chưa thay đổi Supabase. Self activation vẫn cần chốt audit/Receipt semantics; provenance Auth user và attempt-history vẫn là các gate mở.
