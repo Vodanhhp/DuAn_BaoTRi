@@ -4598,3 +4598,30 @@ Tiếp tục audit toàn bộ caller và các writer khác liên quan Auth/Profi
 - Rà soát lock paths Asset ở mức static function definitions đã hoàn thành; chưa chạy concurrency test.
 - Bước kế tiếp: xây ma trận lock liên vertical gồm Organization/Membership/Role/Permission/Auth/Receipt/Asset Lease/Asset rows; xác định điểm linearization của revoke và replay; chỉ đề xuất, không triển khai.
 - Không SQL write, DDL, RPC, grant, role, Auth/data, secrets, Edge Function deployment hoặc Supabase config change.
+
+
+## 87. Ma trận khóa liên vertical và FK interactions – 20/11/2026
+
+### Đã dựng inventory sơ bộ
+- Member/Auth: Auth trigger đi Auth user → Profile → Membership; legacy create đi Auth user FOR UPDATE → Profile read → Membership insert → role assignment. Role change đọc Membership không khóa rồi DELETE/INSERT assignment; status change khóa khi UPDATE; remove khóa Membership FOR UPDATE rồi cascade assignment.
+- Asset create: Counter → Asset. Import: advisory lock theo org+mutation → Counter → Asset → import ledger.
+- Asset Lease: acquire upsert Lease; heartbeat/release ghi Lease; update/archive khóa Lease FOR UPDATE rồi ghi Asset.
+- Asset mutation Receipt: đọc Receipt → khóa Lease → đọc lại Receipt → khóa Asset → update Asset → insert Receipt. Đây không phải Shared Receipt claim-before-business protocol.
+- FK Asset: Lease holder → Auth user ON DELETE CASCADE; Lease → Asset ON DELETE CASCADE; Asset Receipt và Import ledger → Auth user ON DELETE RESTRICT; Counter và Import ledger → Organization ON DELETE RESTRICT.
+- Trigger Asset trong nhóm này chỉ là BEFORE UPDATE trên Asset để cập nhật updated_at.
+
+### Các vấn đề còn mở
+1. Auth user deletion có candidate deadlock với Asset mutation: Auth deletion có thể giữ Auth row rồi chờ cascade Lease; Asset mutation giữ Lease rồi ghi Receipt có FK tới Auth user. Chưa chạy concurrency test, cần xác minh trước khi kết luận.
+2. Revoke Membership/Role có thể cạnh tranh với Asset mutation vì Asset chỉ gọi permission helper, không khóa authorization rows.
+3. Thứ tự Asset Lease → Asset → Receipt insert khác Shared Receipt claim → business rows → Receipt finalize.
+4. Asset create/import dùng Counter → Asset; import còn advisory lock trước Counter. Cần giữ thứ tự này ở mọi đường ghi.
+5. Role update chưa khóa parent Membership; status update lấy row lock ở UPDATE; remove khóa Membership trước cascade.
+6. Auth trigger vẫn chuyển invited → active ngoài acceptance transaction, gây lock-order inversion với Member proposal.
+
+### Candidate lock protocol
+Tạm dùng làm giả thuyết để kiểm tra, không phải quyết định triển khai: Organization → Membership actor/target (UUID tăng dần) → member_roles → Role → Role Permission → Auth user nếu bắt buộc → Receipt claim → domain lock (Asset Lease/Counter/advisory) → Asset/business rows → Receipt finalize. Cần giải quyết Auth trigger và Auth deletion; đồng thời chứng minh domain lock order và FK behavior bằng concurrency tests trên Test.
+
+### Trạng thái
+- Checkpoint trước §86; nay đã có inventory lock paths và FK interactions cho Asset/Member/Auth.
+- Bước tiếp: rà soát các luồng xóa Asset/Organization/Auth, đặc biệt FK cascade/restrict và mọi writer có thể khóa theo thứ tự ngược; sau đó mới lập test matrix concurrency cụ thể.
+- Chỉ đọc/nghiên cứu. Không chạy concurrency test, không SQL write, DDL, RPC, grant, role, Auth/data, secrets, Edge Function deployment hoặc cấu hình Supabase thay đổi.
