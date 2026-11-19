@@ -2582,3 +2582,23 @@ This narrows the business function's object privileges compared with a postgres-
 
 ### Trạng thái
 Chỉ đọc catalog/function definitions và tài liệu. Không SQL write, không thay trigger/function, không DDL/RPC/grant/role/Auth user/data/config change.
+
+
+## 65. Legacy membership SECURITY DEFINER writers và lock-path review – 20/11/2026
+
+### Hàm ghi hiện hữu (BAOTRI-Mini-Test, chỉ đọc)
+- public.admin_create_org_membership(uuid,uuid,text,uuid,text): SECURITY DEFINER owner postgres, search_path rỗng, row_security off; ACL hiện chỉ postgres và service_role có EXECUTE. Hàm kiểm tra service_role, đọc Organization/Role, khóa auth.users theo user_id FOR UPDATE, kiểm tra profiles, sau đó INSERT organization_members và member_roles. Hàm không ghi Invite Saga, audit hay Shared Receipt.
+- public.admin_remove_org_membership(uuid,uuid,uuid): SECURITY DEFINER owner postgres, ACL chỉ postgres/service_role. Hàm SELECT membership FOR UPDATE rồi DELETE organization_members; FK ON DELETE CASCADE xóa member_roles. Không khóa auth.users.
+- public.admin_update_org_member_role(uuid,uuid,text,uuid): SECURITY DEFINER owner postgres, ACL chỉ postgres/service_role. Đọc membership/role, DELETE các member_roles cũ rồi INSERT role mapping mới; SELECT ban đầu không có FOR UPDATE trên membership.
+- public.admin_update_org_member_status(uuid,uuid,text,uuid): SECURITY DEFINER owner postgres, ACL chỉ postgres/service_role. Đọc membership, kiểm tra trạng thái rồi UPDATE organization_members; SELECT ban đầu không có FOR UPDATE, UPDATE sau đó tự lấy row lock.
+- has_org_permission, has_org_role và is_org_member là SECURITY DEFINER read helpers, không ghi membership; chúng dựa trên auth.uid() và chỉ đọc các bảng Organization/Membership/Role/Permission.
+
+### Ý nghĩa với kiến trúc acceptance mới
+- admin_create_org_membership đã có lock path Auth user -> membership -> member_roles, tương thích với nguyên tắc không khóa membership trước rồi mới khóa Auth user. Tuy nhiên đây là đường tạo membership quản trị server-side, không có recipient digest/Saga/audit/receipt; phải được phân loại riêng với self-acceptance và không được coi là bằng chứng acceptance an toàn.
+- admin_remove_org_membership khóa membership rồi cascade member_roles, không truy cập Auth user. Khi thiết kế thêm thao tác có lock Auth, cần bảo đảm không giữ member_roles/membership rồi chờ Auth theo hướng ngược.
+- admin_update_org_member_role không khóa tường minh parent membership trước khi thay role mapping; cần kiểm tra concurrency/semantics của nhiều role mapping trước khi chốt invariant “một role cho mỗi membership”. Không kết luận có lỗi dữ liệu chỉ từ định nghĩa hàm.
+- admin_update_org_member_status lấy row lock ở UPDATE; phải tính thời điểm lock thực tế và các transaction cùng sửa trạng thái.
+- Các hàm ghi cũ hiện chỉ service_role được EXECUTE theo ACL đọc được. Không cấp đường gọi mới cho browser; khi đưa acceptance RPC vào vận hành phải rà lại các server caller và quyết định giữ/giới hạn/retire các hàm cũ để tránh bypass quy trình mới.
+
+### Kết luận tạm thời
+Lock order Auth -> Membership đã xuất hiện trong legacy create function; Auth profile-sync trigger cũng đi Auth -> Profile -> Membership. Tuy vậy global order chưa chốt vì cần kiểm tra mọi writer, đặc biệt các thao tác role/status và caller server-side. Không thay đổi ACL hoặc function.
