@@ -2401,3 +2401,14 @@ Project ref: `oyzhxgzltpdebpymuicb`, PostgreSQL 17.12.
 - If Edge Function validates JWT then passes UID, the DB trusts the Edge Function + dedicated DB credential. A compromised function/credential could pass another UID unless the DB independently verifies a signed, short-lived actor assertion.
 - Before implementation, choose and threat-model one: (A) explicitly accept Edge Function as the trusted identity boundary with strong deployment/secret controls and audit; or (B) design a signed actor assertion with DB-side signature, audience, expiry and replay verification. No ad-hoc GUC or caller-supplied UID is sufficient.
 - This is a design matrix and read-only observation, not approval to create roles, grants, schemas, functions, secrets or migrations.
+
+### PostgreSQL role semantics — verified on Test
+Read-only `pg_roles` inspection confirms:
+- `postgres`: LOGIN, not PostgreSQL SUPERUSER, but CREATEDB, CREATEROLE, REPLICATION and BYPASSRLS are true. It is therefore still far too privileged for runtime Edge Function credentials.
+- `service_role`: NOLOGIN, BYPASSRLS true; intended as an elevated PostgREST API role, not a least-privilege direct DB login.
+- `anon` and `authenticated`: NOLOGIN, no BYPASSRLS.
+- `authenticator`: LOGIN, NOINHERIT; it is the PostgREST role-switching principal, not the Edge Function DB identity.
+- `supabase_auth_admin`: LOGIN and CREATEROLE in this Test project, but scoped for Auth internals; never reuse it.
+Supabase's Postgres Roles guide recommends creating a separate database user for each external service rather than sharing the postgres password.
+
+For the future dedicated login, prefer no role memberships at all (not merely NOINHERIT). NOINHERIT prevents automatic privilege inheritance but a granted membership may still permit SET ROLE depending on membership options/version. Verify no membership paths, no SET ROLE path, and effective privileges. This remains an unapplied proposal.
