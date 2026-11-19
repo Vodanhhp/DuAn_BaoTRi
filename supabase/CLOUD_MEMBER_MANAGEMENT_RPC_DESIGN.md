@@ -1361,3 +1361,45 @@ Không dùng lại hai bảng này làm Shared Receipt Member hoặc audit chung
 - Đã kiểm tra catalog table/view names, RLS flags, policies liên quan và table grants cho tên audit/invite/member-operation/receipt/mutation/change.
 - Kết quả `list_migrations` qua API trả danh sách rỗng; không dùng kết quả này để kết luận migration chưa chạy vì các bảng nghiệp vụ đang tồn tại. Cần đối chiếu migration history riêng nếu công việc sau phụ thuộc vào nó.
 - Chưa kiểm tra nội dung dữ liệu Auth audit, không đọc email/PII, không kiểm tra Production.
+
+
+## 30. DDL draft 021 — Member audit và Invite Saga (19/11/2026)
+
+Tạo file nháp: supabase/drafts/021_member_audit_and_invite_saga_DRAFT.sql.
+
+**Trạng thái:** DDL draft only; chưa phải migration, chưa chạy trên Supabase. Không sửa migration hiện hữu, Edge Function hoặc client.
+
+### 30.1 Cấu trúc được đề xuất
+
+1. organization_member_invite_operations: một row cho mỗi logical invite, PK (organization_id, operation_id), giữ actor gốc, normalized_email (PII), role code, fingerprint, state machine, resolved Auth user, initial membership status bất biến theo contract, attempt/lease/retry metadata, adoption metadata, membership/Receipt scalar references và version.
+2. organization_member_audit_events: append-only audit cho Member lifecycle và Saga adoption/state transition; target membership ID là scalar không FK/cascade. Saga operation reference dùng composite FK RESTRICT để không xóa operation history khi audit còn tham chiếu.
+3. Trigger từ chối UPDATE/DELETE audit; RLS bật; không có policy đọc client; revoke direct table privileges khỏi PUBLIC/anon/authenticated/service_role. Mọi truy cập phải qua RPC hẹp được review.
+
+### 30.2 Đối chiếu schema Test
+
+- Role codes hiện có trong Test: admin, technician, viewer; draft chỉ cho phép technician/viewer ở invite, đúng contract.
+- organization_members hiện có các cột id, organization_id, user_id, role, status, invited_by_user_id, created_at, updated_at.
+- Test có pgcrypto; draft dùng gen_random_uuid() cho audit ID. Đây là metadata xác nhận, không phải dependency cần bật thêm.
+- organizations(id), profiles(id), auth.users(id) và composite organization/member identity đã được xác nhận có trong Test. Draft không tạo FK từ target_membership_id hoặc membership_id về organization_members, để lịch sử không bị cascade/mất khi remove.
+- Không tái sử dụng auth.audit_log_entries, asset_import_mutations hoặc asset_mutation_receipts.
+
+### 30.3 Những điểm cố ý chưa tự quyết
+
+- **Audit scope:** draft hiện đặt tên và phạm vi Member-specific; chưa phải framework audit organization-wide.
+- **Audit read permission:** chưa tạo read RPC hoặc cấp quyền đọc. Cần chốt users.audit.view hay audit.view; không mặc định dùng users.view.
+- **Retention:** không tạo TTL, cleanup hay archive. Phải chốt retention audit, Saga terminal/unresolved, PII deletion/anonymization và backup window.
+- **Adoption:** field hỗ trợ Admin khác tiếp quản, nhưng policy cho phép adoption vẫn là quyết định cần phê duyệt.
+- **Worker:** draft có attempt/lease fields nhưng chưa triển khai worker, RPC claim hoặc attempt history table; giai đoạn đầu manual recovery hay worker vẫn cần chốt.
+- **PII encryption:** chưa giả định pgcrypto encryption; cần key management riêng nếu quyết định mã hóa email at rest.
+- **System actor:** audit draft thêm actor_kind=user/system; system transition có actor_user_id NULL. Đây là mở rộng so với contract user-actor ban đầu, cần cross-review và xác nhận semantics trước khi dùng.
+
+### 30.4 Giới hạn DDL và các việc bắt buộc trước promote
+
+- DDL chỉ tạo hai bảng, index, RLS bật, revoke trực tiếp và append-only trigger. Không có RPC, client read policy, worker, state transition function, audit read function hoặc retention job.
+- resolved_initial_status, actor gốc, fingerprint và state/version transition phải được bảo vệ bất biến/compare-and-set trong RPC; DDL hiện chỉ có CHECK cơ bản, chưa tự enforce toàn bộ state machine.
+- Append-only trigger chặn UPDATE/DELETE row; không thay thế quyền vận hành đối với owner/superuser hoặc TRUNCATE. Grants vận hành phải được review riêng.
+- Direct privileges bị revoke khỏi service_role; Edge Function không được ghi bảng trực tiếp. Service orchestration cần RPC SECURITY DEFINER purpose-specific với EXECUTE grants hẹp.
+- FK RESTRICT tới Auth/Profile/Organization có thể chặn xóa identity/tenant; cần xác nhận lifecycle/retention policy và quy trình archive trước production.
+- Cần review kỹ SQL, test syntax/constraints trên PostgreSQL clone, concurrency, RLS, function owner, lock order, transaction rollback và PII leakage trước khi tạo migration thật.
+
+Không áp dụng SQL. Không có thay đổi database.
