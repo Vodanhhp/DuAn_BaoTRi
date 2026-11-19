@@ -4145,3 +4145,12 @@ Luồng candidate:
 Điều kiện kỹ thuật: không dùng postgres/service_role làm DB identity chung; không tách thao tác khóa row và ghi nghiệp vụ thành nhiều query/connection; transaction pooler không đảm bảo connection affinity, không dựa vào session state, temporary table hoặc advisory session lock; tắt prepared statements. UID phải gắn với phiên đã được Edge Function xác thực, không lấy từ client payload.
 
 Còn phải thiết kế role/grant matrix, quản lý và xoay vòng DB credential, TLS, giới hạn kết nối, kiểm tra driver/pooler, xác minh cách bind UID, và chạy kiểm thử concurrency riêng. Đây mới là candidate kiến trúc, chưa phải phê duyệt triển khai. Không SQL write, role, grant, DDL, RPC, Edge Function, secret hay cấu hình Supabase nào được thay đổi.
+
+### Ranh giới xác thực actor khi kết nối PostgreSQL trực tiếp
+Kết nối PostgreSQL trực tiếp không tự mang ngữ cảnh JWT end-user như PostgREST thường thiết lập. Vì vậy không được mặc định auth.uid() sẽ nhận ra người dùng trình duyệt; không nhận UID tùy ý từ client và không tự set request.jwt.claims từ dữ liệu không tin cậy.
+
+Edge Function phải xác thực bearer token phía server (ví dụ Auth getUser / luồng kiểm tra claims đã xác minh) rồi tự lấy UID. Hàm DB private nhận UID qua DB connection chỉ phía server được dùng, sau đó ràng buộc UID với lời mời, quyền actor và idempotency. Ranh giới tin cậy lúc này là mã Edge Function cùng DB credential: nếu ai chiếm được credential, họ có thể truyền UID khác, trừ khi bổ sung cơ chế assertion mật mã được DB tự xác minh.
+
+Dùng DB login/secret riêng cho luồng acceptance, không chia sẻ với Edge Function khác và tuyệt đối không đưa xuống browser. Phải kiểm tra toàn bộ function mà role có thể gọi, kể cả EXECUTE kế thừa từ PUBLIC và các SECURITY DEFINER trong schema role có USAGE. Chỉ grant EXECUTE một function cụ thể chưa đủ chứng minh không còn callable surface khác. Nếu dùng signed actor assertion thì phải thiết kế rõ key lifecycle, audience, expiry, replay binding và nơi xác minh chữ ký; không tin GUC/JWT claim tự đặt nếu chưa xác minh chữ ký.
+
+Đây là hạng mục bắt buộc rà soát trước khi tạo role/function.
