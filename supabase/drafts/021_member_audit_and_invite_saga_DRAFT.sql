@@ -82,8 +82,14 @@ create table public.organization_member_invite_operations (
     check (
       (adopted_by_user_id is null and adoption_reason is null and adopted_at is null)
       or
-      (adopted_by_user_id is not null and adoption_reason is not null and adopted_at is not null)
+      (adopted_by_user_id is not null and adoption_reason is not null
+        and char_length(btrim(adoption_reason)) between 1 and 1000
+        and adopted_at is not null
+        and adopted_by_user_id <> actor_user_id)
     ),
+
+  constraint organization_member_invite_auth_creator_consistent
+    check (auth_user_created_by_operation is null or auth_user_id is not null),
 
   constraint organization_member_invite_completed_consistent
     check (
@@ -166,7 +172,7 @@ create table public.organization_member_audit_events (
   after_state jsonb not null default '{}'::jsonb
     check (jsonb_typeof(after_state) = 'object'),
   reason text
-    check (reason is null or char_length(btrim(reason)) <= 1000),
+    check (reason is null or char_length(btrim(reason)) between 1 and 1000),
 
   outcome text not null default 'applied'
     check (outcome = 'applied'),
@@ -178,7 +184,32 @@ create table public.organization_member_audit_events (
     check (
       (actor_kind = 'user' and actor_user_id is not null)
       or
-      (actor_kind = 'system' and actor_user_id is null)
+      (actor_kind = 'system' and actor_user_id is null
+        and action_code = 'member.invite.state.change')
+    ),
+
+  constraint organization_member_audit_target_required
+    check (
+      action_code not in (
+        'member.create',
+        'member.role.change',
+        'member.status.change',
+        'member.remove',
+        'member.self.activate'
+      )
+      or target_membership_id is not null
+    ),
+
+  constraint organization_member_audit_mutation_required
+    check (
+      action_code not in (
+        'member.create',
+        'member.role.change',
+        'member.status.change',
+        'member.remove',
+        'member.self.activate'
+      )
+      or mutation_id is not null
     ),
 
   constraint organization_member_audit_invite_operation_fk
@@ -187,7 +218,11 @@ create table public.organization_member_audit_events (
     on delete restrict,
 
   constraint organization_member_audit_adoption_reason
-    check (action_code <> 'member.invite.adopt' or reason is not null),
+    check (
+      action_code <> 'member.invite.adopt'
+      or (actor_kind = 'user' and reason is not null
+        and char_length(btrim(reason)) between 1 and 1000)
+    ),
 
   constraint organization_member_audit_invite_operation_required
     check (
@@ -231,7 +266,9 @@ comment on column public.organization_member_audit_events.before_state is
 comment on column public.organization_member_audit_events.after_state is
   'Allowlisted minimal state only (e.g. role_code/status); never full row or PII.';
 comment on column public.organization_member_audit_events.actor_kind is
-  'user = real authenticated actor; system = server-side Saga transition with actor_user_id NULL.';
+  'user = real authenticated actor; system is reserved for member.invite.state.change only and requires actor_user_id NULL.';
+comment on column public.organization_member_audit_events.reason is
+  'Nonblank bounded reason when present. RPC must reject PII, email, tokens and secrets; SQL length checks cannot detect sensitive text.';
 
 create index organization_member_audit_events_org_time_idx
   on public.organization_member_audit_events
