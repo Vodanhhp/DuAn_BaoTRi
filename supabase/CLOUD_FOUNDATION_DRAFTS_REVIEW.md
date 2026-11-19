@@ -1708,3 +1708,13 @@ Candidate transaction: Edge Function validates bearer via Auth, obtains UID + ex
 Do not grant direct auth.users SELECT/UPDATE to service_role, authenticated or clients. Grant only EXECUTE on the narrowly scoped internal function to the trusted server role. A private-schema function is not callable through PostgREST unless the schema is exposed; select either a trusted direct Postgres connection from Edge Function or a tightly restricted server-only RPC wrapper (revoke EXECUTE from PUBLIC/anon/authenticated; grant only to server role). Never expose auth.users through Data API.
 
 Open: repeat read-only privilege preflight per Production project; verify deployed GoTrue version and email-change transaction behavior; test actual concurrent email-confirm-vs-accept, lock timeout, transaction rollback and admin email updates. The current false-predicate query did not test live contention. No DDL/RPC/Edge Function/SQL write or Supabase configuration change.
+
+## 57. Concurrent invitation acceptance and Auth email-change test matrix
+
+Test plan only; no tests have been executed. Use synthetic disposable users/invitations in BAOTRI-Mini-Test and two independent sessions with explicit barriers.
+
+Required cases: acceptance locks Auth user first and email confirmation waits; confirmed email change commits first and stale Inbox acceptance rejects; simultaneous start serializes to one of those orders; email changes to another fixture's address without cross-acceptance; unconfirmed email rejects; invitation expiry/revocation; inactive organization/invalid role; existing membership/concurrent accept; lock timeout/deadlock/serialization failure; lost HTTP response and replay; same mutation ID with changed payload; unauthorized caller; direct Auth/Saga access denial; Admin email-update paths and all supported Auth email-change modes on deployed GoTrue.
+
+Pass criteria: serializable observed ordering; success creates exactly one membership + one role + audit + Shared Receipt + Saga completion; rejection/rollback creates zero business writes; replay returns original receipt; no PII/secret leakage; browser roles cannot execute internal functions or read private/Auth tables. Initial randomized target: at least 20 interleavings per race class plus deterministic barriers for both lock orders.
+
+Use test-only harness barriers, not production sleeps/debug hooks. A controlled SQL update can verify Postgres row-lock mechanics but does not prove the real GoTrue confirmation path. No fixtures or tests were run; no SQL writes, DDL, RPC, Edge Function, grants or config changes.
