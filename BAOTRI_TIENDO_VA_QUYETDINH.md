@@ -3821,3 +3821,15 @@ Hoàn thiện hợp đồng quyền/replay và quyết định điều chỉnh t
 - GitHub Member design, Foundation review và Progress file được cập nhật, fetch lại xác minh.
 - Không sửa DDL 021; không tạo migration/RPC/Edge Function; không chạy SQL; không thay đổi Supabase Test/Production.
 - Bước tiếp theo: chốt schema decisions (provenance, fingerprint, attempt history, adoption cardinality, audit sequence, PII/retention), sau đó mới chỉnh draft.
+
+
+## 50. Chốt Auth provenance và request fingerprint cho Invite Saga (20/11/2026)
+
+Người dùng đã chốt năm nguyên tắc kiến trúc:
+- Auth provenance có bốn trạng thái: `created_by_operation`, `preexisting_verified`, `unknown`, `conflict`.
+- Không đủ bằng chứng hoặc có xung đột: fail closed sang `needs_review`; không tự gắn hoặc xóa Auth user. Email trùng không phải bằng chứng sở hữu.
+- Request fingerprint là canonical HMAC-SHA-256 digest; secret nằm ngoài Database, chỉ lưu digest và metadata phiên bản.
+- Cùng operation ID nhưng digest khác: reject conflict; replay dùng đúng fingerprint/key version đã lưu.
+- Adoption không thay đổi actor gốc hoặc fingerprint.
+
+Đã ghi quyết định tại Member design §35 và Foundation review §38. Các chi tiết vận hành còn phải thiết kế trước DDL: quy trình xác minh tài khoản pre-existing, key retention/rotation và bảo vệ/retention email. Chưa sửa DDL 021; chưa tạo migration/RPC/Edge Function; không chạy SQL; không thay đổi Supabase Test/Production.
