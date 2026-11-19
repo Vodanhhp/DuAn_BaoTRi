@@ -2199,3 +2199,35 @@ Static inventory từ migration/main, chưa phải runtime call graph đầy đ�
 
 ### Trạng thái
 Static code search + đọc `src/App.tsx`, `src/lib/assetsCloud.ts`, `src/CloudAssetsPanel.tsx`, RLS migration. Chưa thực thi test và chưa thay đổi code/Supabase. Search theo mẫu không thay thế exhaustive call graph; cần review thêm dynamic imports/indirect wrappers trước khi kết luận tuyệt đối.
+
+## 82. Runtime Cloud concurrency matrix – ưu tiên P0/P1 – 20/11/2026
+
+Phạm vi: chỉ các writer/caller Cloud hiện có hoặc DB capability có thể tác động tới chúng. Đây là thiết kế test, chưa chạy test và không tạo dữ liệu.
+
+| ID | Pair / race | Khóa/điểm tranh chấp | Kết quả cần chứng minh | Ưu tiên |
+|---|---|---|---|---|
+| A1 | Hai linked Asset mutation cùng Asset, cùng Lease token | Lease row FOR UPDATE → Asset row | Một mutation áp dụng; mutation còn lại không ghi đè payload/Receipt, stale expected version phải conflict rõ ràng | P0 |
+| A2 | Mutation ↔ heartbeat cùng Lease | UPDATE/row lock Lease | Không mất gia hạn hợp lệ; mutation chỉ qua nếu token còn hạn tại thời điểm kiểm tra | P0 |
+| A3 | Mutation ↔ release cùng Lease | Lease row FOR UPDATE/DELETE | Nếu mutation giữ Lease lock trước thì commit trước release; nếu release thắng thì mutation fail, không cập nhật Asset | P0 |
+| A4 | Acquire hai client cùng Asset, lease hết hạn | PK (organization_id, asset_id), UPSERT conditional | Tối đa một token mới được cấp; client thua không nhận token của người khác | P0 |
+| A5 | Asset direct DELETE ↔ mutation/heartbeat/acquire | Asset row, Lease row và FK ON DELETE CASCADE | Không deadlock kéo dài; delete không bypass Lease protocol; nếu chưa có delete RPC thống nhất Lease → Asset thì phải thu hồi direct DELETE trước khi mở rộng | P0 |
+| I1 | Hai import cùng mutation_id, cùng payload | Advisory xact lock(org, mutation_id) + import ledger | Một lần import/counter reconciliation; retry trả đúng kết quả đã ghi | P1 |
+| I2 | Hai import cùng mutation_id nhưng actor/payload/asset khác | Advisory lock + ledger fingerprint | Request thứ hai bị từ chối; không ghi thêm Asset/counter | P1 |
+| I3 | Hai import khác mutation_id cùng category, mã được nhận diện | Counter UPSERT row | Counter reconcile tuần tự; không làm lùi last_value; Asset insert độc lập | P1 |
+| I4 | Import ↔ allocator cùng org/category | Counter UPSERT row | Không cấp sequence trùng; counter cuối >= sequence đã import | P1 – allocator helper chưa có UI caller |
+| I5 | Hai import khác mutation_id cùng UUID hoặc cùng code | Asset PK/unique (organization_id, code) | Một request thắng; request còn lại lỗi duplicate có thể xử lý được; không đổi UUID/code và không ghi ledger thành công giả | P1 |
+| S1 | Settings update ↔ import đang đọc asset_code_config | Settings row read không khóa ↔ UPDATE row lock | Xác định rõ import dùng snapshot config cũ hay mới; không tạo trạng thái counter reconciliation không nhất quán | P1 |
+| S2 | Settings update ↔ allocator helper | Settings row read không khóa ↔ UPDATE row lock | Tương tự S1; test hợp đồng trước khi helper được nối UI | P1 – helper chưa có caller |
+
+### Nhận định khóa-order từ code hiện tại
+- Linked Asset mutation khóa `asset_edit_locks` FOR UPDATE trước rồi UPDATE Asset. Heartbeat/release/acquire cũng đụng cùng Lease row; đây là điểm serialization chính.
+- `acquire_asset_edit_lock` kiểm tra Asset tồn tại trước, sau đó INSERT/UPSERT Lease. Asset DELETE có FK cascade tới Lease; phải kiểm tra race ở mức DB, không chỉ UI.
+- Import khóa advisory theo `(organization_id, mutation_id)`, đọc ledger, đọc Settings, UPSERT Counter nếu nhận diện code, khóa Asset FOR UPDATE nếu đã tồn tại, rồi ghi import ledger. Advisory lock chỉ gom retry cùng mutation ID; Counter mới gom các import khác mutation ID cùng category.
+- Allocator đọc Settings không khóa, tính MAX code, UPSERT Counter rồi INSERT Asset. Import nhận diện code cũng UPSERT Counter trước Asset. Hai luồng có shared Counter nhưng không shared Settings lock.
+- Settings update hiện dùng PostgREST UPDATE trực tiếp; transaction giữ row lock Settings, nhưng reader import/allocator không yêu cầu FOR SHARE nên không có thứ tự khóa Settings → Counter được bảo đảm.
+
+### Test harness và điều kiện an toàn
+- Chạy trên Test riêng, mỗi scenario dùng organization/asset/user/device/mutation ID được tạo riêng trong transaction có rollback hoặc fixture cô lập; không chạy trên dữ liệu vận hành.
+- Dùng hai session DB độc lập, barrier đồng bộ tại điểm ngay trước RPC/statement; ghi lại begin/lock wait/commit/SQLSTATE và kiểm tra invariant sau mỗi race.
+- Deadlock được ghi nhận theo SQLSTATE 40P01; serialization/unique/lease conflict phải phân biệt, không gom thành “test fail” chung.
+- Không chạy khi chưa có phê duyệt rõ ràng cho test có ghi dữ liệu. Checkpoint này chỉ chốt kịch bản và winner semantics.
