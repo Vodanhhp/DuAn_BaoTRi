@@ -101,3 +101,10 @@ Bảng hiện tại `inventory_movements` có `quantity > 0`, type Nhập/Xuất
 - Không thêm unique inventory code trước preflight.
 - Không dùng performed_by/name label làm actor.
 - Không suy đoán historical balances hoặc edit history.
+
+
+## 9. SQL drafts được tạo để review (19/11/2026)
+
+- `supabase/drafts/018_inventory_movement_audit_fields_DRAFT.sql`: chỉ bổ sung audit fields/constraints/index cho Movement; legacy fields NULL; không backfill balance; không thay grants; không chứa RPC.
+- `supabase/drafts/019_maintenance_log_revisions_DRAFT.sql`: thêm root creator, tạo revision table, backfill baseline revision 1, seed `logs.revise` cho Admin roles và RLS read-only. Không thu hồi direct root INSERT trước khi RPC create cutover.
+- Cả hai file là DRAFT ONLY; chưa chạy SQL. Cần review thêm transaction/permission behavior và đồng bộ với shared Receipt + row_version trước khi promotion.
