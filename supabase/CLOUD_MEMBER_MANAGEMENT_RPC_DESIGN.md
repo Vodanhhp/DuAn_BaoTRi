@@ -2082,3 +2082,37 @@ Supabase docs/API review (20/11/2026):
 - `generateLink({type:'invite'})` handles user creation itself; cannot be safely chained after createUser as a generic password-setup action and has no trusted create-time app_metadata parameter.
 
 **Conclusion:** The exact onboarding gap remains unresolved. Before considering `createUser + app_metadata marker`, a controlled isolated test on the pinned BAOTRI Supabase Auth/SDK versions must establish: (a) recovery generation for an existing unconfirmed user, (b) link verification outcome and `email_confirmed_at`, (c) ability to set password without auto-confirming, (d) expired/replayed link behavior, (e) delivery using custom SMTP/provider, and (f) whether the resulting link can be safely correlated with the Saga attempt without exposing secrets. Until then, do not implement or select this flow. Native `inviteUserByEmail` + fail-closed/manual review remains current.
+
+
+## 49. Existing Auth account: verified self-acceptance flow (proposal, 20/11/2026)
+
+**Security boundary:** an email match is only a candidate locator. An inviter must never attach an existing Auth UUID to a membership merely because the submitted email matches auth.users.email, even when email_confirmed_at is populated. The existing account holder must authenticate as that exact Auth user and explicitly accept the pending organization invitation.
+
+### Proposed flow
+
+1. **Create invitation intent only.** An authorized Admin creates an immutable invitation operation with normalized target-email fingerprint, requested role, organization, original actor, expiry and canonical request fingerprint. Do not call inviteUserByEmail, createUser, or any Auth provisioning endpoint when the system has positively identified an existing account. Do not create a membership or assign a role yet.
+2. **Keep it pending.** Add a candidate Saga state such as awaiting_existing_account_acceptance (schema/state-machine change not approved). The pending invitation is not an active membership and grants no organization access. It can be cancelled/revoked by an authorized Admin and expires according to a policy still to be specified.
+3. **Require the invitee's own authenticated session.** After signing in to the existing account, the user opens a pending-invitations view. A narrowly scoped authenticated RPC returns only invitations whose target email matches the current Auth user's authoritative, currently verified email. Do not accept a caller-supplied Auth UUID or email as identity evidence; derive the actor from auth.uid() and read the authoritative Auth record server-side.
+4. **Explicit acceptance.** The invitee chooses Accept. In one database transaction, the server revalidates: current Auth UID; authoritative email is verified (email_confirmed_at IS NOT NULL); normalized verified email matches the invitation's stored fingerprint; invitation is still pending/unexpired/not revoked; organization is active; role is still valid; inviter's authority (or an authorized Admin's reapproval if policy later permits) remains valid; and no conflicting membership exists. Then atomically create membership + one role assignment + audit + Shared Receipt + operation completion. Record the accepting Auth UID and evidence that acceptance occurred in the authenticated session.
+5. **No silent attachment.** Until the invitee accepts, no membership, role, tenant access or Auth-user association is created. Decline/cancel/expiry are explicit terminal or revocation transitions to be designed; they must be idempotent and audited.
+
+### Existing account variants
+
+- **Existing account with verified email:** eligible to discover and accept only after signing in as that exact account. preexisting_verified is recorded only after the server verifies the authenticated UID and current verified email and commits the explicit acceptance. Email match alone is insufficient.
+- **Existing account with unverified email:** do not attach, auto-confirm, reset password, or assume inviteUserByEmail will deliver an activation message. The user must complete the normal supported Auth verification/sign-in process first; only then can the same self-acceptance flow run. Until then keep the invitation pending or needs_review according to expiry/recovery policy.
+- **Multiple matching candidates, changed email, missing/ambiguous Auth record, stale or conflicting operation:** fail closed to needs_review; no automatic attach/delete. If the user changes their verified email after the invitation was issued, require a new invitation or separately approved re-verification flow; do not silently rewrite the original immutable intent.
+- **No existing account:** remains the separate new-user provisioning path. Existing fail-closed Auth provenance and timeout/crash policy remains unchanged.
+
+### Privacy and abuse controls
+
+- Pending-invitation discovery must not expose organization roster, arbitrary email existence, Auth UUID, phone, role details beyond what the invitee needs, invite token, or another person's invitation. Return minimal fields and only rows bound to the current verified Auth email.
+- Rate-limit and audit discovery/accept/decline attempts. Avoid different unauthenticated responses that reveal whether an email has an Auth account.
+- Do not trust user_metadata, client-supplied email/UID, JWT user-editable metadata, or an email-only lookup as proof. Use server-derived auth.uid() plus authoritative Auth record and verified email state.
+- Recheck all conditions in the final transaction; a prior list result is only a snapshot and cannot authorize acceptance later.
+- Membership + role + audit + Shared Receipt + Saga transition must commit atomically. Duplicate acceptance with the same operation/actor is idempotent; competing or mismatched acceptance is rejected without partial writes.
+
+### Open design items
+
+Invitation notification/delivery for existing accounts; whether pending invites are surfaced in-app only or via a separate email; expiry and resend policy; decline/revoke states; handling changed email and multiple pending invitations; whether original inviter must retain users.manage or an Admin can reapprove; rate limits and audit retention; exact RPC response shape and enumeration controls. Verify current Auth API behavior against pinned versions before implementing any delivery mechanism.
+
+**Status:** recommended workflow for design review only. It is not yet an approved schema/state-machine change. Do not add the candidate state to DDL 021, do not implement RPC/Edge Function, do not run SQL, and do not modify Supabase. Current native inviteUserByEmail + fail-closed/manual review remains unchanged.
