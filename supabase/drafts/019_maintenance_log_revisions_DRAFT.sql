@@ -34,7 +34,7 @@ create table public.maintenance_log_revisions (
   performed_by text not null default '',
   action text not null,
   reason text,
-  edited_by_user_id uuid references auth.users(id) on delete restrict,
+  actor_user_id uuid references auth.users(id) on delete restrict,
   mutation_id uuid,
   created_at timestamptz not null default now(),
 
@@ -55,7 +55,7 @@ create table public.maintenance_log_revisions (
       (
         revision_no = 1
         and action = 'created'
-        and edited_by_user_id is not null
+        and actor_user_id is not null
         and mutation_id is not null
         and reason is null
       )
@@ -63,7 +63,7 @@ create table public.maintenance_log_revisions (
       (
         revision_no = 1
         and action = 'legacy_baseline'
-        and edited_by_user_id is null
+        and actor_user_id is null
         and mutation_id is null
         and reason is null
       )
@@ -71,7 +71,7 @@ create table public.maintenance_log_revisions (
       (
         revision_no > 1
         and action = 'edited'
-        and edited_by_user_id is not null
+        and actor_user_id is not null
         and mutation_id is not null
         and nullif(btrim(reason), '') is not null
       )
@@ -91,7 +91,7 @@ insert into public.maintenance_log_revisions (
   organization_id, log_id, revision_no,
   log_date, due_date, kind, description, parts, readings,
   requested_by, result, completed_at, performed_by,
-  action, reason, edited_by_user_id, mutation_id, created_at
+  action, reason, actor_user_id, mutation_id, created_at
 )
 select
   l.organization_id, l.id, 1,
