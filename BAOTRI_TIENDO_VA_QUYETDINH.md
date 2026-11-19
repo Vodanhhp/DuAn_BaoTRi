@@ -4625,3 +4625,23 @@ Tạm dùng làm giả thuyết để kiểm tra, không phải quyết định 
 - Checkpoint trước §86; nay đã có inventory lock paths và FK interactions cho Asset/Member/Auth.
 - Bước tiếp: rà soát các luồng xóa Asset/Organization/Auth, đặc biệt FK cascade/restrict và mọi writer có thể khóa theo thứ tự ngược; sau đó mới lập test matrix concurrency cụ thể.
 - Chỉ đọc/nghiên cứu. Không chạy concurrency test, không SQL write, DDL, RPC, grant, role, Auth/data, secrets, Edge Function deployment hoặc cấu hình Supabase thay đổi.
+
+
+## 88. Hard-delete Asset và deadlock candidate Lease ↔ Asset – 20/11/2026
+
+### Phát hiện
+- RLS migration 006 cấp policy DELETE cho authenticated khi `assets.delete`; catalog Test xác nhận authenticated có DELETE privilege trên `assets`, trong khi không có UPDATE.
+- Không tìm thấy caller Cloud trực tiếp gọi `.from('assets').delete()` hoặc RPC delete; tuy nhiên API database hiện vẫn cho phép đường direct DELETE nếu policy pass.
+- FK từ `asset_edit_locks` sang Asset là ON DELETE CASCADE; FK từ asset_images, checklist results/templates, inventory movements, maintenance logs/plans/tasks là ON DELETE RESTRICT. Vì thế delete Asset bị chặn khi còn lịch sử/tham chiếu RESTRICT, nhưng Lease vẫn cascade khi delete hợp lệ.
+- Update/archive/receipt RPC khóa Lease rồi mới ghi/khóa Asset. Direct DELETE Asset khóa Asset rồi cascade Lease. Đây là thứ tự ngược Lease → Asset và có thể deadlock trên cùng Asset.
+- Chưa chạy concurrency test, chưa có kết luận runtime deadlock đã tái hiện.
+
+### Quyết định cần có trước Cloud delete
+- Không bật hard-delete Asset qua direct PostgREST khi update path vẫn khóa Lease trước Asset.
+- Chọn một giao thức chung: revoke direct DELETE và cung cấp RPC delete khóa Lease → Asset rồi kiểm tra các FK/history, hoặc chứng minh một thứ tự khác bằng test concurrency.
+- Không thay đổi policy/grant/RPC trong phiên rà soát.
+
+### Trạng thái và bước tiếp
+- Checkpoint §87 đã bổ sung inventory FK/lock Asset; §88 ghi nhận direct DELETE capability và lock inversion.
+- Bước tiếp theo: kiểm tra mọi business table có hard-delete policy/grant tương tự, và rà soát code Local/Cloud delete queue để xác định hành vi thực tế trước khi chốt policy.
+- Chỉ đọc/nghiên cứu. Không SQL write, DDL, RPC, grant, role, Auth/data, secrets, Edge Function deployment hoặc cấu hình Supabase thay đổi.
