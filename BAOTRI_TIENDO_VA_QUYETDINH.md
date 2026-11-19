@@ -4310,3 +4310,64 @@ Catalog chỉ đọc trên Test cho thấy các bảng được kiểm tra chỉ
 Không thấy trigger nghiệp vụ khác trên các bảng organizations, organization_members, member_roles, roles, role_permissions, profiles. Không có trigger tự tạo member_roles, ghi audit invitation, cập nhật Saga hoặc Shared Receipt. Vì vậy acceptance function phải tự ghi đầy đủ membership + role + audit + Shared Receipt + Saga trong cùng transaction; không dựa vào trigger để hoàn tất một phần.
 
 Đây là bằng chứng riêng của Test. Trước migration cần kiểm tra lại trigger inventory/function definitions vì migration tương lai có thể bổ sung trigger. Không thay đổi trigger hoặc bảng.
+
+
+---
+
+## 77. CHECKPOINT DỪNG PHIÊN – 20/11/2026 (tiếp tục ngày mai)
+
+### Đã hoàn tất trong phiên
+1. Kiểm tra role PostgreSQL trên BAOTRI-Mini-Test:
+   - postgres: LOGIN, không SUPERUSER nhưng có CREATEDB, CREATEROLE, REPLICATION, BYPASSRLS; không dùng làm credential runtime cho Edge Function.
+   - service_role: NOLOGIN, BYPASSRLS; không dùng làm DB login tối thiểu hoặc secret reader chung.
+   - authenticator: LOGIN/NOINHERIT, phục vụ PostgREST role switching.
+   - anon/authenticated không có BYPASSRLS.
+   - Ghi nhận yêu cầu DB login riêng, không có role membership đặc quyền nếu sau này cần direct DB connection.
+
+2. Kiểm tra crypto/Vault:
+   - PostgreSQL 17.12 có pgcrypto 1.3; pgjwt không cài và Supabase đánh dấu deprecated trên PG17.
+   - Vault schema cùng secrets/decrypted_secrets objects tồn tại; catalog cho thấy service_role và postgres đọc được, anon/authenticated không đọc trực tiếp.
+   - Không truy vấn secret value; không thay đổi Vault hoặc quyền.
+   - pgcrypto HMAC có thể dùng cho recipient digest nếu giải quyết được secret isolation; không nhầm HMAC với xác minh JWT/JWS.
+
+3. Kiểm tra actor context:
+   - Định nghĩa auth.uid() lấy UUID từ request.jwt.claim.sub, fallback request.jwt.claims ->> sub.
+   - Đây là cơ chế PostgREST request context; direct SQL connection không mặc nhiên có JWT đã xác minh.
+   - Candidate RPC wrapper phải lấy actor từ auth.uid(), không nhận UID/email/org/role đáng tin từ client; không tự ghi đè request JWT settings.
+
+4. Kiểm tra schema exposure:
+   - Catalog pg_settings/pg_db_role_setting không tìm thấy pgrst.db_schemas; chưa đủ kết luận schema nào đang expose.
+   - Repo không có supabase/config.toml tại đường dẫn đã kiểm tra.
+   - Phải kiểm tra Dashboard API Settings → Exposed schemas riêng trên Test và Production.
+   - Candidate: một wrapper hẹp trong schema expose (có thể public sau xác minh); bảng/logic nội bộ ở schema không expose (candidate private).
+
+5. Kiểm tra RLS/trigger:
+   - RLS bật nhưng FORCE RLS tắt ở organizations, organization_members, member_roles, roles, role_permissions, profiles; owner postgres có BYPASSRLS.
+   - SECURITY DEFINER chạy bằng owner đặc quyền phải tự kiểm tra toàn bộ tenant, actor, email confirmed, recipient digest, trạng thái invitation, org, role, inviter authority, membership conflict và idempotency; không dựa vào RLS.
+   - Trigger nghiệp vụ được kiểm tra chỉ có updated_at ở organizations, organization_members, profiles. Không có trigger tự tạo member_roles, audit, Saga hoặc Shared Receipt.
+   - Acceptance phải ghi membership + role + audit + Shared Receipt + Saga trong cùng transaction.
+   - Đã bổ sung negative test cho sai tenant/recipient, expired/revoked, suspended/removed, invalid role, inviter mất quyền, existing membership, cross-actor replay.
+
+### Cập nhật GitHub đã xác minh
+Đã cập nhật và fetch-verify:
+- supabase/CLOUD_MEMBER_MANAGEMENT_RPC_DESIGN.md: §§57–61.
+- supabase/CLOUD_FOUNDATION_DRAFTS_REVIEW.md: §§60–64.
+- BAOTRI_TIENDO_VA_QUYETDINH.md: §§72–76.
+Các commit gần nhất:
+- Member design: 486babf3bf918959ff08152b0e2381d8d3e22313
+- Foundation review: af27aabf1b1c2d2bff49689c6436beb243a6a210
+- Progress trước checkpoint: 50227e83f75425336fbc0e27fcec31ca5b2a881a
+
+### Quyết định tạm thời
+Ưu tiên nghiên cứu/prototype authenticated PostgREST RPC trước phương án Edge Function direct DB login vì tận dụng JWT context do PostgREST xác minh, tránh DB credential riêng. Đây CHƯA phải quyết định kiến trúc cuối cùng.
+
+### Việc tiếp theo ngày mai
+1. Đọc lại §§57–61 Member design, §§60–64 Foundation, §§72–76 Progress.
+2. Thiết kế test JWT context qua API PostgREST thật bên trong SECURITY DEFINER; chưa chạy test ghi dữ liệu.
+3. Xác minh API exposed schemas trên Dashboard Test (và Production khi có quyền/đúng môi trường).
+4. Thiết kế secret isolation cho recipient HMAC; không dùng service_role để đọc secret.
+5. Hoàn thiện ACL wrapper/private function, function owner, search_path rỗng, fully-qualified object names.
+6. Lập kế hoạch concurrency test email-change vs invitation acceptance; chưa thực hiện thay đổi email Auth, tạo lock contention hay SQL write nếu chưa có phê duyệt riêng.
+7. Tiếp tục chỉ đọc catalog/tài liệu và cập nhật thiết kế; KHÔNG tạo DDL/RPC/Edge Function, grant, secret, migration hoặc cấu hình Supabase.
+
+**Trạng thái dừng:** Không có SQL write, DDL, grant, migration, secret access/value, Auth user modification hoặc Supabase configuration change trong phiên. Dừng tại checkpoint này để tiếp tục ngày mai.
