@@ -23,7 +23,7 @@ alter table public.inventory_movements
   add column counted_quantity numeric(18,4),
   add column created_by_user_id uuid references auth.users(id) on delete restrict,
   add column mutation_id uuid,
-  add column expected_item_version bigint;
+  add column expected_item_version bigint,\n  add column performed_by_label text;
 
 alter table public.inventory_movements
   add constraint inventory_movements_quantity_delta_nonzero
