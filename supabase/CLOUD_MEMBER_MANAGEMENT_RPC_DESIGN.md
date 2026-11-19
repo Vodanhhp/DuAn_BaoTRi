@@ -2669,3 +2669,24 @@ Read-only review function definitions và migrations Test. Không chạy concurr
 
 ### Trạng thái
 Read-only catalog/FK/ACL/trigger và source review trên BAOTRI-Mini-Test/GitHub. Không chạy mutation, không thay đổi DB, Auth, RPC hoặc grants.
+
+## 69. Concurrency test contract cho Organization/Membership revoke và Asset mutation – 20/11/2026
+
+### Winner semantics
+- Business mutation và thao tác revoke phải dùng cùng row-lock protocol trên Organization/Membership.
+- Asset mutation lấy Organization + actor Membership lock trước, xác minh active + permission trong transaction, rồi mới vào domain lock. Admin suspend/role change/remove lấy Organization + target Membership lock theo cùng thứ tự.
+- Nếu business mutation lấy lock trước và xác minh hợp lệ, mutation được hoàn tất trước revoke; nếu revoke commit trước, business mutation phải từ chối. Không chấp nhận preflight quyền ở Edge Function làm căn cứ authorization cuối.
+
+### Ma trận test bắt buộc
+- Organization suspend ↔ Asset mutation: xác nhận Organization lock tạo điểm tuần tự hóa; suspend thắng thì mutation bị từ chối.
+- Membership status/role/remove ↔ Asset mutation: test từng operation; cùng actor Membership lock; revoke thắng thì không có Asset/Receipt commit.
+- Auth deletion ↔ Asset Lease/Receipt: chỉ dùng synthetic disposable identity; test lock inversion baseline. Đích đến là tách account erasure khỏi request nghiệp vụ, drain in-flight operation/Lease và áp retention.
+- Asset DELETE ↔ Lease update: baseline direct DELETE đối nghịch Lease → Asset; đích đến chỉ cho delete RPC cùng thứ tự Lease → Asset, direct DELETE bị khóa.
+
+### PASS/FAIL
+- PASS: winner semantics đúng ở cả hai thứ tự; không partial mutation/Receipt; không orphan role mapping/Lease; FK và history được giữ đúng.
+- FAIL: mutation commit sau revoke/suspend đã thắng; actor identity bị xóa khi receipt còn phụ thuộc; deadlock 40P01 trong protocol đích; hoặc trạng thái cuối không xác định.
+- Lock timeout 55P03 cần phân loại riêng, không được ghi nhầm là deadlock. Test phải lưu timeline và wait graph/deadlock log.
+
+### Giới hạn
+Chỉ thiết kế test matrix. Chưa chạy concurrency test, không tạo fixtures/test functions và không thay đổi SQL/RPC/grants/Auth/data.
