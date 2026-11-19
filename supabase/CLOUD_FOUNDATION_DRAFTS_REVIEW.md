@@ -1718,3 +1718,13 @@ Required cases: acceptance locks Auth user first and email confirmation waits; c
 Pass criteria: serializable observed ordering; success creates exactly one membership + one role + audit + Shared Receipt + Saga completion; rejection/rollback creates zero business writes; replay returns original receipt; no PII/secret leakage; browser roles cannot execute internal functions or read private/Auth tables. Initial randomized target: at least 20 interleavings per race class plus deterministic barriers for both lock orders.
 
 Use test-only harness barriers, not production sleeps/debug hooks. A controlled SQL update can verify Postgres row-lock mechanics but does not prove the real GoTrue confirmation path. No fixtures or tests were run; no SQL writes, DDL, RPC, Edge Function, grants or config changes.
+
+## 58. Edge Function → private Postgres function invocation review
+
+Supabase's current documentation supports direct PostgreSQL client connections from Edge Functions. For transient Edge workloads, the documented preferred option is Shared Pooler transaction mode (port 6543); prepared statements must be disabled. This can call a function in a private/non-exposed schema without exposing it through PostgREST.
+
+Candidate: validate bearer JWT in Edge Function; derive authoritative UID; compute recipient HMAC server-side; connect over TLS through transaction pooler using a dedicated restricted DB login; execute exactly one private acceptance function; return a minimal result. The DB login receives only schema USAGE and EXECUTE on that function, not table SELECT/UPDATE on auth.users, Saga, attempts, memberships, roles, audit or receipts. Never use postgres/service_role as the Edge Function's general connection identity.
+
+The function candidate remains SECURITY DEFINER owned by a verified privileged owner, fixed empty search_path, fully qualified names, strict validation, and one atomic statement transaction for Auth row lock + invitation lock + membership/role/audit/receipt/Saga writes. Do not split lock and mutation across multiple pooled queries. Bind server-verified UID to authorization and idempotency; never trust a client UID.
+
+Open before implementation: dedicated DB login role creation/grant policy; credential storage/rotation; pooler TLS and connection limits; driver support and prepared-statement disablement; exact transaction semantics; actor binding; hosted project pooler settings; end-to-end JWT and concurrency tests. No role, grant, DDL, RPC, Edge Function, secret or Supabase setting was changed.
