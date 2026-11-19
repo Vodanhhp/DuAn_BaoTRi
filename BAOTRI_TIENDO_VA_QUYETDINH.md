@@ -3511,3 +3511,34 @@ Làm rõ Local-first: đối với Asset đã mapping Cloud, Local được ghi 
 - Chưa kiểm thử lưu thay đổi đồng thời, heartbeat failure riêng biệt, takeover khi lease hết hạn trong lúc đang sửa, hoặc phục hồi mutation pending sau reload.
 - Chưa nghiệm thu toàn bộ Asset Edit Lease + Mutation Receipt; phạm vi PASS hiện tại chỉ là các tình huống acquire/block/release đã nêu.
 - Không bật đồng bộ nghiệp vụ tổng thể; không thay đổi code, SQL/migration hoặc dữ liệu Cloud trong phiên kiểm thử này.
+
+## 29. Kiểm thử runtime Mutation Receipt – lưu bình thường trên PC (19/11/2026)
+
+### 29.1 Phạm vi và thao tác đã thực hiện
+- Tiếp tục kiểm thử trên domain HTTPS, PC, với Asset thử nghiệm đã liên kết Local ↔ Cloud.
+- Asset: UUID `872077a8-9b75-402d-908a-93fa5bcd9749`, mã `TDE-HP01-001-99-11-26`.
+- Mở form sửa; Network ghi nhận RPC `acquire_asset_edit_lock` trả `acquired: true`, đúng Asset ID và holder là phiên PC đang thao tác.
+- Thay đổi tên Asset thành **“Thiết bị kiểm thử khóa sửa - Lần 5”**, sau đó nhấn Lưu.
+- Network ghi nhận RPC `apply_asset_mutation_with_lock` trả về:
+  - `asset.id` khớp UUID của Asset thử nghiệm.
+  - `asset.name` là tên mới “Thiết bị kiểm thử khóa sửa - Lần 5”.
+  - `asset.updated_at` đã được cập nhật.
+  - `applied_at` có giá trị.
+  - `already_applied: false`, thể hiện mutation được áp dụng lần đầu, không phải replay receipt.
+- Người dùng xác nhận giao diện Local hiển thị thông tin mới sau khi lưu.
+
+### 29.2 Kết luận kiểm thử
+- [x] Acquire Edit Lease trên PC cho đúng Asset: PASS theo Response Network.
+- [x] RPC `apply_asset_mutation_with_lock` thực hiện lưu Cloud thành công: PASS theo Response Network.
+- [x] Response có Asset snapshot đúng, `applied_at` và `already_applied: false`: PASS.
+- [x] Local hiển thị thông tin mới sau khi lưu: PASS theo xác nhận trực tiếp của người dùng.
+- Đây là kiểm thử đường lưu bình thường (first application). Chưa kiểm tra trực tiếp trạng thái bản ghi trong IndexedDB `assetMutations` hoặc đọc bảng receipt từ database.
+- Không ghi nhận lock token, thông tin định danh tài khoản hoặc dữ liệu xác thực vào tài liệu tiến độ.
+
+### 29.3 Trạng thái và điểm dừng
+- [x] Đã kiểm tra mã nguồn `src/App.tsx`: Local Asset và mutation snapshot được ghi trong cùng Dexie transaction; mutation chuyển sang `processing`, gọi Cloud RPC; chỉ khi nhận receipt hợp lệ mới chuyển `applied`, cập nhật mapping Cloud version, đóng form và release lease.
+- [x] Đã kiểm tra migration `supabase/migrations/20261118000300_asset_mutation_receipts.sql`: Cloud lưu receipt theo khóa `(organization_id, mutation_id)`; replay cùng user, Asset, expected version và payload trả receipt cũ với `already_applied: true`; tái sử dụng mutation ID với payload/version khác bị từ chối.
+- [ ] Chưa kiểm thử runtime tình huống Cloud đã commit nhưng response bị mất, sau đó retry cùng mutation ID/payload để quan sát `already_applied: true` trong phiên này.
+- [ ] Chưa kiểm tra trực tiếp bản ghi Local `assetMutations` sau lần lưu vừa rồi.
+- [ ] Chưa nghiệm thu toàn bộ Asset Edit Lease + Mutation Receipt; chưa bật đồng bộ nghiệp vụ tổng thể.
+- **Điểm dừng phiên 19/11/2026:** giữ nguyên trạng thái hiện tại, không thao tác thêm trên Asset thử nghiệm. Khi tiếp tục, kiểm tra trạng thái mutation trong IndexedDB trước; sau đó mới quyết định cách kiểm thử replay receipt an toàn. Không tự ý chặn mạng hoặc tạo mutation mới khi chưa xác định rõ snapshot/mutation ID đang dùng.
