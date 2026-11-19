@@ -118,6 +118,14 @@ begin
       using errcode = '55000';
   end if;
 
+  if tg_op = 'INSERT' then
+    if new.result_status <> 'pending' or new.completed_at is not null then
+      raise exception 'A new receipt must begin pending inside its business transaction'
+        using errcode = '55000';
+    end if;
+    return new;
+  end if;
+
   if old.result_status <> 'pending'
      or new.result_status not in ('applied', 'no_change', 'conflict') then
     raise exception 'Only a pending receipt may be finalized once'
@@ -145,6 +153,10 @@ begin
   return new;
 end;
 $$;
+
+create trigger organization_mutations_guard_insert
+before insert on public.organization_mutations
+for each row execute function public.guard_organization_mutation_receipt();
 
 create trigger organization_mutations_guard_update
 before update on public.organization_mutations
