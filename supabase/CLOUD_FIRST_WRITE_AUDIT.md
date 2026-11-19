@@ -161,3 +161,35 @@
 - Đã có tài liệu đối chiếu chi tiết CLOUD_PERMISSION_UI_MATRIX.md; audit này bổ sung các sai lệch quan trọng cho kế hoạch Cloud-first.
 - Không thay đổi permission catalog, không cấp thêm quyền cho Technician, không thu hồi grant, không sửa UI/code/SQL.
 - Cần hoàn tất kiểm tra mọi child component/modal và test từng RPC với permission allow/deny, bao gồm quyền bị thu hồi giữa phiên.
+
+
+## 11. Rà soát bổ sung: demo, restore queue, Checklist và cấu hình Cloud (19/11/2026)
+
+### 11.1 Dữ liệu demo không được dùng business sync queue
+- `createDemoData()` tạo 30 Asset + 30 Inventory mẫu bằng Dexie bulkAdd, đồng thời gọi `queueChange()` cho từng bản ghi.
+- `createAdditionalDemoAssets()` tạo thêm 15 Asset mẫu và cũng ghi `syncQueue`.
+- UI thông báo rõ dữ liệu mẫu chỉ ở Local/chưa đồng bộ. Tuy nhiên việc đưa demo vào cùng `syncQueue` nghiệp vụ tạo nguy cơ bị đồng bộ nhầm nếu worker/đường sync được kích hoạt trong tương lai hoặc một cơ chế xử lý queue mới được bổ sung.
+- Hướng xử lý: demo phải nằm trong chế độ/test dataset tách biệt hoặc không tạo business syncQueue; chặn tuyệt đối việc upload demo vào tenant Cloud. Không xóa queue cũ trước khi rà soát và phân loại các entry demo đã tồn tại.
+
+### 11.2 Backup/restore và hàng đợi giao dịch
+- Backup hiện export cả `syncQueue`; Restore thay thế toàn bộ các bảng Local và nạp lại `syncQueue` từ file.
+- Restore hiện có preflight bảo vệ Asset Cloud-linked và chặn khi `assetMutations` còn pending/processing/conflict. Nhưng chưa thấy preflight tương đương cho các entry trong `syncQueue` hoặc mutation receipt/transaction chưa rõ kết quả của các vertical khác.
+- Rủi ro hai chiều: restore có thể xóa queue hiện tại chưa xử lý; hoặc nạp lại queue cũ từ backup khiến mutation đã hoàn tất bị replay. Với Cloud-first, không được coi queue cũ trong backup là lệnh hợp lệ để ghi Cloud.
+- Hướng xử lý: giữ restore là local recovery riêng; phân tích/hiển thị số lượng và trạng thái queue trước khi restore; không tự replay queue trong file backup. Cần reconciliation rõ ràng với mutation receipts và mapping Cloud trước khi thay thế/xóa queue. Không làm mất pending transaction hoặc biến backup thành cơ chế ghi ngược Cloud.
+
+### 11.3 Checklist mặc định và permission
+- `AssetChecklist` gọi `ensureDefaultChecklist()` trong `useEffect` khi `allowActions` đúng; điều kiện hiện tại chỉ loại Viewer, nên Technician cũng kích hoạt việc tạo Template + Version tự động khi mở màn hình.
+- `ensureDefaultChecklist()` ghi hai bảng Local và queue; đây là side-effect nghiệp vụ phát sinh từ thao tác xem màn hình, không phải người dùng chủ động xác nhận lưu.
+- Permission catalog hiện chỉ cấp `checklist.template.manage` cho Admin. Hướng xử lý: không tự tạo Template/Version khi mở màn hình; chuyển thành draft/preview và chỉ tạo chính thức sau thao tác chủ động, Cloud confirmation, permission Admin và idempotency. Checklist Result vẫn là giao dịch riêng Admin/Technician theo catalog.
+
+### 11.4 Các đường Cloud setting và Auth
+- `saveCloudAssetCodeConfig()` ghi `organization_settings.asset_code_config` qua PostgREST insert/update và chờ response. Đây là organization-shared setting, không phải Asset business mutation; phải giữ Cloud-first confirmation và server-side `settings.manage`.
+- `onSaveProfile()` và `SetPasswordScreen` cập nhật Supabase Auth metadata/password, chờ response rồi mới cập nhật UI. Đây là hồ sơ/credential Auth cá nhân, không đưa vào business mutation queue.
+- Theme, compact mode và device ID là thiết lập Local/cá nhân/thiết bị; tiếp tục cho phép offline.
+- Cloud Asset import vẫn là Cloud read → Local restore/cache có chọn lọc; không được nhầm với thao tác tạo/sửa Asset Cloud.
+
+### 11.5 Phạm vi và trạng thái
+- Đã rà lại các write sites trong `App.tsx`, `AssetChecklist`, demo generation, backup/restore, `assetsCloud.ts`, `CloudAssetsPanel.tsx`, Auth profile/password và organization settings.
+- Đây là static code audit trên nhánh `main`; chưa runtime test, chưa xác nhận trạng thái migration trên Supabase Project.
+- Chưa sửa code, SQL/migration/RPC, dữ liệu Local/Cloud hoặc permission catalog.
+- Các việc còn lại: rà mọi child/modal và permission gating; thiết kế xử lý queue/receipt cho restore; chốt transaction contract cho từng vertical; lập test allow/deny và retry/timeout trước khi triển khai.
