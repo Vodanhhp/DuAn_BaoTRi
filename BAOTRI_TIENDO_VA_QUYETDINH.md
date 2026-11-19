@@ -4736,3 +4736,28 @@ Checkpoint §91. Chỉ đọc catalog, ACL, FK, trigger và GitHub source. Khôn
 - Muốn thực thi các concurrency test trên BAOTRI-Mini-Test phải có phê duyệt riêng vì chúng tạo/xóa dữ liệu và có thể tác động Auth.
 - Sau khi có kết quả, cập nhật riêng baseline và protocol đích; không tuyên bố hệ thống global deadlock-free chỉ từ bốn kịch bản.
 
+## 93. Rà soát coverage các đường ghi ngoài 4 concurrency pair – 20/11/2026
+
+### Đã nhận diện
+- Asset create dùng Counter → Asset.
+- Asset import dùng advisory mutation lock → import ledger/settings → Counter (nếu reconcile) → Asset → import ledger finalize.
+- Lease có acquire/heartbeat/release; edit/archive/mutation đi Lease → Asset.
+- Membership có Auth profile-sync trigger, admin create, role assignment update, status update và remove.
+- Organization settings là đầu vào của Asset create/import.
+- Inventory item và inventory movement; Maintenance plan/task và maintenance log; Checklist template/version và result đều có writer theo RLS migration.
+- Asset images có INSERT/DELETE; Asset hard-delete có direct DML capability nếu privilege + RLS cho phép.
+
+### Đánh giá
+Bốn cặp §92 chưa đủ coverage toàn bộ writer. Cần bổ sung các test candidate:
+1. Counter ↔ Asset create/import cùng category.
+2. Organization settings update ↔ Asset create/import.
+3. Lease acquire/heartbeat/release ↔ mutation/delete.
+4. Inventory item ↔ inventory movement.
+5. Maintenance plan/task ↔ maintenance log.
+6. Checklist template/version ↔ checklist result.
+7. Auth confirmation trigger ↔ invitation acceptance/revoke.
+
+RLS chỉ kiểm tra điều kiện quyền; không tự serialize quyền với revoke. Phải kiểm tra caller/runtime path và FK trước khi chốt lock order từng nhóm.
+
+### Trạng thái
+Đây là static writer inventory từ migration và code search, chưa phải call graph runtime đầy đủ. Chưa chạy concurrency tests, chưa tạo fixture, không ghi DB, không thay đổi Supabase.
