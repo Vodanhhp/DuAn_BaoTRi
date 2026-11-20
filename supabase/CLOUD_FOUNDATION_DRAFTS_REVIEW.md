@@ -2518,3 +2518,55 @@ Do chưa có runtime caller:
 5. Rà membership/permission revoke race riêng; Asset anchor không thay thế auth serialization.
 6. Chạy test hai session deterministic, gồm Settings update ↔ create/import và Counter create ↔ import.
 Chưa viết hoặc áp dụng migration; chưa sửa code, grants hay Supabase.
+
+## 91. RPC contract candidate cho Settings writer và Asset allocator idempotency
+
+Đã kiểm tra columns hiện tại: `organization_settings` có `organization_id` PK, `asset_code_config` nullable JSONB, `created_at`, `updated_at`; chưa có version riêng. Không tạo migration trong bước này.
+
+### A. Settings save RPC
+
+Candidate function: `save_asset_code_config_with_receipt(p_organization_id uuid, p_mutation_id uuid, p_expected_updated_at timestamptz, p_config jsonb)`.
+
+Contract:
+1. Require authenticated actor và `settings.manage`.
+2. Require organization/mutation ID; validate payload schema ở server (facility/category/location code, allowed keys, bounds).
+3. Lấy transaction advisory lock theo organization + mutation ID (bigint, namespace string riêng cho Settings mutation).
+4. Tra receipt theo `(organization_id, mutation_id)`; nếu đã có:
+   - actor + canonical request payload giống hệt → trả snapshot kết quả cũ;
+   - khác actor/payload → reject, không ghi đè.
+5. Lấy Settings exclusive transaction advisory lock theo organization (two-int Settings namespace).
+6. SELECT Settings row FOR UPDATE nếu tồn tại. Nếu tồn tại, yêu cầu `updated_at = p_expected_updated_at`; nếu không tồn tại, yêu cầu expected version NULL. Mismatch trả conflict `40001`.
+7. INSERT/UPDATE `asset_code_config`, set `updated_at = clock_timestamp()`, lấy snapshot.
+8. Insert receipt (actor, request payload, result snapshot, applied_at) và return trong cùng transaction.
+
+Client phải tạo mutation UUID ổn định trước request và tái sử dụng khi retry; expected_updated_at là snapshot lúc mở form. Khi nhận conflict, UI refetch và yêu cầu người dùng xem lại thay vì âm thầm ghi đè. Với lần tạo Settings đầu tiên, expected version NULL được phép đúng một lần; receipt làm retry an toàn.
+
+Bảng receipt candidate `organization_settings_mutations`: PK/unique `(organization_id, mutation_id)`; columns actor_user_id, request_payload jsonb, result_snapshot jsonb, applied_at timestamptz. Không FK cascade tới Settings row vì đây là organization-level audit/idempotency history. Retention policy phải được định nghĩa trước triển khai.
+
+### B. Asset allocator RPC
+
+Candidate thay thế hoặc version mới của `create_asset_with_code`: `create_asset_with_code_idempotent(p_organization_id, p_asset_id, p_mutation_id, ...payload)`. Bắt buộc stable client-generated Asset UUID và mutation UUID; không còn default NULL cho Asset ID.
+
+Transaction order:
+1. Auth + `assets.create`.
+2. Asset anchor theo organization + p_asset_id.
+3. Mutation-ID bigint advisory lock theo organization + p_mutation_id.
+4. Kiểm tra receipt `asset_creation_mutations`: actor/asset/payload khớp → trả snapshot cũ; mismatch → reject.
+5. Nếu Asset ID đã tồn tại nhưng không có receipt tương ứng → conflict; không cấp mã mới.
+6. Settings shared lock theo organization → đọc/validate config.
+7. Counter UPSERT theo organization/category.
+8. Asset INSERT với code được sinh.
+9. Insert creation receipt gồm actor, Asset ID, request payload (không bao gồm code server-generated), result snapshot, applied_at.
+
+Bảng `asset_creation_mutations` unique `(organization_id, mutation_id)`; cần unique protection để một Asset ID không được bind với nhiều create mutation (unique `(organization_id, asset_id)` hoặc kiểm tra tương đương). Replay cùng mutation/payload trả đúng code và snapshot ban đầu, không chạm Counter; cùng mutation ID khác actor/Asset/payload bị reject.
+
+### C. Shared lock compatibility
+
+- Import: Asset anchor → mutation-ID lock → import receipt check → Settings shared → Counter → Asset → import receipt.
+- Allocator: Asset anchor → mutation-ID lock → creation receipt check → Settings shared → Counter → Asset → creation receipt.
+- Settings save: mutation-ID lock → Settings exclusive → Settings row → Settings receipt.
+- Tất cả writer Settings phải qua RPC. Không giữ direct PostgREST INSERT/UPDATE.
+- Settings exclusive writer không được lấy Asset anchor sau Settings lock; tránh đảo chiều.
+- Các receipt chỉ phục vụ idempotency/audit; không thay thế authorization.
+
+Chưa tạo bảng/function, chưa sửa frontend hoặc grants. Contract cần được review cùng policy retention, payload canonicalization và test matrix trước khi thành migration.
