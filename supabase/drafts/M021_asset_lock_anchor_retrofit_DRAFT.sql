@@ -836,6 +836,14 @@ begin
 end;
 $function$;
 
+-- The legacy full-snapshot UPDATE has no in-repo runtime caller and has no
+-- expected-version/receipt guard. Retire its client entry point to prevent a
+-- stale snapshot from overwriting newer fields after lock serialization.
+-- Keep the function definition for owner-level compatibility/rollback only.
+revoke all on function public.update_asset_with_lock(
+  uuid, uuid, uuid, text, text, text, text, text, date, text, text, date, boolean, text, text
+) from public, anon, authenticated, service_role;
+
 -- The legacy allocator has no observed runtime caller and is not idempotent.
 -- Keep its function definition for compatibility, but close both client roles.
 revoke all on function public.create_asset_with_code(
