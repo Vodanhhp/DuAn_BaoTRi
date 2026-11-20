@@ -5,7 +5,7 @@
 
 ## Promotion blockers / decisions
 
-- [ ] Re-fetch Test migration history and confirm the proposed M021 version is unused; choose final version timestamp.
+- [x] Re-fetch Test migration tracker read-only: it reports only version `20261120042433` (Migration 020 P0); candidate M021 version `20261120050000` is absent. Tracker completeness is not assumed; recheck before apply.
 - [ ] Decide legacy RPC EXECUTE policy for `update_asset_with_lock` and `set_asset_archived_with_lock`.
   - Repository source audit found no runtime callers; active linked-Asset writer uses `apply_asset_mutation_with_lock`.
   - These legacy full-snapshot writers do not carry expected-version/receipt conflict protection. Asset-anchor serialization is not stale-write detection.
