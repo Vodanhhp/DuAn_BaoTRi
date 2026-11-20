@@ -5220,3 +5220,25 @@ Không tạo migration, không gọi function, không ghi DB và không thay đ�
 **Phương án sửa đúng:** giữ Migration 017/018 bất biến; tạo migration mới chỉ tiến về phía trước, thay toàn bộ function body bằng CREATE OR REPLACE FUNCTION và predicate ba phần: JSON object, đủ required keys, không có extra keys. Không dùng replace chuỗi con. Bổ sung test valid, missing key, extra key, JSON null/scalar/array; invalid phải SQLSTATE 22023 và không ghi Asset/Receipt. Trước rollout phải xác minh migration ledger bằng deployment tooling vì database SQL-visible hiện không có schema/table supabase_migrations. Chỉ áp dụng Test sau khi được phê duyệt rõ; Production chưa được phép.
 
 Không tạo migration, không gọi RPC, không ghi DB hoặc thay đổi Supabase trong bước điều tra này.
+
+## 115. Đối chiếu lại trạng thái P0 Migration 020 với Test và GitHub – 20/11/2026
+
+Đính chính trạng thái cuối §114: phần kết luận tại §114 phản ánh thời điểm trước khi Migration 020 được hoàn tất; hiện không còn là trạng thái mới nhất của P0.
+
+### Bằng chứng read-only vừa xác minh
+- Supabase migration history của BAOTRI-Mini-Test trả về version `20261120042433`, tên `20261120000100_p0_fix_asset_mutation_payload_validation` (tool migration history chuẩn hóa tên; version là mốc canonical).
+- Repository `main` có canonical migration `supabase/migrations/20261120042433_p0_fix_asset_mutation_payload_validation.sql`, blob SHA `7945f57a55b2ada94664c03596db482b7127c0ed`. File dùng `CREATE OR REPLACE FUNCTION` thay toàn bộ body, không sửa Migration 017/018; predicate ba phần kiểm tra JSON object, đủ 13 key và không có key thừa.
+- Đọc `pg_get_functiondef` trên BAOTRI-Mini-Test xác nhận active catalog hiện có predicate đúng, không còn đoạn `false then` rời; signature, SECURITY DEFINER, search_path rỗng và row_security off vẫn giữ.
+- Đọc routine privileges xác nhận EXECUTE chỉ thấy cho `authenticated` và `service_role`; không thấy `PUBLIC` hoặc `anon`.
+- `supabase/docs/ASSET_MUTATION_PAYLOAD_VALIDATION_FIX_DESIGN.md` ghi nhận P01 hợp lệ và tám trường hợp payload không hợp lệ đã chạy trong transaction rollback, Asset/Lease/Receipt được xác minh không đổi. Đây là kết quả được ghi trong tài liệu/repo; phiên đối chiếu hiện tại chỉ đọc catalog và migration history, không chạy lại test.
+- Draft test còn nằm ở `supabase/drafts/P0_ASSET_MUTATION_PAYLOAD_VALIDATION_REGRESSION_TEST_DRAFT.sql`; không chạy lại vì có fixture placeholder và tài liệu đã ghi nhận test đã thực hiện.
+
+### Kết luận
+- P0 payload validation đã được sửa bằng Migration 020 trên BAOTRI-Mini-Test và catalog hiện tại phù hợp với source migration.
+- Production chưa được kiểm tra/thay đổi; tuyệt đối không áp dụng Migration 020 lên Production nếu chưa có quyết định và quy trình rollout riêng.
+- §114 được giữ nguyên làm lịch sử nguyên nhân gốc; mục này là trạng thái cập nhật sau đó.
+
+### Bước tiếp theo bám theo lộ trình Asset
+- P0 payload validation không còn là việc đang chờ sửa.
+- Quay lại rollout Asset lock protocol theo §107–§112: hoàn tất preflight read-only, kiểm tra M019/M020 lock primitive và Settings bridge, inventory advisory lock toàn catalog, xác minh version/client compatibility, chuẩn bị deterministic two-session harness.
+- Chưa áp dụng migration lock retrofit, chưa chạy concurrency test ghi dữ liệu, chưa thay grants/RPC hoặc Production. Chỉ chuyển sang execution sau khi preflight/test gate đạt và có phê duyệt rõ ràng.
