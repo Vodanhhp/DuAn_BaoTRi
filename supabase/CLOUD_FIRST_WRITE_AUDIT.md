@@ -445,3 +445,5 @@ Người dùng xác nhận:
 - Đã chuyển thao tác đọc bản ghi hiện tại, giữ nguyên `quantity`, áp dụng quyền cập nhật `minQuantity`, ghi metadata và queue vào cùng Dexie readwrite transaction.
 - Luồng `addMovement()` trước đó đã được chuyển sang transaction; nay hai đường ghi có thể thay đổi hàng tồn đều đọc/ghi trong transaction, tránh stale overwrite giữa các tab.
 - Đã xác minh nội dung commit trên GitHub; chưa có kiểm thử browser đa tab thực tế.
+
+- Hoàn thiện thêm bộ kiểm tra backup: từ chối ID trùng trong cùng bảng để tránh `bulkPut()` âm thầm ghi đè một bản ghi khác khi nhập file bị lỗi hoặc chỉnh sửa thủ công; đã thêm ca regression tương ứng.
