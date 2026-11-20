@@ -23,6 +23,10 @@ create temporary table asset_import_counter_expectation (
   category_code text,
   imported_sequence bigint
 );
+insert into pg_temp.asset_import_counter_expectation values (
+  'dfb443ec-a1ee-496b-842c-0bef3f50b8ce', 'MNA',
+  8000000000000000000 + floor(random() * 1000000)::bigint
+);
 
 do $grant_temp$
 declare v_temp_schema text;
@@ -47,7 +51,7 @@ declare
   v_mutation_id uuid := gen_random_uuid();
   v_duplicate_mutation uuid := gen_random_uuid();
   v_code text;
-  v_sequence bigint := 8000000000000000000 + floor(random() * 1000000)::bigint;
+  v_sequence bigint;
   v_payload jsonb;
   v_result jsonb;
   v_retry jsonb;
@@ -57,8 +61,8 @@ declare
   v_count integer;
   v_next_sequence bigint;
 begin
+  select imported_sequence into strict v_sequence from pg_temp.asset_import_counter_expectation;
   v_code := 'MNA-HP01-' || v_sequence::text || '-01-05-26';
-  insert into pg_temp.asset_import_counter_expectation values (v_org, 'MNA', v_sequence);
   v_payload := pg_catalog.jsonb_build_object(
     'name', 'Asset import identity test',
     'category', 'Máy nén khí',
