@@ -517,3 +517,11 @@ Người dùng xác nhận:
 - Với Log có `checklistResultId`, backup chỉ hợp lệ khi kết quả Checklist nguồn tồn tại và thuộc cùng `assetId` với Log.
 - Mục tiêu: từ chối backup hỏng/tham chiếu chéo trước khi mở bước khôi phục thay thế dữ liệu Local; không tự sửa hoặc bỏ qua lịch sử lỗi.
 - Bổ sung test cho chuỗi tham chiếu hợp lệ, thiếu bản ghi và sai thiết bị. Chưa chạy test runtime; cần CI hoặc chạy `npm test` trên môi trường repo để xác nhận.
+
+## 18. Rà soát thứ tự và khóa ngoại đồng bộ Checklist lên Cloud (20/11/2026)
+
+- Đã đọc trực tiếp định nghĩa FK trên Supabase `BAOTRI-Mini-Test` (không thay đổi schema/dữ liệu): `checklist_templates` → `assets`; `checklist_template_versions` → `checklist_templates` cùng asset; `checklist_results` → Asset + Template + đúng Version (bao gồm `template_version`); `maintenance_logs` → Asset + Task tùy chọn + ChecklistResult tùy chọn. Các FK đều `ON DELETE RESTRICT`, dùng khóa ghép `organization_id` để không thể liên kết chéo tenant.
+- `src/lib/syncMapping.ts` có `CLOUD_SYNC_ORDER` đúng thứ tự phụ thuộc: assets → checklist_templates → checklist_template_versions → checklist_results → maintenance_logs; Task cũng đứng trước Log. Bổ sung regression test kiểm tra các quan hệ thứ tự này.
+- `src/lib/cloudSync.ts` là legacy worker không được kích hoạt. Mảng `DATA_COLLECTIONS` của file này hiện xếp `logs` trước `checklistResults`, không đáp ứng FK khi upload tuần tự; không sửa/kích hoạt file legacy theo nguyên tắc dự án. `src/App.tsx` hiện không import hoặc gọi worker này.
+- Vì vậy không được bật worker legacy. Nếu sau này xây worker mới, phải dùng dependency order đã review, đồng bộ parent trước child, giữ pending khi parent chưa được xác nhận, và xử lý batch/transaction/idempotency phía server. `CLOUD_SYNC_ORDER` mới chỉ là thứ tự tham chiếu, chưa phải worker hoàn chỉnh.
+- Đã xác minh constraint definitions bằng truy vấn chỉ đọc trên project Test; không chạy INSERT/UPDATE/DELETE, không sửa Production. Chưa chạy regression test runtime; CI chưa có status.
