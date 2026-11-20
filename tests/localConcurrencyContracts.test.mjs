@@ -40,11 +40,13 @@ test('Log edits preserve the latest stored edit history inside the write transac
   const handler = source.slice(start, end)
   const transaction = handler.indexOf("db.transaction('rw'")
   const lookup = handler.indexOf('db.logs.get(entry.id)', transaction)
-  const historyMerge = handler.indexOf('existing?.editHistory ?? entry.editHistory', lookup)
+  const revisionGuard = handler.indexOf('existing.updatedAt !== entry.updatedAt', lookup)
+  const historyMerge = handler.indexOf('existing?.editHistory ?? entry.editHistory', revisionGuard)
   const write = handler.indexOf('db.logs.put(next)', historyMerge)
   const queue = handler.indexOf("queueChange('logs', next.id)", write)
   assert.ok(transaction >= 0 && lookup > transaction, 'latest Log must be read inside transaction')
-  assert.ok(historyMerge > lookup && write > historyMerge && queue > write, 'history must be merged before atomic Log and queue writes')
+  assert.ok(revisionGuard > lookup && historyMerge > revisionGuard && write > historyMerge && queue > write, 'stale revisions must be rejected before history merge and atomic write')
+  assert.match(handler, /updatedAt: now\(\)/)
 })
 
 test('stale task form cannot overwrite a newer task revision', () => {
