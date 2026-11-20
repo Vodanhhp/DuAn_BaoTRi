@@ -5084,3 +5084,29 @@ Lưu ý: UPDATE có thể giữ row tuple lock khi trigger chờ advisory; creat
 Điều chỉnh kế hoạch §107: direct `DELETE public.assets` không chờ Phase 4. Nếu preflight xác nhận không có runtime/client caller, revoke DELETE privilege khỏi authenticated trong cùng transaction Phase 2 với việc retrofit tất cả Asset/Lease writer. Hai thay đổi phải commit atomically để không có cửa sổ protocol nửa vời.
 
 Allocator cũ `create_asset_with_code` thiếu receipt idempotency, chưa thấy runtime caller; candidate revoke EXECUTE authenticated cùng Phase 2, chỉ mở lại qua RPC idempotent ở Phase 4 nếu có use case. Phase 4 còn lại chỉ revoke direct Settings INSERT/UPDATE sau compatibility window. Nếu phát hiện client cũ phụ thuộc direct DELETE/allocator, dừng rollout và chuyển đổi client trước.
+
+## 109. Thiết kế chi tiết migration lock primitive và Settings bridge – 20/11/2026
+
+### Phát hiện và sửa thiết kế Settings bridge
+Row-level BEFORE trigger lấy advisory lock theo organization có thể deadlock: direct UPDATE giữ tuple rồi chờ advisory lock, trong khi RPC giữ advisory lock rồi chờ tuple FOR UPDATE. Vì vậy không dùng row-level trigger trong compatibility window.
+
+Bridge candidate mới:
+- Global Settings advisory key.
+- Trigger BEFORE INSERT OR UPDATE FOR EACH STATEMENT lấy global exclusive transaction lock trước row-level processing.
+- Settings RPC lấy cùng global exclusive trước row lock/write.
+- Asset create/import lấy global shared trước khi đọc asset_code_config.
+- Chấp nhận serialization toàn bảng tạm thời.
+- Sau khi revoke direct Settings writes, drop trigger; chuyển tất cả reader/writer đồng bộ sang org-scoped Settings lock.
+
+### Key derivation candidate
+- pg_catalog.hashtextextended trên input có domain prefix/version và seed bigint cố định.
+- Split bigint thành hai signed int32 đúng cách rồi gọi pg_advisory_xact_lock(int,int) hoặc shared overload.
+- Prefix riêng cho Asset anchor, Settings-global, Settings-org; namespace two-int phải inventory để tránh collision với consumer khác. Mutation-ID bigint lock ở keyspace khác.
+- Collision chỉ làm chờ thừa, không phải security boundary.
+- Hash key không phải ID lưu lâu dài; thay PostgreSQL major version/seed/prefix cần protocol migration đồng bộ.
+- Helper đặt schema private, không exposed; search_path rỗng, fully-qualified names, EXECUTE chỉ owner; trigger SECURITY DEFINER an toàn nhưng không thay permission/RLS.
+
+### Test gate
+Deterministic vectors sinh từ PostgreSQL 17.12 thật; shared/shared và exclusive contention; release khi commit/rollback; statement trigger zero-row; deadlock regression direct UPDATE ↔ RPC; search_path độc hại; quyền helper; namespace inventory. Không bịa vectors.
+
+Chưa tạo SQL/migration, chưa chạy SQL hoặc test ghi dữ liệu.
