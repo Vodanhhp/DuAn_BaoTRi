@@ -5275,3 +5275,47 @@ Không tạo migration, không gọi RPC, không ghi DB hoặc thay đổi Supab
 - [ ] Chưa tạo migration canonical M021, chưa áp dụng Test, chưa thay đổi grants/RPC hoặc Production.
 
 **Bước tiếp theo:** hoàn tất static diff từng function trong M021 với catalog BAOTRI-Mini-Test và source main; rà lock order, signature, grants, helper security, compatibility với Settings writer hiện tại và các test. Chỉ sau review mới chạy sequential fixture test; concurrency test vẫn cần hai kết nối vật lý và phê duyệt rõ ràng trước khi ghi dữ liệu.
+
+
+## 117. Static review M021 – phát hiện test không tương thích và direct service_role bypass – 20/11/2026
+
+Tiếp tục review từng function/privilege M021 bằng source draft, các SQL test hiện có và catalog Test. Chỉ đọc; chưa sửa test/migration và chưa ghi database.
+
+### 1. Test cũ phụ thuộc allocator bị M021 revoke
+M021 draft revoke EXECUTE của 'create_asset_with_code' khỏi PUBLIC/anon/authenticated/service_role. Tuy nhiên các test lịch sử sau vẫn gọi allocator:
+- 'supabase/tests/20261117001200_asset_code_allocator_rpc_test.sql': tạo Asset bằng allocator cho Admin/Technician và test Viewer bị deny.
+- 'supabase/tests/20261117000800_authenticated_asset_crud_rls_test.sql': tạo Asset cho Technician/Admin bằng allocator; còn test Admin DELETE kỳ vọng xóa được một row.
+- 'supabase/tests/20261118000100_asset_import_preserving_identity_test.sql': sau import gọi allocator để chứng minh Counter tiếp tục tăng.
+
+Vì vậy không thể chạy nguyên trạng toàn bộ các test này sau M021. Đặc biệt test import cần thay phép kiểm tra allocator bằng kiểm tra trực tiếp Counter dưới DB owner/fixture, còn CRUD test cần tạo fixture bằng elevated setup và cập nhật expected DELETE theo privilege mới. Test allocator cũ phải được đánh dấu lịch sử/expected revoked, không được báo FAIL của M021 chỉ vì gọi API đã chủ động đóng.
+
+### 2. Direct DELETE của service_role vẫn còn
+- Catalog hiện tại xác nhận 'service_role' có DELETE trên 'public.assets'; authenticated cũng có DELETE.
+- M021 draft chỉ 'REVOKE DELETE ... FROM authenticated', chưa revoke service_role.
+- M021 sequential test chỉ assert authenticated không còn DELETE, chưa assert service_role.
+- Search source hiện tại chưa thấy runtime caller xóa trực tiếp Asset, nhưng service_role vẫn là một đường DML có thể bypass Asset anchor nếu backend sau này gọi trực tiếp.
+
+Đây là quyết định cần chốt trong review: nếu nguyên tắc là mọi hard-delete Asset đều bị đóng và không có use case server-side, nên thu hồi DELETE của cả authenticated và service_role, rồi thêm assertion cho cả hai. Không tự sửa trước khi hoàn tất caller audit và xác nhận phạm vi.
+
+### 3. Settings privileged DELETE chưa nằm trong bridge
+- M021 statement trigger khóa global Settings cho INSERT/UPDATE, không cho DELETE.
+- authenticated hiện chỉ có SELECT/INSERT/UPDATE trên organization_settings; service_role có DELETE.
+- Chưa tìm thấy runtime caller delete Settings trong lần search hiện tại. Cần hoàn tất caller audit; nếu DELETE không có use case thì revoke service_role DELETE, nếu có thì phải tham gia cùng Settings lock protocol.
+
+### 4. Những phần đã đối chiếu đúng ở mức tĩnh
+- M021 có 12 function/trigger helper hoặc RPC definition: 5 private helpers/wrapper và 7 public Asset writers được retrofit.
+- Các RPC public hiện là SECURITY DEFINER, owner postgres, search_path rỗng, row_security off; M021 giữ các thuộc tính này trong source draft.
+- apply Asset giữ nguyên predicate P0 đã sửa ở Migration 020 và thêm Asset anchor + mutation-ID bigint lock trước receipt lookup.
+- import giữ mutation-ID bigint lock, thêm Asset anchor trước lock này và Settings shared trước khi đọc cấu hình/counter.
+- acquire/heartbeat/release/update/archive đều lấy cùng Asset anchor trước Lease/Asset tuple operations.
+
+### Trạng thái
+- [x] Phát hiện các test cũ phụ thuộc allocator/DELETE sẽ không tương thích sau M021.
+- [x] Phát hiện service_role còn direct Asset DELETE và Settings DELETE privilege cần xử lý rõ.
+- [x] Đối chiếu sơ bộ lock order và security attributes của 7 Asset writers.
+- [ ] Chưa hoàn tất search toàn repo cho mọi Settings/Asset direct DML service_role caller.
+- [ ] Chưa cập nhật các SQL test lịch sử và test M021.
+- [ ] Chưa chốt việc revoke service_role DELETE.
+- [ ] Chưa promotion/apply M021, chưa chạy sequential hoặc concurrency tests.
+
+**Bước tiếp theo:** audit đầy đủ direct DML/service_role call-sites trong Edge Functions và source; xác minh các grants còn lại; sau đó đề xuất bản chỉnh M021 + bộ test tương thích. Giữ nguyên M021 ở trạng thái draft cho đến khi các điểm này được xử lý.
