@@ -30,6 +30,10 @@ BAOTRI Mini là ứng dụng quản lý bảo trì theo hướng **Local-first**
 - M021 Asset lock-anchor retrofit vẫn là draft; chưa được coi là migration đã triển khai. Kiểm thử hai phiên vật lý còn là cổng bắt buộc.
 - Chưa nghiệm thu phát hành Production. BAOTRI-Mini-Test là môi trường kiểm thử; Production nằm ngoài phạm vi các thay đổi hiện tại.
 
+### Lưu ý về module đồng bộ cũ
+
+- `src/lib/cloudSync.ts` là giao thức JSON cũ dùng bảng `maintenance_records`; tìm kiếm trên nhánh `main` hiện chỉ thấy định nghĩa `syncLocalDatabase()`, chưa thấy nơi gọi từ ứng dụng. Không kích hoạt hoặc tích hợp module này vào luồng đồng bộ hiện tại. Luồng Cloud phải tiếp tục dùng các contract/RPC đã được triển khai và kiểm thử theo từng phân hệ.
+
 ## Kiến trúc và nguyên tắc dữ liệu
 
 1. **Local là nơi thao tác nghiệp vụ** và phải tiếp tục sử dụng được khi mất Internet.
