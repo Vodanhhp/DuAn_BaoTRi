@@ -2860,7 +2860,7 @@ Read-only catalog audit on BAOTRI-Mini-Test (PostgreSQL 17.12), cross-checked wi
 | list_asset_edit_locks | Read-only RPC | No anchor required; preserve assets.view authorization |
 | set_asset_updated_at | Trigger helper | BEFORE UPDATE timestamp-only trigger on assets; not a business writer, no Asset anchor logic required inside trigger |
 
-All eight SECURITY DEFINER business RPCs have owner postgres, empty search_path, row_security=off, and EXECUTE authenticated/service_role; anon and PUBLIC are denied. set_asset_updated_at is SECURITY INVOKER with empty search_path. Preserve each permission check and signature unless a separate approved change requires otherwise.
+All nine SECURITY DEFINER RPCs have owner postgres, empty search_path, row_security=off, and EXECUTE authenticated/service_role; anon and PUBLIC are denied. set_asset_updated_at is SECURITY INVOKER with empty search_path. Preserve each permission check and signature unless a separate approved change requires otherwise.
 
 ### B. Effective table privileges and RLS
 
