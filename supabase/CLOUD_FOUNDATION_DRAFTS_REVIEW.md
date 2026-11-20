@@ -2705,3 +2705,63 @@ Trong preflight Phase 0 phải xác nhận không có runtime/client caller tr�
 - Commit atomically; postflight xác nhận privilege effective, function definitions, grants và app smoke tests.
 
 Phase 4 chỉ revoke direct Settings INSERT/UPDATE sau compatibility window; không lặp lại Asset DELETE revoke. Nếu preflight tìm thấy client phụ thuộc DELETE hoặc allocator cũ, không chạy migration cho tới khi client được chuyển đổi.
+
+## 95. Chốt thiết kế advisory lock primitive và sửa Settings compatibility bridge
+
+### A. Sửa rủi ro deadlock của row-level trigger
+
+Không dùng row-level BEFORE trigger để lấy khóa Settings theo organization trong compatibility window. PostgreSQL có thể khóa tuple UPDATE trước khi chạy row-level BEFORE trigger. Nếu direct writer giữ tuple rồi chờ advisory lock, trong khi Settings RPC giữ advisory lock rồi chờ tuple FOR UPDATE, hai transaction có thể deadlock.
+
+**Bridge an toàn hơn trong compatibility window:**
+- Tạo một global Settings advisory key riêng cho toàn bảng.
+- Dùng trigger BEFORE INSERT OR UPDATE FOR EACH STATEMENT trên organization_settings để lấy global exclusive transaction advisory lock. Statement-level trigger chạy trước row-level processing/tuple locks.
+- Mọi Settings writer RPC cũng lấy cùng global exclusive lock trước khi SELECT FOR UPDATE/INSERT/UPDATE.
+- Mọi Asset create/import reader đọc asset_code_config phải lấy global shared transaction advisory lock trước khi SELECT Settings.
+- Global bridge làm giảm concurrency giữa các organization nhưng giữ thứ tự lock nhất quán, chỉ là tạm thời.
+- Sau khi direct INSERT/UPDATE đã revoke và compatibility window kết thúc, drop statement trigger trong migration riêng; chuyển Settings RPC và create/import sang organization-scoped lock.
+- Không dùng đồng thời global bridge và org-scoped lock theo hai thứ tự khác nhau. Trong thời gian chuyển đổi, một protocol global duy nhất phải được áp dụng cho mọi reader/writer.
+
+**Gate riêng:** hai-session test phải chứng minh direct UPDATE/INSERT ↔ Settings RPC không deadlock; Settings RPC ↔ create/import reader tuân thủ global exclusive/shared semantics; trigger statement thực thi kể cả statement ảnh hưởng 0 rows. Không chỉ dựa vào lý thuyết trigger order.
+
+### B. Key derivation candidate
+
+Dùng pg_catalog.hashtextextended(text, bigint) với:
+- Chuỗi input có domain prefix và version rõ ràng, ví dụ baotri:asset-anchor:v1:<organization_uuid>:<asset_uuid>, baotri:settings-org:v1:<organization_uuid>, và baotri:settings-global:v1.
+- Seed bigint cố định, ghi trong tài liệu và không đổi giữa các function cùng protocol.
+- Kết quả bigint được tách thành hai signed int32 bằng phép shift/mask và chuyển unsigned 32-bit sang signed range trước cast; gọi overload pg_catalog.pg_advisory_xact_lock(int,int) hoặc _shared(int,int).
+- Không cast trực tiếp phần unsigned > 2^31−1 sang integer vì sẽ overflow.
+- Tất cả hàm derive/lock nằm trong schema private không exposed qua Data API; fully qualify mọi object, search_path=''.
+- Domain prefix phân biệt Asset, Settings-global, Settings-org và các namespace tương lai. Collision 64-bit chỉ gây serialize thừa, không cấp quyền và không được dùng làm security boundary.
+- Advisory two-int keyspace có thể collision với một consumer two-int khác; Phase 0 phải inventory mọi advisory lock đang dùng. Mutation-ID lock bigint là keyspace khác, không collision với two-int overload.
+- hashtextextended là hash nội bộ PostgreSQL, không phải cryptographic hash và không phải persistent identifier. Cùng server/version/input/seed phải cho cùng key. PostgreSQL major upgrade hoặc thay thuật toán phải được coi là protocol migration: drain transaction, cập nhật mọi caller đồng bộ, không để hai version key scheme chạy song song.
+- Không đổi prefix/seed/key algorithm sau khi rollout mà không có migration phối hợp toàn bộ caller.
+
+### C. Quyền và function security
+
+- Helper derive/acquire/release lock là internal implementation, không phải RPC cho client.
+- Function nghiệp vụ hiện chạy SECURITY DEFINER owner postgres; helper private chỉ cho owner cần thiết EXECUTE. Revoke EXECUTE khỏi PUBLIC, anon, authenticated; không grant helper cho frontend.
+- Trigger function phải SECURITY DEFINER owner tin cậy, SET search_path = '', fully qualify private helper và pg_catalog functions. Trigger chỉ lấy advisory lock, không thay đổi authorization hoặc RLS.
+- SECURITY DEFINER không được coi là thay thế permission checks bên trong RPC. Giữ nguyên auth.uid(), membership/permission checks hiện hành.
+- Không bật row_security=off cho helper chỉ để lấy lock; helper không cần đọc dữ liệu tenant.
+- Schema private không nằm trong exposed schemas; xác minh quyền USAGE/EXECUTE thực tế và không để public role gọi trực tiếp.
+
+### D. Bộ test lock primitive
+
+1. Determinism: cùng org+asset+version+seed sinh đúng cùng cặp int32 qua nhiều session.
+2. Separation: Asset key, Settings-org key, Settings-global key có vector riêng; không giả định hash collision là không thể.
+3. Two-int vs bigint: xác nhận các overload đang dùng thuộc keyspace khác nhau.
+4. Transaction scope: lock tự nhả sau COMMIT và ROLLBACK; không giữ qua pooled connection.
+5. Shared semantics: hai shared readers cùng key không chặn nhau; exclusive writer phải chờ readers; reader mới phải chờ exclusive writer.
+6. Organization isolation sau bridge: hai org key độc lập theo test vector; không hardcode kỳ vọng “không bao giờ collision” như invariant toán học.
+7. Statement trigger: BEFORE INSERT/UPDATE FOR EACH STATEMENT lấy global exclusive lock trước row operation, kể cả câu lệnh 0 row.
+8. Deadlock regression: direct UPDATE giữ row ↔ RPC lock trước row; xác nhận bridge statement-level tránh inversion.
+9. Privilege: authenticated/anon không EXECUTE helper; direct DML vẫn bị RLS/grants kiểm soát như trước.
+10. Search path: gọi trong session có search_path độc hại không làm thay đổi object resolution.
+
+**Không ghi test vector giả định vào tài liệu.** Vector phải được sinh từ chính PostgreSQL 17.12 trên BAOTRI-Mini-Test bằng query read-only và lưu lại cùng kết quả. Chưa chạy test và chưa tạo SQL.
+
+### E. Phân kỳ Settings key
+
+- Compatibility window: chỉ dùng global Settings key cho trigger, Settings RPC, Asset create/import readers.
+- Sau khi revoke direct Settings writes: bỏ trigger bridge, chuyển mọi caller trong một migration/release đồng bộ sang org-scoped Settings key.
+- Không để một reader lấy global shared trong khi writer chỉ lấy org exclusive; như vậy hai luồng không còn đồng bộ với nhau.
