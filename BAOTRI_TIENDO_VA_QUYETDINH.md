@@ -4825,3 +4825,25 @@ Kết luận dựa trên static search và các call sites đã mở, không ph�
 Điểm kỹ thuật: Asset mutation dùng Lease FOR UPDATE → Asset UPDATE; Import dùng advisory mutation lock → Settings read → Counter UPSERT → Asset FOR UPDATE/INSERT → import ledger. Advisory lock chỉ bảo vệ retry cùng mutation ID; Counter mới serialize category. Allocator cũng Counter → Asset. Settings writer đang PostgREST UPDATE trực tiếp, không có shared row lock với reader.
 
 Winner semantics và điều kiện test được ghi tại `CLOUD_FOUNDATION_DRAFTS_REVIEW.md` §82 và `CLOUD_MEMBER_MANAGEMENT_RPC_DESIGN.md` §73. Chưa chạy concurrency test, chưa ghi DB, không sửa code/Supabase. Chỉ nghiên cứu và cập nhật tài liệu.
+
+## 97. Thiết kế harness concurrency hai session – gom thao tác theo mức ưu tiên – 20/11/2026
+
+### Vì sao cần thêm bước
+Hai test SQL hiện tại chỉ chạy tuần tự trong một transaction; chúng xác nhận logic từng thao tác nhưng không tạo interleaving giữa hai giao dịch. Vì vậy cần thiết kế một harness riêng thay vì tiếp tục thêm nhiều bước tuần tự vào test cũ.
+
+### Phạm vi đã chốt
+- Harness dùng hai PostgreSQL connection vật lý, hai transaction độc lập và một orchestrator bên ngoài để điều khiển barrier.
+- Ghi PID/transaction ID, timeline, blocker/wait graph, SQLSTATE, commit/rollback; phân biệt deadlock 40P01, lock timeout 55P03, unique 23505, optimistic conflict 40001 và lease conflict 55000.
+- Fixture dùng ID riêng, không dùng temporary table để chia sẻ giữa hai session. Chỉ tạo/cleanup khi có phê duyệt thực thi trên Test.
+- Ưu tiên P0: hai acquire/takeover Lease; mutation cùng Asset; mutation cùng mutation ID; mutation ↔ heartbeat/release; Asset DELETE ↔ Lease/mutation.
+- P1: import khác mutation ID cùng Counter/category; retry/collision UUID-code; Settings update ↔ import/allocator.
+- Baseline và protocol mục tiêu phải báo cáo tách biệt. PASS yêu cầu đúng invariant cuối, không partial Receipt/ledger, không duplicate, không orphan và không deadlock trong phạm vi protocol được kiểm tra.
+
+### Phát hiện cần giữ rõ
+- Có thể tái hiện candidate lock inversion Lease → Asset đối nghịch Asset DELETE → cascade Lease bằng hai session và fixture disposable; chưa được chạy.
+- Client barrier chỉ xác nhận thời điểm bắt đầu và trạng thái blocker. Nếu cần dừng chính xác bên trong RPC mà không thể tạo bằng lock cạnh tranh bên ngoài, phải review test hook riêng; không tự thêm trigger/hook.
+- Không dùng pg_sleep đơn thuần làm bằng chứng concurrency.
+- 20261118000200_asset_edit_lock_lease_test.sql và 20261118000300_asset_mutation_receipts_test.sql vẫn là test tuần tự, không được ghi P0/P1 concurrency PASS.
+
+### Trạng thái an toàn
+Chỉ đọc migration/test source và cập nhật thiết kế tài liệu. Chưa tạo runner, test fixture, test function/trigger; chưa chạy concurrency test, SQL ghi dữ liệu hoặc thay đổi Supabase.
