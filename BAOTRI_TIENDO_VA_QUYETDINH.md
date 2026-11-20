@@ -5165,7 +5165,7 @@ Chỉ chạy concurrency test ghi dữ liệu trên BAOTRI-Mini-Test sau phê du
 - assets: authenticated SELECT và DELETE; INSERT/UPDATE false. DELETE bị RLS policy assets.delete kiểm tra nhưng vẫn có thể bypass Asset anchor, nên revoke DELETE cùng transaction M020.
 - organization_settings: authenticated SELECT/INSERT/UPDATE; policy ghi yêu cầu settings.manage. CloudAssetsPanel đang dùng direct PostgREST writer saveCloudAssetCodeConfig(); M019 statement trigger bridge phải hoạt động trước M020.
 - Lease/Receipt/Import/Counter: authenticated không có direct DML grants; RLS bật, RPC SECURITY DEFINER thao tác nội bộ.
-- Các business RPC SECURITY DEFINER owner postgres, search_path rỗng, row_security=off; anon/PUBLIC không EXECUTE. Giữ nguyên permission checks.
+- Các RPC SECURITY DEFINER owner postgres, search_path rỗng, row_security=off; anon/PUBLIC không EXECUTE. Giữ nguyên permission checks.
 
 ### Constraint/trigger
 - Lease PK (org,asset), FK Asset ON DELETE CASCADE.
