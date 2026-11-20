@@ -5533,3 +5533,28 @@ Rà thêm test SQL liên quan trước execution gate:
 - Không thực hiện SQL write/migration, chưa test concurrency, chưa Production.
 
 **Next:** chốt policy legacy RPC trước execution; nếu giữ thì chạy legacy lease test + actual two-session writer interleavings, nếu revoke thì sửa test suite và privilege assertions. Tiếp tục review draft-only.
+
+
+## 128. M021 final preflight checklist + read-only Settings baseline — 20/11/2026
+
+Tạo `supabase/drafts/M021_PREFLIGHT_CHECKLIST_DRAFT.md` để gom execution gate, privilege contract, sequential regression, two-session protocol, execution order và decision legacy RPC.
+
+### Read-only baseline kiểm tra trực tiếp trên BAOTRI-Mini-Test
+- Fixture organization_settings tồn tại.
+- Effective privileges: authenticated INSERT=true, UPDATE=true, DELETE=false; service_role DELETE=true. M021 draft revoke service_role Settings DELETE.
+- organization_settings: organization_id NOT NULL; asset_categories NOT NULL default []; created_at/updated_at NOT NULL default now(); asset_code_config nullable. Cấu trúc phù hợp test INSERT/UPSERT compatibility bridge (test rollback).
+- Đây là catalog/read-only observations; không DML/schema write.
+
+### Recommendation cần quyết định trước execution
+- Source audit không thấy runtime caller cho legacy `update_asset_with_lock` / `set_asset_archived_with_lock`; writer app đang dùng mutation RPC có expected version + receipt.
+- Đề xuất revoke EXECUTE hai legacy RPC cho authenticated/service_role nếu không có external compatibility; giữ quyền owner-level maintenance. Nếu giữ, phải chấp nhận documented stale-write risk và test ordering.
+- Chưa chỉnh privilege SQL draft, chưa revoke, chưa apply migration.
+
+### Trạng thái
+- [x] Checklist preflight tạo draft và push lên repo.
+- [x] Đọc cấu trúc Settings và effective DELETE grants Test bằng read-only SQL.
+- [ ] Legacy EXECUTE policy chưa chốt.
+- [ ] M021 chưa apply; sequential test/concurrency chưa chạy.
+- [ ] Production untouched.
+
+**Next:** tiếp tục review checklist/drafts, xác nhận SHA/contents sau commit; execution vẫn dừng tại approval gate.
