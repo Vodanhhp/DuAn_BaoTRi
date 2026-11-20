@@ -5593,3 +5593,11 @@ Tạo `supabase/drafts/M021_PREFLIGHT_CHECKLIST_DRAFT.md` để gom execution ga
 1. CI run `44725449267` has passed; no outstanding CI failure.
 2. Run physical two-session M021 protocol externally; do not simulate it with sequential execute_sql calls.
 3. Proceed with controlled Test data Local→Cloud Asset import/edit verification. Do not enable generic full sync or touch Production.
+
+
+## 132. Quyết định lưu metadata người tạo Asset trên Cloud — 20/11/2026
+
+- Chốt phương án: lưu cả created_by_user_id và created_by_label trên Cloud, không loại bỏ metadata khi nhập Asset Local.
+- Đã tạo draft supabase/drafts/M022_asset_creator_metadata_DRAFT.sql; commit 08e2965862d582366863cfc97998b5a961b569e0. Draft thêm hai cột nullable, FK user với ON DELETE SET NULL (giữ nhãn người tạo), ghi nhận actor cho Asset tạo trực tiếp trên Cloud và mở rộng RPC import để giữ metadata Local cùng idempotency payload.
+- Đã fetch lại file và kiểm tra tĩnh các điểm: add columns, Cloud create, import allowlist/type validation, canonical payload, so sánh Asset đã tồn tại và INSERT. Chưa chạy migration, chưa thay đổi Test/Production.
+- Việc tiếp theo: review SQL M022 kỹ hơn; sau khi người dùng phê duyệt mới áp dụng trên BAOTRI-Mini-Test. Sau đó cập nhật mapper/AssetRow/import payload và chạy CI + browser verification. Không full sync, không Production.
