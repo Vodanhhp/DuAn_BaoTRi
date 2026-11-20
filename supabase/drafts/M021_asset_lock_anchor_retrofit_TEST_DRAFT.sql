@@ -2,7 +2,6 @@
 -- Run only after the matching M021 migration is applied to BAOTRI-Mini-Test.
 -- This script uses one dedicated Test organization and rolls back all DML.
 -- M021 revokes the legacy full-snapshot update RPC; the historical lease test that calls it is pre-M021 only.
--- M021 revokes the legacy full-snapshot update RPC; the historical lease test that calls it is pre-M021 only.
 -- It is not a substitute for the separate two-physical-session concurrency suite.
 
 begin;
@@ -112,7 +111,7 @@ begin
   v_import:=public.import_asset_preserving_identity(v_org,v_asset_id,v_asset.code,v_payload,pg_catalog.gen_random_uuid());
   if coalesce((v_import->>'already_present')::boolean,false) is not true then raise exception 'Import did not preserve existing Asset'; end if;
 
-  -- Retained legacy update/archive writers must take the same Asset anchor.
+  -- Retained archive/restore RPC must take the same Asset anchor; full-snapshot update is denied.
   v_lease:=public.acquire_asset_edit_lock(v_org,v_asset_id,pg_catalog.gen_random_uuid(),'M021 legacy regression');
   if coalesce((v_lease->>'acquired')::boolean,false) is not true then raise exception 'Legacy acquire failed'; end if;
   v_token:=(v_lease->>'lock_token')::uuid;
