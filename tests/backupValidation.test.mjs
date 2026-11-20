@@ -68,3 +68,41 @@ test('rejects duplicate primary keys within a table', () => {
   duplicate.assets = [{ id: 'same-id' }, { id: 'same-id' }]
   assert.equal(isValidBackupV3(duplicate), false)
 })
+
+const backupWithChecklistChain = () => {
+  const backup = validBackup()
+  backup.assets = [{ id: 'asset-1' }]
+  backup.checklistTemplates = [{ id: 'template-1', assetId: 'asset-1' }]
+  backup.checklistVersions = [{ id: 'version-1', templateId: 'template-1', assetId: 'asset-1' }]
+  backup.checklistResults = [{ id: 'result-1', assetId: 'asset-1', templateId: 'template-1', templateVersionId: 'version-1' }]
+  backup.logs = [{ id: 'log-1', assetId: 'asset-1', checklistResultId: 'result-1' }]
+  return backup
+}
+
+test('accepts backup with consistent Checklist-to-request references', () => {
+  assert.equal(isValidBackupV3(backupWithChecklistChain()), true)
+})
+
+test('rejects Checklist templates, versions, or results with missing or mismatched asset references', () => {
+  const missingAsset = backupWithChecklistChain()
+  missingAsset.checklistTemplates[0].assetId = 'missing-asset'
+  assert.equal(isValidBackupV3(missingAsset), false)
+
+  const mismatchedVersion = backupWithChecklistChain()
+  mismatchedVersion.checklistVersions[0].assetId = 'another-asset'
+  assert.equal(isValidBackupV3(mismatchedVersion), false)
+
+  const missingVersion = backupWithChecklistChain()
+  missingVersion.checklistResults[0].templateVersionId = 'missing-version'
+  assert.equal(isValidBackupV3(missingVersion), false)
+})
+
+test('rejects maintenance requests linked to missing Checklist results or another asset', () => {
+  const missingResult = backupWithChecklistChain()
+  missingResult.logs[0].checklistResultId = 'missing-result'
+  assert.equal(isValidBackupV3(missingResult), false)
+
+  const mismatchedAsset = backupWithChecklistChain()
+  mismatchedAsset.logs[0].assetId = 'another-asset'
+  assert.equal(isValidBackupV3(mismatchedAsset), false)
+})
