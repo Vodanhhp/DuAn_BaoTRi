@@ -1,0 +1,32 @@
+import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+import test from 'node:test'
+
+const source = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8')
+
+test('checklist template version is resolved from current IndexedDB state inside transaction', () => {
+  const start = source.indexOf('const saveTemplate = async')
+  const end = source.indexOf('const startRun =', start)
+  assert.ok(start >= 0 && end > start, 'saveTemplate handler must exist')
+  const handler = source.slice(start, end)
+  const transaction = handler.indexOf("db.transaction('rw'")
+  const lookup = handler.indexOf("where('assetId').equals(asset.id).first()", transaction)
+  const writeTemplate = handler.indexOf('db.checklistTemplates.put(nextTemplate)', transaction)
+  const writeVersion = handler.indexOf('db.checklistVersions.add(', transaction)
+  assert.ok(transaction >= 0 && lookup > transaction, 'template lookup must happen inside transaction')
+  assert.ok(writeTemplate > lookup && writeVersion > writeTemplate, 'template and version writes must follow current-state lookup')
+  assert.match(handler, /const nextVersion=\(latestTemplate\?\.currentVersion \?\? 0\)\+1/)
+})
+
+test('task completion re-reads current state and refuses a second completion Log', () => {
+  const start = source.indexOf('const completeTask = async')
+  const end = source.indexOf('const archiveAsset =', start)
+  assert.ok(start >= 0 && end > start, 'completeTask handler must exist')
+  const handler = source.slice(start, end)
+  const transaction = handler.indexOf("db.transaction('rw'")
+  const lookup = handler.indexOf('db.tasks.get(t.id)', transaction)
+  const guard = handler.indexOf("current.status === 'Hoàn thành'", lookup)
+  const logInsert = handler.indexOf('db.logs.add(log)', guard)
+  assert.ok(transaction >= 0 && lookup > transaction, 'task must be re-read inside transaction')
+  assert.ok(guard > lookup && logInsert > guard, 'already-completed guard must precede Log insertion')
+})
