@@ -5003,3 +5003,27 @@ Mỗi case cần hai connection vật lý, xác định winner semantics, ghi wa
 - Future hard delete: Asset anchor → Lease/Asset/dependency checks; direct DELETE phải bị thu hồi.
 
 **Kết luận:** tách riêng ba miền Asset, Settings và Counter, đồng thời giữ mutation-ID idempotency độc lập. Chưa tạo migration, chưa sửa code/RPC/grants/Supabase và chưa chạy concurrency test. Bước tiếp theo là thiết kế RPC Settings + allocator receipt, rồi gom toàn bộ thay đổi thành một kế hoạch migration có thứ tự triển khai và rollback.
+
+## 105. Contract RPC Settings và allocator idempotency – 20/11/2026
+
+Đã xác định contract candidate, chưa viết SQL/migration.
+
+### Settings writer
+- Function candidate: `save_asset_code_config_with_receipt(org, mutation_id, expected_updated_at, config)`.
+- Xác thực actor + `settings.manage`; khóa mutation ID → kiểm tra receipt replay → Settings exclusive lock theo organization → khóa row nếu có → so sánh `updated_at` → ghi config → receipt.
+- Bảng receipt candidate `organization_settings_mutations` unique (organization_id, mutation_id), lưu actor/request payload/result snapshot.
+- Client tạo mutation UUID ổn định, giữ qua retry; expected_updated_at giúp phát hiện cấu hình bị người khác sửa. Conflict trả 40001, UI refetch để người dùng quyết định; không silent overwrite.
+- Settings row chưa tồn tại: expected_updated_at NULL; organization-scoped advisory lock bảo vệ cả trường hợp row vắng mặt.
+- Sau chuyển đổi, RPC là writer duy nhất; direct PostgREST INSERT/UPDATE đóng lại.
+
+### Allocator
+- `create_asset_with_code` hiện thiếu mutation ID/receipt và p_id optional. Candidate RPC idempotent bắt buộc stable Asset UUID + mutation UUID.
+- Thứ tự: Auth/assets.create → Asset anchor → mutation-ID advisory → receipt replay → Settings shared → Counter UPSERT → Asset INSERT → creation receipt.
+- Receipt replay trả đúng Asset/code snapshot cũ, không tăng Counter. Cùng mutation ID khác actor/Asset/payload bị reject. Asset UUID đã tồn tại không có receipt tương ứng thì trả conflict.
+- Receipt table candidate `asset_creation_mutations`, unique (organization_id, mutation_id), thêm unique binding organization + asset_id.
+
+### Thứ tự tổng hợp
+- Import/allocator dùng Settings shared; Settings save dùng Settings exclusive.
+- Cả Settings writer và Asset writer lấy mutation-ID lock trước Settings lock; không được lấy Asset anchor sau khi đã lấy Settings lock.
+- Counter vẫn serialize code cùng organization/category.
+- Chưa tạo bảng/function, chưa sửa code/grants, chưa chạy concurrency tests.
