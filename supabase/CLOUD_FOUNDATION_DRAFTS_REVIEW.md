@@ -2841,13 +2841,13 @@ Chưa thực thi truy vấn catalog, chưa sinh vector, chưa tạo migration.
 - Lưu hai-session timeline theo monotonic timestamp, PID, txid, SQLSTATE và blocking graph. Không dùng thời gian chờ cố định làm bằng chứng ordering.
 - Đây là thiết kế test, không phải kết quả PASS. Chỉ chạy trên BAOTRI-Mini-Test sau phê duyệt rõ ràng cho test DML/concurrency.
 
-## 98. Catalog audit Test – exact M020 writer inventory and blockers
+## 98. Catalog audit Test – exact M021 writer inventory and blockers
 
 Read-only catalog audit on BAOTRI-Mini-Test (PostgreSQL 17.12), cross-checked with GitHub source search/fetch. No SQL writes or RPC invocations were performed.
 
 ### A. Exact public function inventory
 
-| Function | Classification | Current behavior / M020 disposition |
+| Function | Classification | Current behavior / M021 disposition |
 |---|---|---|
 | acquire_asset_edit_lock | Runtime writer | UPSERT Lease; retrofit Asset anchor before Asset existence read and Lease UPSERT |
 | heartbeat_asset_edit_lock | Runtime writer | UPDATE Lease; retrofit Asset anchor before Lease UPDATE |
@@ -2856,7 +2856,7 @@ Read-only catalog audit on BAOTRI-Mini-Test (PostgreSQL 17.12), cross-checked wi
 | import_asset_preserving_identity | Runtime writer | Existing bigint mutation lock, Settings read, Counter UPSERT, Asset FOR UPDATE/INSERT, import ledger; add Asset anchor before mutation lock and global Settings shared before Settings read |
 | update_asset_with_lock | Legacy callable RPC | No runtime caller found; exported compatibility helper remains. Keep and retrofit Asset anchor → Lease → Asset; mark deprecated |
 | set_asset_archived_with_lock | Legacy callable RPC | No runtime caller found; exported compatibility helper remains. Keep and retrofit Asset anchor → Lease → Asset; mark deprecated |
-| create_asset_with_code | Legacy allocator capability | Authenticated + service_role EXECUTE; source helper createCloudAsset exported but no caller found. Ordinary Asset creation is Local-first. Candidate revoke authenticated and service_role EXECUTE in M020; retain owner-only, do not expose a non-idempotent Cloud allocator |
+| create_asset_with_code | Legacy allocator capability | Authenticated + service_role EXECUTE; source helper createCloudAsset exported but no caller found. Ordinary Asset creation is Local-first. Candidate revoke authenticated and service_role EXECUTE in M021; retain owner-only, do not expose a non-idempotent Cloud allocator |
 | list_asset_edit_locks | Read-only RPC | No anchor required; preserve assets.view authorization |
 | set_asset_updated_at | Trigger helper | BEFORE UPDATE timestamp-only trigger on assets; not a business writer, no Asset anchor logic required inside trigger |
 
@@ -2886,9 +2886,9 @@ The active catalog definition of apply_asset_mutation_with_lock currently contai
 
 The forward hotfix migration 20261119000100_fix_asset_mutation_payload_validation.sql replaces the old text 'or jsonb_object_length(p_payload) <> cardinality(v_required_keys)' with the string 'false'. That replacement appears to remove the 'or' token and produce the suspicious active definition above.
 
-This has not been runtime-invoked or compiled by plpgsql_check (extension is not installed). Treat as a P0 blocker: before M020, create a separate minimal forward fix that preserves valid boolean syntax, then validate the function with a real call-path regression/test and confirm exact pg_get_functiondef. Do not bury this correction inside the Asset lock retrofit; isolate the root cause and its test evidence. Existing historical PASS notes do not override the current catalog text.
+This has not been runtime-invoked or compiled by plpgsql_check (extension is not installed). Treat as a P0 blocker: before M021, create a separate minimal forward fix that preserves valid boolean syntax, then validate the function with a real call-path regression/test and confirm exact pg_get_functiondef. Do not bury this correction inside the Asset lock retrofit; isolate the root cause and its test evidence. Existing historical PASS notes do not override the current catalog text.
 
-### E. M020 lock order after M019 bridge exists
+### E. M021 lock order after M019 bridge exists
 
 1. acquire: auth + assets.update → Asset anchor → Asset existence read → Lease UPSERT.
 2. heartbeat: auth + assets.update → Asset anchor → Lease UPDATE.
@@ -2897,11 +2897,11 @@ This has not been runtime-invoked or compiled by plpgsql_check (extension is not
 5. import: auth + assets.import → Asset anchor → existing mutation-ID bigint lock → import ledger replay → global Settings shared lock → Settings read → Counter UPSERT → Asset FOR UPDATE/INSERT → import ledger INSERT.
 6. legacy update/archive: auth + assets.update → Asset anchor → Lease FOR UPDATE → Asset UPDATE.
 7. list locks: read-only; no anchor.
-8. create_asset_with_code: candidate retire client/service_role EXECUTE in same M020 transaction because no runtime caller was found and Local-first creation is authoritative. If future evidence requires keeping it, stop and redesign it with anchor, Settings shared lock, Counter and idempotency before retaining access.
+8. create_asset_with_code: candidate retire client/service_role EXECUTE in same M021 transaction because no runtime caller was found and Local-first creation is authoritative. If future evidence requires keeping it, stop and redesign it with anchor, Settings shared lock, Counter and idempotency before retaining access.
 
-### F. Atomic M020 contents and gates
+### F. Atomic M021 contents and gates
 
-M020 must commit together:
+M021 must commit together:
 - Replace all seven retained Asset/Lease writer RPC definitions with anchor-aware versions (five runtime + two legacy).
 - Add mutation-ID advisory serialization to apply before receipt replay.
 - Retrofit import with Asset anchor and global Settings shared reader lock.
