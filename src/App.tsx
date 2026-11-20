@@ -2330,6 +2330,7 @@ function AssetChecklist({asset,userName,allowActions,scheduledFor,isMakeup,creat
   const [builderOpen,setBuilderOpen] = useState(false)
   const [runOpen,setRunOpen] = useState(false)
   const [draftTitle,setDraftTitle] = useState('')
+  const [builderBaseUpdatedAt,setBuilderBaseUpdatedAt] = useState<string|null>(null)
   const [draftDescription,setDraftDescription] = useState('')
   const [draftItems,setDraftItems] = useState<ChecklistTemplateItem[]>([])
   const [answers,setAnswers] = useState<Record<string,string>>({})
@@ -2340,6 +2341,7 @@ function AssetChecklist({asset,userName,allowActions,scheduledFor,isMakeup,creat
   const orderedResults = results.slice().sort((a,b)=>b.performedAt.localeCompare(a.performedAt))
   const openBuilder = async () => {
     if (!allowActions) return
+    setBuilderBaseUpdatedAt(template?.updatedAt ?? null)
     setDraftTitle(template?.title ?? ('Checklist - '+asset.name))
     setDraftDescription(template?.description ?? '')
     const current = template ? await db.checklistVersions.where('templateId').equals(template.id).toArray() : []
@@ -2360,6 +2362,8 @@ function AssetChecklist({asset,userName,allowActions,scheduledFor,isMakeup,creat
       // Resolve the template by asset inside the transaction. This prevents
       // two tabs opening the first-time builder from creating two templates.
       const latestTemplate=await db.checklistTemplates.where('assetId').equals(asset.id).first()
+      // Reject stale editor state instead of publishing old content as a new version.
+      if ((latestTemplate?.updatedAt ?? null) !== builderBaseUpdatedAt) return 'conflict' as const
       const templateId=latestTemplate?.id ?? uid()
       const existingVersions=latestTemplate ? await db.checklistVersions.where('templateId').equals(templateId).toArray() : []
       const highestVersion=Math.max(latestTemplate?.currentVersion ?? 0,...existingVersions.map(version=>version.version))
@@ -2372,6 +2376,10 @@ function AssetChecklist({asset,userName,allowActions,scheduledFor,isMakeup,creat
       await queueChange('checklistVersions', versionId)
       return nextVersion
     })
+    if (savedVersion === 'conflict') {
+      alert('Biểu mẫu đã được thay đổi ở tab khác. Chưa lưu phiên bản này; hãy đóng trình sửa, mở lại biểu mẫu mới nhất rồi thực hiện thay đổi.')
+      return
+    }
     setBuilderOpen(false)
     alert('Đã lưu biểu mẫu phiên bản '+savedVersion+'. Các phiên bản và phiếu cũ được giữ nguyên.')
   }
