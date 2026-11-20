@@ -76,7 +76,9 @@ const localAssetImportSnapshot = (assets: Asset[]): string => JSON.stringify(
       notes: asset.notes ?? '',
       archivedAt: asset.archivedAt || null,
       createdAt: asset.createdAt,
-      updatedAt: asset.updatedAt
+      updatedAt: asset.updatedAt,
+      createdByUserId: asset.createdByUserId ?? null,
+      createdByLabel: asset.createdByLabel ?? null
     }))
 )
 
@@ -105,7 +107,9 @@ const localAssetMatchesCloud = (asset: Asset, row: Record<string, unknown>): boo
   (row.notes ?? '') === (asset.notes ?? '') &&
   sameTimestamp(row.archived_at as string | null | undefined, asset.archivedAt || null) &&
   sameTimestamp(row.created_at as string | null | undefined, asset.createdAt) &&
-  sameTimestamp(row.updated_at as string | null | undefined, asset.updatedAt)
+  sameTimestamp(row.updated_at as string | null | undefined, asset.updatedAt) &&
+  (row.created_by_user_id ?? null) === (asset.createdByUserId ?? null) &&
+  (row.created_by_label ?? null) === (asset.createdByLabel ?? null)
 
 
 export default function CloudAssetsPanel({ client, organizationId, organizationName, organizationRole, onBack }: Props) {
@@ -338,7 +342,7 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
       const localIds = new Set<string>()
       const localCodes = new Set<string>()
       for (const asset of localRows) {
-        // Fail during preview rather than after confirmation if Cloud cannot preserve Local metadata.
+        // Fail during preview rather than after confirmation if Cloud cannot preserve Local fields.
         toCloudAssetRow(asset, organizationId)
         if (!asset.id || !asset.code.trim() || !asset.name.trim() || !asset.category.trim()) {
           throw new Error('Có thiết bị Local thiếu UUID, mã quản lý, tên hoặc nhóm thiết bị. Không thể đồng bộ an toàn.')
