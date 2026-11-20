@@ -891,19 +891,18 @@ commit;
 -- REQUIRED TESTS BEFORE PROMOTION/APPLY:
 -- 1. Re-run all existing Asset Lease and Asset mutation SQL tests.
 -- 2. Sequential: acquire, heartbeat, release, mutation replay, payload rejection,
---    update/archive lease token ownership and expiry.
+--    archive/restore lease token ownership and expiry; legacy full-snapshot update EXECUTE denied.
 -- 3. Lock vectors: verify deterministic Asset two-int keys using PostgreSQL
 --    17.12; verify Asset two-int and existing mutation-ID bigint key spaces.
 -- 4. Two-session protocol Sections 1-8: primitive contention + actual RPC
---    acquire/heartbeat/release, mutation/import, mutation-ID reuse, legacy writers;
+--    acquire/heartbeat/release, mutation/import, mutation-ID reuse and retained archive RPC;
 --    no hard-delete cases (privileges are denied), no deadlock, invariants hold.
 -- 5. Settings: direct PostgREST INSERT/UPDATE statement trigger takes global
 --    exclusive even for zero-row UPDATE; import reader takes global shared;
 --    test both interleavings with two physical sessions.
 -- 6. Effective privilege matrix: authenticated cannot DELETE assets; service_role
---    cannot direct Asset INSERT/UPDATE/DELETE or Settings DELETE; authenticated and
---    service_role cannot EXECUTE the legacy allocator; retained RPC EXECUTE matrix
---    is preserved for authenticated/service_role and denied to anon/PUBLIC.
+--    cannot direct Asset INSERT/UPDATE/DELETE or Settings DELETE; authenticated and service_role cannot EXECUTE the legacy allocator or full-snapshot update RPC;
+--    retained RPC EXECUTE matrix is preserved for supported RPCs and denied to anon/PUBLIC.
 -- 7. Search-path poisoning: private helpers and pg_catalog lock functions
 --    resolve only through fully-qualified names and empty search_path.
 -- 8. Postflight: no missing trigger/function, no schema USAGE/EXECUTE to client,
