@@ -48,6 +48,20 @@ test('accepts valid inventory location settings in v3 backups', () => {
   assert.equal(isValidBackupV3(backup), true)
 })
 
+test('validates custom asset category groups and their item codes', () => {
+  const valid = validBackup()
+  valid.customAssetCategories = [{ label: 'Nhóm tự tạo', items: [{ name: 'Máy phụ trợ', code: 'MPT' }] }]
+  assert.equal(isValidBackupV3(valid), true)
+
+  const invalidItem = validBackup()
+  invalidItem.customAssetCategories = [{ label: 'Nhóm tự tạo', items: [{ name: 'Máy phụ trợ', code: ' ' }] }]
+  assert.equal(isValidBackupV3(invalidItem), false)
+
+  const emptyGroup = validBackup()
+  emptyGroup.customAssetCategories = [{ label: 'Nhóm rỗng', items: [] }]
+  assert.equal(isValidBackupV3(emptyGroup), false)
+})
+
 test('rejects malformed optional inventory location settings', () => {
   const invalidLocations = validBackup()
   invalidLocations.inventoryLocations = ['Kho cơ điện', '   ']
