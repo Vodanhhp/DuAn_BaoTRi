@@ -106,3 +106,18 @@ test('backup restore reports database success separately from optional localStor
   assert.ok(storageTry > clearPending && storageWrite > storageTry, 'optional localStorage write is isolated after database commit')
   assert.ok(warning > storageWrite && successFlash > warning, 'storage failure is reported as a partial warning, not a failed database restore')
 })
+
+test('stale Checklist editor cannot publish over a newer template revision', () => {
+  const start = source.indexOf('const openBuilder = async')
+  const end = source.indexOf('const startRun =', start)
+  assert.ok(start >= 0 && end > start, 'Checklist builder handlers must exist')
+  const handler = source.slice(start, end)
+  assert.match(handler, /setBuilderBaseUpdatedAt\(template\?\.updatedAt \?\? null\)/, 'editor must capture the template revision when opened')
+  const transaction = handler.indexOf("db.transaction('rw'")
+  const latestRead = handler.indexOf("where('assetId').equals(asset.id).first()", transaction)
+  const staleGuard = handler.indexOf("(latestTemplate?.updatedAt ?? null) !== builderBaseUpdatedAt", latestRead)
+  const write = handler.indexOf('db.checklistTemplates.put(nextTemplate)', staleGuard)
+  assert.ok(transaction >= 0 && latestRead > transaction, 'latest template revision must be read inside transaction')
+  assert.ok(staleGuard > latestRead && write > staleGuard, 'stale editor must be rejected before publishing a new version')
+  assert.match(handler, /savedVersion === 'conflict'/, 'user must be told to reopen the latest template')
+})
