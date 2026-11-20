@@ -5110,3 +5110,18 @@ Bridge candidate mới:
 Deterministic vectors sinh từ PostgreSQL 17.12 thật; shared/shared và exclusive contention; release khi commit/rollback; statement trigger zero-row; deadlock regression direct UPDATE ↔ RPC; search_path độc hại; quyền helper; namespace inventory. Không bịa vectors.
 
 Chưa tạo SQL/migration, chưa chạy SQL hoặc test ghi dữ liệu.
+
+## 110. Inventory lock source và contract migration M019 – 20/11/2026
+
+GitHub source search/fetch xác nhận một advisory lock call-site đã tìm thấy: migration import dùng bigint overload với hashtextextended(org || ':' || mutation_id, seed 0). Chưa tìm thấy two-int hoặc session-level call trong source được index; vẫn cần catalog-wide read-only audit trước khi triển khai.
+
+Khi retrofit import, thứ tự là Asset anchor → mutation-ID bigint lock → ledger replay → Settings shared lock → đọc Settings → Counter. Không đảo mutation-ID lock hiện hữu ra sau ledger replay.
+
+M019 contract:
+- private schema không exposed; key derivation và lock wrapper SECURITY INVOKER, owner postgres.
+- Trigger wrapper riêng SECURITY DEFINER owner postgres, search_path rỗng, chỉ lấy global Settings lock.
+- Revoke PUBLIC EXECUTE mặc định; không grant helper cho anon/authenticated; trigger không trở thành API client-callable.
+- Domain/version prefix + seed cố định; hash bigint split đúng signed int32; client không truyền key tùy ý.
+- M019 chỉ tạo helper/trigger bridge; chưa sửa business RPC, grants trực tiếp hoặc frontend.
+
+Chưa chạy catalog query, chưa sinh vectors, chưa tạo migration.
