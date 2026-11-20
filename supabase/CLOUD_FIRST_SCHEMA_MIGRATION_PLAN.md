@@ -233,3 +233,16 @@ Fresh read-only preflight on BAOTRI-Mini-Test (project `oyzhxgzltpdebpymuicb`) c
 - candidate migration version `20261120050000` absent from the migration tracker.
 
 These are baseline values, not defects in the current database; M021 is intended to change them. The absence of the private schema and candidate version clears two preconditions but does not authorize or constitute an application. Remaining evidence gates are SQL regression, effective postflight catalog checks, and the physical two-session/RPC interleaving suite. No database writes or RPC calls were made; M021 remains Draft; Production untouched.
+
+
+## 23. M021 applied to Test; sequential regression and postflight — 20/11/2026
+
+Applied `m021_asset_lock_anchor_retrofit` to BAOTRI-Mini-Test only using the reviewed M021 draft. Supabase returned success; migration tracker now records version `20261120110552`. Production was not touched.
+
+Postflight catalog checks confirm the intended effective privilege boundary: authenticated Asset DELETE=false; service_role Asset INSERT/UPDATE/DELETE=false; service_role Settings DELETE=false; client/service roles have no USAGE on private schema; legacy full-snapshot `update_asset_with_lock` EXECUTE=false for authenticated/service_role; archive/restore EXECUTE remains true for authenticated and false for anon. The private helper functions exist in schema `private`; note `to_regclass()` is a relation lookup and is not a valid function-existence check.
+
+Ran the current rollback-only sequential regression file against Test. It returned without SQL error, so its DO assertions completed; rollback left the fixture Asset intact, no active Lease rows, and the Settings/counter fixture rows present. The current receipt/import counts are six/one (pre-existing history retained), not claimed to be newly created by the test.
+
+Security advisor after apply: the SECURITY DEFINER warning count fell from 12 to 10, consistent with revoking the two legacy RPCs. Existing INFO findings for RLS-enabled internal tables without policies and the Auth leaked-password-protection warning remain; they are not newly introduced by M021.
+
+**Not yet verified:** the physical two-session lock-contention and RPC interleaving protocol. The available Supabase SQL tool exposes one-shot SQL execution and does not provide persistent independently controlled sessions/READY barriers, so sequential requests cannot honestly prove contention. M021 remains Test-only; do not promote to Production until the external two-session protocol passes.
