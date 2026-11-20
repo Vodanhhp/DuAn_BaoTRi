@@ -1297,12 +1297,20 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
         await db.checklistResults.bulkPut(data.checklistResults ?? [])
         await db.syncQueue.bulkPut(data.syncQueue ?? [])
       })
-      if (Array.isArray(data.customAssetCategories)) {
-        localStorage.setItem('baotri-custom-asset-categories', JSON.stringify(data.customAssetCategories))
-        setCustomAssetCategories(data.customAssetCategories)
-      }
+      // The database transaction has committed. Clear the pending dialog before
+      // touching localStorage, which can fail independently (quota/private mode).
       setPendingRestore(null)
-      flash('Đã khôi phục dữ liệu sao lưu')
+      let categoryWarning = ''
+      if (Array.isArray(data.customAssetCategories)) {
+        try {
+          localStorage.setItem('baotri-custom-asset-categories', JSON.stringify(data.customAssetCategories))
+          setCustomAssetCategories(data.customAssetCategories)
+        } catch (storageError) {
+          console.error('Đã khôi phục dữ liệu nhưng không thể lưu danh mục thiết bị tùy chỉnh:', storageError)
+          categoryWarning = ' Dữ liệu danh mục thiết bị tùy chỉnh chưa được lưu vào trình duyệt.'
+        }
+      }
+      flash('Đã khôi phục dữ liệu sao lưu.' + categoryWarning)
     } catch (error) {
       flash(error instanceof Error ? error.message : 'Không thể khôi phục file sao lưu; dữ liệu Local được giữ nguyên nếu giao dịch chưa hoàn tất')
     }
