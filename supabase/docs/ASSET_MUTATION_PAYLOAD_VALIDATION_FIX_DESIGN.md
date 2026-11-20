@@ -30,7 +30,7 @@ end if;
 
 This rejects SQL NULL, JSON null, scalar, array, missing keys, and unsupported extra keys. A valid payload must be an object with exactly the 13 required keys. Existing field-level validation (nonblank name and supported status) remains unchanged.
 
-## 3. Forward migration draft
+## 3. Canonical forward migration
 
 The following is the complete function definition copied from the current canonical Migration 017 source. The corrective migration must wrap this definition and the grants/comments below in a transaction. Version assignment was checked against the repository migration inventory and the confirmed BAOTRI-Mini-Test sequence through Migration 019. The target has no migration ledger table/tooling; the user confirmed no migration SQL was applied after Migration 019. The proposed next version is Migration 020 (`20261120000100`).
 
@@ -224,7 +224,9 @@ comment on function public.apply_asset_mutation_with_lock(uuid, uuid, uuid, uuid
 commit;
 ```
 
-**Important:** This is a full-definition forward replacement. Do not run the historical Migration 017 or 018 again. Do not add unrelated schema, lease, receipt, permission, or lock-order changes to this migration.
+**Canonical file:** `supabase/migrations/20261120000100_p0_fix_asset_mutation_payload_validation.sql`.
+
+**Important:** This is a full-definition forward replacement. It is committed to the migrations directory but has NOT been applied. Do not run the historical Migration 017 or 018 again. Do not add unrelated schema, lease, receipt, permission, or lock-order changes to this migration.
 
 ## 4. Regression test matrix
 
@@ -282,7 +284,8 @@ After applying the approved migration on Test:
 ## 7. Current status
 
 - This document remains a design/review artifact; it is not execution approval.
-- A versioned SQL draft exists at `supabase/drafts/20261120000100_p0_fix_asset_mutation_payload_validation_DRAFT.sql`; it is not in `supabase/migrations/`.
+- The canonical Migration 020 file now exists at `supabase/migrations/20261120000100_p0_fix_asset_mutation_payload_validation.sql`; it has not been applied.
+- The original review snapshot remains at `supabase/drafts/20261120000100_p0_fix_asset_mutation_payload_validation_DRAFT.sql`.
 - The regression test draft exists at `supabase/drafts/P0_ASSET_MUTATION_PAYLOAD_VALIDATION_REGRESSION_TEST_DRAFT.sql`. Its helper-call argument count was corrected in commit `8e08dc79b2a2d4cf4b46d18d667047c16d568335`.
-- Proposed Migration 020 has not been promoted to the migrations directory.
+- The migration was promoted in GitHub commit `e98bdb7efe0211fb27852173de9548f98c7e2d11`; this is a repository change only, not a database deployment.
 - No SQL has been executed, no RPC has been invoked, and Supabase has not been changed.
