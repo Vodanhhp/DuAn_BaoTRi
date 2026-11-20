@@ -2302,18 +2302,22 @@ function AssetChecklist({asset,userName,allowActions,scheduledFor,isMakeup,creat
     if(!draftTitle.trim()) return alert('Nhập tên biểu mẫu Checklist')
     if(!cleanItems.length) return alert('Thêm ít nhất một hạng mục kiểm tra')
     const timestamp=now()
-    const templateId=template?.id ?? uid()
-    const nextVersion=(template?.currentVersion ?? 0)+1
-    const versionId=uid()
-    const nextTemplate={id:templateId,assetId:asset.id,title:draftTitle.trim(),description:draftDescription,currentVersion:nextVersion,active:true,createdAt:template?.createdAt??timestamp,updatedAt:timestamp}
-    await db.transaction('rw',[db.checklistTemplates,db.checklistVersions,db.syncQueue],async()=>{
+    const savedVersion=await db.transaction('rw',[db.checklistTemplates,db.checklistVersions,db.syncQueue],async()=>{
+      // Resolve the template by asset inside the transaction. This prevents
+      // two tabs opening the first-time builder from creating two templates.
+      const latestTemplate=await db.checklistTemplates.where('assetId').equals(asset.id).first()
+      const templateId=latestTemplate?.id ?? uid()
+      const nextVersion=(latestTemplate?.currentVersion ?? 0)+1
+      const versionId=uid()
+      const nextTemplate={id:templateId,assetId:asset.id,title:draftTitle.trim(),description:draftDescription,currentVersion:nextVersion,active:true,createdAt:latestTemplate?.createdAt??timestamp,updatedAt:timestamp}
       await db.checklistTemplates.put(nextTemplate)
       await db.checklistVersions.add({id:versionId,templateId,assetId:asset.id,version:nextVersion,title:draftTitle.trim(),description:draftDescription,items:cleanItems,createdAt:timestamp})
       await queueChange('checklistTemplates', templateId)
       await queueChange('checklistVersions', versionId)
+      return nextVersion
     })
     setBuilderOpen(false)
-    alert('Đã lưu biểu mẫu phiên bản '+nextVersion+'. Các phiên bản và phiếu cũ được giữ nguyên.')
+    alert('Đã lưu biểu mẫu phiên bản '+savedVersion+'. Các phiên bản và phiếu cũ được giữ nguyên.')
   }
   const startRun = () => {
     if (!allowActions) return
