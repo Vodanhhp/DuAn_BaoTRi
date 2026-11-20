@@ -105,6 +105,8 @@ test('backup restore reports database success separately from optional localStor
   assert.ok(transaction >= 0 && clearPending > transaction, 'restore dialog closes only after database transaction succeeds')
   assert.ok(storageTry > clearPending && storageWrite > storageTry, 'optional localStorage write is isolated after database commit')
   assert.ok(warning > storageWrite && successFlash > warning, 'storage failure is reported as a partial warning, not a failed database restore')
+  assert.ok(handler.includes("localStorage.setItem('baotri-inventory-locations'"), 'restore must persist the inventory location catalog when present')
+  assert.ok(handler.includes("localStorage.setItem('baotri-inventory-location-enabled'"), 'restore must persist the inventory location setting when present')
 })
 
 test('stale Checklist editor cannot publish over a newer template revision', () => {
