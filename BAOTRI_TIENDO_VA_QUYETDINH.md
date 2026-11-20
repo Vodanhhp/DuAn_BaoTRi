@@ -5187,3 +5187,20 @@ Active pg_get_functiondef của apply_asset_mutation_with_lock hiện có đoạ
 M020 atomic contents: retrofit 7 writer RPC; import thêm Asset anchor + Settings shared; apply thêm mutation-ID lock trước receipt; revoke authenticated + service_role EXECUTE allocator legacy sau caller audit; revoke authenticated DELETE trên assets. Không đóng direct Settings writes cho đến phase RPC Settings sau này.
 
 **Trạng thái:** đã audit catalog và chốt phạm vi. Chưa tạo SQL/migration, chưa chạy function, chưa sửa code/grants/Supabase.
+
+## 113. Xác minh sâu P0 payload validation – 20/11/2026
+
+Đã fetch toàn bộ function definition từ catalog và đối chiếu hai migration + test trên GitHub.
+
+**Định nghĩa active có lỗi cú pháp rõ ràng:** sau điều kiện `or (p_payload - v_required_keys) <> '{}'::jsonb` là một dòng `false then`, không có toán tử Boolean nối giữa hai biểu thức. Chưa gọi RPC để xác nhận lỗi runtime vì phạm vi hiện tại chỉ cho phép đọc.
+
+**Nguồn gốc sai lệch:**
+- Migration gốc trên main `20261118000300_asset_mutation_receipts.sql` dùng JSONB subtraction để phát hiện key thừa.
+- Hotfix `20261119000100_fix_asset_mutation_payload_validation.sql` lại tìm chuỗi cũ `or jsonb_object_length(...)` và thay cả chuỗi có chữ `or` bằng `false`.
+- Catalog hiện tại có điều kiện subtraction cộng thêm `false` rời. Source hiện tại và function đã triển khai không tạo thành cặp migration có thể tái lập sạch.
+- Tìm kiếm toàn repo chỉ thấy `jsonb_object_length` trong hotfix; không thấy trong migration gốc hiện tại hoặc test hiện tại.
+- Test receipt hiện có gọi RPC với payload hợp lệ nhiều lần, nhưng chưa có test rõ ràng cho thiếu key, key thừa, JSON null/scalar/array. PASS lịch sử không chứng minh function active hiện tại còn hợp lệ sau hotfix.
+
+**Sửa tối thiểu ở mức thiết kế:** bỏ dòng `false` rời, giữ nguyên điều kiện subtraction JSONB. Sau đó tạo forward-only migration sau khi đối chiếu deployment migration ledger; bổ sung test payload hợp lệ, thiếu key, key thừa, và không phải object. Chỉ chạy trong Test fixture riêng khi được phê duyệt rõ ràng.
+
+Không tạo migration, không gọi function, không ghi DB và không thay đổi Supabase trong đợt xác minh này.
