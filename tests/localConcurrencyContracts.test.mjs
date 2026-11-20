@@ -20,6 +20,21 @@ test('checklist template version is resolved from current IndexedDB state inside
   assert.match(handler, /const nextVersion=highestVersion\+1/)
 })
 
+test('inventory edits reject stale or deleted rows before writing', () => {
+  const start = source.indexOf('const saveItem = async')
+  const end = source.indexOf('const saveTask = async', start)
+  assert.ok(start >= 0 && end > start, 'saveItem handler must exist')
+  const handler = source.slice(start, end)
+  const transaction = handler.indexOf("db.transaction('rw'")
+  const lookup = handler.indexOf('db.inventory.get(i.id)', transaction)
+  const missingGuard = handler.indexOf("editingExisting && !existing", lookup)
+  const staleGuard = handler.indexOf('existing.updatedAt !== i.updatedAt', missingGuard)
+  const write = handler.indexOf('db.inventory.put(value)', staleGuard)
+  assert.ok(transaction >= 0 && lookup > transaction, 'current Inventory row must be read inside transaction')
+  assert.ok(missingGuard > lookup && staleGuard > missingGuard && write > staleGuard, 'deleted or stale Inventory rows must be rejected before write')
+  assert.match(handler, /Vật tư đã được thay đổi ở nơi khác/)
+})
+
 test('task completion re-reads current state and refuses a second completion Log', () => {
   const start = source.indexOf('const completeTask = async')
   const end = source.indexOf('const archiveAsset =', start)
@@ -100,11 +115,13 @@ test('backup restore reports database success separately from optional localStor
   const clearPending = handler.indexOf('setPendingRestore(null)', transaction)
   const storageTry = handler.indexOf('try {', clearPending)
   const storageWrite = handler.indexOf("localStorage.setItem('baotri-custom-asset-categories'", storageTry)
-  const warning = handler.indexOf('categoryWarning =', storageWrite)
-  const successFlash = handler.indexOf("flash('Đã khôi phục dữ liệu sao lưu.' + categoryWarning)", warning)
+  const warning = handler.indexOf('settingsWarning +=', storageWrite)
+  const successFlash = handler.indexOf("flash('Đã khôi phục dữ liệu sao lưu.' + settingsWarning)", warning)
   assert.ok(transaction >= 0 && clearPending > transaction, 'restore dialog closes only after database transaction succeeds')
   assert.ok(storageTry > clearPending && storageWrite > storageTry, 'optional localStorage write is isolated after database commit')
   assert.ok(warning > storageWrite && successFlash > warning, 'storage failure is reported as a partial warning, not a failed database restore')
+  assert.ok(handler.includes("localStorage.setItem('baotri-inventory-locations'"), 'restore must persist the inventory location catalog when present')
+  assert.ok(handler.includes("localStorage.setItem('baotri-inventory-location-enabled'"), 'restore must persist the inventory location setting when present')
 })
 
 test('stale Checklist editor cannot publish over a newer template revision', () => {

@@ -5711,3 +5711,104 @@ Mở https://github.com/Vodanhhp/DuAn_BaoTRi/settings/pages và kiểm tra:
 - Công việc được tạm dừng theo yêu cầu người dùng ngày 20/11/2026.
 
 **Điểm tiếp tục chính xác:** bắt đầu bằng việc mở Settings → Pages và kiểm tra/chụp ảnh hai mục `Build and deployment` và `Custom domain`. Không làm lại các bước chẩn đoán workflow đã hoàn thành ở trên, trừ khi có dữ liệu mới.
+
+
+---
+
+## BỔ SUNG TIẾN ĐỘ 20/11/2026 – M023 RESET DỮ LIỆU LOCAL + CLOUD TRÊN TEST
+
+### 1. Phạm vi và nguyên tắc
+- Chỉ áp dụng cho Supabase project `oyzhxgzltpdebpymuicb` – `BAOTRI-Mini-Test`.
+- Tổ chức Test được khóa cứng trong RPC bằng UUID `dfb443ec-a1ee-496b-842c-0bef3f50b8ce` và kiểm tra tên `Cá nhân`; chỉ Admin đang hoạt động được xem preview/reset.
+- Production không được truy cập hoặc thay đổi.
+- Reset thao tác nghiệp vụ Cloud và Local; giữ tài khoản, hồ sơ người dùng, tổ chức, thành viên, roles, role_permissions và permission catalog.
+- Giữ `asset_import_mutations` và `asset_mutation_receipts` làm sổ kỹ thuật idempotency/chống replay; không coi các ledger này là dữ liệu nghiệp vụ hiển thị. Không xóa để tránh retry trễ tái tạo Asset đã reset.
+
+### 2. Migration M023
+- Migration `20261120144143_m023_test_reset_all_data` đã được apply trên BAOTRI-Mini-Test.
+- Thêm `organization_settings.data_reset_at` làm reset epoch cho các thiết bị Local.
+- RPC:
+  - `preview_baotri_test_reset()`: trả số lượng Cloud sẽ xóa và số lượng kỹ thuật/tài khoản được giữ.
+  - `reset_baotri_test_data(p_confirmation)`: chỉ chạy với cụm xác nhận chính xác `RESET TEST`, Admin hợp lệ, đúng Test organization; xóa theo thứ tự FK-safe.
+  - `get_baotri_data_reset_epoch(p_organization_id)`: cho thành viên đang hoạt động đọc reset epoch để thiết bị tự dọn Local.
+- Reset kiểm tra active Asset edit lock; nếu còn lease đang hiệu lực thì từ chối.
+- Dùng Asset anchor trước Settings exclusive theo lock order M021.
+- Xóa nghiệp vụ: maintenance_logs, inventory_movements, checklist_results, checklist_template_versions, checklist_templates, maintenance_tasks, maintenance_plans, asset_images metadata, asset_edit_locks, assets, inventory_items, asset_code_counters.
+- Reset `organization_settings.asset_categories` về [] và `asset_code_config` về NULL; giữ lại row Settings.
+- Không xóa Auth users, profiles, memberships, roles hoặc permission grants.
+- Không có Storage bucket/object trong Test tại thời điểm kiểm tra.
+
+### 3. Kết quả kiểm tra an toàn – chưa reset dữ liệu
+- Admin preview chạy thành công trong transaction chỉ đọc.
+- Preview hiện ghi nhận: 2 Assets; 1 Asset code counter; các bảng nghiệp vụ khác trong danh sách reset đều 0.
+- Technical ledgers được giữ: 47 `asset_import_mutations`, 7 `asset_mutation_receipts`; thành viên 4, roles 3, role_permissions 54.
+- Kiểm tra quyền Viewer gọi preview bị từ chối SQLSTATE 42501 như kỳ vọng.
+- Gọi reset bằng cụm từ sai bị từ chối SQLSTATE 22023 trước mọi thao tác xóa.
+- Post-check xác nhận dữ liệu chưa thay đổi: assets=2, import ledger=47, mutation receipts=7, data_reset_at=NULL.
+- **Chưa gọi reset bằng cụm từ đúng; không có dữ liệu Cloud/Local nào bị xóa trong phiên triển khai này.**
+
+### 4. Frontend và cơ chế Local đa thiết bị
+- Thêm vùng quản trị reset trong CloudAssetsPanel, chỉ hiển thị với Admin đúng Test organization.
+- Bắt buộc kiểm tra số lượng, nhập `RESET TEST`, xác nhận lần cuối.
+- Khi reset Cloud thành công, thiết bị đang thao tác xóa các bảng nghiệp vụ Dexie, syncQueue, assetCloudLinks, assetMutations và danh mục Local tùy chỉnh; giữ Auth/session, device ID và tùy chọn giao diện.
+- Thiết bị khác sẽ đọc `data_reset_at` khi mở ứng dụng, focus lại hoặc kết nối mạng; nếu epoch thay đổi thì tự xóa Local trên chính thiết bị đó. Thiết bị offline không thể nhận lệnh xóa cho đến khi online/focus lại.
+- Không bật full sync. Không có thao tác xóa dữ liệu Production.
+
+### 5. GitHub và kiểm thử
+- Branch: `feature/test-reset-all`.
+- Draft PR: https://github.com/Vodanhhp/DuAn_BaoTRi/pull/2
+- Ba file thay đổi trước phần TIENDO: `src/App.tsx`, `src/CloudAssetsPanel.tsx`, migration M023.
+- GitHub Actions run `44756516155`: regression tests PASS, template release validation PASS, production bundle build PASS.
+- PR đang để Draft, chưa merge vào main; chưa triển khai frontend lên Production/GitHub Pages.
+- M023 đã áp dụng trên Test DB riêng; việc này không làm thay đổi Production.
+- Supabase Security Advisor ghi nhận các SECURITY DEFINER RPC mới có thể gọi bởi authenticated; các hàm đã khóa search_path rỗng, revoke PUBLIC/anon, grant authenticated và kiểm tra membership/Admin + hard-coded Test organization. Đây là cảnh báo lint cùng nhóm với các RPC nghiệp vụ SECURITY DEFINER đang có; cần giữ rà soát bảo mật khi review PR.
+
+### 6. Trạng thái và bước tiếp theo
+- [x] M023 apply trên BAOTRI-Mini-Test.
+- [x] Admin preview và quyền Viewer deny test.
+- [x] Sai confirmation phrase bị chặn trước khi xóa.
+- [x] GitHub regression tests và production build PASS.
+- [ ] Review PR và kiểm tra giao diện trên trình duyệt Test.
+- [ ] Khi người dùng sẵn sàng, chạy preview lần cuối trên PC và Mobile.
+- [ ] Chỉ khi người dùng nhập `RESET TEST` và xác nhận, mới thực hiện reset thực tế; sau đó xác minh Cloud business tables = 0 và từng Local client đã nhận epoch.
+- [ ] Chưa merge main / chưa tác động Production.
+
+**Điểm tiếp tục:** kiểm tra PR #2 trên branch `feature/test-reset-all`, chạy giao diện Test và xác nhận preview trên PC/Mobile. Không gọi RPC reset với cụm từ đúng cho đến khi người dùng chủ động xác nhận thao tác xóa.
+
+
+### 7. BỔ SUNG KIỂM TRA AN TOÀN – 20/11/2026
+- Đối chiếu toàn bộ bảng có `organization_id` trong schema public: 19 bảng. Các bảng nghiệp vụ phát sinh dữ liệu hiện có đều nằm trong danh sách reset; các bảng tài khoản/phân quyền và hai technical ledgers được phân loại giữ lại.
+- Đối chiếu FK thực tế: các bảng con được xóa trước bảng cha; `maintenance_logs` trước tasks/checklist results; `checklist_results` trước template versions/templates; inventory movements trước inventory items/assets; asset_images trước assets. Không thay đổi FK hoặc bật CASCADE.
+- Thực hiện dry-run gọi chính RPC `reset_baotri_test_data('RESET TEST')` trong transaction và ROLLBACK ngay sau đó. Trong transaction, Cloud trả về 0 Assets, 0 Inventory và đã tạo reset epoch; sau ROLLBACK xác nhận lại Assets=2, Inventory=0, import ledger=47, mutation receipts=7, `data_reset_at=NULL`. **Đây chỉ là kiểm thử rollback, không phải reset thật.**
+- Siết cơ chế Local: trên BAOTRI-Mini-Test, App fail-closed, không mở thao tác Local khi offline hoặc chưa xác minh được reset epoch từ Cloud. Khi RPC thành công mới cho phép vào ứng dụng; thiết bị online/focus lại sẽ kiểm tra epoch và dọn Local nếu epoch mới.
+- Commit siết fail-closed: `10ee2ecb151cb5171ea3a474c766c610dea7854c`.
+- GitHub Actions run `44757256792`: tất cả bước regression tests, template validation và production bundle build đều PASS.
+- Sau kiểm tra: Cloud vẫn nguyên dữ liệu trước reset (Assets=2; import ledger=47; mutation receipts=7; reset epoch NULL). Không tác động Production.
+
+
+## 136. Chuẩn bị chạy giao diện M023 trên máy local – 20/11/2026
+
+### Trạng thái Git và môi trường
+- Người dùng đã kiểm tra workspace tại `E:\\DuAnBaoTri\\DuAn_BaoTRi`: ban đầu ở `main`, working tree sạch và khớp `origin/main`.
+- Đã fetch và chuyển thành công sang nhánh `feature/test-reset-all`; nhánh local theo dõi `origin/feature/test-reset-all`.
+- Commit tại thời điểm chuyển nhánh: `4a788e211df9a0565d597c4563beea05de09c631` — `Document M023 dry-run and fail-closed safety checks`. Working tree sạch.
+- Đã đọc `.env.local` theo cách che kín key; `VITE_SUPABASE_URL=https://oyzhxgzltpdebpymuicb.supabase.co`, đúng project BAOTRI-Mini-Test. Không hiển thị hoặc ghi lại anon key.
+- Node.js `v26.13.1`; npm `11.20.0`; Vite `6.4.6`; esbuild `0.25.12`.
+- PowerShell chặn gọi `npm.ps1`; sử dụng `npm.cmd` thay thế, không thay đổi Execution Policy.
+- `npm.cmd install-scripts approve esbuild` đã phê duyệt riêng script cài đặt của `esbuild@0.25.12`. Sau đó `npm.cmd ci` cài thành công 475 packages; `npm.cmd install-scripts ls` xác nhận không còn package có install script chưa được review; `.\node_modules\.bin\esbuild.cmd --version` trả về `0.25.12`.
+- npm báo 5 moderate severity vulnerabilities và một số package deprecated (inflight, lodash.isequal, rimraf, glob, fstream, uuid). Chưa chạy `npm audit fix` hoặc `npm audit fix --force`; không tự nâng dependency trong bước chuẩn bị preview.
+ 
+### Trạng thái kiểm thử giao diện
+- Đã xác minh URL Supabase Test trước khi cài dependencies.
+- **Chưa chạy `npm.cmd run dev`; chưa mở giao diện local trên trình duyệt; chưa đăng nhập Admin/Viewer; chưa kiểm tra UI Preview.**
+- **Không gọi RPC reset với confirmation đúng; không reset Cloud hoặc Local; dữ liệu Test vẫn nguyên trạng. Production không được truy cập/thay đổi.**
+- PR #2 vẫn Draft, chưa merge vào main; chưa triển khai frontend lên Production/GitHub Pages.
+
+### Điểm tiếp tục lần sau
+1. Tại terminal repo đang ở nhánh `feature/test-reset-all`, chạy `npm.cmd run dev`.
+2. Mở URL Local Vite hiển thị trong terminal trên Chrome; đăng nhập tài khoản Admin của BAOTRI-Mini-Test.
+3. Kiểm tra khu vực reset và chạy Preview chỉ đọc; đối chiếu số lượng Cloud sẽ xóa/giữ. Không nhấn nút reset thật.
+4. Nếu cần, kiểm tra quyền Viewer riêng; không dùng DevTools/SQL để bypass quyền.
+5. Chỉ sau khi người dùng chủ động yêu cầu và xác nhận cuối cùng mới xem xét reset thật; trước đó preview lại ngay trên PC/Mobile.
+
+**Trạng thái kết thúc ngày 20/11/2026:** đã chuẩn bị xong nhánh, cấu hình Test và dependencies; đang dừng ngay trước bước khởi động Vite. Không có dữ liệu nào bị xóa.

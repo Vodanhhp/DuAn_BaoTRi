@@ -24,6 +24,38 @@ const hasValidRows = (value: unknown): value is Array<Record<string, unknown>> =
   return true
 }
 
+const hasValidCustomAssetCategories = (value: unknown): boolean =>
+  Array.isArray(value) && value.every(group =>
+    isRecord(group) && typeof group.label === 'string' && Boolean(group.label.trim()) &&
+    Array.isArray(group.items) && group.items.length > 0 && group.items.every(item =>
+      isRecord(item) && typeof item.name === 'string' && Boolean(item.name.trim()) &&
+      typeof item.code === 'string' && Boolean(item.code.trim())
+    )
+  )
+
+const syncCollections = new Set([
+  'assets', 'inventory', 'tasks', 'logs', 'movements', 'maintenancePlans',
+  'checklistTemplates', 'checklistVersions', 'checklistResults'
+])
+
+const hasValidSyncQueue = (value: unknown): value is Array<Record<string, unknown>> => {
+  if (!Array.isArray(value)) return false
+  const keys = new Set<string>()
+  for (const item of value) {
+    if (!isRecord(item) || typeof item.tableName !== 'string' || !syncCollections.has(item.tableName) ||
+        typeof item.recordId !== 'string' || !item.recordId.trim() ||
+        item.id !== `${item.tableName}:${item.recordId}` || keys.has(`${item.tableName}:${item.recordId}`) ||
+        !['upsert', 'delete'].includes(String(item.operation)) ||
+        typeof item.queuedAt !== 'string' || !item.queuedAt.trim() ||
+        !['pending', 'processing', 'failed'].includes(String(item.status)) ||
+        !Number.isInteger(item.attempts) || (item.attempts as number) < 0 ||
+        typeof item.deviceId !== 'string' || !item.deviceId.trim() ||
+        typeof item.mutationId !== 'string' || !item.mutationId.trim()) return false
+    keys.add(`${item.tableName}:${item.recordId}`)
+  }
+  return true
+}
+
 /**
  * Validate the complete current backup format before any destructive restore.
  * A valid empty database is allowed, but every table must be explicitly present.
@@ -33,7 +65,20 @@ export function isValidBackupV3(value: unknown): value is Record<string, unknown
   if (value.backupVersion !== 3 || value.database !== 'baotri-local-v1') return false
   if (typeof value.exportedAt !== 'string' || !value.exportedAt.trim()) return false
   if (!tableKeys.every(key => hasValidRows(value[key]))) return false
-  if (!Array.isArray(value.customAssetCategories)) return false
+  if (!hasValidSyncQueue(value.syncQueue)) return false
+  // An upsert queue entry must point to a record included in this snapshot.
+  // Otherwise restoring it could later upload an ID-only placeholder to Cloud.
+  for (const item of value.syncQueue as Array<Record<string, unknown>>) {
+    if (item.operation === 'delete') continue
+    const rows = value[item.tableName as string] as Array<Record<string, unknown>>
+    if (!rows.some(row => row.id === item.recordId)) return false
+  }
+  if (!hasValidCustomAssetCategories(value.customAssetCategories)) return false
+  // Inventory locations were added after the original v3 format. Keep older
+  // v3 backups valid, but validate the fields when they are present.
+  if ('inventoryLocations' in value && (!Array.isArray(value.inventoryLocations) ||
+      value.inventoryLocations.some(location => typeof location !== 'string' || !location.trim()))) return false
+  if ('inventoryLocationEnabled' in value && typeof value.inventoryLocationEnabled !== 'boolean') return false
 
   // Preserve Checklist and maintenance-request relationships during restore.
   const assets = new Map((value.assets as Array<Record<string, unknown>>).map(row => [row.id as string, row]))

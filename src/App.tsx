@@ -23,6 +23,7 @@ type Page = 'dashboard' | 'checklist' | 'assets' | 'inventory' | 'planning' | 't
 
 // Chỉ bật trong giai đoạn thử nghiệm. Khi nghiệm thu Checklist, đổi duy nhất thành false để bắt buộc quét QR.
 const CHECKLIST_TEST_MODE = false
+const TEST_RESET_ORGANIZATION_ID = 'dfb443ec-a1ee-496b-842c-0bef3f50b8ce'
 const xmlEntities: Record<string, string> = {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}
 const xmlText = (value: string) => value.replace(/[&<>"']/g, ch => xmlEntities[ch] ?? ch)
 const htmlEscape = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch] ?? ch))
@@ -315,6 +316,7 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
   const [editingLog, setEditingLog] = useState<Log | null>(null)
   const [selectedLogIds, setSelectedLogIds] = useState<string[]>([])
   const [notice, setNotice] = useState('')
+  const [resetCheckReady, setResetCheckReady] = useState(false)
   const [mobileMore, setMobileMore] = useState(false)
   const assets = useLiveQuery(() => db.assets.orderBy('name').toArray(), []) ?? []
   const activeAssets = assets.filter(a => !a.archivedAt)
@@ -610,6 +612,75 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
   const lowStock = inventory.filter(i => i.quantity <= i.minQuantity)
 
   const flash = (s: string) => { setNotice(s); setTimeout(() => setNotice(''), 2800) }
+
+  // Test reset epoch: every browser clears its own Local database after the Test Admin resets Cloud.
+  useEffect(() => {
+    if (organizationId !== TEST_RESET_ORGANIZATION_ID) {
+      setResetCheckReady(true)
+      return
+    }
+    // Fail closed in Test until the server reset epoch has been checked successfully.
+    setResetCheckReady(false)
+    let active = true
+    let checking = false
+    const checkResetEpoch = async () => {
+      if (!active || checking) return
+      if (!navigator.onLine) {
+        setNotice('Môi trường Test cần Internet để xác nhận trạng thái reset Cloud. Hãy kết nối mạng rồi tải lại ứng dụng.')
+        return
+      }
+      checking = true
+      try {
+        const { data, error } = await cloudClient.rpc('get_baotri_data_reset_epoch', {
+          p_organization_id: organizationId
+        })
+        if (error) throw error
+        if (!active) return
+        const epoch = typeof data === 'string' ? data : null
+        if (epoch) {
+          const markerKey = 'baotri-data-reset-epoch:' + organizationId
+          if (localStorage.getItem(markerKey) !== epoch) {
+            await db.transaction('rw', [
+              db.assets, db.inventory, db.tasks, db.logs, db.movements, db.maintenancePlans,
+              db.checklistTemplates, db.checklistVersions, db.checklistResults, db.syncQueue,
+              db.assetCloudLinks, db.assetMutations
+            ], async () => {
+              await Promise.all([
+                db.assets.clear(), db.inventory.clear(), db.tasks.clear(), db.logs.clear(),
+                db.movements.clear(), db.maintenancePlans.clear(), db.checklistTemplates.clear(),
+                db.checklistVersions.clear(), db.checklistResults.clear(), db.syncQueue.clear(),
+                db.assetCloudLinks.clear(), db.assetMutations.clear()
+              ])
+            })
+            localStorage.removeItem('baotri-custom-asset-categories')
+            localStorage.removeItem('baotri-inventory-locations')
+            setCustomAssetCategories([])
+            setInventoryLocations([])
+            localStorage.setItem(markerKey, epoch)
+            setNotice('Cloud Test đã reset. Dữ liệu Local trên thiết bị này đã được xóa an toàn.')
+          }
+        }
+        setResetCheckReady(true)
+      } catch (error) {
+        console.error('Không thể xác nhận trạng thái reset Cloud Test:', error)
+        setNotice('Chưa xác nhận được trạng thái reset Cloud. Ứng dụng Test đang khóa thao tác Local để tránh đồng bộ dữ liệu cũ. Hãy kết nối Internet và tải lại.')
+      } finally {
+        checking = false
+      }
+    }
+    const resumeCheck = () => {
+      setResetCheckReady(false)
+      void checkResetEpoch()
+    }
+    void checkResetEpoch()
+    window.addEventListener('focus', resumeCheck)
+    window.addEventListener('online', resumeCheck)
+    return () => {
+      active = false
+      window.removeEventListener('focus', resumeCheck)
+      window.removeEventListener('online', resumeCheck)
+    }
+  }, [cloudClient, organizationId])
   const blockViewer = (action: string) => {
     if (!isViewer) return false
     flash(`Tài khoản Viewer chỉ có quyền xem, không được phép ${action}.`)
@@ -840,10 +911,13 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
   }
   const saveItem = async (i: InventoryItem) => {
     if (blockViewer('thêm hoặc sửa vật tư')) return
-    // Preserve the latest stock balance inside the same write transaction.
-    // A movement in another tab must not be overwritten by this form's stale snapshot.
+    const editingExisting = Boolean(editingItem?.code)
+    // Preserve the latest stock balance and reject stale metadata edits inside
+    // the same write transaction. A deleted row must not be recreated by an old form.
     const saved = await db.transaction('rw', [db.inventory, db.syncQueue], async () => {
       const existing = await db.inventory.get(i.id)
+      if (editingExisting && !existing) return { outcome: 'missing' as const }
+      if (existing && (!editingExisting || existing.updatedAt !== i.updatedAt)) return { outcome: 'conflict' as const }
       const value: InventoryItem = {
         ...i, quantity: existing?.quantity ?? 0,
         minQuantity: isAdmin ? i.minQuantity : (existing?.minQuantity ?? 0),
@@ -854,8 +928,10 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
       }
       await db.inventory.put(value)
       await queueChange('inventory', value.id)
-      return { value, existed: Boolean(existing) }
+      return { outcome: 'saved' as const, existed: Boolean(existing) }
     })
+    if (saved.outcome === 'missing') { flash('Vật tư không còn tồn tại. Hãy tải lại danh sách kho trước khi sửa.'); return }
+    if (saved.outcome === 'conflict') { flash('Vật tư đã được thay đổi ở nơi khác. Hãy đóng và mở lại biểu mẫu trước khi lưu.'); return }
     setModal(null); setEditingItem(null); flash(saved.existed ? 'Đã cập nhật thông tin vật tư' : 'Đã thêm vật tư (tồn ban đầu = 0)')
   }
   const saveTask = async (t: Task) => {
@@ -1232,7 +1308,7 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
           database: 'baotri-local-v1',
           assets, inventory, tasks, logs, movements, maintenancePlans,
           checklistTemplates, checklistVersions, checklistResults, syncQueue,
-          customAssetCategories
+          customAssetCategories, inventoryLocations, inventoryLocationEnabled
         }
       })
       const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' })
@@ -1314,17 +1390,37 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
       // The database transaction has committed. Clear the pending dialog before
       // touching localStorage, which can fail independently (quota/private mode).
       setPendingRestore(null)
-      let categoryWarning = ''
+      let settingsWarning = ''
       if (Array.isArray(data.customAssetCategories)) {
-        try {
-          localStorage.setItem('baotri-custom-asset-categories', JSON.stringify(data.customAssetCategories))
-          setCustomAssetCategories(data.customAssetCategories)
-        } catch (storageError) {
+        setCustomAssetCategories(data.customAssetCategories)
+        try { localStorage.setItem('baotri-custom-asset-categories', JSON.stringify(data.customAssetCategories)) }
+        catch (storageError) {
           console.error('Đã khôi phục dữ liệu nhưng không thể lưu danh mục thiết bị tùy chỉnh:', storageError)
-          categoryWarning = ' Dữ liệu danh mục thiết bị tùy chỉnh chưa được lưu vào trình duyệt.'
+          settingsWarning += ' Danh mục thiết bị tùy chỉnh chưa được lưu bền vững trên trình duyệt.'
         }
       }
-      flash('Đã khôi phục dữ liệu sao lưu.' + categoryWarning)
+      // Older v3 backups do not contain these optional fields; leave the
+      // current browser settings untouched when restoring such a backup.
+      if (Array.isArray(data.inventoryLocations)) {
+        const sourceLocations = data.inventoryLocations as string[]
+        const restoredLocations: string[] = Array.from(new Set<string>(sourceLocations.map(item => item.trim()).filter(Boolean)))
+          .sort((left, right) => left.localeCompare(right, 'vi'))
+        setInventoryLocations(restoredLocations)
+        try { localStorage.setItem('baotri-inventory-locations', JSON.stringify(restoredLocations)) }
+        catch (storageError) {
+          console.error('Đã khôi phục dữ liệu nhưng không thể lưu danh mục vị trí kho:', storageError)
+          settingsWarning += ' Danh mục vị trí kho chưa được lưu bền vững trên trình duyệt.'
+        }
+      }
+      if (typeof data.inventoryLocationEnabled === 'boolean') {
+        setInventoryLocationEnabled(data.inventoryLocationEnabled)
+        try { localStorage.setItem('baotri-inventory-location-enabled', String(data.inventoryLocationEnabled)) }
+        catch (storageError) {
+          console.error('Đã khôi phục dữ liệu nhưng không thể lưu thiết lập vị trí kho:', storageError)
+          settingsWarning += ' Thiết lập vị trí kho chưa được lưu bền vững trên trình duyệt.'
+        }
+      }
+      flash('Đã khôi phục dữ liệu sao lưu.' + settingsWarning)
     } catch (error) {
       flash(error instanceof Error ? error.message : 'Không thể khôi phục file sao lưu; dữ liệu Local được giữ nguyên nếu giao dịch chưa hoàn tất')
     }
@@ -1340,6 +1436,12 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
     ['reports','Báo cáo',BarChart3],
     ['settings','Cài đặt',Settings]
   ] as const
+
+  if (!resetCheckReady) {
+    return <div className={`app-shell ${theme} ${compact ? 'compact-mode' : ''}`}>
+      <main className="main"><section className="panel"><h2>Đang kiểm tra trạng thái dữ liệu Cloud…</h2><p className="muted">Ứng dụng Test tạm khóa thao tác Local cho đến khi xác nhận được reset epoch từ Cloud. Hãy kiểm tra Internet và tải lại trang nếu quá trình chưa hoàn tất.</p>{notice && <p className="form-hint warning-hint" role="alert">{notice}</p>}</section></main>
+    </div>
+  }
 
   return <div className={`app-shell ${theme} ${compact ? 'compact-mode' : ''}`}>
     <aside className="sidebar">

@@ -37,6 +37,94 @@ test('accepts a complete valid empty backup', () => {
   assert.equal(isValidBackupV3(validBackup()), true)
 })
 
+test('accepts legacy v3 backups without inventory location settings', () => {
+  assert.equal(isValidBackupV3(validBackup()), true)
+})
+
+test('accepts valid inventory location settings in v3 backups', () => {
+  const backup = validBackup()
+  backup.inventoryLocations = ['Kho cơ điện', 'Kho phụ tùng']
+  backup.inventoryLocationEnabled = false
+  assert.equal(isValidBackupV3(backup), true)
+})
+
+test('validates custom asset category groups and their item codes', () => {
+  const valid = validBackup()
+  valid.customAssetCategories = [{ label: 'Nhóm tự tạo', items: [{ name: 'Máy phụ trợ', code: 'MPT' }] }]
+  assert.equal(isValidBackupV3(valid), true)
+
+  const invalidItem = validBackup()
+  invalidItem.customAssetCategories = [{ label: 'Nhóm tự tạo', items: [{ name: 'Máy phụ trợ', code: ' ' }] }]
+  assert.equal(isValidBackupV3(invalidItem), false)
+
+  const emptyGroup = validBackup()
+  emptyGroup.customAssetCategories = [{ label: 'Nhóm rỗng', items: [] }]
+  assert.equal(isValidBackupV3(emptyGroup), false)
+})
+
+test('rejects malformed optional inventory location settings', () => {
+  const invalidLocations = validBackup()
+  invalidLocations.inventoryLocations = ['Kho cơ điện', '   ']
+  assert.equal(isValidBackupV3(invalidLocations), false)
+
+  const invalidToggle = validBackup()
+  invalidToggle.inventoryLocationEnabled = 'false'
+  assert.equal(isValidBackupV3(invalidToggle), false)
+})
+
+test('accepts a well-formed pending sync queue entry', () => {
+  const backup = validBackup()
+  backup.assets = [{ id: 'asset-1' }]
+  backup.syncQueue = [{
+    id: 'assets:asset-1', tableName: 'assets', recordId: 'asset-1', operation: 'upsert',
+    queuedAt: '2026-11-20T10:00:00.000Z', status: 'pending', attempts: 0,
+    deviceId: 'device-1', mutationId: 'mutation-1'
+  }]
+  assert.equal(isValidBackupV3(backup), true)
+})
+
+test('rejects malformed or unsupported sync queue entries before restore', () => {
+  const invalidCollection = validBackup()
+  invalidCollection.syncQueue = [{
+    id: 'profiles:user-1', tableName: 'profiles', recordId: 'user-1', operation: 'upsert',
+    queuedAt: '2026-11-20T10:00:00.000Z', status: 'pending', attempts: 0,
+    deviceId: 'device-1', mutationId: 'mutation-1'
+  }]
+  assert.equal(isValidBackupV3(invalidCollection), false)
+
+  const invalidOperation = validBackup()
+  invalidOperation.syncQueue = [{
+    id: 'assets:asset-1', tableName: 'assets', recordId: 'asset-1', operation: 'truncate',
+    queuedAt: '2026-11-20T10:00:00.000Z', status: 'pending', attempts: 0,
+    deviceId: 'device-1', mutationId: 'mutation-1'
+  }]
+  assert.equal(isValidBackupV3(invalidOperation), false)
+
+  const missingMutationId = validBackup()
+  missingMutationId.syncQueue = [{
+    id: 'assets:asset-1', tableName: 'assets', recordId: 'asset-1', operation: 'upsert',
+    queuedAt: '2026-11-20T10:00:00.000Z', status: 'pending', attempts: -1,
+    deviceId: 'device-1'
+  }]
+  assert.equal(isValidBackupV3(missingMutationId), false)
+
+  const orphanedUpsert = validBackup()
+  orphanedUpsert.syncQueue = [{
+    id: 'assets:missing-asset', tableName: 'assets', recordId: 'missing-asset', operation: 'upsert',
+    queuedAt: '2026-11-20T10:00:00.000Z', status: 'pending', attempts: 0,
+    deviceId: 'device-1', mutationId: 'mutation-1'
+  }]
+  assert.equal(isValidBackupV3(orphanedUpsert), false)
+
+  const validDelete = validBackup()
+  validDelete.syncQueue = [{
+    id: 'assets:deleted-asset', tableName: 'assets', recordId: 'deleted-asset', operation: 'delete',
+    queuedAt: '2026-11-20T10:00:00.000Z', status: 'pending', attempts: 0,
+    deviceId: 'device-1', mutationId: 'mutation-2'
+  }]
+  assert.equal(isValidBackupV3(validDelete), true)
+})
+
 test('rejects missing tables and unsupported backup versions', () => {
   const missingTable = validBackup()
   delete missingTable.logs
