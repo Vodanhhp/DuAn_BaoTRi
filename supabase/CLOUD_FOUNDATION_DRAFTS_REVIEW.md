@@ -2933,3 +2933,30 @@ The existing receipt test file invokes the RPC several times with valid payloads
 Minimal intended correction candidate (design only, not applied): remove the dangling standalone `false` line and preserve the original JSONB subtraction condition. This retains all three intended checks and rejects unknown payload keys. Before approving the fix, compare the actual deployed migration history using the deployment's migration ledger (none was found among the inspected application-visible migration tables), create a forward-only corrective migration, and add tests for: valid exact-key payload; missing required key; unsupported extra key; JSON null/scalar/array payload. Run those tests only in an explicitly approved disposable Test fixture. Do not execute on Production.
 
 No migration, function invocation, SQL write, or database mutation was performed during this follow-up.
+
+## 100. Corrected P0 root-cause finding – migration immutability drift
+
+Correction to §98–§99: the active malformed condition is now explained by a reproducible Git history sequence, not merely a suspected mismatch.
+
+Evidence:
+1. Parent of commit `74a27b4` contains Migration 017's original condition:
+   `or (p_payload - v_required_keys) <> '{}'::jsonb`
+   followed by
+   `or jsonb_object_length(p_payload) <> cardinality(v_required_keys)`.
+2. Commit `74a27b4` (2026-11-19 05:22 +07) edits the already-numbered Migration 017 file in place. The current version removes the jsonb_object_length line and changes the object test to `IS DISTINCT FROM`.
+3. Commit `6d38f25` (2026-11-19 05:22 +07) adds Migration 018. Its guard explicitly expects the OLD `or jsonb_object_length(...)` text, then replaces that whole fragment—including its leading `or`—with `false`.
+4. A database that had already applied the old Migration 017 retains that old function body; editing Migration 017 in Git does not update an already-migrated database. Applying Migration 018 to that old body passes the guard and produces exactly the active catalog lines: JSONB subtraction condition followed by `false then`.
+5. The current active catalog matches that outcome exactly. This is strong causal evidence for migration drift + editing an already-applied migration in place + a hotfix text replacement that consumes the Boolean operator.
+
+Important correction: the hotfix guard would abort if run against the current revised Migration 017 body (because the old fragment is absent). It only matches the previously deployed/original body. Thus the hotfix did not transform the current GitHub Migration 017 file; it transformed an older deployed definition.
+
+### Corrective path (design only)
+- Never edit a migration already released/applied; preserve historical Migration 017 and 018 as immutable history.
+- Add a new forward-only migration that replaces the full RPC definition using `CREATE OR REPLACE FUNCTION` (or a carefully guarded full-body replacement), with the intended validation:
+  `jsonb_typeof(p_payload) is distinct from 'object' OR NOT (p_payload ?& v_required_keys) OR (p_payload - v_required_keys) <> '{}'::jsonb`.
+- Do not patch the dangling token with a blind string replace.
+- Add explicit validation cases: exact valid key set; missing required key; extra unsupported key; JSON null/scalar/array. Assert SQLSTATE 22023 for invalid payloads and no Asset/Receipt mutation.
+- Before applying, verify migration history from the deployment's migration ledger/tooling; the SQL-visible database does not expose a `supabase_migrations` schema/table in this project, so SQL catalog alone cannot establish which migration versions were recorded.
+- Apply only to the approved disposable Test environment, then inspect `pg_get_functiondef` and run the regression test. Production remains out of scope.
+
+No migration, RPC invocation, or SQL write was performed during this investigation.
