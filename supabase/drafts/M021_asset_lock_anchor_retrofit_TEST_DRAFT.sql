@@ -1,0 +1,146 @@
+-- BAOTRI Mini — DRAFT TEST ONLY: M021 Asset/Lease lock-anchor retrofit.
+-- Run only after the matching M021 migration is applied to BAOTRI-Mini-Test.
+-- This script uses one dedicated Test organization and rolls back all DML.
+-- It is not a substitute for the separate two-physical-session concurrency suite.
+
+begin;
+
+do $preflight$
+declare v_actor uuid;
+begin
+  select m.user_id into v_actor
+  from public.organization_members m
+  join public.member_roles mr on mr.member_id=m.id and mr.organization_id=m.organization_id
+  join public.roles r on r.id=mr.role_id and r.organization_id=mr.organization_id
+  where m.organization_id='dfb443ec-a1ee-496b-842c-0bef3f50b8ce'::uuid
+    and m.status='active' and r.name='Admin'
+  order by m.created_at
+  limit 1;
+  if v_actor is null then raise exception 'M021 Test requires an active Admin fixture'; end if;
+  perform pg_catalog.set_config('request.jwt.claim.sub',v_actor::text,true);
+  perform pg_catalog.set_config('request.jwt.claims',pg_catalog.jsonb_build_object('sub',v_actor::text,'role','authenticated')::text,true);
+end;
+$preflight$;
+
+set local role authenticated;
+
+-- BEFORE STATEMENT must lock even when no Settings row matches.
+update public.organization_settings
+set asset_code_config=asset_code_config
+where organization_id='00000000-0000-0000-0000-000000000000'::uuid;
+
+do $test$
+declare
+  v_org uuid := 'dfb443ec-a1ee-496b-842c-0bef3f50b8ce';
+  v_asset_id uuid;
+  v_asset public.assets;
+  v_lease jsonb;
+  v_token uuid;
+  v_mutation uuid := pg_catalog.gen_random_uuid();
+  v_payload jsonb;
+  v_result jsonb;
+  v_replay jsonb;
+  v_import jsonb;
+  v_updated public.assets;
+begin
+  if not public.has_org_permission(v_org,'assets.update')
+     or not public.has_org_permission(v_org,'assets.import')
+     or not public.has_org_permission(v_org,'settings.manage') then
+    raise exception 'M021 Test Admin fixture lacks required permissions';
+  end if;
+
+  select a.id into v_asset_id
+  from public.assets a
+  where a.organization_id=v_org
+    and not exists (
+      select 1 from public.asset_edit_locks l
+      where l.organization_id=a.organization_id and l.asset_id=a.id
+        and l.expires_at>pg_catalog.clock_timestamp()
+    )
+  order by a.created_at,a.id
+  limit 1;
+  if v_asset_id is null then raise exception 'No unlocked Asset fixture found'; end if;
+
+  select * into v_asset from public.assets where organization_id=v_org and id=v_asset_id;
+
+  -- Acquire -> heartbeat -> apply -> replay -> release.
+  v_lease:=public.acquire_asset_edit_lock(v_org,v_asset_id,pg_catalog.gen_random_uuid(),'M021 regression test');
+  if coalesce((v_lease->>'acquired')::boolean,false) is not true then raise exception 'Acquire failed: %',v_lease; end if;
+  v_token:=(v_lease->>'lock_token')::uuid;
+  if coalesce((public.heartbeat_asset_edit_lock(v_org,v_asset_id,v_token)->>'renewed')::boolean,false) is not true then raise exception 'Heartbeat failed'; end if;
+
+  v_payload:=pg_catalog.jsonb_build_object(
+    'name',v_asset.name || ' [M021 test]',
+    'brand',v_asset.brand,'model',v_asset.model,'serial',v_asset.serial,'location',v_asset.location,
+    'commissioned_at',v_asset.commissioned_at,'power',v_asset.power,'cycle',v_asset.cycle,
+    'cycle_started_at',v_asset.cycle_started_at,'transferred_from_other_facility',v_asset.transferred_from_other_facility,
+    'status',v_asset.status,'notes',v_asset.notes,'archived_at',v_asset.archived_at
+  );
+  v_result:=public.apply_asset_mutation_with_lock(v_org,v_asset_id,v_token,v_mutation,v_asset.updated_at,v_payload);
+  if coalesce((v_result->>'already_applied')::boolean,true) then raise exception 'First apply incorrectly reported replay'; end if;
+  v_replay:=public.apply_asset_mutation_with_lock(v_org,v_asset_id,v_token,v_mutation,v_asset.updated_at,v_payload);
+  if coalesce((v_replay->>'already_applied')::boolean,false) is not true then raise exception 'Identical mutation retry was not replayed'; end if;
+  if public.release_asset_edit_lock(v_org,v_asset_id,v_token) is not true then raise exception 'Release failed'; end if;
+
+  -- Import existing identity/payload; verifies Asset anchor -> bigint mutation lock -> Settings shared -> Counter/Asset.
+  select * into v_asset from public.assets where organization_id=v_org and id=v_asset_id;
+  v_payload:=pg_catalog.jsonb_build_object(
+    'name',v_asset.name,'category',v_asset.category,'brand',v_asset.brand,'model',v_asset.model,'serial',v_asset.serial,
+    'location',v_asset.location,'commissioned_at',v_asset.commissioned_at,'power',v_asset.power,'cycle',v_asset.cycle,
+    'cycle_started_at',v_asset.cycle_started_at,'transferred_from_other_facility',v_asset.transferred_from_other_facility,
+    'status',v_asset.status,'notes',v_asset.notes,'archived_at',v_asset.archived_at,
+    'created_at',v_asset.created_at,'updated_at',v_asset.updated_at
+  );
+  v_import:=public.import_asset_preserving_identity(v_org,v_asset_id,v_asset.code,v_payload,pg_catalog.gen_random_uuid());
+  if coalesce((v_import->>'already_present')::boolean,false) is not true then raise exception 'Import did not preserve existing Asset'; end if;
+
+  -- Retained legacy update/archive writers must take the same Asset anchor.
+  v_lease:=public.acquire_asset_edit_lock(v_org,v_asset_id,pg_catalog.gen_random_uuid(),'M021 legacy regression');
+  if coalesce((v_lease->>'acquired')::boolean,false) is not true then raise exception 'Legacy acquire failed'; end if;
+  v_token:=(v_lease->>'lock_token')::uuid;
+  v_updated:=public.update_asset_with_lock(v_org,v_asset_id,v_token,v_asset.name || ' [legacy]',v_asset.brand,v_asset.model,v_asset.serial,v_asset.location,v_asset.commissioned_at,v_asset.power,v_asset.cycle,v_asset.cycle_started_at,v_asset.transferred_from_other_facility,v_asset.status,v_asset.notes);
+  v_updated:=public.set_asset_archived_with_lock(v_org,v_asset_id,v_token,true);
+  v_updated:=public.set_asset_archived_with_lock(v_org,v_asset_id,v_token,false);
+  if public.release_asset_edit_lock(v_org,v_asset_id,v_token) is not true then raise exception 'Legacy release failed'; end if;
+end;
+$test$;
+
+reset role;
+
+do $security$
+begin
+  if has_table_privilege('authenticated','public.assets','DELETE') then raise exception 'Authenticated still has direct Asset DELETE'; end if;
+  if has_function_privilege('authenticated','public.create_asset_with_code(uuid,text,text,text,uuid,text,text,text,date,text,text,date,boolean,text,text)','EXECUTE') then raise exception 'Authenticated can still execute legacy allocator'; end if;
+  if has_function_privilege('service_role','public.create_asset_with_code(uuid,text,text,text,uuid,text,text,text,date,text,text,date,boolean,text,text)','EXECUTE') then raise exception 'service_role can still execute legacy allocator'; end if;
+  if has_schema_privilege('authenticated','private','USAGE') then raise exception 'Authenticated can access private schema'; end if;
+  if has_function_privilege('authenticated','private.lock_asset_anchor(uuid,uuid)','EXECUTE') then raise exception 'Authenticated can execute Asset anchor helper'; end if;
+  if not has_function_privilege('authenticated','public.acquire_asset_edit_lock(uuid,uuid,uuid,text)','EXECUTE') then raise exception 'Authenticated lost acquire RPC'; end if;
+end;
+$security$;
+
+-- The current transaction must hold the two-int Asset/Settings namespace and
+-- bigint mutation-ID namespace. objsubid=2 denotes two-int; objsubid=1 bigint.
+do $locks$
+begin
+  if not exists(select 1 from pg_locks where locktype='advisory' and pid=pg_backend_pid() and objsubid=2 and granted) then
+    raise exception 'No two-int advisory transaction lock observed';
+  end if;
+  if not exists(select 1 from pg_locks where locktype='advisory' and pid=pg_backend_pid() and objsubid=1 and granted) then
+    raise exception 'No bigint mutation-ID advisory transaction lock observed';
+  end if;
+end;
+$locks$;
+
+rollback;
+
+-- TWO-PHYSICAL-SESSION CONCURRENCY SUITE (must be run by an external harness):
+-- A1-A4: acquire/takeover, heartbeat/release, and delete-anchor interleavings.
+-- A5-A7: apply mutation vs delete; import vs delete; same mutation ID across Asset IDs.
+-- A8: different Asset IDs in one org; confirm independent anchors.
+-- A9: Settings direct INSERT/UPDATE (statement trigger exclusive) vs import shared reader.
+-- A10: FK reference INSERT vs delete; confirm no orphan or deadlock.
+-- A11: legacy update/archive vs Asset delete.
+-- Each session records PID, txid, READY checkpoint, pg_locks, pg_blocking_pids, SQLSTATE.
+-- No pg_sleep-based ordering. Use external READY barriers and lock_timeout only as a safety bound.
+-- Roll back both sessions and verify Asset, Lease, Receipt, Import ledger and Counter snapshots.
+-- This sequential SQL file does not mark those concurrency cases PASS.
