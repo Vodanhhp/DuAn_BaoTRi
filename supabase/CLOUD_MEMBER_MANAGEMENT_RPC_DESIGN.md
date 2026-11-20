@@ -2870,7 +2870,7 @@ Rollout: trigger + helper → retrofit create/import shared lock → deploy Sett
 
 ### Migration boundaries
 - M019: helper/namespace + Settings trigger bridge (expand only).
-- M020: retrofit acquire/heartbeat/release/apply/import và legacy update/archive trong cùng release DB atomic; xử lý allocator legacy (retrofit hoặc revoke nếu chưa có caller).
+- M021: retrofit acquire/heartbeat/release/apply/import và legacy update/archive trong cùng release DB atomic; xử lý allocator legacy (retrofit hoặc revoke nếu chưa có caller).
 - M021: Settings mutation receipt + RPC; frontend triển khai sau DB expand.
 - M022: allocator receipt + idempotent RPC; đóng direct Settings INSERT/UPDATE và direct Asset DELETE sau compatibility window.
 - Các số migration chỉ là tên dự kiến, phải kiểm tra lịch sử migration thực tế trước khi chọn số.
@@ -2957,20 +2957,20 @@ Pass: không có 40P01; blocker/wait đúng; zero-row trigger lấy lock; transa
 
 Chưa chạy test. Cần phê duyệt rõ ràng trước mọi concurrency test có ghi dữ liệu.
 
-## 88. M020 – exact catalog target list and preflight blocker
+## 88. M021 – exact catalog target list and preflight blocker
 
-Read-only Test catalog confirms the M020 scope:
+Read-only Test catalog confirms the M021 scope:
 - Retrofit seven retained writers: acquire, heartbeat, release, apply mutation, import, legacy update and legacy archive.
 - Read-only: list_asset_edit_locks.
 - Timestamp trigger only: set_asset_updated_at.
-- create_asset_with_code remains callable by authenticated/service_role but createCloudAsset() has no caller in the current repository search; Local-first is the authoritative creation path. Candidate revoke EXECUTE authenticated + service_role atomically in M020; keep owner-only.
+- create_asset_with_code remains callable by authenticated/service_role but createCloudAsset() has no caller in the current repository search; Local-first is the authoritative creation path. Candidate revoke EXECUTE authenticated + service_role atomically in M021; keep owner-only.
 - Effective privileges: authenticated can DELETE public.assets (RLS assets.delete policy applies), but cannot INSERT/UPDATE. Revoke DELETE in the same transaction as writer retrofit.
 - authenticated can INSERT/UPDATE organization_settings; CloudAssetsPanel saveCloudAssetCodeConfig() is a live direct writer. Keep M019 statement trigger bridge until later Settings RPC compatibility phase.
 - Internal Lease/Receipt/Import/Counter tables have no authenticated direct DML grants; RLS enabled.
 
-Important P0: active catalog apply_asset_mutation_with_lock payload validation shows 'or (p_payload - v_required_keys) <> '{}'::jsonb' immediately followed by 'false then'. Migration 20261119000100 replaces the old 'or jsonb_object_length(...)' substring with 'false', apparently dropping the boolean OR. No function call/compile test was run and plpgsql_check is not installed. Isolate and fix this syntax concern in a forward migration and regression test before M020.
+Important P0: active catalog apply_asset_mutation_with_lock payload validation shows 'or (p_payload - v_required_keys) <> '{}'::jsonb' immediately followed by 'false then'. Migration 20261119000100 replaces the old 'or jsonb_object_length(...)' substring with 'false', apparently dropping the boolean OR. No function call/compile test was run and plpgsql_check is not installed. Isolate and fix this syntax concern in a forward migration and regression test before M021.
 
-M020 lock order: Asset anchor precedes every Lease/Asset row lock; apply additionally takes mutation-ID bigint lock before receipt lookup; import takes Asset anchor before existing mutation lock, then global Settings shared before Settings read, then Counter and Asset. Revoke direct Asset DELETE and allocator EXECUTE in the same M020 transaction as the retained writer definitions. No migration has been created or applied.
+M021 lock order: Asset anchor precedes every Lease/Asset row lock; apply additionally takes mutation-ID bigint lock before receipt lookup; import takes Asset anchor before existing mutation lock, then global Settings shared before Settings read, then Counter and Asset. Revoke direct Asset DELETE and allocator EXECUTE in the same M021 transaction as the retained writer definitions. No migration has been created or applied.
 
 ## 89. P0 payload validation – source/catalog discrepancy
 
