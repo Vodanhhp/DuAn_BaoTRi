@@ -261,10 +261,25 @@ The preceding CI failure was a stale test assertion in `localConcurrencyContract
 Still pending: physical two-session M021 protocol and browser-level Local PC → Cloud import/edit verification on Test. No generic sync activation and no Production changes.
 
 
-## 25. Asset creator metadata — M022 draft decision (20/11/2026)
+## 25. Asset creator metadata — M022 applied on Test (20/11/2026)
 
 Decision: preserve both Local Asset creator fields in Cloud (created_by_user_id, created_by_label); do not drop audit metadata during selective import.
 
-Draft created: supabase/drafts/M022_asset_creator_metadata_DRAFT.sql (GitHub commit fc5d2b6e92805c9e7741715ea1938b5a4f8c5c7c; blob SHA 98fd330df1ac74b19e9639709c2d6e0408f5c83f). It adds nullable creator columns, references auth.users(id) with ON DELETE SET NULL while retaining the label, stamps Cloud-origin creates from the authenticated actor, and extends the identity-preserving import RPC to validate, compare, store, and return creator metadata.
+M022 was explicitly approved and applied to BAOTRI-Mini-Test only:
+- Project: oyzhxgzltpdebpymuicb (BAOTRI-Mini-Test)
+- Migration version: 20261120111828, name m022_asset_creator_metadata
+- Canonical migration: supabase/migrations/20261120111828_m022_asset_creator_metadata.sql
+- Draft retained for review history: supabase/drafts/M022_asset_creator_metadata_DRAFT.sql
+- Production was not accessed or changed.
 
-Static read-back checks confirmed both creator fields are present in the schema alteration, Cloud create path, import validation, canonical idempotency payload, existing-row comparison, and INSERT. This is a draft review only: NOT applied to Test or Production. Existing Cloud rows remain NULL; no creator identity is fabricated. App mapping and browser verification must follow only after the Test migration is separately approved and applied.
+Postflight verified:
+- Both nullable columns exist on public.assets.
+- created_by_user_id FK references auth.users(id) ON DELETE SET NULL; created_by_label remains as the readable audit label.
+- create_asset_with_code stamps the authenticated actor and JWT email (UUID text fallback).
+- import_asset_preserving_identity validates, compares, stores and returns both creator fields, including in the canonical idempotency payload.
+- Both RPCs retain SECURITY DEFINER, empty search_path and row_security=off.
+- M021 direct-write privilege restrictions remain unchanged: authenticated Asset DELETE=false; service_role Asset INSERT/UPDATE/DELETE=false.
+
+Application mapping is now updated to preserve creator metadata in both directions, the selective import RPC payload, preview snapshot and existing-row equality check. Existing Cloud rows remain NULL; no historical creator is fabricated.
+
+Next: CI verification of the mapper/import changes, then controlled browser-level Local PC → Cloud import/edit verification on Test. Physical two-session M021 concurrency protocol remains separately pending. No generic full sync and no Production changes.
