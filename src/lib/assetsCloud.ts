@@ -30,13 +30,16 @@ type AssetRow = {
   archived_at: string | null
   created_at: string
   updated_at: string
+  created_by_user_id: string | null
+  created_by_label: string | null
 }
 
 const ASSET_COLUMNS = [
   'id', 'organization_id', 'code', 'name', 'category', 'brand', 'model',
   'serial', 'location', 'commissioned_at', 'power', 'cycle',
   'cycle_started_at', 'transferred_from_other_facility', 'status',
-  'notes', 'archived_at', 'created_at', 'updated_at'
+  'notes', 'archived_at', 'created_at', 'updated_at',
+  'created_by_user_id', 'created_by_label'
 ].join(',')
 
 function toAsset(row: AssetRow): Asset {
@@ -60,7 +63,9 @@ function toAsset(row: AssetRow): Asset {
     images: [],
     archivedAt: row.archived_at ?? undefined,
     createdAt: row.created_at,
-    updatedAt: row.updated_at
+    updatedAt: row.updated_at,
+    createdByUserId: row.created_by_user_id ?? undefined,
+    createdByLabel: row.created_by_label ?? undefined
   }
 }
 
@@ -205,8 +210,7 @@ export async function importCloudAssetPreservingIdentity(
   if (!organizationId) throw new Error('Thiếu tổ chức đang hoạt động.')
   if (!asset.id) throw new Error('Thiếu UUID thiết bị Local.')
   if (!asset.code || !asset.code.trim()) throw new Error('Thiếu mã quản lý thiết bị Local.')
-  // Enforce the same no-data-loss contract as the reviewed mapper: reject draft IDs
-  // and creator metadata that the current Cloud schema cannot preserve.
+  // Enforce the same no-data-loss contract as the reviewed mapper before the RPC write.
   toCloudAssetRow(asset, organizationId)
 
   const { data, error } = await client.rpc('import_asset_preserving_identity', {
@@ -230,7 +234,9 @@ export async function importCloudAssetPreservingIdentity(
       notes: asset.notes ?? '',
       archived_at: asset.archivedAt || null,
       created_at: asset.createdAt,
-      updated_at: asset.updatedAt
+      updated_at: asset.updatedAt,
+      created_by_user_id: asset.createdByUserId ?? null,
+      created_by_label: asset.createdByLabel ?? null
     }
   })
 
