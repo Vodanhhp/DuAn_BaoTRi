@@ -5027,3 +5027,17 @@ Mỗi case cần hai connection vật lý, xác định winner semantics, ghi wa
 - Cả Settings writer và Asset writer lấy mutation-ID lock trước Settings lock; không được lấy Asset anchor sau khi đã lấy Settings lock.
 - Counter vẫn serialize code cùng organization/category.
 - Chưa tạo bảng/function, chưa sửa code/grants, chưa chạy concurrency tests.
+
+## 106. Cầu nối tương thích Settings writer cũ
+
+Refinement rollout: có thể thêm transitional BEFORE INSERT/UPDATE trigger cho `organization_settings` để mọi direct PostgREST writer cũ cũng lấy Settings exclusive advisory lock. Create/import lấy shared lock trước khi đọc config. RLS `settings.manage` vẫn là authorization; trigger chỉ serialize. Trigger hoạt động cả khi Settings row chưa tồn tại; PK organization_id vẫn chặn duplicate insert.
+
+Thứ tự rollout candidate:
+1. Tạo helper + trigger Settings lock.
+2. Retrofit create/import lấy Settings shared lock.
+3. Deploy Settings RPC có receipt và frontend mutation ID.
+4. Theo dõi compatibility window.
+5. Revoke direct INSERT/UPDATE ở migration riêng sau khi bảo đảm client version.
+6. Chạy concurrency test Settings writer ↔ create/import; nếu giữ trigger sau khi revoke direct path thì trigger là defense-in-depth.
+
+Lưu ý: UPDATE có thể giữ row tuple lock khi trigger chờ advisory; create/import không được khóa row Settings FOR UPDATE, nếu không có thể tạo vòng chờ. Cần kiểm chứng bằng hai session thật trước triển khai. Chưa tạo trigger hoặc migration.
