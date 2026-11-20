@@ -23,16 +23,23 @@ alter table public.inventory_movements
   add column counted_quantity numeric(18,4),
   add column created_by_user_id uuid references auth.users(id) on delete restrict,
   add column mutation_id uuid,
-  add column expected_item_version bigint,\n  add column performed_by_label text;
+  add column expected_item_version bigint,
+  add column performed_by_label text;
 
 alter table public.inventory_movements
+  -- PostgreSQL numeric treats NaN as greater than ordinary numbers; reject it explicitly.
+  add constraint inventory_movements_quantity_not_nan
+    check (quantity <> 'NaN'::numeric),
   add constraint inventory_movements_quantity_delta_nonzero
-    check (quantity_delta is null or quantity_delta <> 0),
+    check (
+      quantity_delta is null
+      or (quantity_delta <> 0 and quantity_delta <> 'NaN'::numeric)
+    ),
   add constraint inventory_movements_balances_nonnegative
     check (
-      (balance_before is null or balance_before >= 0)
-      and (balance_after is null or balance_after >= 0)
-      and (counted_quantity is null or counted_quantity >= 0)
+      (balance_before is null or (balance_before >= 0 and balance_before <> 'NaN'::numeric))
+      and (balance_after is null or (balance_after >= 0 and balance_after <> 'NaN'::numeric))
+      and (counted_quantity is null or (counted_quantity >= 0 and counted_quantity <> 'NaN'::numeric))
     ),
   add constraint inventory_movements_expected_version_positive
     check (expected_item_version is null or expected_item_version > 0),
