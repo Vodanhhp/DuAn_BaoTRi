@@ -2275,3 +2275,31 @@ Các test hiện tại chứng minh nhiều invariant logic ở đường tuần
 
 ### Ranh giới an toàn
 Không tạo test function/trigger/hook, không sửa migration/RPC, không SQL ghi dữ liệu, không deploy và không thay đổi Supabase. Khi được phê duyệt thực thi, cần duyệt riêng việc tạo fixture và chạy race test trên BAOTRI-Mini-Test.
+
+
+## 85. Harness runbook – thứ tự thực hiện, quan sát và tiêu chí dừng
+
+### Runbook tối thiểu
+1. **Preflight chỉ đọc:** xác nhận migration/version, role, quyền RPC, fixture tồn tại, không có Lease/Receipt cũ và không có transaction đang chạy trên fixture. Gắn application_name riêng cho từng session.
+2. **Mở hai connection vật lý:** mỗi connection chạy transaction riêng; orchestrator chỉ phát lệnh khi cả hai báo READY. Ghi PID và txid trước khi bắt đầu race.
+3. **Điều khiển interleaving:** dùng barrier phía client và row lock có chủ đích. Không dùng pg_sleep làm cơ chế đồng bộ. Chụp blocker/wait graph khi một session bị chặn.
+4. **Kết thúc có kiểm soát:** mỗi session ghi rõ COMMIT hoặc ROLLBACK và SQLSTATE. Nếu deadlock, session bị chọn victim phải rollback; session còn lại phải được xác nhận kết quả trước khi cleanup.
+5. **Đọc invariant sau race:** Lease chỉ có một owner/token; Asset khớp mutation thắng; Receipt/Import ledger không trùng; Counter không lùi; không có bản ghi mồ côi.
+6. **Cleanup riêng:** chỉ sau khi cả hai session kết thúc; kiểm tra FK và lịch sử trước khi xóa fixture.
+
+### Race có thể dựng deterministic
+- **Lease → Asset đối nghịch Asset → Lease cascade:** Session A khóa Lease row bằng SELECT ... FOR UPDATE. Session B DELETE Asset và chờ FK cascade xóa Lease. Sau khi xác nhận B đang chờ A, Session A UPDATE cùng Asset. Đây là vòng chờ có thể kích hoạt deadlock 40P01; chỉ dùng fixture disposable. Mục đích là chứng minh đường direct DELETE có thể xung đột với thứ tự khóa của mutation, không phải xác nhận deadlock đã xảy ra trên môi trường thật.
+- Không cần thêm trigger/hook để dựng trường hợp trên. Với race cần pause bên trong RPC ở điểm không thể tạo từ bên ngoài, phải ghi rõ chưa thể kiểm thử deterministic nếu chưa có test hook được review riêng.
+
+### Phân loại kết quả
+- 40P01: deadlock – FAIL nếu protocol mục tiêu yêu cầu không deadlock.
+- 55P03: lock timeout – timeout, không gọi là deadlock.
+- 23505: unique conflict – chỉ PASS nếu đúng hợp đồng collision.
+- 40001: serialization failure – cần retry theo hợp đồng, không tự coi là PASS.
+- 55000 hoặc JSON lease conflict: lease không hợp lệ/đã bị thay – đánh giá theo winner semantics.
+- Kết quả RPC trả JSON không đồng nghĩa SQL statement thành công về mặt nghiệp vụ; phải đọc trạng thái cuối và Receipt/ledger.
+
+### Thứ tự ưu tiên để tiết kiệm thời gian
+P0 chạy trước: acquire/takeover; mutation/mutation; mutation/heartbeat/release; direct DELETE ↔ mutation. P1 chỉ chạy sau: import retry/collision; import ↔ allocator; Settings update ↔ import. Allocator chưa có caller runtime nên kết quả P1 phải ghi là kiểm thử capability/RPC, không phải kiểm thử luồng UI đang hoạt động.
+
+Chưa tạo runner, fixture hoặc chạy SQL ghi dữ liệu. Đây là runbook thiết kế, không phải kết quả kiểm thử.
