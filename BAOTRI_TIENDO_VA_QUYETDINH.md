@@ -5711,3 +5711,66 @@ Mở https://github.com/Vodanhhp/DuAn_BaoTRi/settings/pages và kiểm tra:
 - Công việc được tạm dừng theo yêu cầu người dùng ngày 20/11/2026.
 
 **Điểm tiếp tục chính xác:** bắt đầu bằng việc mở Settings → Pages và kiểm tra/chụp ảnh hai mục `Build and deployment` và `Custom domain`. Không làm lại các bước chẩn đoán workflow đã hoàn thành ở trên, trừ khi có dữ liệu mới.
+
+
+---
+
+## BỔ SUNG TIẾN ĐỘ 20/11/2026 – M023 RESET DỮ LIỆU LOCAL + CLOUD TRÊN TEST
+
+### 1. Phạm vi và nguyên tắc
+- Chỉ áp dụng cho Supabase project `oyzhxgzltpdebpymuicb` – `BAOTRI-Mini-Test`.
+- Tổ chức Test được khóa cứng trong RPC bằng UUID `dfb443ec-a1ee-496b-842c-0bef3f50b8ce` và kiểm tra tên `Cá nhân`; chỉ Admin đang hoạt động được xem preview/reset.
+- Production không được truy cập hoặc thay đổi.
+- Reset thao tác nghiệp vụ Cloud và Local; giữ tài khoản, hồ sơ người dùng, tổ chức, thành viên, roles, role_permissions và permission catalog.
+- Giữ `asset_import_mutations` và `asset_mutation_receipts` làm sổ kỹ thuật idempotency/chống replay; không coi các ledger này là dữ liệu nghiệp vụ hiển thị. Không xóa để tránh retry trễ tái tạo Asset đã reset.
+
+### 2. Migration M023
+- Migration `20261120144143_m023_test_reset_all_data` đã được apply trên BAOTRI-Mini-Test.
+- Thêm `organization_settings.data_reset_at` làm reset epoch cho các thiết bị Local.
+- RPC:
+  - `preview_baotri_test_reset()`: trả số lượng Cloud sẽ xóa và số lượng kỹ thuật/tài khoản được giữ.
+  - `reset_baotri_test_data(p_confirmation)`: chỉ chạy với cụm xác nhận chính xác `RESET TEST`, Admin hợp lệ, đúng Test organization; xóa theo thứ tự FK-safe.
+  - `get_baotri_data_reset_epoch(p_organization_id)`: cho thành viên đang hoạt động đọc reset epoch để thiết bị tự dọn Local.
+- Reset kiểm tra active Asset edit lock; nếu còn lease đang hiệu lực thì từ chối.
+- Dùng Asset anchor trước Settings exclusive theo lock order M021.
+- Xóa nghiệp vụ: maintenance_logs, inventory_movements, checklist_results, checklist_template_versions, checklist_templates, maintenance_tasks, maintenance_plans, asset_images metadata, asset_edit_locks, assets, inventory_items, asset_code_counters.
+- Reset `organization_settings.asset_categories` về [] và `asset_code_config` về NULL; giữ lại row Settings.
+- Không xóa Auth users, profiles, memberships, roles hoặc permission grants.
+- Không có Storage bucket/object trong Test tại thời điểm kiểm tra.
+
+### 3. Kết quả kiểm tra an toàn – chưa reset dữ liệu
+- Admin preview chạy thành công trong transaction chỉ đọc.
+- Preview hiện ghi nhận: 2 Assets; 1 Asset code counter; các bảng nghiệp vụ khác trong danh sách reset đều 0.
+- Technical ledgers được giữ: 47 `asset_import_mutations`, 7 `asset_mutation_receipts`; thành viên 4, roles 3, role_permissions 54.
+- Kiểm tra quyền Viewer gọi preview bị từ chối SQLSTATE 42501 như kỳ vọng.
+- Gọi reset bằng cụm từ sai bị từ chối SQLSTATE 22023 trước mọi thao tác xóa.
+- Post-check xác nhận dữ liệu chưa thay đổi: assets=2, import ledger=47, mutation receipts=7, data_reset_at=NULL.
+- **Chưa gọi reset bằng cụm từ đúng; không có dữ liệu Cloud/Local nào bị xóa trong phiên triển khai này.**
+
+### 4. Frontend và cơ chế Local đa thiết bị
+- Thêm vùng quản trị reset trong CloudAssetsPanel, chỉ hiển thị với Admin đúng Test organization.
+- Bắt buộc kiểm tra số lượng, nhập `RESET TEST`, xác nhận lần cuối.
+- Khi reset Cloud thành công, thiết bị đang thao tác xóa các bảng nghiệp vụ Dexie, syncQueue, assetCloudLinks, assetMutations và danh mục Local tùy chỉnh; giữ Auth/session, device ID và tùy chọn giao diện.
+- Thiết bị khác sẽ đọc `data_reset_at` khi mở ứng dụng, focus lại hoặc kết nối mạng; nếu epoch thay đổi thì tự xóa Local trên chính thiết bị đó. Thiết bị offline không thể nhận lệnh xóa cho đến khi online/focus lại.
+- Không bật full sync. Không có thao tác xóa dữ liệu Production.
+
+### 5. GitHub và kiểm thử
+- Branch: `feature/test-reset-all`.
+- Draft PR: https://github.com/Vodanhhp/DuAn_BaoTRi/pull/2
+- Ba file thay đổi trước phần TIENDO: `src/App.tsx`, `src/CloudAssetsPanel.tsx`, migration M023.
+- GitHub Actions run `44756516155`: regression tests PASS, template release validation PASS, production bundle build PASS.
+- PR đang để Draft, chưa merge vào main; chưa triển khai frontend lên Production/GitHub Pages.
+- M023 đã áp dụng trên Test DB riêng; việc này không làm thay đổi Production.
+- Supabase Security Advisor ghi nhận các SECURITY DEFINER RPC mới có thể gọi bởi authenticated; các hàm đã khóa search_path rỗng, revoke PUBLIC/anon, grant authenticated và kiểm tra membership/Admin + hard-coded Test organization. Đây là cảnh báo lint cùng nhóm với các RPC nghiệp vụ SECURITY DEFINER đang có; cần giữ rà soát bảo mật khi review PR.
+
+### 6. Trạng thái và bước tiếp theo
+- [x] M023 apply trên BAOTRI-Mini-Test.
+- [x] Admin preview và quyền Viewer deny test.
+- [x] Sai confirmation phrase bị chặn trước khi xóa.
+- [x] GitHub regression tests và production build PASS.
+- [ ] Review PR và kiểm tra giao diện trên trình duyệt Test.
+- [ ] Khi người dùng sẵn sàng, chạy preview lần cuối trên PC và Mobile.
+- [ ] Chỉ khi người dùng nhập `RESET TEST` và xác nhận, mới thực hiện reset thực tế; sau đó xác minh Cloud business tables = 0 và từng Local client đã nhận epoch.
+- [ ] Chưa merge main / chưa tác động Production.
+
+**Điểm tiếp tục:** kiểm tra PR #2 trên branch `feature/test-reset-all`, chạy giao diện Test và xác nhận preview trên PC/Mobile. Không gọi RPC reset với cụm từ đúng cho đến khi người dùng chủ động xác nhận thao tác xóa.
