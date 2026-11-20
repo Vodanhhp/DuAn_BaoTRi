@@ -22,6 +22,29 @@ const dateText = (value?: string) => value
   ? new Date(value + (value.length === 10 ? 'T00:00:00' : '')).toLocaleDateString('vi-VN')
   : '—'
 type CodeEntry = { name: string; code: string }
+type TestResetPreview = {
+  environment: string
+  organization_name: string
+  delete_counts: Record<string, number>
+  preserve_counts: Record<string, number>
+  local_counts: Record<string, number>
+}
+const TEST_RESET_ORGANIZATION_ID = 'dfb443ec-a1ee-496b-842c-0bef3f50b8ce'
+const RESET_LABELS: Record<string, string> = {
+  assets: 'Thiết bị Cloud', inventory_items: 'Vật tư', maintenance_tasks: 'Công việc bảo trì',
+  maintenance_plans: 'Kế hoạch bảo trì', checklist_templates: 'Biểu mẫu Checklist',
+  checklist_template_versions: 'Phiên bản Checklist', checklist_results: 'Kết quả Checklist',
+  maintenance_logs: 'Nhật ký bảo trì/sửa chữa', inventory_movements: 'Giao dịch kho',
+  asset_images: 'Metadata ảnh thiết bị', asset_edit_locks: 'Khóa chỉnh sửa',
+  asset_code_counters: 'Bộ đếm mã thiết bị'
+}
+const LOCAL_RESET_LABELS: Record<string, string> = {
+  assets: 'Thiết bị', inventory: 'Vật tư', tasks: 'Công việc', logs: 'Nhật ký',
+  movements: 'Giao dịch kho', maintenancePlans: 'Kế hoạch bảo trì',
+  checklistTemplates: 'Biểu mẫu Checklist', checklistVersions: 'Phiên bản Checklist',
+  checklistResults: 'Kết quả Checklist', syncQueue: 'Hàng đợi đồng bộ',
+  assetCloudLinks: 'Liên kết Local–Cloud', assetMutations: 'Mutation thiết bị'
+}
 const suggestCode = (value: string, maxLength: number): string => {
   const normalized = value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, 'D').toUpperCase()
   const words = normalized.split(/[^A-Z0-9]+/).filter(Boolean)
@@ -135,6 +158,11 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
   const [checkingLocalImport, setCheckingLocalImport] = useState(false)
   const [importingLocalAssets, setImportingLocalAssets] = useState(false)
   const [restoringCloudAssetId, setRestoringCloudAssetId] = useState<string | null>(null)
+  const [resetPreview, setResetPreview] = useState<TestResetPreview | null>(null)
+  const [loadingResetPreview, setLoadingResetPreview] = useState(false)
+  const [resettingTestData, setResettingTestData] = useState(false)
+  const [resetPhrase, setResetPhrase] = useState('')
+  const canResetTestData = organizationId === TEST_RESET_ORGANIZATION_ID && organizationRole.trim().toLowerCase() === 'admin'
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
@@ -302,6 +330,85 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
       setRestoringCloudAssetId(null)
+    }
+  }
+
+  const previewTestReset = async () => {
+    if (!canResetTestData) return
+    setLoadingResetPreview(true)
+    setError('')
+    setMessage('')
+    try {
+      const { data, error } = await client.rpc('preview_baotri_test_reset')
+      if (error) throw error
+      if (!data || data.environment !== 'BAOTRI-Mini-Test') {
+        throw new Error('Không xác nhận được đúng môi trường BAOTRI-Mini-Test.')
+      }
+      const [assetsCount, inventoryCount, tasksCount, logsCount, movementsCount, plansCount,
+        templatesCount, versionsCount, resultsCount, queueCount, linksCount, mutationsCount] = await Promise.all([
+        db.assets.count(), db.inventory.count(), db.tasks.count(), db.logs.count(), db.movements.count(),
+        db.maintenancePlans.count(), db.checklistTemplates.count(), db.checklistVersions.count(),
+        db.checklistResults.count(), db.syncQueue.count(), db.assetCloudLinks.count(), db.assetMutations.count()
+      ])
+      setResetPreview({
+        ...data,
+        local_counts: {
+          assets: assetsCount, inventory: inventoryCount, tasks: tasksCount, logs: logsCount,
+          movements: movementsCount, maintenancePlans: plansCount, checklistTemplates: templatesCount,
+          checklistVersions: versionsCount, checklistResults: resultsCount, syncQueue: queueCount,
+          assetCloudLinks: linksCount, assetMutations: mutationsCount
+        }
+      })
+      setResetPhrase('')
+      setMessage('Đã đọc thống kê. Chưa xóa dữ liệu nào.')
+    } catch (cause) {
+      setResetPreview(null)
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setLoadingResetPreview(false)
+    }
+  }
+
+  const resetAllTestData = async () => {
+    if (!canResetTestData || !resetPreview || resetPhrase !== 'RESET TEST') return
+    if (!window.confirm('XÁC NHẬN CUỐI: Xóa dữ liệu nghiệp vụ Cloud của BAOTRI-Mini-Test và phát lệnh xóa Local trên các thiết bị khi chúng kết nối mạng. Giữ tài khoản, thành viên, phân quyền và sổ chống phát lại mutation. Tiếp tục?')) return
+    setResettingTestData(true)
+    setError('')
+    setMessage('')
+    let cloudResetDone = false
+    try {
+      const { data, error } = await client.rpc('reset_baotri_test_data', { p_confirmation: resetPhrase })
+      if (error) throw error
+      if (!data || data.status !== 'reset' || !data.reset_at) {
+        throw new Error('Cloud không trả về xác nhận reset hợp lệ.')
+      }
+      cloudResetDone = true
+      await db.transaction('rw', [
+        db.assets, db.inventory, db.tasks, db.logs, db.movements, db.maintenancePlans,
+        db.checklistTemplates, db.checklistVersions, db.checklistResults, db.syncQueue,
+        db.assetCloudLinks, db.assetMutations
+      ], async () => {
+        await Promise.all([
+          db.assets.clear(), db.inventory.clear(), db.tasks.clear(), db.logs.clear(),
+          db.movements.clear(), db.maintenancePlans.clear(), db.checklistTemplates.clear(),
+          db.checklistVersions.clear(), db.checklistResults.clear(), db.syncQueue.clear(),
+          db.assetCloudLinks.clear(), db.assetMutations.clear()
+        ])
+      })
+      localStorage.removeItem('baotri-custom-asset-categories')
+      localStorage.removeItem('baotri-inventory-locations')
+      localStorage.setItem('baotri-data-reset-epoch:' + organizationId, data.reset_at)
+      setResetPreview(null)
+      setMessage('Đã reset Cloud và Local trên thiết bị này. Các thiết bị khác sẽ tự xóa Local khi kết nối mạng hoặc tải lại ứng dụng.')
+      await load()
+      window.setTimeout(() => window.location.reload(), 900)
+    } catch (cause) {
+      const detail = cause instanceof Error ? cause.message : String(cause)
+      setError(cloudResetDone
+        ? 'Cloud đã reset thành công nhưng Local trên thiết bị này chưa xác nhận xóa xong. Hãy tải lại ứng dụng để cơ chế reset epoch tự xử lý. Chi tiết: ' + detail
+        : detail)
+    } finally {
+      setResettingTestData(false)
     }
   }
 
@@ -499,6 +606,36 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
     {message && <div className="form-hint" role="status">{message}</div>}
     {error && <div className="form-hint warning-hint" role="alert">{error}</div>}
     {(!lockStateKnown || !isOnline) && <div className="form-hint warning-hint" role="status">{!isOnline ? 'Mất Internet: không thể tải dữ liệu Cloud hoặc xác nhận trạng thái khóa mới nhất.' : lockError || 'Chưa xác nhận được trạng thái khóa từ Cloud; thông tin khóa hiển thị có thể chưa cập nhật.'}</div>}
+
+    {canResetTestData && !permissionsLoading && <div className="panel" style={{ margin: '14px 0', padding: 16, border: '1px solid #c58b42' }}>
+      <h3>Reset toàn bộ dữ liệu thử nghiệm</h3>
+      <p className="muted">Chỉ dành cho Admin của BAOTRI-Mini-Test. Xóa dữ liệu nghiệp vụ Cloud và Local; giữ tài khoản, thành viên, phân quyền cùng sổ kỹ thuật chống phát lại mutation. Không tác động Production.</p>
+      <p className="muted">Đóng màn hình sửa thiết bị và dừng mọi thao tác nhập/liên kết Cloud trên các thiết bị khác trước khi reset. Các Local đang offline chỉ được xóa khi kết nối mạng hoặc tải lại ứng dụng sau đó.</p>
+      <button type="button" className="soft-btn" disabled={!isOnline || loadingResetPreview || resettingTestData} onClick={() => void previewTestReset()}>
+        {loadingResetPreview ? 'Đang kiểm tra số lượng…' : 'Kiểm tra dữ liệu sẽ reset'}
+      </button>
+      {resetPreview && <>
+        <h4>Cloud – dữ liệu sẽ xóa</h4>
+        <ul>{Object.entries(resetPreview.delete_counts).map(([key, count]) =>
+          <li key={key}>{RESET_LABELS[key] || key}: <b>{count}</b></li>
+        )}</ul>
+        <h4>Local – thiết bị đang mở</h4>
+        <ul>{Object.entries(resetPreview.local_counts).map(([key, count]) =>
+          <li key={key}>{LOCAL_RESET_LABELS[key] || key}: <b>{count}</b></li>
+        )}</ul>
+        <h4>Dữ liệu được giữ lại</h4>
+        <ul>{Object.entries(resetPreview.preserve_counts).map(([key, count]) =>
+          <li key={key}>{key}: <b>{count}</b></li>
+        )}</ul>
+        <p className="form-hint warning-hint">Nhập chính xác RESET TEST để mở nút xác nhận. Cloud sẽ xóa trong một giao dịch; nếu có khóa chỉnh sửa còn hiệu lực, thao tác sẽ bị từ chối.</p>
+        <label>Nhập RESET TEST
+          <input value={resetPhrase} onChange={event => setResetPhrase(event.target.value)} autoComplete="off" spellCheck={false} />
+        </label>
+        <button type="button" className="danger-btn" disabled={!isOnline || resettingTestData || resetPhrase !== 'RESET TEST'} onClick={() => void resetAllTestData()}>
+          {resettingTestData ? 'Đang reset Local + Cloud…' : 'RESET TOÀN BỘ TEST'}
+        </button>
+      </>}
+    </div>}
 
     {canImportAssets && !permissionsLoading && <div className="panel" style={{ margin: '12px 0', padding: 14 }}>
       <h3>Đồng bộ thiết bị từ Local PC lên Cloud</h3>
