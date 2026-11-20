@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { db, now, type Asset, type AssetCloudLink } from './db'
+import { toCloudAssetRow } from './lib/syncMapping'
 import {
   getCloudAssetById, getCloudAssetCodeConfig, importCloudAssetPreservingIdentity, listCloudAssets, saveCloudAssetCodeConfig,
   type AssetCodeConfig
@@ -337,6 +338,8 @@ export default function CloudAssetsPanel({ client, organizationId, organizationN
       const localIds = new Set<string>()
       const localCodes = new Set<string>()
       for (const asset of localRows) {
+        // Fail during preview rather than after confirmation if Cloud cannot preserve Local metadata.
+        toCloudAssetRow(asset, organizationId)
         if (!asset.id || !asset.code.trim() || !asset.name.trim() || !asset.category.trim()) {
           throw new Error('Có thiết bị Local thiếu UUID, mã quản lý, tên hoặc nhóm thiết bị. Không thể đồng bộ an toàn.')
         }
