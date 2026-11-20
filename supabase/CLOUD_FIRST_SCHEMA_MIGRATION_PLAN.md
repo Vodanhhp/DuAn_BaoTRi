@@ -212,3 +212,11 @@ Resolved the legacy RPC decision in the draft: revoke EXECUTE on `public.update_
 Keep `set_asset_archived_with_lock` available for now because it is a narrow archive/restore operation that validates the current lease token and does not accept a stale full Asset snapshot. Revisit when the Cloud lifecycle UI has a dedicated versioned mutation route.
 
 Updated M021 migration draft, sequential test and two-session protocol. The historical `supabase/tests/20261118000200_asset_edit_lock_lease_test.sql` calls the revoked legacy update RPC and is explicitly pre-M021 only; the new M021 sequential test checks the denied EXECUTE matrix and retains archive/restore checks. GitHub fetch-back verified the files. No SQL executed, no DB changes; M021 remains draft, Production untouched.
+
+## 21. M021 policy consistency pass — 20/11/2026
+
+Reconciled the preflight checklist with the finalized policy in §20: `update_asset_with_lock` EXECUTE is revoked from PUBLIC/anon/authenticated/service_role; `set_asset_archived_with_lock` remains available to authenticated/service_role for token-validated archive/restore and denied to anon. The checklist now distinguishes draft contract from post-apply runtime verification and no longer presents the decision as open.
+
+A final sequential-test wording pass removed a duplicated header comment and corrected the stale description “legacy update/archive writers” to “archive/restore RPC”; the actual test already exercised archive + restore and asserted the full-snapshot update EXECUTE denial. Both checklist and test were fetched back and matched the submitted content.
+
+This is documentation/test clarity only. No SQL was executed; M021 remains Draft; no Supabase schema/data/grants changed; Production untouched.
