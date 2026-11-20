@@ -5774,3 +5774,13 @@ Mở https://github.com/Vodanhhp/DuAn_BaoTRi/settings/pages và kiểm tra:
 - [ ] Chưa merge main / chưa tác động Production.
 
 **Điểm tiếp tục:** kiểm tra PR #2 trên branch `feature/test-reset-all`, chạy giao diện Test và xác nhận preview trên PC/Mobile. Không gọi RPC reset với cụm từ đúng cho đến khi người dùng chủ động xác nhận thao tác xóa.
+
+
+### 7. BỔ SUNG KIỂM TRA AN TOÀN – 20/11/2026
+- Đối chiếu toàn bộ bảng có `organization_id` trong schema public: 19 bảng. Các bảng nghiệp vụ phát sinh dữ liệu hiện có đều nằm trong danh sách reset; các bảng tài khoản/phân quyền và hai technical ledgers được phân loại giữ lại.
+- Đối chiếu FK thực tế: các bảng con được xóa trước bảng cha; `maintenance_logs` trước tasks/checklist results; `checklist_results` trước template versions/templates; inventory movements trước inventory items/assets; asset_images trước assets. Không thay đổi FK hoặc bật CASCADE.
+- Thực hiện dry-run gọi chính RPC `reset_baotri_test_data('RESET TEST')` trong transaction và ROLLBACK ngay sau đó. Trong transaction, Cloud trả về 0 Assets, 0 Inventory và đã tạo reset epoch; sau ROLLBACK xác nhận lại Assets=2, Inventory=0, import ledger=47, mutation receipts=7, `data_reset_at=NULL`. **Đây chỉ là kiểm thử rollback, không phải reset thật.**
+- Siết cơ chế Local: trên BAOTRI-Mini-Test, App fail-closed, không mở thao tác Local khi offline hoặc chưa xác minh được reset epoch từ Cloud. Khi RPC thành công mới cho phép vào ứng dụng; thiết bị online/focus lại sẽ kiểm tra epoch và dọn Local nếu epoch mới.
+- Commit siết fail-closed: `10ee2ecb151cb5171ea3a474c766c610dea7854c`.
+- GitHub Actions run `44757256792`: tất cả bước regression tests, template validation và production bundle build đều PASS.
+- Sau kiểm tra: Cloud vẫn nguyên dữ liệu trước reset (Assets=2; import ledger=47; mutation receipts=7; reset epoch NULL). Không tác động Production.
