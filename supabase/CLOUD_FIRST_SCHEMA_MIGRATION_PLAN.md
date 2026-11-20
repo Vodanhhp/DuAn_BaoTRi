@@ -167,6 +167,7 @@ Migration 020 is now occupied by the applied P0 payload fix. The former planned 
 Drafts:
 - `supabase/drafts/M021_asset_lock_anchor_retrofit_DRAFT.sql`
 - `supabase/drafts/M021_asset_lock_anchor_retrofit_TEST_DRAFT.sql`
+- `supabase/drafts/M021_TWO_SESSION_TEST_PROTOCOL_DRAFT.md` (manual two-session barrier protocol; not yet run)
 
 Rollback-only Test execution verified helper/trigger/function DDL, all seven Asset/Lease writer paths sequentially, mutation replay, import with Settings shared lock, and authenticated zero-row Settings UPDATE with global exclusive trigger lock. Effective privileges changed as intended inside the transaction and reverted after ROLLBACK. Key vectors were generated from PostgreSQL 17.12; two-int locks appear with `objsubid=2`, existing mutation bigint locks with `objsubid=1`.
 
