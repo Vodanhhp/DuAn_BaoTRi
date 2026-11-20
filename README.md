@@ -1,56 +1,95 @@
-# BAOTRI PWA – bản nền 0.1
+# BAOTRI Mini
 
-Đây là bộ khung khởi đầu cho phần mềm quản lý bảo trì theo yêu cầu đã thống nhất.
+BAOTRI Mini là ứng dụng quản lý bảo trì theo hướng **Local-first**: nghiệp vụ hằng ngày được thao tác trên dữ liệu cục bộ của thiết bị; Cloud là lớp tài khoản, tổ chức, phân quyền và lưu trữ/đồng bộ những phân hệ đã được triển khai có kiểm soát.
 
-## Có sẵn trong bản 0.1
-- Giao diện responsive cho máy tính và điện thoại.
-- PWA cơ bản, có thể cài như ứng dụng.
-- Dữ liệu cục bộ bằng IndexedDB/Dexie.
-- Danh mục thiết bị, tạo QR, quét QR.
-- Kho vật tư, nhập/xuất và cảnh báo tồn tối thiểu.
-- Kế hoạch/công việc bảo trì, checklist và thông số.
-- Nhật ký bảo trì khi đánh dấu hoàn thành.
-- Xuất Excel cho thiết bị, kho, kế hoạch và nhật ký.
-- Sao lưu/khôi phục JSON.
-- Dữ liệu mẫu demo để mở lên có thứ để xem.
+## Trạng thái sản phẩm
 
-## Chưa có trong bản 0.1
-- Chưa có tài khoản, Supabase hoặc dữ liệu cloud.
-- Chưa có đồng bộ máy tính/điện thoại.
-- Chưa có phân tách tenant.
-- Chưa tự sinh lịch bảo trì định kỳ theo chu kỳ; hiện tại tạo từng công việc.
-- Chưa có biểu mẫu PDF tùy biến.
-- Chưa có upload ảnh/tệp thực tế trong hồ sơ.
-- QR hiện chứa mã thiết bị, luồng quét tra mã thiết bị.
-- Chưa dùng cho hồ sơ bảo trì chính thức hoặc môi trường an toàn trọng yếu.
+### Chức năng Local hiện có
+- Dashboard và quản lý danh mục thiết bị.
+- Hồ sơ thiết bị, mã quản lý, QR tạo/quét, lưu kho và khôi phục.
+- Kho vật tư: danh mục, nhập – xuất – tồn, cảnh báo tồn tối thiểu.
+- Kế hoạch bảo trì, công việc, checklist theo chu kỳ, kết quả checklist.
+- Nhật ký bảo trì và báo cáo.
+- Xuất Excel, sao lưu và khôi phục dữ liệu JSON.
+- Lưu dữ liệu bằng IndexedDB (Dexie), giao diện responsive và PWA có thể cài đặt.
 
-## Chạy trên Windows
-1. Cài Node.js bản LTS: https://nodejs.org/
-2. Giải nén thư mục.
-3. Mở thư mục `baotri-pwa` bằng VS Code.
-4. Mở Terminal trong VS Code và chạy:
+### Phân hệ Cloud đã triển khai
+- Đăng nhập Supabase bằng tài khoản được cấp sẵn; không mở đăng ký tự do.
+- Tổ chức và phân quyền theo membership/permission.
+- Quản lý Asset Cloud theo phạm vi tổ chức.
+- Tạo mã thiết bị qua RPC; nhập Asset Local có giữ nguyên UUID/mã khi được phép.
+- Sửa hồ sơ Asset, lưu kho/khôi phục thông qua RPC có Lease khóa chỉnh sửa.
+- Có kiểm soát payload, idempotency/Receipt riêng cho luồng cập nhật Asset.
+- Local và Cloud không được xem là đã đồng bộ toàn bộ chỉ vì Asset Cloud hoạt động.
+
+### Phần chưa nghiệm thu / chưa bật đồng bộ đại trà
+- Inventory Cloud chưa có đầy đủ RPC giao dịch nhập, xuất, điều chỉnh và Receipt/change-feed tương ứng. Không ghi Movement trực tiếp lên Cloud.
+- Task, kế hoạch, checklist và nhật ký chưa có đầy đủ business RPC/contract để đồng bộ an toàn toàn bộ dữ liệu.
+- Một số trường nhật ký Local chưa có cột tương ứng trong schema Cloud; ứng dụng chủ động từ chối đồng bộ để tránh làm mất dữ liệu.
+- Ảnh/tệp trong hồ sơ thiết bị vẫn là dữ liệu Local; chưa có luồng Storage hoàn chỉnh.
+- M021 Asset lock-anchor retrofit vẫn là draft; chưa được coi là migration đã triển khai. Kiểm thử hai phiên vật lý còn là cổng bắt buộc.
+- Chưa nghiệm thu phát hành Production. BAOTRI-Mini-Test là môi trường kiểm thử; Production nằm ngoài phạm vi các thay đổi hiện tại.
+
+## Kiến trúc và nguyên tắc dữ liệu
+
+1. **Local là nơi thao tác nghiệp vụ** và phải tiếp tục sử dụng được khi mất Internet.
+2. **Cloud không tự sinh dữ liệu nghiệp vụ Local**. Với Asset, định danh được tạo theo luồng được kiểm soát và ánh xạ về Local.
+3. Chỉ đồng bộ những phân hệ đã có schema, quyền, RPC và kiểm thử đầy đủ. Không bật full sync hoặc đẩy toàn bộ IndexedDB lên Cloud.
+4. Không bỏ qua trường dữ liệu Local mà schema Cloud chưa hỗ trợ; phải giữ Local và báo rõ.
+5. Các mutation quan trọng cần kiểm tra quyền ở máy chủ, transaction và cơ chế retry/idempotency phù hợp.
+6. Migration đã áp dụng không được sửa lịch sử; thay đổi schema phải đi bằng migration mới và được kiểm tra trên Test trước.
+
+## Công nghệ
+
+- React + TypeScript + Vite
+- IndexedDB qua Dexie
+- Supabase Auth + PostgreSQL + RLS/RPC
+- PWA qua vite-plugin-pwa
+- ExcelJS, QRCode và html5-qrcode
+
+## Chạy trên máy phát triển
+
+Yêu cầu Node.js LTS.
 
 ```bash
 npm install
+```
+
+Tạo file `.env.local` ở thư mục gốc:
+
+```dotenv
+VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=YOUR_SUPABASE_PUBLISHABLE_KEY
+```
+
+Chạy ứng dụng:
+
+```bash
 npm run dev
 ```
 
-5. Mở địa chỉ Vite in ra, thường là `http://localhost:5173`.
+Chạy kiểm tra:
 
-## Build để đưa lên GitHub Pages hoặc hosting
 ```bash
+npm run test:sync-mapping
+npm run test:local-identity
+npm run test:template-release
 npm run build
 ```
-Bản build nằm trong thư mục `dist`.
 
-Lưu ý: deploy dưới đường dẫn con của GitHub Pages có thể cần cấu hình `base` trong `vite.config.ts`. Nếu dùng tên miền riêng hoặc hosting gốc thì cấu hình mặc định phù hợp hơn.
+Build production nằm trong thư mục `dist`.
 
-## Dữ liệu
-Dữ liệu đang lưu trong IndexedDB của trình duyệt hiện tại. Dùng mục Cài đặt > Sao lưu thường xuyên. Xóa dữ liệu trình duyệt có thể làm mất dữ liệu cục bộ nếu chưa sao lưu.
+## Tài liệu kỹ thuật
 
-## Hướng phát triển kế tiếp
-1. Chốt nghiệp vụ và chuẩn hóa biểu mẫu.
-2. Bổ sung lịch bảo trì định kỳ tự sinh.
-3. Bổ sung hồ sơ thiết bị chi tiết và lịch sử sửa chữa/thay thế.
-4. Thiết kế Supabase/PostgreSQL, tenant_id, auth và quyền truy cập.
-5. Xây dựng sync engine hai chiều có xử lý xung đột và kiểm thử.
+- Kế hoạch schema/RPC: `supabase/CLOUD_FIRST_SCHEMA_MIGRATION_PLAN.md`
+- Review nền tảng và các draft: `supabase/CLOUD_FOUNDATION_DRAFTS_REVIEW.md`
+- Thiết kế sửa lỗi payload Asset: `supabase/docs/ASSET_MUTATION_PAYLOAD_VALIDATION_FIX_DESIGN.md`
+- Các SQL chưa triển khai nằm trong `supabase/drafts/`; phải đọc trạng thái từng file trước khi thực hiện. Draft không phải migration đã áp dụng.
+
+## Nguyên tắc phát hành
+
+- Kiểm tra build và test tự động.
+- Kiểm thử nghiệp vụ Local và Cloud theo từng phân hệ.
+- Kiểm tra offline/online, khôi phục sau timeout và dữ liệu sau đồng bộ.
+- Chỉ promote migration sau khi review và test trên BAOTRI-Mini-Test đạt.
+- Production chỉ là bước triển khai riêng sau nghiệm thu.
