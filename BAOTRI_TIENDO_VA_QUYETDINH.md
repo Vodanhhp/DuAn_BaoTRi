@@ -5442,3 +5442,26 @@ Theo caller audit §119 và static review §120, đã cập nhật **draft SQL v
 - [ ] Chỉ promotion/apply sau khi review/test gate đạt; không chạm Production.
 
 **Bước tiếp theo:** review độc lập các test assertions vừa thêm, sau đó tìm và cập nhật test lịch sử phụ thuộc allocator/delete theo thứ tự; giữ migration/test ở draft.
+
+
+## 122. Legacy SQL regressions made M021-aware / explicitly historical – 20/11/2026
+
+Đã xử lý các test lịch sử phụ thuộc allocator sau M021, cập nhật file test trên GitHub; không chạy SQL và không database changes.
+
+- `20261117001200_asset_code_allocator_rpc_test.sql`: giữ test allocator Admin/Technician + Viewer khi EXECUTE còn mở (pre-M021). Khi M021 contract revoke allocator, nhánh test không gọi RPC; thay bằng assertion allocator EXECUTE denied cho authenticated và service_role.
+- `20261118000100_asset_import_preserving_identity_test.sql`: test allocator continuation chạy ở baseline pre-M021; sau M021 không gọi allocator nữa, assert EXECUTE revoked và kiểm tra `asset_code_counters.last_value >= imported sequence` bằng owner sau RESET ROLE. Counter expectation được lưu trong temp table. Import/identity/idempotency/permission tests giữ nguyên.
+- `20261117000800_authenticated_asset_crud_rls_test.sql`: đánh dấu rõ HISTORICAL/PRE-M021 ONLY, không chạy sau M021 vì direct Asset DELETE và allocator RPC bị đóng. M021 sequential test thay thế các expectation này bằng privilege assertions. Không rewrite test cũ vì phần Admin DELETE policy là test lịch sử không còn contract hiện tại.
+
+### Static verification
+- Fetch lại cả 3 file sau update, xác nhận các nhánh/notice đúng nội dung và signatures allocator đầy đủ.
+- Test import counter dùng counter table/column theo migration 012: `public.asset_code_counters(organization_id, category_code, last_value)`.
+- Chưa thực thi SQL; chưa thể khẳng định test syntax/behavior PASS. Test allocator/import vẫn transaction rollback khi chạy theo hướng dẫn.
+
+### Trạng thái
+- [x] Allocator test branch theo EXECUTE privilege.
+- [x] Import test counter assertion sau RESET ROLE cho M021.
+- [x] CRUD test lịch sử được cảnh báo không chạy sau M021.
+- [ ] Chưa chạy các SQL test trên Test.
+- [ ] M021 sequential/two-session tests còn chưa chạy; migration vẫn draft.
+
+**Bước tiếp theo:** static review SQL syntax của 2 test đã sửa, review migration/test draft cùng nhau và chuẩn bị checklist preflight; không áp dụng migration cho tới khi review hoàn tất và execution được duyệt.
