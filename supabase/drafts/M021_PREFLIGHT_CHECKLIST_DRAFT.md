@@ -54,3 +54,11 @@
 - Test effective privileges: authenticated INSERT=true, UPDATE=true, DELETE=false; service_role DELETE=true.
 - `organization_settings` columns: organization_id (NOT NULL), asset_categories (NOT NULL, default []), created_at/updated_at (NOT NULL, default now()), asset_code_config nullable. This supports the draft INSERT/UPSERT compatibility exercise.
 - These are catalog observations only; no data was modified.
+
+
+## Static signature/grant cross-check (20/11/2026)
+
+- Read-only BAOTRI-Mini-Test `pg_proc` inspection confirms all nine function identity signatures in the sequential test match the currently deployed function signatures: acquire, heartbeat, release, apply mutation, import, update legacy, archive legacy, list locks, allocator.
+- Current baseline: all listed functions are SECURITY DEFINER, owned by postgres, `search_path=''`, `row_security=off`; authenticated and service_role EXECUTE=true; anon=false. This is the pre-M021 baseline, not a post-M021 PASS.
+- GitHub caller audit nuance: `updateAssetWithEditLock` and `setAssetArchivedWithEditLock` are exported helper definitions in `src/lib/assetEditLocks.ts`, but repository search found no import/call sites beyond those definitions. Same for `createCloudAsset()` in `src/lib/assetsCloud.ts`. This is stronger than saying the helpers do not exist; it does not rule out external/old clients.
+- The M021 sequential test currently expects legacy update/archive EXECUTE retained for authenticated/service_role and exercises both functions. If the final policy is revoke, both the test calls and EXECUTE assertions must be changed to expect denial; the historical lease test must be marked pre-M021 or adapted.
