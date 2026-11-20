@@ -17,6 +17,7 @@ import { db, uid, now, getDeviceId, queueChange, type Asset, type AssetMutationP
 import { acquireAssetEditLock, applyAssetMutationWithEditLock, heartbeatAssetEditLock, releaseAssetEditLock, type AssetEditLease } from './lib/assetEditLocks'
 import { downloadExcelReport } from './lib/excelExport'
 import { formatLocalDate } from './lib/dateUtils'
+import { isValidBackupV3 } from './lib/backupValidation'
 
 type Page = 'dashboard' | 'checklist' | 'assets' | 'inventory' | 'planning' | 'tasks' | 'logs' | 'reports' | 'settings'
 
@@ -1166,10 +1167,9 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
   const restore = async (file: File) => {
     if (blockViewer('khôi phục dữ liệu từ bản sao lưu')) return
     try {
-      const data = JSON.parse(await file.text())
-      const tableKeys = ['assets','inventory','tasks','logs','movements','maintenancePlans','checklistTemplates','checklistVersions','checklistResults','syncQueue']
-      if (!data || typeof data !== 'object' || tableKeys.some(key => data[key] !== undefined && !Array.isArray(data[key]))) {
-        throw new Error('Invalid backup structure')
+      const data: unknown = JSON.parse(await file.text())
+      if (!isValidBackupV3(data)) {
+        throw new Error('File không phải bản sao lưu BAOTRI Local v3 đầy đủ hoặc dữ liệu bên trong không hợp lệ.')
       }
       setPendingRestore({ fileName: file.name, data })
     } catch {
