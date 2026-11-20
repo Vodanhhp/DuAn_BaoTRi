@@ -222,9 +222,13 @@ revoke all on function public.guard_organization_mutation_receipt()
 -- is temporary: the role must be able to own the function in public, but
 -- must not retain schema-object creation rights afterward.
 grant create on schema public to baotri_receipt_guard;
+-- Supabase's postgres role has CREATEROLE but is not a member of the new
+-- owner role by default; grant membership only for the ownership transfer.
+grant baotri_receipt_guard to postgres;
 alter function public.assert_organization_mutation_receipt_finalized()
   owner to baotri_receipt_guard;
 revoke create on schema public from baotri_receipt_guard;
+revoke baotri_receipt_guard from postgres;
 
 revoke all on function public.assert_organization_mutation_receipt_finalized()
   from public, anon, authenticated, service_role;
