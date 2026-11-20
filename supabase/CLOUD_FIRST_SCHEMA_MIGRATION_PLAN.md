@@ -183,3 +183,14 @@ Updated `supabase/drafts/M021_asset_lock_anchor_retrofit_TEST_DRAFT.sql`: it now
 GitHub update was fetched back and verified. No SQL was executed; M021 remains draft; no Supabase data/schema/permissions changed; Production untouched.
 
 Next: continue static review of exact RPC signatures and grant matrix, test transaction assumptions, then close the remaining legacy RPC policy decision. Do not apply M021 until explicit approval and required concurrency evidence.
+
+
+## 18. M021 RPC signature and caller cross-check — 20/11/2026
+
+Read-only catalog query on BAOTRI-Mini-Test compared `pg_get_function_identity_arguments`, return type, owner, SECURITY DEFINER, `proconfig`, and effective EXECUTE for the nine functions covered by the M021 sequential test. All identity signatures match the test's `has_function_privilege` checks and function calls. Current pre-M021 baseline: owner postgres, SECURITY DEFINER, `search_path=''`, `row_security=off`; authenticated/service_role EXECUTE true and anon false for all nine. This is baseline evidence only, not post-M021 verification.
+
+Repository search refinement: `updateAssetWithEditLock` and `setAssetArchivedWithEditLock` exist as exported helper definitions in `src/lib/assetEditLocks.ts`, but no imports/call sites were found elsewhere. `createCloudAsset()` similarly exists as an exported definition in `src/lib/assetsCloud.ts`, with no runtime caller found. Old external clients remain outside repository visibility.
+
+No code/runtime caller was silently removed. Legacy EXECUTE policy remains a promotion decision: keeping the RPCs preserves compatibility but retains full-snapshot stale-write risk; revoking is consistent with current in-repo call graph but must account for external clients. The sequential test currently assumes they remain executable and must be edited if revocation is chosen.
+
+No SQL writes or RPC calls were made; no schema/grants/data changed; M021 remains draft; Production untouched.
