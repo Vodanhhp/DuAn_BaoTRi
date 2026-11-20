@@ -5041,3 +5041,40 @@ Thứ tự rollout candidate:
 6. Chạy concurrency test Settings writer ↔ create/import; nếu giữ trigger sau khi revoke direct path thì trigger là defense-in-depth.
 
 Lưu ý: UPDATE có thể giữ row tuple lock khi trigger chờ advisory; create/import không được khóa row Settings FOR UPDATE, nếu không có thể tạo vòng chờ. Cần kiểm chứng bằng hai session thật trước triển khai. Chưa tạo trigger hoặc migration.
+
+## 107. Kế hoạch migration thống nhất và rollback – 20/11/2026
+
+Đã gom các quyết định Asset anchor, Settings lock, Counter, idempotency và legacy RPC thành kế hoạch rollout. Đây là kế hoạch tài liệu, chưa tạo migration và chưa ghi database.
+
+### Các phase dự kiến
+
+0. **Preflight read-only:** chốt source commit/migration inventory; đối chiếu Test và Production; kiểm tra grants/RLS/FK/triggers/indexes; tìm mọi call-site và bản client cũ; baseline Asset/Lease/Receipt/Import/Counter/Settings; chuẩn bị backup/restore.
+1. **Expand-only primitives:** helper Asset anchor two-int, Settings key namespace riêng, Settings BEFORE INSERT/UPDATE compatibility trigger. Chưa revoke grants, chưa đổi frontend.
+2. **Retrofit Asset writers cùng đợt:** acquire, heartbeat, release, apply mutation, import và legacy update/archive. Allocator cũ phải retrofit hoặc revoke nếu không caller; không để writer bypass anchor. Giữ permission, token, expiry, expected version, receipt semantics.
+3. **Settings RPC + frontend:** receipt table, mutation ID, expected_updated_at, optimistic conflict; transitional trigger giữ client cũ tương thích.
+4. **Allocator idempotent + hardening:** stable Asset UUID + mutation UUID + creation receipt; sau compatibility window revoke direct Settings INSERT/UPDATE và direct Asset DELETE privilege. Không tạo hard-delete RPC; archive/Thanh lý tiếp tục mặc định.
+5. **Production rollout:** backup, parity, migration theo thứ tự, smoke test, theo dõi lock wait/SQLSTATE/replay mismatch/client version.
+
+### Lock order mục tiêu
+- Asset writers: authorization → Asset anchor → mutation-ID lock nếu có → Settings shared nếu đọc config → Counter → Lease → Asset → Receipt/ledger.
+- Settings writer: authorization → mutation-ID lock → Settings exclusive → Settings row write → receipt.
+- Không function nào được lấy Asset anchor sau Settings lock.
+- Counter row vẫn là serialization point cho cấp mã cùng organization/category.
+- Direct Settings/Asset DELETE chỉ đóng sau khi compatibility và caller audit đạt yêu cầu.
+
+### Rollback
+- Không rollback một phần các RPC đã retrofit. Nếu rollback Phase 2, phải thay cả nhóm writer bằng definitions tương thích trong một transaction; ưu tiên forward-fix.
+- Không GRANT lại direct Asset DELETE hoặc Settings direct write chỉ vì rollback frontend.
+- Giữ receipt/ledger data; không DROP bảng đã có dữ liệu.
+- Chỉ gỡ Settings trigger khi toàn bộ reader/writer đã rời protocol tương ứng.
+- Migration lỗi phải xác minh catalog không ở trạng thái nửa vời; mỗi phase có preflight, test, postflight và catalog diff.
+
+### Gate bắt buộc trước khi triển khai
+- Key derivation có test vectors; namespace tách Asset/Settings/mutation ID.
+- Hai-session harness chạy được trên Test và A1–A12 pass theo invariant.
+- Test/Production schema parity được xác minh.
+- Có retention policy cho receipt mới.
+- Có inventory minimum client version và compatibility window.
+- Không bật hard-delete trong phạm vi này.
+
+**Trạng thái:** kế hoạch rollout/rollback đã được lập. Chưa viết SQL migration, chưa sửa code, chưa thay grants/RPC/Supabase và chưa chạy concurrency test.
