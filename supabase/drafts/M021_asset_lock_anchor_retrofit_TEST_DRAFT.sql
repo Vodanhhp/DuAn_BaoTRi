@@ -176,13 +176,13 @@ $locks$;
 rollback;
 
 -- TWO-PHYSICAL-SESSION CONCURRENCY SUITE (must be run by an external harness):
--- A1-A4: acquire/takeover, heartbeat/release, and delete-anchor interleavings.
--- A5-A7: apply mutation vs delete; import vs delete; same mutation ID across Asset IDs.
--- A8: different Asset IDs in one org; confirm independent anchors.
--- A9: Settings direct INSERT/UPDATE (statement trigger exclusive) vs import shared reader.
--- A10: FK reference INSERT vs delete; confirm no orphan or deadlock.
--- A11: legacy update/archive vs Asset delete.
+-- See supabase/drafts/M021_TWO_SESSION_TEST_PROTOCOL_DRAFT.md Sections 1-8.
+-- Sections 1-7 exercise lock primitive behavior, Settings bridge, namespace,
+-- transaction release and helper privilege/search-path; Section 8 adds actual RPC
+-- integration interleavings (Asset lease, mutation/import, mutation-ID reuse,
+-- legacy update/archive). Direct DELETE/FK-vs-delete cases are superseded because
+-- authenticated/service_role DELETE is revoked and no delete RPC exists.
 -- Each session records PID, txid, READY checkpoint, pg_locks, pg_blocking_pids, SQLSTATE.
 -- No pg_sleep-based ordering. Use external READY barriers and lock_timeout only as a safety bound.
--- Roll back both sessions and verify Asset, Lease, Receipt, Import ledger and Counter snapshots.
+-- Roll back both sessions and verify Asset, Lease, Receipt, Import ledger, Settings and Counter snapshots.
 -- This sequential SQL file does not mark those concurrency cases PASS.
