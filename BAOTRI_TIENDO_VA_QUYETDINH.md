@@ -5784,3 +5784,31 @@ Mở https://github.com/Vodanhhp/DuAn_BaoTRi/settings/pages và kiểm tra:
 - Commit siết fail-closed: `10ee2ecb151cb5171ea3a474c766c610dea7854c`.
 - GitHub Actions run `44757256792`: tất cả bước regression tests, template validation và production bundle build đều PASS.
 - Sau kiểm tra: Cloud vẫn nguyên dữ liệu trước reset (Assets=2; import ledger=47; mutation receipts=7; reset epoch NULL). Không tác động Production.
+
+
+## 136. Chuẩn bị chạy giao diện M023 trên máy local – 20/11/2026
+
+### Trạng thái Git và môi trường
+- Người dùng đã kiểm tra workspace tại `E:\\DuAnBaoTri\\DuAn_BaoTRi`: ban đầu ở `main`, working tree sạch và khớp `origin/main`.
+- Đã fetch và chuyển thành công sang nhánh `feature/test-reset-all`; nhánh local theo dõi `origin/feature/test-reset-all`.
+- Commit tại thời điểm chuyển nhánh: `4a788e211df9a0565d597c4563beea05de09c631` — `Document M023 dry-run and fail-closed safety checks`. Working tree sạch.
+- Đã đọc `.env.local` theo cách che kín key; `VITE_SUPABASE_URL=https://oyzhxgzltpdebpymuicb.supabase.co`, đúng project BAOTRI-Mini-Test. Không hiển thị hoặc ghi lại anon key.
+- Node.js `v26.13.1`; npm `11.20.0`; Vite `6.4.6`; esbuild `0.25.12`.
+- PowerShell chặn gọi `npm.ps1`; sử dụng `npm.cmd` thay thế, không thay đổi Execution Policy.
+- `npm.cmd install-scripts approve esbuild` đã phê duyệt riêng script cài đặt của `esbuild@0.25.12`. Sau đó `npm.cmd ci` cài thành công 475 packages; `npm.cmd install-scripts ls` xác nhận không còn package có install script chưa được review; `.\node_modules\.bin\esbuild.cmd --version` trả về `0.25.12`.
+- npm báo 5 moderate severity vulnerabilities và một số package deprecated (inflight, lodash.isequal, rimraf, glob, fstream, uuid). Chưa chạy `npm audit fix` hoặc `npm audit fix --force`; không tự nâng dependency trong bước chuẩn bị preview.
+ 
+### Trạng thái kiểm thử giao diện
+- Đã xác minh URL Supabase Test trước khi cài dependencies.
+- **Chưa chạy `npm.cmd run dev`; chưa mở giao diện local trên trình duyệt; chưa đăng nhập Admin/Viewer; chưa kiểm tra UI Preview.**
+- **Không gọi RPC reset với confirmation đúng; không reset Cloud hoặc Local; dữ liệu Test vẫn nguyên trạng. Production không được truy cập/thay đổi.**
+- PR #2 vẫn Draft, chưa merge vào main; chưa triển khai frontend lên Production/GitHub Pages.
+
+### Điểm tiếp tục lần sau
+1. Tại terminal repo đang ở nhánh `feature/test-reset-all`, chạy `npm.cmd run dev`.
+2. Mở URL Local Vite hiển thị trong terminal trên Chrome; đăng nhập tài khoản Admin của BAOTRI-Mini-Test.
+3. Kiểm tra khu vực reset và chạy Preview chỉ đọc; đối chiếu số lượng Cloud sẽ xóa/giữ. Không nhấn nút reset thật.
+4. Nếu cần, kiểm tra quyền Viewer riêng; không dùng DevTools/SQL để bypass quyền.
+5. Chỉ sau khi người dùng chủ động yêu cầu và xác nhận cuối cùng mới xem xét reset thật; trước đó preview lại ngay trên PC/Mobile.
+
+**Trạng thái kết thúc ngày 20/11/2026:** đã chuẩn bị xong nhánh, cấu hình Test và dependencies; đang dừng ngay trước bước khởi động Vite. Không có dữ liệu nào bị xóa.
