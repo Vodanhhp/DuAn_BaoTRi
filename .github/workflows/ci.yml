@@ -39,6 +39,7 @@ jobs:
           npm run test:date-utils
           npm run test:backup-validation
           npm run test:local-concurrency
+          npm run test:cloud-asset-import
 
       - name: Validate template release
         run: npm run validate:template
