@@ -2451,3 +2451,70 @@ Thứ tự candidate sau refinement:
 | A12 | direct PostgREST DELETE | bị SQL privilege chặn sau hardening |
 
 Tất cả test phải chạy hai connection thật, kiểm tra SQLSTATE, wait graph, commit/rollback và invariant cuối. Không chạy ở checkpoint này; chưa có migration/harness.
+
+## 90. Settings/Counter lock design và xử lý RPC legacy – 20/11/2026
+
+### 1. Miền khóa Settings
+
+Catalog xác nhận `organization_settings` có PK `organization_id`; RLS INSERT/UPDATE yêu cầu `settings.manage`. Source chỉ tìm thấy một runtime writer: `saveCloudAssetCodeConfig()` trong `src/lib/assetsCloud.ts`, đang đọc trước rồi PostgREST INSERT hoặc UPDATE trực tiếp. Hai RPC `create_asset_with_code` và `import_asset_preserving_identity` đọc `asset_code_config` mà không khóa Settings.
+
+Candidate:
+- Chuyển Settings writer sang một RPC duy nhất, xác thực `settings.manage`, lấy **organization-scoped exclusive transaction advisory lock**, rồi INSERT/UPDATE Settings trong cùng transaction.
+- Create/import lấy **shared transaction advisory lock cùng key** trước khi đọc `asset_code_config`.
+- Dùng namespace hai-int riêng cho Settings, khác namespace Asset anchor; mutation-ID tiếp tục dùng bigint. Ví dụ về mặt thiết kế: cặp `(SETTINGS_NAMESPACE, hashtext(organization_id))`; đây là key-design concept, chưa phải SQL đã duyệt.
+- Advisory lock giải quyết cả trường hợp Settings row chưa tồn tại; không phụ thuộc `SELECT FOR SHARE` trên một row có thể vắng mặt.
+- Không cho phép bất kỳ PostgREST INSERT/UPDATE trực tiếp nào khác vào Settings sau khi chuyển đổi. Giữ RLS làm lớp authorization bổ sung, không coi advisory lock là quyền truy cập.
+- Settings writer chỉ lấy Settings lock; không được sau đó lấy Asset anchor/Counter. Create/import lấy Asset anchor → mutation-ID lock nếu có → Settings shared → Counter → Asset. Thứ tự một chiều này tránh tạo vòng khóa giữa Settings và Asset.
+
+### 2. Miền Counter
+
+Catalog xác nhận:
+- `asset_code_counters` có PK/unique `(organization_id, category_code)`.
+- `assets_code_unique_per_org` bảo vệ `(organization_id, code)`.
+- `asset_edit_locks` unique `(organization_id, asset_id)`.
+- `asset_import_mutations` và `asset_mutation_receipts` unique `(organization_id, mutation_id)`.
+
+Counter row UPSERT là serialization point đúng cho các thao tác cấp/reconcile mã cùng organization/category. Không thay bằng Asset anchor:
+- Create allocator đọc MAX lịch sử trước UPSERT Counter; giá trị MAX có thể cũ khi chờ Counter, nhưng UPSERT lấy `greatest(counter.last_value, existing_max)+1`, vì vậy counter đã được import reconcile sẽ thắng.
+- Import nhận dạng code rồi UPSERT Counter bằng `greatest(last_value, imported_sequence)`; cùng category sẽ serialize với allocator.
+- Import code không nhận dạng được không reconcile Counter; giữ nguyên code nhưng cần đánh dấu review theo chính sách hiện hành.
+- Mọi đường tạo mã mới phải đi qua Counter; direct Asset INSERT hoặc writer mới bỏ qua Counter sẽ phá invariant dù unique code vẫn chặn duplicate exact code.
+
+### 3. RPC allocator và idempotency
+
+`create_asset_with_code` hiện không có mutation ID/receipt. `p_id` optional; nếu client mất response rồi gọi lại với ID mới hoặc NULL, có thể tạo Asset thứ hai. Nếu retry với cùng ID, lần hai có thể tăng Counter rồi fail unique ID, khiến transaction rollback nhưng API không trả kết quả replay ổn định.
+
+Do chưa có runtime caller:
+- Chưa bật/khuyến nghị dùng helper này trong UI.
+- Trước khi đưa vào runtime, phải thiết kế stable client-generated Asset UUID + mutation ID và receipt riêng (hoặc cơ chế replay tương đương kiểm tra chính xác actor/organization/UUID/payload trước khi cấp Counter).
+- Retry cùng ID/payload phải trả kết quả đã tạo mà không cấp sequence mới; cùng ID khác payload phải từ chối.
+- Giữ permission `assets.create`, Settings shared lock, Counter row và Asset anchor theo đúng thứ tự.
+
+### 4. Quyết định với hai RPC legacy
+
+`update_asset_with_lock` và `set_asset_archived_with_lock`:
+- Có function trong catalog, EXECUTE authenticated; source còn exported helper `updateAssetWithEditLock()` và `setAssetArchivedWithEditLock()`.
+- Static search không tìm thấy caller trong UI/runtime hiện tại. Đây là “exported compatibility helper, no observed runtime call”, không phải bằng chứng có thể xóa ngay.
+- Candidate an toàn: **giữ tạm và retrofit cùng Asset anchor** trong migration protocol; đánh dấu deprecated trong source/docs, không dùng cho luồng mới.
+- Chỉ revoke EXECUTE trong migration riêng sau khi call-site audit toàn repo + kiểm tra phiên bản client triển khai + thời gian tương thích. Không DROP function trong migration anchor đầu tiên.
+- Nếu không retrofit mà vẫn để EXECUTE, hai đường này có thể phá serialization protocol; do đó không được để trạng thái nửa vời.
+
+### 5. Thứ tự khóa candidate đầy đủ
+
+- Acquire/heartbeat/release: authorization contract hiện tại → Asset anchor → Lease row/DML. Release vẫn chỉ cho phép holder + token đúng; không thêm assets.update một cách vô tình.
+- Apply mutation: permission → Asset anchor → receipt replay/recheck → Lease FOR UPDATE → Asset FOR UPDATE → UPDATE + Receipt.
+- Import: permission → Asset anchor → mutation-ID bigint advisory → ledger replay → Settings shared → Counter UPSERT → Asset row → import ledger.
+- Allocator: permission → Asset anchor → Settings shared → Counter UPSERT → Asset INSERT; chưa đưa vào runtime cho tới khi có idempotency receipt.
+- Settings save: permission → Settings exclusive → Settings INSERT/UPDATE.
+- Legacy update/archive: permission/token → Asset anchor → Lease FOR UPDATE → Asset FOR UPDATE.
+- Future hard delete: permission → Asset anchor → Lease/Asset/dependency checks; direct DELETE privilege phải đóng.
+
+### 6. Còn thiếu trước migration
+
+1. Chốt namespace/hash function và API helper SQL duy nhất để mọi RPC dùng cùng Asset key.
+2. Thiết kế Settings RPC + đổi frontend writer; xác nhận không còn đường direct write.
+3. Thiết kế idempotency allocator nếu muốn bật helper.
+4. Quyết định deprecation window cho legacy helper.
+5. Rà membership/permission revoke race riêng; Asset anchor không thay thế auth serialization.
+6. Chạy test hai session deterministic, gồm Settings update ↔ create/import và Counter create ↔ import.
+Chưa viết hoặc áp dụng migration; chưa sửa code, grants hay Supabase.
