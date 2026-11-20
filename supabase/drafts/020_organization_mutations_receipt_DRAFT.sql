@@ -1,5 +1,5 @@
 -- BAOTRI Mini — DRAFT ONLY: shared organization mutation Receipt
--- Proposed sequence: 020 (filename is not an applied migration).
+-- Historical draft label: 020. Sequence reassignment is required because the P0 corrective Migration 020 is now applied.
 --
 -- PURPOSE
 --   One private Receipt per logical business mutation, including mutations
@@ -99,6 +99,18 @@ create index organization_mutations_actor_created_idx
 
 alter table public.organization_mutations enable row level security;
 
+-- A dedicated NOLOGIN role lets the deferred assertion inspect only the
+-- final status without granting Receipt access to browser/client roles.
+-- It is intentionally not BYPASSRLS and is not a member of client roles.
+create role baotri_receipt_guard
+  nologin nosuperuser nocreatedb nocreaterole noinherit nobypassrls;
+grant usage on schema public to baotri_receipt_guard;
+grant select on table public.organization_mutations to baotri_receipt_guard;
+create policy organization_mutations_guard_select
+  on public.organization_mutations
+  for select to baotri_receipt_guard
+  using (true);
+
 -- Receipt data can contain canonical business snapshots. Clients must never
 -- SELECT or mutate this table directly; only reviewed SECURITY DEFINER RPCs
 -- may access it after explicit Auth, membership, permission, actor and
@@ -172,9 +184,9 @@ for each row execute function public.guard_organization_mutation_receipt();
 create or replace function public.assert_organization_mutation_receipt_finalized()
 returns trigger
 language plpgsql
+security definer
 set search_path = ''
-set row_security = off
-as $$
+as $
 declare
   v_status text;
 begin
@@ -204,9 +216,18 @@ deferrable initially deferred
 for each row execute function public.assert_organization_mutation_receipt_finalized();
 
 revoke all on function public.guard_organization_mutation_receipt()
-  from public, anon, authenticated;
+  from public, anon, authenticated, service_role;
+
+-- Transfer the deferred assertion to the least-privilege guard role. CREATE
+-- is temporary: the role must be able to own the function in public, but
+-- must not retain schema-object creation rights afterward.
+grant create on schema public to baotri_receipt_guard;
+alter function public.assert_organization_mutation_receipt_finalized()
+  owner to baotri_receipt_guard;
+revoke create on schema public from baotri_receipt_guard;
+
 revoke all on function public.assert_organization_mutation_receipt_finalized()
-  from public, anon, authenticated;
+  from public, anon, authenticated, service_role;
 
 comment on table public.organization_mutations is
   'Private shared idempotency Receipt: one immutable final result per logical organization mutation; pending is transaction-local only.';
@@ -293,4 +314,7 @@ commit;
 --     atomic rollback on failure.
 --   * Test no_change and conflict receipts: replay stable; no change events.
 --   * Test deferred finalization guard: a pending row cannot commit.
+--   * Verify assertion runs as baotri_receipt_guard (NOLOGIN, NOBYPASSRLS),
+--     whose only table privilege is SELECT and whose dedicated RLS policy is
+--     the only path to inspect Receipt state. Client roles cannot read Receipt.
 --   * Confirm Receipt retention policy before any deletion/archive mechanism.
