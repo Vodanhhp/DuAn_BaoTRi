@@ -153,3 +153,9 @@ Draft vẫn chưa được apply. Trước promotion còn cần duplicate prefli
 Draft 015 đã được chạy thử DDL trong transaction rollback trên BAOTRI-Mini-Test. Trigger function pass các trường hợp INSERT ép version về 1, business UPDATE tăng version, timestamp-only UPDATE không tăng, no-op UPDATE không tăng và client không thể ép row_version. Sau rollback, sáu bảng mục tiêu không có cột row_version; không thay đổi schema/data/migration history.
 
 Draft vẫn chưa apply. Trước promotion cần điều phối timestamp migration sau Migration 020 và phải triển khai RPC expected-version cùng release nghiệp vụ; row_version đơn lẻ không chặn lost update.
+
+## 15. Shared Receipt deferred guard verification — 20/11/2026
+
+Draft Shared Receipt đã được chỉnh theo phương án role NOLOGIN/NOBYPASSRLS/NOINHERIT, chỉ SELECT Receipt qua RLS policy riêng; deferred assertion SECURITY DEFINER do role này sở hữu, `search_path = ''`, không dùng `row_security = off`. DDL và probe RPC đã pass trên BAOTRI-Mini-Test trong transaction rollback: final Receipt pass, pending Receipt bị chặn, authenticated không SELECT được Receipt; role/table không tồn tại sau rollback.
+
+Shared Receipt vẫn chưa apply. Còn phải hoàn tất review lock ordering/replay race và business RPC contracts. Draft mang nhãn 020 cũ phải được gán lại migration version vì Migration 020 P0 đã được áp dụng.
