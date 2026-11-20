@@ -2249,3 +2249,29 @@ Phạm vi: chỉ các writer/caller Cloud hiện có hoặc DB capability có th
 
 ### Kết luận
 Các test hiện tại chứng minh nhiều invariant logic ở đường tuần tự, không phải concurrent interleaving. Không được ghi trạng thái P0/P1 là PASS chỉ dựa trên hai script này. Cần harness hai session độc lập, barrier đồng bộ, thu SQLSTATE/lock wait và kiểm tra invariant sau commit/rollback. Chưa chạy test, không ghi dữ liệu.
+
+## 84. Thiết kế harness concurrency hai DB session – không cần sửa RPC để quan sát lock wait
+
+### Kiến trúc harness
+- Dùng một orchestrator ngoài PostgreSQL (Node/psql runner) mở **hai connection vật lý độc lập**, mỗi connection giữ transaction riêng. Không dùng hai promise trên cùng connection và không dùng hai block DO trong một session để giả lập concurrency.
+- Orchestrator điều khiển barrier bằng tín hiệu ở client: ready, start, statement_sent, blocked/returned, commit/rollback. Polling pg_stat_activity + pg_blocking_pids(pid) chỉ dùng xác nhận session đang chờ đúng blocker; không thay barrier bằng pg_sleep.
+- Mỗi session ghi pg_backend_pid(), txid_current(), clock_timestamp(), application_name, SQLSTATE, thời điểm bắt đầu/kết thúc statement và commit/rollback. Khi có lock wait, chụp pg_stat_activity, pg_locks, pg_blocking_pids; deadlock lấy SQLSTATE 40P01, lock timeout 55P03, unique conflict 23505, optimistic conflict 40001, lease conflict 55000.
+- Fixture phải được tạo trước trong organization Test riêng và có ID riêng cho từng case. Không dựa vào temporary table để chia sẻ fixture giữa hai connection. Cleanup chạy sau khi cả hai transaction kết thúc, có kiểm tra FK/Receipt/Lease trước khi xóa; nếu cần rollback thì mỗi connection chỉ rollback dữ liệu do chính transaction đó tạo. Không chạy trên production.
+
+### Kịch bản thực thi ưu tiên
+1. **P0 – Lease acquire:** hai session gọi acquire cùng Asset chưa có Lease; lặp lại với Lease đã hết hạn. Kết quả bắt buộc đúng một token hợp lệ; loser không được trả token. Sau commit, đọc Lease xác nhận duy nhất một holder/token.
+2. **P0 – Mutation cùng Asset:** hai session dùng cùng Lease token nhưng mutation ID khác và cùng expected version. Chỉ một mutation được commit; session còn lại phải nhận conflict/lease outcome xác định, không được silent last-write-wins. Kiểm tra đúng một Receipt và Asset khớp Receipt thắng.
+3. **P0 – Cùng mutation ID:** cùng actor/asset/payload phải tạo một Receipt và một lần cập nhật; retry trả cùng snapshot. Cùng mutation ID nhưng payload/actor/asset khác phải bị từ chối, không tạo Receipt thứ hai.
+4. **P0 – Mutation ↔ heartbeat/release:** chạy cả hai thứ tự. Ghi rõ mutation thắng thì cập nhật + Receipt commit trước; release thắng thì mutation token cũ fail. Heartbeat chỉ gia hạn Lease còn hiệu lực và không được hồi sinh token đã hết hạn.
+5. **P0 – Asset DELETE ↔ Lease/mutation:** kiểm tra acquire, heartbeat và mutation khi DELETE cạnh tranh. Có thể dựng lock inversion có kiểm soát bằng hai session: T1 giữ Lease row rồi gọi mutation; T2 giữ Asset row rồi DELETE (FK cascade sẽ cần Lease). Chỉ dùng fixture disposable. Nếu ghi nhận 40P01, lưu wait graph và không lặp lại trên dữ liệu thật. Đây là phép tái hiện candidate, không phải cách sửa.
+6. **P1 – Import/Counter:** hai import khác mutation ID cùng organization/category; import trùng UUID/code; import retry cùng mutation ID; import ↔ allocator helper. Kiểm tra Counter không lùi, code không trùng, ledger chỉ ghi kết quả thành công đúng một lần.
+7. **P1 – Settings:** UPDATE asset_code_config ↔ import/allocator. Ghi nhận snapshot config mà mỗi transaction đọc. Hiện reader không FOR SHARE, nên trước khi có protocol chung chỉ đo behavior baseline, không tự đặt một winner semantics chưa được triển khai.
+
+### Điều kiện PASS và cách báo cáo
+- Báo cáo riêng **baseline hiện tại** và **protocol mục tiêu**; không trộn hai kết quả.
+- PASS chỉ khi trạng thái cuối, Receipt/ledger, Lease, Asset và Counter thỏa invariant; loser có SQLSTATE/outcome đúng hợp đồng; không có partial commit, duplicate code/UUID hoặc orphan.
+- Deadlock 40P01 là FAIL của protocol mục tiêu; 55P03 là timeout riêng, không gọi là deadlock. Một lần chạy không đủ chứng minh absence of deadlock; cần lặp nhiều interleaving và lưu log.
+- Test hiện hữu 20261118000200 và 20261118000300 vẫn là test tuần tự một transaction. Harness này mới là thiết kế; chưa có runner, chưa chạy và chưa tạo fixture.
+
+### Ranh giới an toàn
+Không tạo test function/trigger/hook, không sửa migration/RPC, không SQL ghi dữ liệu, không deploy và không thay đổi Supabase. Khi được phê duyệt thực thi, cần duyệt riêng việc tạo fixture và chạy race test trên BAOTRI-Mini-Test.
