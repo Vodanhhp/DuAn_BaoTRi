@@ -2996,7 +2996,7 @@ Migration 020 P0 payload fix is applied on BAOTRI-Mini-Test. The former candidat
 
 Current catalog confirms seven retained Asset/Lease writers and only one existing advisory call site: `import_asset_preserving_identity` uses bigint mutation-ID lock. No two-int advisory/session lock call or `private` schema exists. The two-int and bigint PostgreSQL overloads are available.
 
-M021 draft: `supabase/drafts/M021_asset_lock_anchor_retrofit_DRAFT.sql`. Test draft: `supabase/drafts/M021_asset_lock_anchor_retrofit_TEST_DRAFT.sql`.
+M021 draft: `supabase/drafts/M021_asset_lock_anchor_retrofit_DRAFT.sql`. Test draft: `supabase/drafts/M021_asset_lock_anchor_retrofit_TEST_DRAFT.sql`. Two-session protocol: `supabase/drafts/M021_TWO_SESSION_TEST_PROTOCOL_DRAFT.md` (prepared, not executed).
 
 The draft creates private versioned two-int Asset anchor and global Settings keys; adds a BEFORE STATEMENT Settings exclusive bridge; retrofits all seven writer paths; adds mutation-ID bigint serialization before apply Receipt replay; adds Settings shared lock before import config read; revokes authenticated Asset DELETE and allocator EXECUTE from authenticated/service_role. It preserves release's token-only cleanup authorization and existing RPC signatures/grants for retained writers.
 
