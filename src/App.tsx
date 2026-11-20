@@ -943,7 +943,7 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
     if (blockViewer('nhập hoặc xuất kho')) return
     if (!Number.isFinite(qty) || qty <= 0) { flash('Số lượng phải lớn hơn 0'); return }
     try {
-      const movement = await db.transaction('rw', [db.inventory, db.movements, db.syncQueue], async () => {
+      await db.transaction('rw', [db.inventory, db.movements, db.syncQueue], async () => {
         // Always validate and calculate against the latest row inside the write transaction.
         // The Inventory modal may hold a stale quantity when another tab changes stock.
         const current = await db.inventory.get(item.id)
