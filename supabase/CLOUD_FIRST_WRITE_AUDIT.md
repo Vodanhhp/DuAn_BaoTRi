@@ -494,3 +494,11 @@ Người dùng xác nhận:
 - Đã tách lỗi lưu danh mục tùy chọn khỏi kết quả transaction: đóng hộp thoại restore sau khi DB commit; nếu localStorage lỗi, vẫn báo khôi phục DB thành công kèm cảnh báo danh mục tùy chỉnh chưa lưu.
 - Thay đổi không sửa schema, không đổi semantics thay thế backup, không thay đổi dữ liệu Cloud/Production.
 - Bổ sung static regression contract vào `tests/localConcurrencyContracts.test.mjs`. Đây là kiểm tra cấu trúc mã nguồn; chưa phải runtime test hoặc mô phỏng quota/private-mode của trình duyệt.
+
+## 15. Checklist editor optimistic concurrency (20/11/2026)
+
+- Trình sửa Checklist chụp `updatedAt` của Template khi mở.
+- Khi lưu, transaction đọc lại Template hiện tại theo `assetId` và so sánh `updatedAt` với mốc đã chụp.
+- Nếu khác nhau (bao gồm trường hợp một tab khác vừa tạo Template trong lúc tab này đang mở), transaction trả `conflict`, không ghi Template/Version và không queue mutation. UI yêu cầu đóng trình sửa và mở lại dữ liệu mới nhất.
+- Nếu không có thay đổi cạnh tranh, việc tính version tiếp theo, ghi Template, thêm Version và queue vẫn diễn ra trong cùng transaction.
+- Bổ sung static regression contract. Chưa chạy Node test hoặc browser multi-tab runtime; chưa tuyên bố PASS.
