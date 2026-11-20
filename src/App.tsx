@@ -1162,7 +1162,7 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
       customAssetCategories: customAssetCategories
     }
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `backup-baotri-day-du-${today()}.json`; a.click(); URL.revokeObjectURL(url)
+    const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `backup-baotri-day-du-${today()}.json`; a.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
   const restore = async (file: File) => {
     if (blockViewer('khôi phục dữ liệu từ bản sao lưu')) return
