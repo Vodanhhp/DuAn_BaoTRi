@@ -13,7 +13,7 @@ import {
 import { QRCodeSVG } from 'qrcode.react'
 import { Html5QrcodeScanner } from 'html5-qrcode'
 import namingConventionText from '../QUY_UOC_MA_DINH_DANH_VA_VIET_TAT_THIET_BI.txt?raw'
-import { db, uid, now, getDeviceId, queueChange, type Asset, type AssetMutationPayload, type InventoryItem, type Task, type MaintenancePlan, type MaintenancePlanPeriod, type Movement, type Log, type ChecklistTemplateItem, type ChecklistTemplateVersion, type ChecklistResultItem, type ChecklistResult, putAndQueue, addAndQueue, deleteAndQueue } from './db'
+import { db, uid, now, getDeviceId, queueChange, type Asset, type AssetMutationPayload, type InventoryItem, type Task, type MaintenancePlan, type MaintenancePlanPeriod, type Movement, type Log, type ChecklistTemplateItem, type ChecklistTemplateVersion, type ChecklistResultItem, type ChecklistResult, putAndQueue, addAndQueue } from './db'
 import { acquireAssetEditLock, applyAssetMutationWithEditLock, heartbeatAssetEditLock, releaseAssetEditLock, type AssetEditLease } from './lib/assetEditLocks'
 import { downloadExcelReport } from './lib/excelExport'
 import { formatLocalDate } from './lib/dateUtils'
