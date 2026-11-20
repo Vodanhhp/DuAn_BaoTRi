@@ -50,6 +50,7 @@ export type CloudAssetRow = OrganizationScope & {
   cycle_started_at: string | null; transferred_from_other_facility: boolean
   status: Asset['status']; notes: string; archived_at: string | null
   created_at: string; updated_at: string
+  created_by_user_id: string | null; created_by_label: string | null
 }
 
 export type CloudInventoryItemRow = OrganizationScope & {
@@ -119,7 +120,6 @@ function nullable(value?: string | null): string | null {
 
 export function toCloudAssetRow(value: Asset, organizationId: string): CloudAssetRow {
   rejectDraftIdentity(value.id, 'Asset.id', value.identityStatus)
-  if (value.createdByLabel || value.createdByUserId) throw new UnsupportedCloudFieldError('Schema Cloud hiện chưa có trường người tạo Asset; từ chối bỏ mất dấu vết người tạo.')
   return {
     organization_id: requireOrganizationId(organizationId),
     id: value.id, code: value.code, name: value.name, category: value.category,
@@ -129,7 +129,9 @@ export function toCloudAssetRow(value: Asset, organizationId: string): CloudAsse
     cycle_started_at: nullable(value.cycleStartedAt),
     transferred_from_other_facility: Boolean(value.transferredFromOtherFacility),
     status: value.status, notes: value.notes ?? '', archived_at: nullable(value.archivedAt),
-    created_at: value.createdAt, updated_at: value.updatedAt
+    created_at: value.createdAt, updated_at: value.updatedAt,
+    created_by_user_id: value.createdByUserId ?? null,
+    created_by_label: value.createdByLabel ?? null
   }
 }
 
@@ -142,7 +144,9 @@ export function fromCloudAssetRow(row: CloudAssetRow): Asset {
     cycleStartedAt: row.cycle_started_at ?? undefined,
     transferredFromOtherFacility: row.transferred_from_other_facility,
     status: row.status, notes: row.notes ?? '', images: [],
-    archivedAt: row.archived_at ?? undefined, createdAt: row.created_at, updatedAt: row.updated_at
+    archivedAt: row.archived_at ?? undefined, createdAt: row.created_at, updatedAt: row.updated_at,
+    createdByUserId: row.created_by_user_id ?? undefined,
+    createdByLabel: row.created_by_label ?? undefined
   }
 }
 
