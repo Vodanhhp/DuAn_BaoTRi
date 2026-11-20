@@ -65,4 +65,4 @@
 
 - [ ] Verify no EXECUTE for authenticated/anon/service_role on every private helper, including `lock_two_int`, both Settings lock helpers, and the Settings trigger wrapper; trigger wrapper ACL must be inspected via `has_function_privilege`, not invoked as a normal function.
 - [x] Draft contract: `update_asset_with_lock` EXECUTE revoked from PUBLIC/anon/authenticated/service_role; `set_asset_archived_with_lock` retained for authenticated/service_role and denied to anon. Runtime verification remains pending until M021 is applied to Test.
-- [ ] Confirm historical lease test is pre-M021 only because it calls revoked `update_asset_with_lock`; use the M021 sequential draft for post-M021 coverage.
+- [x] Historical lease test is labeled pre-M021 only because it calls revoked `update_asset_with_lock`; use the M021 sequential draft for post-M021 coverage. Runtime regression execution remains pending.
