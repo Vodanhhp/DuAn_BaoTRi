@@ -510,3 +510,10 @@ Người dùng xác nhận:
 - Tra cứu Log đã liên kết bằng index `logs.checklistResultId`; nếu một Log khác đã liên kết cùng kết quả Checklist thì từ chối ghi. Trường hợp đang sửa chính Log đã liên kết vẫn được phép.
 - Kiểm tra nguồn, kiểm tra trùng, ghi Log và queue mutation nằm trong cùng transaction; ngăn hai tab tạo hai yêu cầu từ một kết quả Checklist.
 - Không thêm schema/migration, tận dụng index đã có từ DB v4. Bổ sung static regression contract; chưa chạy runtime test hoặc multi-tab browser test.
+
+## 17. Kiểm tra tính toàn vẹn liên kết Checklist trong backup (20/11/2026)
+
+- `isValidBackupV3()` không chỉ kiểm tra ID từng bảng: nay còn xác thực chuỗi tham chiếu `ChecklistTemplate → Asset`, `ChecklistVersion → ChecklistTemplate/Asset`, `ChecklistResult → Asset/Template/Version`.
+- Với Log có `checklistResultId`, backup chỉ hợp lệ khi kết quả Checklist nguồn tồn tại và thuộc cùng `assetId` với Log.
+- Mục tiêu: từ chối backup hỏng/tham chiếu chéo trước khi mở bước khôi phục thay thế dữ liệu Local; không tự sửa hoặc bỏ qua lịch sử lỗi.
+- Bổ sung test cho chuỗi tham chiếu hợp lệ, thiếu bản ghi và sai thiết bị. Chưa chạy test runtime; cần CI hoặc chạy `npm test` trên môi trường repo để xác nhận.
