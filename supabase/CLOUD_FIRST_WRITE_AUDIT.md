@@ -447,3 +447,13 @@ Người dùng xác nhận:
 - Đã xác minh nội dung commit trên GitHub; chưa có kiểm thử browser đa tab thực tế.
 
 - Hoàn thiện thêm bộ kiểm tra backup: từ chối ID trùng trong cùng bảng để tránh `bulkPut()` âm thầm ghi đè một bản ghi khác khi nhập file bị lỗi hoặc chỉnh sửa thủ công; đã thêm ca regression tương ứng.
+
+
+## 14. Chống ghi trùng khi thao tác Checklist và hoàn thành công việc (20/11/2026)
+
+- `saveTemplate()` trước đây lấy `template.currentVersion` từ React state trước transaction. Hai tab có thể cùng dùng một phiên bản cũ, ghi trùng số phiên bản; trường hợp chưa có template còn có nguy cơ tạo hai template cho cùng Asset.
+- Đã chuyển truy vấn template hiện tại theo `assetId`, xác định ID template và số phiên bản kế tiếp vào trong cùng Dexie readwrite transaction với việc ghi Template, Version và syncQueue. Số phiên bản hiển thị sau lưu lấy từ kết quả transaction.
+- `completeTask()` trước đây dùng Task snapshot từ UI và luôn tạo Log mới. Hai tab hoặc thao tác lặp có thể tạo nhiều Log cho cùng một lần hoàn thành.
+- Đã đọc lại Task trong transaction; nếu không tồn tại hoặc đã hoàn thành thì không tạo Log mới. Task, Log và queue vẫn commit nguyên tử trong cùng transaction.
+- Đã thêm `tests/localConcurrencyContracts.test.mjs`, script `test:local-concurrency`, đưa vào GitHub Actions và README. Đây là kiểm tra source contract; cần CI build/test thực thi để xác nhận cú pháp và chưa thay thế kiểm thử browser đa tab.
+- Không sửa Cloud/Production, schema, RPC hoặc dữ liệu hiện có.
