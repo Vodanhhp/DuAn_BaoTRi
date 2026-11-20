@@ -860,8 +860,19 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
   }
   const saveTask = async (t: Task) => {
     if (blockViewer('thêm hoặc sửa công việc')) return
-    const value = { ...t, updatedAt: now() }
-    await putAndQueue(db.tasks, 'tasks', value); setModal(null); setEditingTask(null); flash('Đã lưu công việc')
+    const outcome = await db.transaction('rw', [db.tasks, db.syncQueue], async () => {
+      const current = await db.tasks.get(t.id)
+      if (current && current.updatedAt !== t.updatedAt) return 'conflict' as const
+      const value = { ...t, updatedAt: now() }
+      await db.tasks.put(value)
+      await queueChange('tasks', value.id)
+      return 'saved' as const
+    })
+    if (outcome === 'conflict') {
+      flash('Công việc đã được thay đổi ở nơi khác. Hãy đóng và mở lại biểu mẫu trước khi lưu.')
+      return
+    }
+    setModal(null); setEditingTask(null); flash('Đã lưu công việc')
   }
   const saveMaintenancePlans = async (plans: MaintenancePlan[]) => {
     if (blockViewer('thêm hoặc sửa kế hoạch bảo trì')) return
