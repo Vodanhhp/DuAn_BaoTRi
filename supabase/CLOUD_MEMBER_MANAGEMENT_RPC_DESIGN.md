@@ -2820,3 +2820,14 @@ Không có test nào được chạy ở checkpoint này. Chưa ghi dữ liệu,
 - Nếu cần serialization cấu hình, candidate là chuyển Settings write sang RPC dùng organization-scoped exclusive advisory lock; create/import dùng shared lock cùng key trước khi đọc config. Phải xử lý trường hợp Settings row chưa tồn tại; FOR SHARE không khóa được hàng vắng mặt.
 - Test matrix cần gồm acquire/delete khi Lease absent/present; mutation/delete; heartbeat/release/delete; import/delete; allocator/import cùng UUID; cùng mutation ID khác Asset; create/import cùng category; Settings update ↔ create/import; FK reference insert ↔ delete; legacy RPC ↔ delete; direct DELETE bị chặn.
 - Chưa chạy concurrency tests, chưa tạo migration, chưa thay đổi Settings writer hoặc Supabase.
+
+## 80. Settings, Counter và legacy Asset RPC – quyết định candidate
+
+- `saveCloudAssetCodeConfig()` là runtime writer duy nhất tìm thấy cho `organization_settings`; hiện ghi PostgREST INSERT/UPDATE trực tiếp sau SELECT. RLS kiểm tra `settings.manage`, nhưng writer không lấy advisory lock.
+- `create_asset_with_code` và `import_asset_preserving_identity` đọc `asset_code_config` mà không khóa Settings.
+- Candidate: chuyển Settings write thành RPC lấy exclusive transaction advisory lock theo organization; create/import lấy shared lock cùng key trước khi đọc config. Dùng namespace two-int riêng cho Settings, khác Asset anchor; lock Settings row absent vẫn được bảo vệ. Không cho writer nào lấy Settings rồi tiếp tục lấy Asset anchor.
+- Lock order: create = Asset anchor → Settings shared → Counter → Asset; import = Asset anchor → mutation-ID bigint advisory → ledger replay → Settings shared → Counter → Asset; Settings save = Settings exclusive → Settings DML.
+- Counter PK là (organization_id, category_code), unique Asset code là (organization_id, code). Counter UPSERT là serialization point cấp mã; Asset anchor không thay thế. Mọi writer tạo code phải qua Counter.
+- Allocator chưa có mutation ID/receipt và p_id optional. Chưa có runtime caller; không đưa vào UI trước khi bổ sung stable UUID + idempotent receipt/replay. Retry cùng request không được cấp sequence mới.
+- Hai RPC legacy update/archive còn EXECUTE authenticated và helper exported trong source nhưng không thấy runtime caller. Candidate: giữ tạm, retrofit cùng Asset anchor, đánh dấu deprecated; revoke EXECUTE chỉ trong migration riêng sau call-site audit và compatibility window. Không DROP ngay.
+- Chưa triển khai RPC Settings, chưa đổi frontend writer, chưa tạo migration, chưa chạy concurrency test.
