@@ -3003,3 +3003,17 @@ The draft creates private versioned two-int Asset anchor and global Settings key
 Rollback-only execution on BAOTRI-Mini-Test passed DDL creation, sequential writer calls (acquire/heartbeat/release/apply/replay/import/legacy update/archive), and zero-row Settings statement trigger under authenticated. Effective privilege checks inside the transaction matched the contract. pg_locks showed Asset/Settings two-int keys (`objsubid=2`) and mutation bigint keys (`objsubid=1`). After ROLLBACK, schema/trigger/Lease/Receipt changes were absent and original grants were restored.
 
 **Not applied.** Two-session concurrency A1–A11, lock ordering/blocker graphs, deadlock regression, search_path poisoning and full existing SQL test suite remain required before promoting/applying M021. Production is out of scope.
+
+
+## 92. M021 test draft cross-review — Settings lock assertions need separation (20/11/2026)
+
+Static review of `M021_asset_lock_anchor_retrofit_TEST_DRAFT.sql` found a likely false-negative in the lock-observation block:
+- The same rollback-only transaction first performs Settings INSERT/UPDATE, causing the BEFORE STATEMENT trigger to acquire the global Settings advisory lock exclusively.
+- Later, import acquires the same Settings key in shared mode. PostgreSQL advisory locks are transaction-scoped and same-session requests are compatible with/held by that transaction; the catalog generally exposes the strongest held mode rather than separate simultaneous ExclusiveLock and ShareLock rows for one key.
+- The test currently asserts both a granted ExclusiveLock row and a granted ShareLock row for the same global Settings key. This is not a valid requirement for this single transaction and may fail even when locking is correct.
+
+Recommended correction before execution: keep the exclusive-trigger assertion in this rollback test, and verify import's shared-lock path in a separate transaction/session with no exclusive Settings lock already held (or use two-session protocol to observe shared lock directly). Do not assert both lock modes coexist in one transaction. No SQL was executed.
+
+Also confirmed statically: import with a fresh mutation ID proceeds through Asset anchor, mutation-ID lock, Settings shared lock/read, counter reconciliation, and Asset identity check; ledger replay exits before the Settings shared lock, as expected. This means the draft's fresh mutation ID is appropriate for exercising that path.
+
+No migration applied, no database writes, Production untouched.
