@@ -5204,3 +5204,19 @@ M020 atomic contents: retrofit 7 writer RPC; import thêm Asset anchor + Setting
 **Sửa tối thiểu ở mức thiết kế:** bỏ dòng `false` rời, giữ nguyên điều kiện subtraction JSONB. Sau đó tạo forward-only migration sau khi đối chiếu deployment migration ledger; bổ sung test payload hợp lệ, thiếu key, key thừa, và không phải object. Chỉ chạy trong Test fixture riêng khi được phê duyệt rõ ràng.
 
 Không tạo migration, không gọi function, không ghi DB và không thay đổi Supabase trong đợt xác minh này.
+
+## 114. Kết luận nguyên nhân gốc P0 – migration drift đã được chứng minh bằng Git history
+
+Đính chính §112–§113: đã truy lại chính xác phiên bản trước/sau các commit:
+
+1. Parent commit `74a27b4`: Migration 017 cũ có điều kiện JSONB subtraction, sau đó có thêm `or jsonb_object_length(p_payload) <> cardinality(v_required_keys)`.
+2. Commit `74a27b4` lúc 05:22 ngày 19/11 sửa trực tiếp file Migration 017 đã tồn tại: bỏ điều kiện jsonb_object_length và đổi object check sang `IS DISTINCT FROM`.
+3. Commit `6d38f25` lúc 05:22 ngày 19/11 thêm Migration 018. Migration 018 kiểm tra đúng chuỗi cũ rồi thay toàn bộ chuỗi, bao gồm chữ `or` đầu chuỗi, bằng `false`.
+4. Database đã chạy Migration 017 cũ vẫn giữ function cũ; sửa file migration trên GitHub không cập nhật database đã migrate. Khi Migration 018 chạy trên function cũ, guard khớp và phép replace tạo đúng đoạn catalog đang thấy: điều kiện subtraction rồi tới `false then`.
+5. Active catalog hiện khớp chính xác kết quả này.
+
+**Nguyên nhân gốc:** chỉnh sửa migration đã phát hành tại chỗ + migration hotfix dựa trên textual replacement làm mất toán tử Boolean + môi trường database giữ phiên bản migration cũ. Đây là migration drift, không phải lỗi JSONB subtraction.
+
+**Phương án sửa đúng:** giữ Migration 017/018 bất biến; tạo migration mới chỉ tiến về phía trước, thay toàn bộ function body bằng CREATE OR REPLACE FUNCTION và predicate ba phần: JSON object, đủ required keys, không có extra keys. Không dùng replace chuỗi con. Bổ sung test valid, missing key, extra key, JSON null/scalar/array; invalid phải SQLSTATE 22023 và không ghi Asset/Receipt. Trước rollout phải xác minh migration ledger bằng deployment tooling vì database SQL-visible hiện không có schema/table supabase_migrations. Chỉ áp dụng Test sau khi được phê duyệt rõ; Production chưa được phép.
+
+Không tạo migration, không gọi RPC, không ghi DB hoặc thay đổi Supabase trong bước điều tra này.
