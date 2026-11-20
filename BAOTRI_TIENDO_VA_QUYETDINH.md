@@ -5483,3 +5483,13 @@ M021 test draft được bổ sung thêm:
 - Sửa qualified target reference trong ON CONFLICT thành `organization_settings.asset_categories`.
 
 Đã fetch/update từng draft bằng SHA. Đây là static test design, chưa thực thi; cần validate syntax/permissions khi Test execution gate được duyệt.
+
+
+## 125. Static structural check và signature cross-check – 20/11/2026
+
+- Fetch lại 5 SQL draft/test và TIEN DO từ GitHub main; SHA được xác nhận sau các cập nhật gần nhất.
+- Structural check trên source: mọi dollar-quote tag trong M021 migration/test và 3 regression SQL test đều có số lần xuất hiện chẵn; M021 migration có BEGIN/COMMIT. Đây chỉ là check cấu trúc, không thay thế parser hoặc thực thi PostgreSQL.
+- Read-only catalog query trên BAOTRI-Mini-Test xác nhận identity signatures của 7 retained RPCs + `list_asset_edit_locks` + legacy allocator khớp test privilege matrix; không có database write.
+- M021 vẫn draft. Sequential test và concurrency A1–A11 chưa chạy; Production untouched.
+
+**Next:** rà soát toàn bộ test M021 assertions và lock protocol để lập checklist execution rõ ràng; chỉ chạy trên Test sau approval, không thay đổi Production.
