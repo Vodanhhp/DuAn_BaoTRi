@@ -5465,3 +5465,11 @@ Theo caller audit §119 và static review §120, đã cập nhật **draft SQL v
 - [ ] M021 sequential/two-session tests còn chưa chạy; migration vẫn draft.
 
 **Bước tiếp theo:** static review SQL syntax của 2 test đã sửa, review migration/test draft cùng nhau và chuẩn bị checklist preflight; không áp dụng migration cho tới khi review hoàn tất và execution được duyệt.
+
+
+## 123. Test import fixture privilege correction – 20/11/2026
+
+Static review vừa phát hiện bảng temp `asset_import_counter_expectation` được tạo nhưng INSERT fixture nằm bên trong DO chạy với `SET ROLE authenticated`, trong khi chưa cấp quyền INSERT. Đã sửa test file: expectation row được tạo ở owner setup trước `SET ROLE`; DO authenticated chỉ đọc sequence fixture và không ghi bảng expectation. Fetch/update bằng SHA và verify content hash.
+
+- Đây là correction của test draft, không phải database change.
+- Chưa thực thi SQL; vẫn cần kiểm tra syntax và behavior trên Test.
