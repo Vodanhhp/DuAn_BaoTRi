@@ -429,3 +429,11 @@ Người dùng xác nhận:
 - Chưa chạy test/build runtime; cần xác minh trên Node trước khi coi là nghiệm thu.
 
 - Bổ sung: trì hoãn thu hồi Blob URL của file backup 1 giây sau khi kích hoạt tải xuống, tránh thu hồi URL quá sớm khi trình duyệt chưa bắt đầu đọc Blob.
+
+
+## 12. Backup snapshot nhất quán và CI tự động (20/11/2026)
+
+- Phát hiện backup trước đây đọc từng bảng bằng các request riêng lẻ ngoài transaction; nếu dữ liệu thay đổi trong lúc sao lưu, JSON có thể ghép các trạng thái ở những thời điểm khác nhau.
+- Đã chuyển toàn bộ 10 bảng Local vào một Dexie readonly transaction; snapshot chỉ được serialize sau khi transaction đọc hoàn tất. Có thêm xử lý lỗi sao lưu và thông báo trạng thái; không sửa dữ liệu nghiệp vụ.
+- Đã thêm GitHub Actions workflow `.github/workflows/ci.yml`: Node.js 20, `npm ci`, chạy 5 nhóm regression tests, validate template release và `npm run build` trên push main, pull request vào main hoặc workflow_dispatch.
+- Workflow vừa được tạo; cần chờ GitHub Actions thực thi và đọc kết quả thực tế. Không coi workflow tồn tại là bằng chứng build/test PASS.
