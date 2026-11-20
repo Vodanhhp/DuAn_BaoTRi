@@ -437,3 +437,11 @@ Người dùng xác nhận:
 - Đã chuyển toàn bộ 10 bảng Local vào một Dexie readonly transaction; snapshot chỉ được serialize sau khi transaction đọc hoàn tất. Có thêm xử lý lỗi sao lưu và thông báo trạng thái; không sửa dữ liệu nghiệp vụ.
 - Đã thêm GitHub Actions workflow `.github/workflows/ci.yml`: Node.js 20, `npm ci`, chạy 5 nhóm regression tests, validate template release và `npm run build` trên push main, pull request vào main hoặc workflow_dispatch.
 - Workflow vừa được tạo; cần chờ GitHub Actions thực thi và đọc kết quả thực tế. Không coi workflow tồn tại là bằng chứng build/test PASS.
+
+
+## 13. Đồng thời sửa thông tin vật tư và nhập/xuất kho (20/11/2026)
+
+- Phát hiện `saveItem()` đọc số tồn hiện tại trước transaction rồi mới ghi vật tư. Nếu một tab khác nhập/xuất kho sau lần đọc nhưng trước lần ghi, form sửa tên/đơn vị/nhà cung cấp có thể ghi đè số tồn mới bằng số cũ.
+- Đã chuyển thao tác đọc bản ghi hiện tại, giữ nguyên `quantity`, áp dụng quyền cập nhật `minQuantity`, ghi metadata và queue vào cùng Dexie readwrite transaction.
+- Luồng `addMovement()` trước đó đã được chuyển sang transaction; nay hai đường ghi có thể thay đổi hàng tồn đều đọc/ghi trong transaction, tránh stale overwrite giữa các tab.
+- Đã xác minh nội dung commit trên GitHub; chưa có kiểm thử browser đa tab thực tế.
