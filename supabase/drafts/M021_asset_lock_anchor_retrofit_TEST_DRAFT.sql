@@ -40,6 +40,13 @@ $vector$;
 
 set local role authenticated;
 
+-- Exercise the live authenticated Settings INSERT/UPDATE compatibility bridge
+-- against the dedicated fixture; transaction rollback restores original values.
+insert into public.organization_settings (organization_id, asset_categories)
+values ('dfb443ec-a1ee-496b-842c-0bef3f50b8ce'::uuid, '[]'::jsonb)
+on conflict (organization_id) do update
+set asset_categories=public.organization_settings.asset_categories;
+
 -- BEFORE STATEMENT must lock even when no Settings row matches.
 update public.organization_settings
 set asset_code_config=asset_code_config
@@ -122,6 +129,7 @@ begin
   if has_table_privilege('service_role','public.assets','INSERT') then raise exception 'service_role still has direct Asset INSERT'; end if;
   if has_table_privilege('service_role','public.assets','UPDATE') then raise exception 'service_role still has direct Asset UPDATE'; end if;
   if has_table_privilege('service_role','public.assets','DELETE') then raise exception 'service_role still has direct Asset DELETE'; end if;
+  if exists(select 1 from pg_attribute a where a.attrelid='public.assets'::regclass and a.attnum>0 and not a.attisdropped and (has_column_privilege('service_role','public.assets',a.attname,'INSERT') or has_column_privilege('service_role','public.assets',a.attname,'UPDATE'))) then raise exception 'service_role retains column-level direct Asset INSERT/UPDATE'; end if;
   if has_table_privilege('service_role','public.organization_settings','DELETE') then raise exception 'service_role still has Settings DELETE'; end if;
   if not has_table_privilege('authenticated','public.organization_settings','INSERT') then raise exception 'Authenticated lost Settings INSERT compatibility privilege'; end if;
   if not has_table_privilege('authenticated','public.organization_settings','UPDATE') then raise exception 'Authenticated lost Settings UPDATE compatibility privilege'; end if;
