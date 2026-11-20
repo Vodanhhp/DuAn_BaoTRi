@@ -882,18 +882,34 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
     }
     const timestamp = now()
     const values = plans.map(plan => ({ ...plan, title: plan.title.trim(), contractor: plan.contractor.trim(), notes: plan.notes.trim(), updatedAt: timestamp }))
-    await db.transaction('rw', [db.maintenancePlans, db.syncQueue], async () => {
+    const outcome = await db.transaction('rw', [db.maintenancePlans, db.syncQueue], async () => {
+      const currentPlans = await Promise.all(values.map(value => db.maintenancePlans.get(value.id)))
+      if (values.some((value, index) => currentPlans[index] && currentPlans[index]!.updatedAt !== plans.find(plan => plan.id === value.id)?.updatedAt)) return 'conflict' as const
       await db.maintenancePlans.bulkPut(values)
       await Promise.all(values.map(value => queueChange('maintenancePlans', value.id)))
+      return 'saved' as const
     })
+    if (outcome === 'conflict') {
+      flash('Kế hoạch đã được thay đổi ở nơi khác. Hãy mở lại biểu mẫu trước khi lưu.')
+      return
+    }
     setModal(null); setEditingPlan(null)
     flash(values.length > 1 ? `Đã lưu kế hoạch cho ${values.length} thiết bị` : 'Đã lưu kế hoạch bảo trì')
   }
   const deleteMaintenancePlan = async (plan: MaintenancePlan) => {
     if (blockViewer('xóa kế hoạch bảo trì')) return
     if (!confirm(`Xóa kế hoạch “${plan.title}”?`)) return
-    await deleteAndQueue(db.maintenancePlans, 'maintenancePlans', plan.id)
-    flash('Đã xóa kế hoạch bảo trì')
+    const outcome = await db.transaction('rw', [db.maintenancePlans, db.syncQueue], async () => {
+      const current = await db.maintenancePlans.get(plan.id)
+      if (!current) return 'missing' as const
+      if (current.updatedAt !== plan.updatedAt) return 'conflict' as const
+      await db.maintenancePlans.delete(plan.id)
+      await queueChange('maintenancePlans', plan.id, 'delete')
+      return 'deleted' as const
+    })
+    if (outcome === 'deleted') flash('Đã xóa kế hoạch bảo trì')
+    else if (outcome === 'conflict') flash('Kế hoạch đã được thay đổi ở nơi khác; chưa xóa. Hãy tải lại danh sách.')
+    else flash('Kế hoạch không còn tồn tại.')
   }
   const saveLog = async (entry: Log) => {
     if (blockViewer('tạo hoặc cập nhật phiếu bảo dưỡng – sửa chữa')) return
