@@ -2737,3 +2737,13 @@ Kết luận: ưu tiên concurrency test đang có ý nghĩa là linked Asset Le
 - Settings update ↔ import: kiểm tra snapshot config vì hiện reader không FOR SHARE; proposal nếu yêu cầu config nhất quán là Settings FOR SHARE → Counter → Asset, Settings update giữ UPDATE lock. Chưa sửa SQL.
 
 Không có test nào được chạy ở checkpoint này. Chưa ghi dữ liệu, chưa sửa RPC, DDL, grants hoặc Supabase config.
+
+## 74. Harness concurrency – nguyên tắc hai connection và thu bằng chứng
+
+- Một test concurrency thật phải có hai PostgreSQL connection vật lý, hai transaction độc lập và một orchestrator điều khiển barrier. Một SQL script chạy tuần tự trong BEGIN ... ROLLBACK không đáp ứng điều kiện này.
+- Không dùng temporary table làm kho fixture chung vì temp table thuộc từng session. Fixture phải có ID riêng, được tạo trong Test organization trước khi mở race; cleanup sau khi cả hai transaction kết thúc và kiểm tra FK/Receipt/Lease.
+- Ghi backend PID, transaction ID, application_name, timeline begin/statement/lock-wait/commit, SQLSTATE; khi chờ khóa chụp pg_stat_activity, pg_locks, pg_blocking_pids. 40P01 = deadlock; 55P03 = lock timeout; không gộp hai trạng thái.
+- Barrier phía client dùng để ra lệnh bắt đầu; polling blocker chỉ xác nhận trạng thái chờ. Không dùng pg_sleep đơn thuần làm bằng chứng thứ tự. Với race cần pause chính xác bên trong RPC, nếu không thể dựng bằng lock cạnh tranh bên ngoài thì phải có test hook riêng được review; không tự thêm hook vào migration.
+- Thứ tự chạy: preflight fixture → race hai session → commit/rollback theo case → đọc invariant sau commit → cleanup có kiểm tra. Mỗi case chạy hai hướng winner, nhiều interleaving; baseline và target protocol báo cáo riêng.
+- Các nhóm đầu tiên: Lease acquire/takeover; mutation/mutation và Receipt replay; mutation/heartbeat/release; Asset DELETE/cascade Lease; import/counter/UUID-code; Settings update/import.
+- Đây là hợp đồng thiết kế, không phải harness đã triển khai hoặc test đã PASS. Không chạy SQL ghi, không tạo fixture, không thay đổi RPC/DDL/grants/Auth/data hoặc Supabase.
