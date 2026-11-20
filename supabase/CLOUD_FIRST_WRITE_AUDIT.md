@@ -560,3 +560,25 @@ Người dùng xác nhận:
 - Rủi ro thiết kế cần lưu ý trước khi có Cloud writer: `checklist_templates.current_version` là số nguyên header, chưa có FK/constraint bảo đảm tồn tại một dòng `checklist_template_versions` tương ứng. Một UPDATE template trực tiếp có quyền có thể đặt current_version sai; INSERT version và UPDATE header cũng không được DB buộc cùng một transaction. Trên Test hiện có 0 template nên không thể đánh giá dữ liệu thực tế; đây là gap cấu trúc, không phải phát hiện bản ghi sai.
 - Hướng xử lý trước khi mở Cloud Checklist: RPC publish version trong một transaction, kiểm tra active membership + `checklist.template.manage`, serialize theo template row, cấp số version kế tiếp từ DB, insert immutable version rồi cập nhật current_version; thu hồi direct INSERT/UPDATE nếu RPC là đường ghi duy nhất. Cần kiểm thử concurrent publish và rollback. Không áp dụng thay đổi trong lượt này.
 - Không chạy DML ghi, không thay đổi RLS/grants/schema/Production. Các kết quả ACL/policy/constraint là truy vấn chỉ đọc trên Test.
+
+
+## 22. Asset và Inventory: quyền ghi trực tiếp, số dư và lịch sử (20/11/2026)
+
+### Assets
+- Trên `BAOTRI-Mini-Test`, `authenticated` hiện có SELECT và DELETE trên `assets`; không có INSERT/UPDATE trực tiếp trong effective table grants được truy vấn. Tạo Asset và sửa hồ sơ đang đi qua các RPC/luồng có kiểm soát; `src/lib/assetsCloud.ts` gọi `create_asset_with_code`, `import_asset_preserving_identity`, còn các sửa đổi hồ sơ qua asset edit lock RPC.
+- RLS DELETE yêu cầu `assets.delete`; role catalog hiện chỉ cấp quyền này cho Admin. Các bảng con quan trọng (maintenance tasks/plans, checklist, logs, inventory movements linked_asset_id, asset_images) dùng FK RESTRICT theo thiết kế đã rà soát; hard-delete Asset có tham chiếu lịch sử sẽ bị chặn. `asset_edit_locks` có cascade cleanup nhưng không làm cascade lịch sử nghiệp vụ.
+- Kết luận: quyền DELETE trực tiếp vẫn là bề mặt cần cân nhắc; thiết kế đã có đề xuất revoke DELETE authenticated và ưu tiên archive/Thanh lý. Chưa tự thu hồi vì delete/acquire lock có cạnh tranh và cần serialization anchor thống nhất; một RPC delete chỉ khóa Lease/Asset riêng lẻ chưa đủ an toàn.
+
+### Inventory
+- `authenticated` hiện có SELECT/INSERT/UPDATE/DELETE trên `inventory_items`; RLS lần lượt kiểm tra `inventory.view/create/update/delete`. Role catalog: Admin và Technician có `inventory.create`, `inventory.update`, `inventory.adjust`; chỉ Admin có `inventory.delete`.
+- Cột `quantity` thuộc cùng bảng và direct UPDATE privilege hiện cho phép update cột này; INSERT privilege cũng cho phép client đặt số dư ban đầu. Do đó một client có `inventory.update` có thể thay đổi số tồn mà không tạo movement; client có `inventory.create` có thể tạo tồn đầu kỳ mà không có movement opening. Đây là đường ghi trực tiếp không bảo đảm audit trail, dù UI Local hiện giữ balance + movement trong cùng Dexie transaction.
+- `inventory_movements` chỉ có SELECT cho authenticated; không có INSERT/UPDATE/DELETE authenticated. Điều này giữ movement append-only ở lớp client SQL, nhưng không bảo vệ được balance khi bảng Item vẫn có direct INSERT/UPDATE.
+- Các FK movement → item và movement.linked_asset → asset đều ON DELETE RESTRICT. Item có quantity/min_quantity/unit_price không âm; movement quantity > 0 và type nằm trong Nhập/Xuất/Điều chỉnh. Tuy nhiên các CHECK này không chứng minh balance = tổng lịch sử movement.
+- Test hiện có 1 Asset, 0 inventory_items và 0 inventory_movements; chưa có dữ liệu kho để reconcile. Không thể kết luận số dư lịch sử hợp lệ từ snapshot này.
+- Đối chiếu `CLOUD_INVENTORY_RPC_DESIGN.md` và protocol review: thiết kế đã xác định đúng cutover — create item + opening movement atomic; metadata RPC không nhận quantity; post/adjust movement khóa Item, kiểm tra expected version, cập nhật balance + movement + idempotency/receipt cùng transaction; không upsert movement. Nhưng chưa được triển khai thành migration/worker hoàn chỉnh.
+- Hành động cần trước Cloud Inventory: triển khai/test RPC và đường đọc canonical; sau đó mới thu hồi direct INSERT/UPDATE (hoặc tối thiểu column UPDATE quantity) và direct DELETE theo chính sách archive. Không revoke quyền trước khi có RPC thay thế và cutover được kiểm thử; không chạy DML, không thay đổi grants/schema trong lượt này.
+
+### Kết luận
+- Assets: không có direct INSERT/UPDATE authenticated trong quyền bảng hiện tại; hard-delete còn mở cho Admin nhưng bị permission + FK RESTRICT giới hạn.
+- Inventory: direct balance mutation là finding ưu tiên cao, vì có thể tạo lệch giữa số dư và sổ movement. Cloud Inventory phải tiếp tục ở trạng thái chưa bật worker cho đến khi transaction RPC và quyền ghi được khóa đúng.
+- Tất cả truy vấn trong mục này là read-only trên `BAOTRI-Mini-Test`; không thay đổi Test hoặc Production.
