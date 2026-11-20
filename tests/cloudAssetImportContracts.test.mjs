@@ -24,6 +24,6 @@ test('Local Asset import preview rejects unsupported fields before reading Cloud
   const guard = handler.indexOf('toCloudAssetRow(asset, organizationId)')
   const cloudRead = handler.indexOf("client.from('assets')")
   assert.ok(guard >= 0 && cloudRead > guard, 'preview must validate every Local Asset before any Cloud lookup')
-  assert.ok(handler.includes('createdByUserId: asset.createdByUserId ?? null'), 'preview snapshot must detect creator UUID changes')
-  assert.ok(handler.includes('createdByLabel: asset.createdByLabel ?? null'), 'preview snapshot must detect creator label changes')
+  assert.ok(cloudPanel.includes('createdByUserId: asset.createdByUserId ?? null'), 'preview snapshot must detect creator UUID changes')
+  assert.ok(cloudPanel.includes('createdByLabel: asset.createdByLabel ?? null'), 'preview snapshot must detect creator label changes')
 })
