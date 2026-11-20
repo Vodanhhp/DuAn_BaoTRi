@@ -2321,3 +2321,35 @@ Chưa tạo runner, fixture hoặc chạy SQL ghi dữ liệu. Đây là runbook
 
 ### Kết luận
 Khuyến nghị an toàn nhất hiện tại là **không cung cấp hard-delete Asset từ client**; ưu tiên archive/Thanh lý và giữ lịch sử. Thu hồi DELETE privilege là bước hardening nhỏ, nhưng vẫn phải rà lại quyền hiệu lực và UI caller trước khi triển khai. Không sửa migration/RPC/grants ở checkpoint này.
+
+
+## 87. Candidate unified Asset serialization protocol – advisory anchor
+
+### Vì sao cần anchor chung
+Lease row có thể chưa tồn tại khi Asset mới được mở lần đầu. SELECT ... FOR UPDATE trên Lease không khóa được hàng chưa tồn tại; acquire hiện dùng INSERT ... ON CONFLICT có điều kiện hết hạn. Vì vậy delete RPC chỉ khóa Lease trước Asset vẫn chưa giải quyết đầy đủ race acquire ↔ delete.
+
+### Candidate protocol để review
+Dùng transaction-scoped advisory lock theo cặp organization_id + asset_id làm serialization anchor ổn định, trước khi bất kỳ RPC nào khóa hoặc ghi Lease/Asset. Có thể tạo key 64-bit bằng hash ổn định của hai UUID; hash collision chỉ gây serialize thừa, không được dùng làm authorization. Mọi RPC vẫn phải xác minh organization membership/permission độc lập.
+
+Thứ tự thống nhất đề xuất:
+1. Xác thực actor, active membership và permission.
+2. Lấy advisory transaction lock cho organization + Asset.
+3. Đọc/khóa Lease row nếu có.
+4. Khóa Asset row FOR UPDATE khi cần thay đổi/xóa.
+5. Thực hiện mutation/Receipt hoặc dependency check.
+6. Commit/rollback.
+
+Các đường phải tham gia cùng protocol:
+- acquire: advisory → kiểm tra Asset → Lease INSERT/UPSERT.
+- mutation/archive: advisory → Lease FOR UPDATE → Asset FOR UPDATE → update + Receipt.
+- heartbeat/release: advisory → Lease row → gia hạn/xóa đúng token.
+- future delete RPC: advisory → Lease row nếu có → Asset FOR UPDATE → kiểm tra FK/dependency/retention → delete nếu policy cho phép.
+
+### Điều kiện bắt buộc trước khi chọn
+- Retrofit đồng thời tất cả RPC đang hoạt động; không chỉ thêm advisory lock vào delete.
+- Rà và loại bỏ/khóa các legacy RPC còn cho phép sửa Asset theo thứ tự khác.
+- Direct PostgREST DELETE phải bị thu hồi; nếu không, đường DELETE không lấy advisory lock vẫn có thể chen vào.
+- Các INSERT tạo quan hệ FK tới Asset không nhất thiết lấy advisory lock; Asset FOR UPDATE và FK kiểm tra sẽ serialize chúng ở cấp row. Phải test race insert-reference ↔ delete và xác nhận FK RESTRICT không làm mất lịch sử.
+- Kiểm thử hai session với acquire/delete, mutation/delete, heartbeat/delete và reference-insert/delete; ghi wait graph, SQLSTATE và invariant.
+
+Đây là candidate design, chưa phải protocol được triển khai hoặc phê duyệt. Không thêm advisory lock vào migration hiện tại ở checkpoint này.
