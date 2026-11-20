@@ -486,3 +486,11 @@ Người dùng xác nhận:
 - Bổ sung trường hợp bản kế hoạch đang sửa bị xóa ở tab khác: form cũ không được `bulkPut()` tạo lại bản ghi đã mất; thao tác bị báo xung đột. Các kế hoạch mới trong luồng tạo nhiều thiết bị vẫn được phép thêm.
 
 - Bổ sung `Log.updatedAt` tùy chọn để kiểm soát revision. `saveLog()` từ chối lưu nếu timestamp của bản đang lưu khác snapshot lúc mở form, rồi mới hợp nhất lịch sử, ghi Log và queue trong transaction. Nhật ký mới tạo khi hoàn thành Task cũng được đóng dấu revision. Dữ liệu Log cũ không cần migration: `updatedAt` có thể để trống cho đến lần lưu đầu tiên.
+
+## 14. Khôi phục backup: tách commit IndexedDB và lưu tùy chọn localStorage (20/11/2026)
+
+- `applyRestore()` thay thế các bảng Local trong một Dexie transaction. Sau khi transaction hoàn tất, ứng dụng mới cập nhật `baotri-custom-asset-categories` trong `localStorage`.
+- Trước sửa, nếu `localStorage.setItem()` lỗi sau khi Dexie transaction đã commit, catch chung hiển thị thông báo khôi phục thất bại dù dữ liệu database đã được thay thế thành công. Người dùng có thể hiểu nhầm và thử lại.
+- Đã tách lỗi lưu danh mục tùy chọn khỏi kết quả transaction: đóng hộp thoại restore sau khi DB commit; nếu localStorage lỗi, vẫn báo khôi phục DB thành công kèm cảnh báo danh mục tùy chỉnh chưa lưu.
+- Thay đổi không sửa schema, không đổi semantics thay thế backup, không thay đổi dữ liệu Cloud/Production.
+- Bổ sung static regression contract vào `tests/localConcurrencyContracts.test.mjs`. Đây là kiểm tra cấu trúc mã nguồn; chưa phải runtime test hoặc mô phỏng quota/private-mode của trình duyệt.
