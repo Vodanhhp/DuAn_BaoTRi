@@ -5149,3 +5149,41 @@ Thiết kế test deterministic, chưa chạy:
 Không có deadlock; blocker đúng theo timeline; zero-row trigger vẫn lấy lock; transaction kết thúc thì lock nhả; helper private; search_path an toàn; fixture rollback sạch. SQLSTATE 55P03 là timeout cần phân tích, không tự động kết luận deadlock. Đây là test plan, chưa có kết quả PASS.
 
 Chỉ chạy concurrency test ghi dữ liệu trên BAOTRI-Mini-Test sau phê duyệt rõ ràng.
+
+## 112. Đối chiếu catalog PostgreSQL Test và chốt phạm vi M020 – 20/11/2026
+
+Đã thực hiện read-only catalog audit trên BAOTRI-Mini-Test, đối chiếu GitHub source. Không gọi RPC nghiệp vụ, không ghi DB.
+
+### Function inventory
+- Runtime writer cần retrofit: acquire_asset_edit_lock, heartbeat_asset_edit_lock, release_asset_edit_lock, apply_asset_mutation_with_lock, import_asset_preserving_identity.
+- Legacy nhưng còn callable/exported helper: update_asset_with_lock và set_asset_archived_with_lock. Không thấy caller UI/runtime; vẫn retrofit để tương thích trong thời gian chuyển đổi.
+- create_asset_with_code còn EXECUTE cho authenticated và service_role. createCloudAsset() chỉ thấy định nghĩa helper, không thấy caller; tạo thiết bị thông thường theo Local-first. Candidate revoke EXECUTE authenticated + service_role cùng M020, chỉ owner còn quyền.
+- list_asset_edit_locks chỉ đọc; không cần Asset anchor.
+- set_asset_updated_at là trigger timestamp-only; không phải business writer.
+
+### Effective grants/RLS
+- assets: authenticated SELECT và DELETE; INSERT/UPDATE false. DELETE bị RLS policy assets.delete kiểm tra nhưng vẫn có thể bypass Asset anchor, nên revoke DELETE cùng transaction M020.
+- organization_settings: authenticated SELECT/INSERT/UPDATE; policy ghi yêu cầu settings.manage. CloudAssetsPanel đang dùng direct PostgREST writer saveCloudAssetCodeConfig(); M019 statement trigger bridge phải hoạt động trước M020.
+- Lease/Receipt/Import/Counter: authenticated không có direct DML grants; RLS bật, RPC SECURITY DEFINER thao tác nội bộ.
+- Các business RPC SECURITY DEFINER owner postgres, search_path rỗng, row_security=off; anon/PUBLIC không EXECUTE. Giữ nguyên permission checks.
+
+### Constraint/trigger
+- Lease PK (org,asset), FK Asset ON DELETE CASCADE.
+- Asset receipt và import ledger PK (org,mutation), actor/org FKs RESTRICT.
+- Counter PK (org,category), Asset unique (org,id) và (org,code).
+- Hiện có trigger updated_at trên Asset UPDATE và Settings UPDATE; chưa có trigger trên Lease. M019 statement trigger Settings chưa có trong catalog.
+
+### P0 cần xử lý trước M020
+Active pg_get_functiondef của apply_asset_mutation_with_lock hiện có đoạn 'or (p_payload - v_required_keys) <> '{}'::jsonb' tiếp theo là 'false then', không thấy toán tử boolean trước false. Migration 20261119000100_fix_asset_mutation_payload_validation.sql thay chuỗi 'or jsonb_object_length(...)' thành 'false', có vẻ đã làm mất 'or'. Chưa gọi function hoặc chạy compile test; plpgsql_check không cài. Phải tách một forward fix nhỏ và regression test xác nhận function compile/validation trước M020. Không coi lịch sử PASS cũ là đủ khi catalog hiện tại có dấu hiệu này.
+
+### M020 lock order
+- acquire: permission → Asset anchor → Asset existence → Lease UPSERT.
+- heartbeat/release: Asset anchor → Lease UPDATE/DELETE; giữ nguyên semantics token/actor.
+- apply: permission → Asset anchor → mutation-ID bigint lock → receipt replay → Lease FOR UPDATE → Asset FOR UPDATE → update + receipt.
+- import: permission → Asset anchor → mutation-ID bigint lock → ledger replay → Settings global shared → Settings read → Counter UPSERT → Asset row → ledger.
+- legacy update/archive: permission → Asset anchor → Lease → Asset.
+- list locks read-only; timestamp trigger không đổi.
+
+M020 atomic contents: retrofit 7 writer RPC; import thêm Asset anchor + Settings shared; apply thêm mutation-ID lock trước receipt; revoke authenticated + service_role EXECUTE allocator legacy sau caller audit; revoke authenticated DELETE trên assets. Không đóng direct Settings writes cho đến phase RPC Settings sau này.
+
+**Trạng thái:** đã audit catalog và chốt phạm vi. Chưa tạo SQL/migration, chưa chạy function, chưa sửa code/grants/Supabase.
