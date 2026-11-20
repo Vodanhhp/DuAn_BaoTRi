@@ -2911,3 +2911,25 @@ M020 must commit together:
 - Keep list_asset_edit_locks and set_asset_updated_at unchanged.
 
 Preflight must fail closed if any client caller for direct Asset DELETE or allocator is found. Postflight checks effective privileges, exact function definitions/grants, RLS policies, no missing function signature, and current frontend smoke tests. No SQL has been applied as part of this audit.
+
+## 99. P0 follow-up – exact payload-condition mismatch confirmed
+
+A full read-only fetch of the active PostgreSQL definition confirms the exact token sequence:
+
+`or (p_payload - v_required_keys) <> '{}'::jsonb`
+followed immediately by
+`false then`.
+
+There is no boolean operator between the final JSONB condition and `false`. The PL/pgSQL body is therefore syntactically invalid at that IF condition when compiled/executed. No RPC was invoked to prove the runtime error because execution is outside the approved read-only scope.
+
+Source comparison:
+- GitHub migration `20261118000300_asset_mutation_receipts.sql` contains the intended three-part check: JSON object, all required keys present, and no unsupported keys using `p_payload - v_required_keys`.
+- GitHub hotfix `20261119000100_fix_asset_mutation_payload_validation.sql` searches for a different old fragment beginning `or jsonb_object_length(...)` and replaces the entire fragment, including its leading `or`, with `false`.
+- The current active catalog has the JSONB subtraction condition plus the dangling `false`, showing that the deployed function definition and current GitHub migration source do not form a clean reproducible pair.
+- Repository search finds `jsonb_object_length` only in the hotfix migration, not in the current base migration or current test.
+
+The existing receipt test file invokes the RPC several times with valid payloads, but contains no explicit missing-key or extra-key validation case. Its historical PASS cannot establish that the current active function is valid after the hotfix.
+
+Minimal intended correction candidate (design only, not applied): remove the dangling standalone `false` line and preserve the original JSONB subtraction condition. This retains all three intended checks and rejects unknown payload keys. Before approving the fix, compare the actual deployed migration history using the deployment's migration ledger (none was found among the inspected application-visible migration tables), create a forward-only corrective migration, and add tests for: valid exact-key payload; missing required key; unsupported extra key; JSON null/scalar/array payload. Run those tests only in an explicitly approved disposable Test fixture. Do not execute on Production.
+
+No migration, function invocation, SQL write, or database mutation was performed during this follow-up.
