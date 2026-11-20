@@ -2769,3 +2769,14 @@ Không có test nào được chạy ở checkpoint này. Chưa ghi dữ liệu,
 - Hard-delete về sau phải kiểm tra active membership, assets.delete, Lease hợp lệ, FK/dependency, retention và audit; từ chối khi lịch sử phải giữ. Receipts/import ledger hiện giữ asset_id scalar, không FK, nên cần chính sách audit/retention rõ ràng.
 - Trạng thái: thiết kế đề xuất; chưa sửa SQL, grants, RPC hoặc Supabase.
 
+
+
+## 77. Candidate serialization anchor cho Asset – review trước khi viết delete RPC
+
+- Lease row không phải anchor tồn tại ổn định: Asset có thể chưa có Lease; SELECT FOR UPDATE không khóa hàng chưa tồn tại, trong khi acquire tạo Lease bằng INSERT/UPSERT.
+- Candidate cần review: transaction-scoped advisory lock theo organization_id + asset_id, lấy trước mọi Lease/Asset row lock. Hash collision chỉ serialize thừa, không thay thế authorization.
+- Lock order mục tiêu: xác thực membership/permission → advisory key → Lease row (nếu có) → Asset row → business mutation/Receipt hoặc dependency check.
+- Phải retrofit đồng thời acquire, mutation/archive, heartbeat, release và delete; rà legacy RPC; đóng direct DELETE. Chỉ thêm advisory lock ở delete RPC là không đủ.
+- Các thao tác INSERT FK tham chiếu Asset không lấy advisory lock vẫn được Asset row lock + FK kiểm soát; cần test reference-insert ↔ delete và giữ ON DELETE RESTRICT cho lịch sử.
+- Đây là candidate design, chưa triển khai. Cần concurrency tests thật trước khi chốt.
+
