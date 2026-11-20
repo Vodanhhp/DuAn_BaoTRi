@@ -484,3 +484,5 @@ Người dùng xác nhận:
 - Bổ sung source contract tests cho cả save và delete trong `test:local-concurrency`.
 
 - Bổ sung trường hợp bản kế hoạch đang sửa bị xóa ở tab khác: form cũ không được `bulkPut()` tạo lại bản ghi đã mất; thao tác bị báo xung đột. Các kế hoạch mới trong luồng tạo nhiều thiết bị vẫn được phép thêm.
+
+- Bổ sung `Log.updatedAt` tùy chọn để kiểm soát revision. `saveLog()` từ chối lưu nếu timestamp của bản đang lưu khác snapshot lúc mở form, rồi mới hợp nhất lịch sử, ghi Log và queue trong transaction. Nhật ký mới tạo khi hoàn thành Task cũng được đóng dấu revision. Dữ liệu Log cũ không cần migration: `updatedAt` có thể để trống cho đến lần lưu đầu tiên.
