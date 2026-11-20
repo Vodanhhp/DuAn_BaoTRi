@@ -18,7 +18,7 @@
 - [ ] Confirm private schema/helper privileges, function owners, SECURITY DEFINER/INVOKER, empty search_path, row_security attributes and trigger timing.
 - [ ] Confirm advisory lock namespace and known vector, lock order (Asset anchor -> mutation-ID bigint lock -> Settings shared/exclusive -> row/ledger/counter), and no unplanned lock inversion.
 - [ ] Review payload key/type validation, Receipt idempotency/replay ownership, Import ledger identity, and test fixtures for current schema.
-- [ ] Fix the sequential test's Settings lock observation: it currently expects both ExclusiveLock (from statement trigger) and ShareLock (from import) on the same key in one transaction. Separate the shared-lock verification into a clean transaction/session or two-session test; don't require both modes to appear simultaneously.
+- [x] Corrected the sequential test's Settings lock observation: it verifies the exclusive lock already held by the statement trigger without requiring a second simultaneous ShareLock row. Clean shared-only acquisition remains a separate physical two-session gate.
 
 ## Sequential Test regression gate
 
