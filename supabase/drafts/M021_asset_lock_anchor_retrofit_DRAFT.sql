@@ -886,8 +886,9 @@ commit;
 --    update/archive lease token ownership and expiry.
 -- 3. Lock vectors: verify deterministic Asset two-int keys using PostgreSQL
 --    17.12; verify Asset two-int and existing mutation-ID bigint key spaces.
--- 4. Two-session A1-A8/A10/A11 interleavings: no deadlock, no orphan Lease,
---    correct Receipt/Asset/Counter invariants, transaction-scoped release.
+-- 4. Two-session protocol Sections 1-8: primitive contention + actual RPC
+--    acquire/heartbeat/release, mutation/import, mutation-ID reuse, legacy writers;
+--    no hard-delete cases (privileges are denied), no deadlock, invariants hold.
 -- 5. Settings: direct PostgREST INSERT/UPDATE statement trigger takes global
 --    exclusive even for zero-row UPDATE; import reader takes global shared;
 --    test both interleavings with two physical sessions.
