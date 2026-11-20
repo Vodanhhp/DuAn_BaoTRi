@@ -5568,3 +5568,28 @@ Tạo `supabase/drafts/M021_PREFLIGHT_CHECKLIST_DRAFT.md` để gom execution ga
 - No migration or data changes made; Production untouched.
 
 **Next:** perform static cross-review of draft test privilege assumptions and RPC signatures, including caller impacts; leave migration execution gated.
+
+
+## 130. M021 Test apply + Local→Cloud Asset import guard — 20/11/2026
+
+### M021 database state
+- Applied migration `m021_asset_lock_anchor_retrofit` to **BAOTRI-Mini-Test only**. Supabase returned success; migration tracker records version `20261120110552`. Production untouched.
+- Postflight effective privilege checks: authenticated direct Asset DELETE=false; service_role direct Asset INSERT/UPDATE/DELETE=false; service_role Settings DELETE=false; authenticated/service_role/anon have no USAGE on private schema; legacy full-snapshot update RPC EXECUTE=false for authenticated/service_role; archive/restore RPC retained for authenticated/service_role and denied to anon.
+- Private helper functions exist in schema `private`. Do not use `to_regclass()` to test function existence; it only resolves relations.
+- Ran current rollback-only M021 sequential regression SQL on Test. Tool returned without SQL error, meaning its DO assertions completed. Fixture Asset remained present, no active Lease rows remained, Settings/counter fixture rows remained. Existing receipt/import counts were six/one and are not claimed as new test artifacts.
+- Security advisor now reports 10 authenticated SECURITY DEFINER RPC warnings (down from 12 pre-M021), consistent with the two legacy RPC revocations. Existing RLS INFO findings on internal tables and leaked-password-protection warning remain.
+- **Physical two-session concurrency protocol is still NOT run.** Available Supabase SQL tool exposes one-shot SQL execution without persistent independently controlled sessions/READY barriers. Sequential calls cannot prove lock contention. Keep M021 Test-only; no Production promotion until the physical two-session suite passes.
+
+### App source review and correction
+- Reviewed `src/lib/assetsCloud.ts`, `src/CloudAssetsPanel.tsx`, `src/lib/assetEditLocks.ts`, `src/lib/cloudSync.ts`, `src/lib/syncMapping.ts`, `src/db.ts`, and active App handlers.
+- Active linked-Asset edit path uses acquire lease + expected Cloud version + stable mutation ID + receipt RPC. Unlinked Asset creation remains Local-first and queued. Cloud panel offers explicit selective Local PC → Cloud import preserving Local UUID and management code.
+- Found an inconsistency: pure mapper `toCloudAssetRow` rejects draft identities and creator metadata that the current Cloud schema cannot preserve, but `importCloudAssetPreservingIdentity` previously constructed the RPC payload directly and could silently omit creator fields.
+- Fixed import boundary: `assetsCloud.ts` now calls `toCloudAssetRow(asset, organizationId)` before the import RPC; Cloud panel preview performs the same validation before Cloud lookup. Unsupported fields now fail early rather than being silently lost.
+- Added `tests/cloudAssetImportContracts.test.mjs`, npm script `test:cloud-asset-import`, and CI invocation in `.github/workflows/ci.yml`.
+- Commits: `31b03480` (import boundary guard), `b79d2db3` (preview guard), `95404389` (contract test), `d9fa38fa` (npm script), `98034efe` (CI integration). All changed files were fetched again and SHA/content verified.
+- CI run for commit `98034efe` is in progress at time of this note; no PASS claimed yet. Earlier runs were cancelled by subsequent pushes.
+
+### Next
+1. Wait for CI run `44725303717` and resolve only actual failures.
+2. Run physical two-session M021 protocol externally; do not simulate it with sequential execute_sql calls.
+3. After CI, proceed with controlled Test data Local→Cloud Asset import/edit verification. Do not enable generic full sync or touch Production.
