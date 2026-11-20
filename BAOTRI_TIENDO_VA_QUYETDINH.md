@@ -5351,3 +5351,33 @@ Tiếp tục caller audit theo §117. Đối chiếu effective table grants trê
 - [ ] Chưa chốt chính sách service_role writer; chưa apply M021.
 
 **Bước tiếp theo:** kiểm tra kỹ toàn bộ Edge Function và các helper Cloud liên quan để xác nhận service_role không có đường Asset/Settings DML nào khác; sau đó cập nhật M021 theo contract privilege được chốt, cập nhật test suite tương thích và tiếp tục review trước khi chạy bất kỳ migration nào.
+
+
+## 119. Hoàn tất caller audit lần cuối – Asset/Settings Cloud writers – 20/11/2026
+
+Đọc lại các call-sites thực tế trong source và cross-check audit/design notes; chưa thay đổi code/database.
+
+### Asset DML call-sites
+- `src/lib/assetsCloud.ts`: `listCloudAssets()` và `getCloudAssetById()` chỉ SELECT. `createCloudAsset()` là hàm exported gọi allocator RPC nhưng GitHub search không tìm thấy caller ngoài chính định nghĩa; đây là dead/unreferenced helper theo search hiện tại, không phải runtime writer.
+- `App.tsx`: linked Asset đọc Cloud version trước khi thực hiện mutation; mutation được gửi qua `apply_asset_mutation_with_lock`, không dùng direct UPDATE.
+- `CloudAssetsPanel.tsx`: đọc Asset và thực hiện import preserving identity qua RPC; không direct INSERT/UPDATE/DELETE Asset.
+- Repo search không thấy call-site PostgREST direct Asset INSERT/UPDATE/DELETE; search từ khóa đã rà nhưng search index không đảm bảo toàn bộ, vì vậy kết luận ở mức review source/search chứ không chứng minh runtime không có writer.
+
+### Settings DML call-sites
+- `saveCloudAssetCodeConfig()` trong `src/lib/assetsCloud.ts` là helper thực sự được gọi từ `CloudAssetsPanel.tsx`; ghi PostgREST INSERT/UPDATE vào `organization_settings`, chờ server response. M021 statement trigger bridge vẫn cần để serialize legacy direct Settings writer.
+- Không thấy caller Settings DELETE trong repo search. Settings DELETE của service_role không có use case hiện tại được tìm thấy; vẫn là privilege khả dụng cho backend nếu không thu hồi.
+
+### Review kết luận / đề xuất contract
+- Caller audit củng cố contract RPC-only cho Cloud Asset business writes: không thấy direct Asset DML runtime call-site; create helper allocator chưa được gọi; mutation/import hiện dùng RPC.
+- Đề xuất chỉnh draft M021: revoke INSERT/UPDATE/DELETE direct trên `public.assets` khỏi `service_role` (giữ SELECT nếu cần); revoke DELETE trên `organization_settings` khỏi `service_role` nếu không có backend delete use-case. Không thay grants ở Test lúc này.
+- M021 test cần assert effective privilege cho service_role Asset INSERT/UPDATE/DELETE và Settings DELETE đã bị revoke, cùng authenticated Asset DELETE; đồng thời assert Settings INSERT/UPDATE vẫn hoạt động qua trigger-compatible path.
+- Đây là đề xuất security/grants, chưa được thực hiện; vẫn cần approval trước khi áp dụng migration.
+
+### Trạng thái
+- [x] Caller audit source cho Asset: các writer runtime hiện tìm thấy đi qua RPC; Cloud reads là SELECT.
+- [x] Caller audit Settings: direct INSERT/UPDATE helper có caller; chưa thấy DELETE caller.
+- [x] Đề xuất privilege contract M021 rõ ràng, không còn để service_role bypass ngoài dự kiến.
+- [ ] Chưa chỉnh draft SQL/test để revoke/assert privilege; chưa apply migration.
+- [ ] Chưa chạy M021 sequential test hoặc two-session concurrency suite.
+
+**Bước tiếp theo:** review chi tiết remainder M021 (function signatures, EXECUTE grants, trigger bridge, lock-order và các test assertions) rồi cập nhật draft/test để phản ánh contract; không thay đổi database cho tới khi review hoàn tất và được duyệt.
