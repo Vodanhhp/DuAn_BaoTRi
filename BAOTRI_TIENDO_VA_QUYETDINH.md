@@ -5517,3 +5517,19 @@ Review protocol M021 cho thấy bản cũ mới kiểm tra lock primitives/manua
 - [ ] Two-session physical tests chưa chạy.
 
 **Next:** final review M021 privilege contract (allocator/direct table DML/Settings DELETE + legacy update/archive), rà các migration/test lịch sử tương thích, sau đó tạo preflight checklist. Execution chỉ Test và cần approval; Production out of scope.
+
+
+## 127. SQL regression inventory sau M021 compatibility edits – 20/11/2026
+
+Rà thêm test SQL liên quan trước execution gate:
+- `20261117000900_business_modules_rls_integration_test.sql`: search source không thấy allocator/direct Asset DELETE/legacy Asset update/archive; không bị M021 writer revoke ảnh hưởng theo static review.
+- `20261118000200_asset_edit_lock_lease_test.sql`: có legacy update/archive RPC calls; vẫn tương thích nếu M021 giữ EXECUTE legacy functions (draft hiện chưa revoke). Nếu chốt revoke legacy thì test này phải được đánh dấu pre-M021 hoặc sửa expected-denied.
+- `20261117000800_authenticated_asset_crud_rls_test.sql`: đã đánh dấu pre-M021-only.
+- Allocator test và import test đã branch theo allocator EXECUTE privilege.
+
+### Execution readiness
+- Static review chưa hoàn tất toàn bộ SQL syntax; chỉ structural dollar-quote check + catalog signature check đã thực hiện.
+- M021 privilege contract còn một quyết định chưa chốt: legacy `update_asset_with_lock`/`set_asset_archived_with_lock` EXECUTE. M021 hiện giữ quyền để test compatibility; source audit không thấy runtime callers. Anchor serialize nhưng legacy RPC không có expected version/receipt nên stale snapshot có thể overwrite nếu caller còn dùng. Không tự revoke.
+- Không thực hiện SQL write/migration, chưa test concurrency, chưa Production.
+
+**Next:** chốt policy legacy RPC trước execution; nếu giữ thì chạy legacy lease test + actual two-session writer interleavings, nếu revoke thì sửa test suite và privilege assertions. Tiếp tục review draft-only.
