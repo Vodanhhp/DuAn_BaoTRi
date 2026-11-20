@@ -848,6 +848,14 @@ revoke all on function public.create_asset_with_code(
 -- documentation, but remove the SQL privilege gate from authenticated.
 revoke delete on table public.assets from authenticated;
 
+-- The Cloud Asset business-write contract is RPC-only. No direct table DML
+-- from service_role may bypass Asset anchor, Lease, payload validation or Receipt.
+revoke insert, update, delete on table public.assets from service_role;
+
+-- No current Settings deletion use-case is present in the repository. Keep the
+-- legacy direct INSERT/UPDATE bridge during compatibility, but close DELETE.
+revoke delete on table public.organization_settings from service_role;
+
 comment on function private.lock_asset_anchor(uuid, uuid) is
   'Internal transaction-scoped two-int advisory anchor for one organization + Asset pair.';
 comment on function private.lock_settings_global_shared() is
