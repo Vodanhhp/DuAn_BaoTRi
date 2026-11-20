@@ -5656,7 +5656,7 @@ Tạo `supabase/drafts/M021_PREFLIGHT_CHECKLIST_DRAFT.md` để gom execution ga
 ### 1. Hiện tượng
 - Website BAOTRI Mini tại `https://baotri.vieclamhp247.com` không truy cập được; trình duyệt trên PC và điện thoại (Brave) đều nhận 404.
 - Đã gửi lại các liên kết làm việc:
-  - Website: https://baotri.vieclamhp.com
+  - Website: https://baotri.vieclamhp247.com
   - Repository: https://github.com/Vodanhhp/DuAn_BaoTRi
   - Workflow run đã kiểm tra: https://github.com/Vodanhhp/DuAn_BaoTRi/actions/runs/44064036081
 - Lưu ý: đường dẫn website đúng theo cấu hình CNAME trong repository là `baotri.vieclamhp247.com`; đường dẫn ở danh sách trên chỉ là liên kết đã gửi trong trao đổi, không dùng làm căn cứ xác nhận domain.
