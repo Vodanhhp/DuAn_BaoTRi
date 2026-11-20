@@ -203,3 +203,12 @@ Further static review found the sequential security block checked schema USAGE a
 Also corrected the two-session protocol's trigger-wrapper test: a PostgreSQL trigger function must not be invoked as an ordinary SQL function. The protocol now checks its EXECUTE ACL via `has_function_privilege`; direct invocation of the ordinary Asset helper remains the permission-denied probe. Indirect trigger execution through permitted Settings DML remains tested separately.
 
 These are test-quality improvements only. No SQL was executed; M021 remains draft; no database schema/data/grants changed; Production untouched.
+
+
+## 20. M021 legacy full-snapshot RPC policy — 20/11/2026
+
+Resolved the legacy RPC decision in the draft: revoke EXECUTE on `public.update_asset_with_lock` from PUBLIC, anon, authenticated and service_role. The function remains defined for owner-level rollback/compatibility, but clients must use the versioned/idempotent `apply_asset_mutation_with_lock` path. Rationale: the legacy RPC writes a complete Asset snapshot and has no expected-version/receipt conflict guard; the Asset anchor only serializes requests and cannot prevent a stale snapshot overwriting newer fields.
+
+Keep `set_asset_archived_with_lock` available for now because it is a narrow archive/restore operation that validates the current lease token and does not accept a stale full Asset snapshot. Revisit when the Cloud lifecycle UI has a dedicated versioned mutation route.
+
+Updated M021 migration draft, sequential test and two-session protocol. The historical `supabase/tests/20261118000200_asset_edit_lock_lease_test.sql` calls the revoked legacy update RPC and is explicitly pre-M021 only; the new M021 sequential test checks the denied EXECUTE matrix and retains archive/restore checks. GitHub fetch-back verified the files. No SQL executed, no DB changes; M021 remains draft, Production untouched.
