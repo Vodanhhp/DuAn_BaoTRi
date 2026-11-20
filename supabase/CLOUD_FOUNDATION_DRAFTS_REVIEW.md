@@ -2396,3 +2396,58 @@ Các function nghiệp vụ đều SECURITY DEFINER, owner postgres, search_path
 6. Catalog hiện tại là trạng thái Test; chưa chứng minh Production có cùng migrations/grants.
 
 Chưa thay đổi SQL, RPC, grants, code hoặc Supabase. Candidate chỉ được chốt sau khi review toàn bộ lock order và chạy concurrency tests hai session.
+
+## 89. Lock namespace, Counter và Settings – refinement của Candidate Asset anchor
+
+### Tách key space advisory lock
+
+Import hiện dùng `pg_advisory_xact_lock(bigint)` với khóa hash của `organization_id:mutation_id`. Không nên dùng chung cách tạo bigint cho Asset anchor nếu muốn tách miền khóa rõ ràng.
+
+PostgreSQL cung cấp hai key space advisory lock không chồng lấn: một khóa bigint 64-bit và cặp hai khóa integer 32-bit. Vì vậy candidate ưu tiên Asset anchor dùng overload hai integer, còn mutation-ID lock hiện tại tiếp tục dùng bigint. Tài liệu PostgreSQL: https://www.postgresql.org/docs/15/functions-admin.html#FUNCTIONS-ADVISORY-LOCKS
+
+- Key pair phải được tạo ổn định từ cả organization_id và asset_id.
+- Hash collision chỉ gây serialize thừa; không được gây bỏ qua khóa hoặc thay thế authorization.
+- Không dùng session-level lock; chỉ dùng transaction-level lock để tự giải phóng khi commit/rollback.
+- Phải dùng cùng thuật toán/key pair trong mọi RPC Asset và future delete RPC; không được để mỗi function tự chọn seed/format khác nhau.
+
+### Lock order xuyên suốt các miền
+
+Thứ tự candidate sau refinement:
+1. Auth + authorization precheck.
+2. Asset anchor (two-int advisory transaction lock).
+3. Mutation-ID advisory bigint (chỉ function có idempotency key).
+4. Settings/config read.
+5. Counter row (khi create/import code cần reconcile).
+6. Lease row (nếu có).
+7. Asset row.
+8. Receipt/import ledger và dependency checks theo từng flow.
+
+Đây là thứ tự mục tiêu để review, không có nghĩa mọi function đều cần đi qua toàn bộ các bước. Riêng mutation hiện tại có Receipt lookup trước Lease; khi retrofit anchor phải lấy Asset anchor trước fast replay, còn thứ tự bên trong flow vẫn cần bảo toàn idempotency contract.
+
+### Counter và Settings – phát hiện bổ sung
+
+- `create_asset_with_code` đọc `organization_settings.asset_code_config`, đọc MAX code trong `assets`, UPSERT `asset_code_counters`, rồi INSERT Asset.
+- `import_asset_preserving_identity` đọc Settings, reconcile Counter bằng UPSERT nếu code nhận diện được, rồi khóa/INSERT Asset.
+- Hai đường cùng serialize theo Counter row của organization/category; Asset anchor không thay thế Counter.
+- Runtime `saveCloudAssetCodeConfig()` đọc Settings rồi INSERT/UPDATE trực tiếp qua PostgREST; policy RLS yêu cầu `settings.manage`. Đây là writer khác miền, hiện không tham gia advisory lock.
+- RPC create/import hiện đọc Settings không khóa. Nếu cần bảo đảm một operation dùng trọn bộ cấu hình cũ hoặc mới, cần thiết kế riêng Settings serialization. `SELECT ... FOR SHARE` chỉ hữu ích khi row đã tồn tại; nó không khóa được row Settings chưa tồn tại.
+- Candidate sạch hơn là chuyển Settings write sang RPC lấy organization-scoped advisory lock độc quyền, còn create/import lấy shared lock cùng key trước khi đọc config. Cần xác minh tổ chức luôn có Settings row hoặc quy định rõ insert-first behavior. Chưa thiết kế/triển khai thay đổi này.
+
+### Test matrix cần có sau khi hoàn thiện design
+
+| Test | Interleaving | Invariant |
+|---|---|---|
+| A1 | acquire ↔ delete khi chưa có Lease | chỉ một winner; không tạo Lease mồ côi; Asset không bị xóa trong khi acquire thành công |
+| A2 | acquire/takeover ↔ delete khi Lease đã có | không deadlock; token/Lease và Asset nhất quán |
+| A3 | mutation ↔ delete | mutation commit trước hoặc delete commit trước theo anchor; không có Receipt mới tham chiếu Asset đã xóa trái policy |
+| A4 | heartbeat/release ↔ delete | không Lease orphan hoặc heartbeat gia hạn Lease cho Asset đã bị xóa |
+| A5 | import ↔ delete cùng Asset UUID | ledger replay/Asset/dependency đồng nhất; không có orphan ledger ngoài retention policy |
+| A6 | allocator với p_id ↔ import cùng UUID | một Asset duy nhất; code/counter không sai; collision được trả đúng hợp đồng |
+| A7 | cùng mutation_id nhưng khác asset | một ledger owner; request còn lại bị từ chối mismatch, không deadlock |
+| A8 | create/import khác Asset cùng category | Counter tăng đơn điệu, không trùng code |
+| A9 | Settings update ↔ create/import | xác định rõ winner semantics và config version được dùng |
+| A10 | FK reference INSERT ↔ delete | RESTRICT bảo vệ lịch sử; không xóa mất liên kết |
+| A11 | legacy update/archive ↔ delete | nếu còn EXECUTE thì cùng anchor; nếu revoke thì client cũ không bị gãy bất ngờ |
+| A12 | direct PostgREST DELETE | bị SQL privilege chặn sau hardening |
+
+Tất cả test phải chạy hai connection thật, kiểm tra SQLSTATE, wait graph, commit/rollback và invariant cuối. Không chạy ở checkpoint này; chưa có migration/harness.
