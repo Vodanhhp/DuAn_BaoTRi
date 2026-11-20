@@ -2353,3 +2353,46 @@ Các đường phải tham gia cùng protocol:
 - Kiểm thử hai session với acquire/delete, mutation/delete, heartbeat/delete và reference-insert/delete; ghi wait graph, SQLSTATE và invariant.
 
 Đây là candidate design, chưa phải protocol được triển khai hoặc phê duyệt. Không thêm advisory lock vào migration hiện tại ở checkpoint này.
+
+
+## 88. RPC inventory và retrofit matrix cho Candidate Asset anchor – 20/11/2026
+
+Đã đối chiếu catalog PostgreSQL hiện tại trên BAOTRI-Mini-Test với migrations và GitHub source. Đây là inventory read-only; chưa sửa function hoặc quyền.
+
+### Inventory function đang tồn tại
+
+| Function | EXECUTE authenticated / anon | Runtime / vai trò | Retrofit candidate |
+|---|---|---|---|
+| `acquire_asset_edit_lock(uuid,uuid,uuid,text)` | Có / Không | Runtime khi mở editor; INSERT/UPSERT Lease | Bắt buộc: advisory anchor trước kiểm tra Asset và Lease UPSERT |
+| `heartbeat_asset_edit_lock(uuid,uuid,uuid)` | Có / Không | Runtime heartbeat; UPDATE Lease | Bắt buộc: advisory anchor trước UPDATE Lease |
+| `release_asset_edit_lock(uuid,uuid,uuid)` | Có / Không | Runtime đóng editor; DELETE Lease theo user/token | Bắt buộc: advisory anchor trước DELETE Lease |
+| `apply_asset_mutation_with_lock(uuid,uuid,uuid,uuid,timestamptz,jsonb)` | Có / Không | Runtime lưu Asset linked; Lease → Asset → Receipt | Bắt buộc: advisory anchor trước receipt/Lease/Asset; giữ kiểm tra receipt và replay semantics |
+| `import_asset_preserving_identity(uuid,uuid,text,jsonb,uuid)` | Có / Không | Runtime import batch Local → Cloud; đã có advisory theo org + mutation ID | Bắt buộc: thêm Asset anchor trước mutation-ID advisory; sau đó mới Settings/Counter/Asset/ledger |
+| `create_asset_with_code(uuid,text,text,text,uuid,text,text,text,date,text,text,date,boolean,text,text)` | Có / Không | RPC allocator có trong repository, chưa thấy caller runtime | Bắt buộc nếu tiếp tục cho phép gọi: xác định/generate Asset UUID, lấy Asset anchor trước Settings/Counter/INSERT |
+| `update_asset_with_lock(...)` | Có / Không | Legacy RPC và helper wrapper còn trong source; chưa thấy bằng chứng là đường save hiện hành | Bắt buộc nếu giữ; nếu xác nhận không còn caller thì deprecate/revoke EXECUTE riêng |
+| `set_asset_archived_with_lock(uuid,uuid,uuid,boolean)` | Có / Không | Legacy archive/restore RPC và helper wrapper còn trong source; chưa thấy caller hiện hành | Bắt buộc nếu giữ; nếu loại bỏ thì deprecate/revoke EXECUTE riêng |
+| `list_asset_edit_locks(uuid)` | Có / Không | Read-only metadata | Không cần Asset anchor |
+| `set_asset_updated_at()` | Trigger, không phải API | BEFORE UPDATE timestamp trigger | Không tự lấy anchor; writer phải lấy anchor trước UPDATE |
+
+Các function nghiệp vụ đều SECURITY DEFINER, owner postgres, search_path rỗng và row_security=off; catalog xác nhận authenticated có EXECUTE, anon không có. Function còn EXECUTE vẫn là bề mặt API dù UI hiện không gọi.
+
+### Thứ tự retrofit đề xuất
+
+- **Acquire:** Auth + permission → Asset anchor → xác nhận Asset → Lease INSERT/UPSERT.
+- **Heartbeat/release:** xác thực → Asset anchor → thao tác Lease đúng user/token. Release hiện chỉ kiểm tra auth + holder/token, không kiểm tra assets.update; không tự đổi permission contract.
+- **Apply mutation:** Auth + permission → Asset anchor → receipt fast lookup/recheck → Lease FOR UPDATE → validate token/expiry → Asset FOR UPDATE → UPDATE + Receipt. Lấy anchor trước cả fast replay.
+- **Import:** Auth + assets.import → Asset anchor → mutation-ID advisory hiện có → ledger replay → Settings → Counter UPSERT → Asset FOR UPDATE/INSERT → import ledger. Không đảo thứ tự hai advisory lock.
+- **Allocator:** Auth + assets.create → xác định/generate UUID → Asset anchor → Settings/aggregate → Counter UPSERT → Asset INSERT. Counter vẫn là serialization point theo organization/category.
+- **Legacy update/archive:** nếu giữ, anchor → Lease FOR UPDATE → Asset FOR UPDATE; nếu không còn caller thì chỉ revoke sau kiểm tra client cũ/backward compatibility.
+- **Read-only list** và timestamp trigger không phải writer endpoint cần anchor.
+
+### Giới hạn cần giữ rõ
+
+1. Asset anchor chỉ serialize thao tác cùng organization + Asset; không thay thế authorization và không tự giải quyết membership/permission revoke race.
+2. Import đang có advisory theo organization + mutation ID; thứ tự phải cố định Asset anchor trước mutation-ID lock.
+3. Counter và Settings writer là miền khóa khác; Asset anchor không giải quyết race cấu hình/mã.
+4. Direct PostgREST DELETE chưa lấy anchor; cần đóng đường này trước khi coi protocol kín.
+5. Legacy helpers còn EXECUTE authenticated; cần xác minh client cũ trước khi revoke.
+6. Catalog hiện tại là trạng thái Test; chưa chứng minh Production có cùng migrations/grants.
+
+Chưa thay đổi SQL, RPC, grants, code hoặc Supabase. Candidate chỉ được chốt sau khi review toàn bộ lock order và chạy concurrency tests hai session.
