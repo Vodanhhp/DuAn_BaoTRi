@@ -917,6 +917,7 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
       // Re-read the latest Log inside the write transaction so an older tab
       // cannot erase a newer completion history or edit-history entry.
       const existing = await db.logs.get(entry.id)
+      if (existing && existing.updatedAt !== entry.updatedAt) return null
       const revertedCompletion = Boolean(existing?.result && !entry.result)
       const editHistory = revertedCompletion
         ? [...(existing?.editHistory ?? []), {
@@ -930,11 +931,15 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
           }]
         : existing?.editHistory ?? entry.editHistory
       const completedAt = entry.result ? entry.completedAt || existing?.completedAt || now() : undefined
-      const next: Log = { ...entry, dueDate: entry.dueDate || undefined, requestedBy: entry.requestedBy?.trim() || userName, performedBy: entry.result ? (entry.performedBy.trim() || userName) : entry.performedBy.trim(), result: entry.result || '', completedAt, editHistory }
+      const next: Log = { ...entry, updatedAt: now(), dueDate: entry.dueDate || undefined, requestedBy: entry.requestedBy?.trim() || userName, performedBy: entry.result ? (entry.performedBy.trim() || userName) : entry.performedBy.trim(), result: entry.result || '', completedAt, editHistory }
       await db.logs.put(next)
       await queueChange('logs', next.id)
       return next
     })
+    if (!value) {
+      flash('Phiếu đã được thay đổi ở nơi khác. Hãy đóng và mở lại biểu mẫu trước khi lưu.')
+      return
+    }
     setModal(null); setEditingLog(null)
     flash(value.result ? 'Đã lưu Phiếu YC hoàn thành' : 'Đã lưu Phiếu YC, đang chờ xử lý')
   }
