@@ -4875,3 +4875,22 @@ Chỉ đọc migration/test source và cập nhật thiết kế tài liệu. Ch
 - Vì vậy không thể gọi các test Node hiện hữu là DB concurrency harness. Cũng không nên thêm PostgreSQL client vào dependencies của ứng dụng trình duyệt BAOTRI Mini chỉ để chạy kiểm thử DB.
 - Hướng phù hợp khi được phép thực thi: dùng psql với hai process/connection độc lập, hoặc một runner kiểm thử riêng ngoài runtime ứng dụng; connection string/credential chỉ lấy từ môi trường bảo mật, không ghi vào GitHub, tài liệu hoặc log.
 - Chưa tạo runner, chưa thêm dependency, chưa sửa package.json và chưa truy cập secret. Đây là kết quả rà soát read-only.
+
+
+## 100. Đánh giá đường xóa Asset – quyết định thiết kế đề xuất – 20/11/2026
+
+Đã đọc trực tiếp business schema, Lease migration, permission/RLS migration và Receipt migration.
+
+### Bằng chứng
+- authenticated hiện được cấp DELETE trên public.assets; policy RLS yêu cầu assets.delete. Đây là khả năng direct PostgREST DELETE ở tầng DB, không phải bằng chứng UI đang gọi nó.
+- Lease FK tới Asset dùng ON DELETE CASCADE.
+- Bảy quan hệ nghiệp vụ giữ Asset bằng ON DELETE RESTRICT: maintenance task, maintenance plan, checklist template, checklist result, maintenance log, inventory movement liên kết Asset và metadata ảnh. Lịch sử không tự bị xóa theo Asset.
+- Receipt và import ledger có asset_id scalar, không FK; hard-delete cần chính sách lưu dấu vết riêng.
+
+### Kết luận đề xuất
+1. Đóng direct DELETE từ authenticated bằng migration REVOKE DELETE trên public.assets; trước triển khai phải kiểm tra effective grants và xác nhận không có UI caller phụ thuộc.
+2. Nghiệp vụ mặc định giữ hồ sơ, dùng archive hoặc trạng thái Thanh lý; không xóa lịch sử bảo trì/checklist/ảnh.
+3. Chưa tạo delete RPC. Khóa Lease rồi Asset chưa đủ vì Lease row có thể chưa tồn tại và acquire có thể INSERT/UPSERT Lease. Cần một serialization anchor chung cho tất cả writer; mutation hiện theo Lease → Asset nên không được thêm riêng delete path với lock order khác.
+4. Hard-delete chỉ xem xét sau khi chốt retention/audit, dependency checks, quyền active membership + assets.delete, và lock protocol chung.
+
+Chưa thay đổi grants, migration, RPC hoặc Supabase. Đây là đề xuất kiến trúc, không phải hardening đã triển khai.
