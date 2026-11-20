@@ -6,11 +6,11 @@
 ## Promotion blockers / decisions
 
 - [x] Re-fetch Test migration tracker read-only: it reports only version `20261120042433` (Migration 020 P0); candidate M021 version `20261120050000` is absent. Tracker completeness is not assumed; recheck before apply.
-- [ ] Decide legacy RPC EXECUTE policy for `update_asset_with_lock` and `set_asset_archived_with_lock`.
-  - Repository source audit found no runtime callers; active linked-Asset writer uses `apply_asset_mutation_with_lock`.
-  - These legacy full-snapshot writers do not carry expected-version/receipt conflict protection. Asset-anchor serialization is not stale-write detection.
-  - **Recommendation:** revoke EXECUTE from `authenticated` and `service_role` for these two RPCs if no external client compatibility requirement exists. Keep owner-level maintenance access; do not grant PUBLIC/anon.
-  - If revocation is selected, adjust the M021 sequential regression and mark the historical lease test pre-M021 / update its expected-denied assertions. If retained, test stale-write ordering and explicitly accept documented lost-update risk.
+- [x] Resolve legacy RPC EXECUTE policy.
+  - Revoke EXECUTE on `update_asset_with_lock` from PUBLIC, anon, authenticated and service_role. The full-snapshot RPC has no expected-version/Receipt guard; an Asset anchor only serializes and cannot prevent stale overwrite. Keep its definition for owner-level rollback/maintenance only.
+  - Retain `set_asset_archived_with_lock` for authenticated/service_role during the compatibility window. It is a narrow archive/restore operation that validates the current lease token and does not accept a full stale Asset snapshot. Revisit when Cloud lifecycle UI has a dedicated versioned mutation route.
+  - Current repository writer uses `apply_asset_mutation_with_lock`; no runtime call sites were found for the two legacy helper wrappers. External/old clients cannot be ruled out.
+  - Sequential test expects update RPC denied and archive/restore available. Historical lease SQL test is pre-M021 only because it calls the revoked update RPC.
 - [ ] Verify allocator `create_asset_with_code` is revoked from authenticated/service_role; test confirms denied and import counter reconciliation remains valid.
 - [ ] Confirm direct Asset INSERT/UPDATE/DELETE denied to service_role and direct DELETE denied to authenticated, including column ACLs.
 - [ ] Confirm Settings DELETE denied to service_role; authenticated INSERT/UPDATE compatibility retained only as required by live Settings writer and statement trigger.
@@ -26,7 +26,7 @@
 - [ ] Run allocator test (branch aware).
 - [ ] Run import-preserving-identity test (branch aware; verify counter last_value after RESET ROLE).
 - [ ] Run business modules RLS integration test.
-- [ ] Run lease test only if legacy RPC EXECUTE retained; otherwise run updated compatibility/denial version.
+- [ ] Run the updated M021 lease/compatibility test: archive/restore remains executable; full-snapshot update must be denied. Historical lease SQL test is pre-M021 only.
 - [ ] Do not treat the historical direct Asset CRUD test as post-M021; it is pre-M021 only.
 - [ ] Record exact SQLSTATE, PASS/FAIL and before/after state snapshots; no claim of pass without execution.
 
@@ -41,7 +41,7 @@
 ## Safe execution order
 
 1. Re-read all current draft SQL and tests; run parser/structural checks outside database if available.
-2. Finalize the legacy EXECUTE policy and update tests/docs accordingly.
+2. Legacy EXECUTE policy is resolved in M021: revoke full-snapshot update; retain token-validated archive/restore. Reconfirm draft/test/checklist consistency.
 3. Confirm Test-only target and explicit approval for applying M021.
 4. Apply migration to Test only; verify function definitions, effective privileges, triggers, and migration history read-only.
 5. Run sequential regression suite.
@@ -61,8 +61,8 @@
 - Read-only BAOTRI-Mini-Test `pg_proc` inspection confirms all nine function identity signatures in the sequential test match the currently deployed function signatures: acquire, heartbeat, release, apply mutation, import, update legacy, archive legacy, list locks, allocator.
 - Current baseline: all listed functions are SECURITY DEFINER, owned by postgres, `search_path=''`, `row_security=off`; authenticated and service_role EXECUTE=true; anon=false. This is the pre-M021 baseline, not a post-M021 PASS.
 - GitHub caller audit nuance: `updateAssetWithEditLock` and `setAssetArchivedWithEditLock` are exported helper definitions in `src/lib/assetEditLocks.ts`, but repository search found no import/call sites beyond those definitions. Same for `createCloudAsset()` in `src/lib/assetsCloud.ts`. This is stronger than saying the helpers do not exist; it does not rule out external/old clients.
-- The M021 sequential test currently expects legacy update/archive EXECUTE retained for authenticated/service_role and exercises both functions. If the final policy is revoke, both the test calls and EXECUTE assertions must be changed to expect denial; the historical lease test must be marked pre-M021 or adapted.
+- M021 policy is finalized: `update_asset_with_lock` is denied to all application roles; `set_asset_archived_with_lock` remains available to authenticated/service_role and is exercised for archive + restore. The sequential test checks this matrix.
 
 - [ ] Verify no EXECUTE for authenticated/anon/service_role on every private helper, including `lock_two_int`, both Settings lock helpers, and the Settings trigger wrapper; trigger wrapper ACL must be inspected via `has_function_privilege`, not invoked as a normal function.
-- [ ] Verify `update_asset_with_lock` EXECUTE is revoked from PUBLIC/anon/authenticated/service_role; keep `set_asset_archived_with_lock` EXECUTE only if lease-token and archive/restore tests pass.
+- [x] Draft contract: `update_asset_with_lock` EXECUTE revoked from PUBLIC/anon/authenticated/service_role; `set_asset_archived_with_lock` retained for authenticated/service_role and denied to anon. Runtime verification remains pending until M021 is applied to Test.
 - [ ] Confirm historical lease test is pre-M021 only because it calls revoked `update_asset_with_lock`; use the M021 sequential draft for post-M021 coverage.
