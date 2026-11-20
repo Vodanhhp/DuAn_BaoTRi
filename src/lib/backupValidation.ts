@@ -34,6 +34,11 @@ export function isValidBackupV3(value: unknown): value is Record<string, unknown
   if (typeof value.exportedAt !== 'string' || !value.exportedAt.trim()) return false
   if (!tableKeys.every(key => hasValidRows(value[key]))) return false
   if (!Array.isArray(value.customAssetCategories)) return false
+  // Inventory locations were added after the original v3 format. Keep older
+  // v3 backups valid, but validate the fields when they are present.
+  if ('inventoryLocations' in value && (!Array.isArray(value.inventoryLocations) ||
+      value.inventoryLocations.some(location => typeof location !== 'string' || !location.trim()))) return false
+  if ('inventoryLocationEnabled' in value && typeof value.inventoryLocationEnabled !== 'boolean') return false
 
   // Preserve Checklist and maintenance-request relationships during restore.
   const assets = new Map((value.assets as Array<Record<string, unknown>>).map(row => [row.id as string, row]))
