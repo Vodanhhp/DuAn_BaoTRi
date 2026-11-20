@@ -915,16 +915,24 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
   }
   const completeTask = async (t: Task) => {
     if (blockViewer('ghi nhận hoàn thành công việc')) return
-    const completedAt = now()
-    const completed = { ...t, status: 'Hoàn thành' as const, completedAt, updatedAt: completedAt }
-    const log: Log = { id: uid(), assetId: t.assetId, taskId: t.id, date: today(), kind: 'Bảo dưỡng định kỳ', description: t.title, parts: '', readings: t.readings, requestedBy: userName, result: 'Đạt', completedAt, performedBy: userName }
-    await db.transaction('rw', [db.tasks, db.logs, db.syncQueue], async () => {
+    const outcome = await db.transaction('rw', [db.tasks, db.logs, db.syncQueue], async () => {
+      // Re-read current task state inside the transaction. A stale row from
+      // another tab must not create a second completion Log.
+      const current = await db.tasks.get(t.id)
+      if (!current) return 'missing' as const
+      if (current.status === 'Hoàn thành') return 'already-completed' as const
+      const completedAt = now()
+      const completed = { ...current, status: 'Hoàn thành' as const, completedAt, updatedAt: completedAt }
+      const log: Log = { id: uid(), assetId: current.assetId, taskId: current.id, date: today(), kind: 'Bảo dưỡng định kỳ', description: current.title, parts: '', readings: current.readings, requestedBy: userName, result: 'Đạt', completedAt, performedBy: userName }
       await db.tasks.put(completed)
       await db.logs.add(log)
-      await queueChange('tasks', t.id)
+      await queueChange('tasks', current.id)
       await queueChange('logs', log.id)
+      return 'completed' as const
     })
-    flash('Đã ghi nhận hoàn thành')
+    if (outcome === 'completed') flash('Đã ghi nhận hoàn thành')
+    else if (outcome === 'already-completed') flash('Công việc này đã được ghi nhận hoàn thành trước đó')
+    else flash('Không tìm thấy công việc; chưa tạo nhật ký hoàn thành')
   }
   const archiveAsset = async (a: Asset) => {
     if (blockViewer('đưa thiết bị vào lưu kho')) return
