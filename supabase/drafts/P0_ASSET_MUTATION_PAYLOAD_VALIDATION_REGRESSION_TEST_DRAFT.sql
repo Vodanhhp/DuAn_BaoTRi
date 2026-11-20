@@ -186,38 +186,38 @@ begin
   );
 
   perform pg_temp.assert_invalid_asset_payload(
-    v_org, v_asset, v_token, v_actor, v_expected_updated_at,
+    v_org, v_asset, v_token, v_expected_updated_at,
     v_payload || jsonb_build_object('unsupported_test_key', 'extra'),
     'P03 unsupported extra key'
   );
 
   perform pg_temp.assert_invalid_asset_payload(
-    v_org, v_asset, v_token, v_actor, v_expected_updated_at,
+    v_org, v_asset, v_token, v_expected_updated_at,
     'null'::jsonb, 'P04a JSON null'
   );
 
   perform pg_temp.assert_invalid_asset_payload(
-    v_org, v_asset, v_token, v_actor, v_expected_updated_at,
+    v_org, v_asset, v_token, v_expected_updated_at,
     '"string"'::jsonb, 'P04b JSON string'
   );
 
   perform pg_temp.assert_invalid_asset_payload(
-    v_org, v_asset, v_token, v_actor, v_expected_updated_at,
+    v_org, v_asset, v_token, v_expected_updated_at,
     '123'::jsonb, 'P04c JSON number'
   );
 
   perform pg_temp.assert_invalid_asset_payload(
-    v_org, v_asset, v_token, v_actor, v_expected_updated_at,
+    v_org, v_asset, v_token, v_expected_updated_at,
     'true'::jsonb, 'P04d JSON boolean'
   );
 
   perform pg_temp.assert_invalid_asset_payload(
-    v_org, v_asset, v_token, v_actor, v_expected_updated_at,
+    v_org, v_asset, v_token, v_expected_updated_at,
     '[]'::jsonb, 'P04e JSON array'
   );
 
   perform pg_temp.assert_invalid_asset_payload(
-    v_org, v_asset, v_token, v_actor, v_expected_updated_at,
+    v_org, v_asset, v_token, v_expected_updated_at,
     null::jsonb, 'P04f SQL NULL'
   );
 
