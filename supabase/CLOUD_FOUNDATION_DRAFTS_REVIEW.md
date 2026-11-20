@@ -3033,7 +3033,7 @@ The Test pg_locks probe observed two-int keys with `objsubid=2` and mutation-ID 
 
 ### Rollback-only DDL and sequential runtime test
 
-Draft `supabase/drafts/M021_asset_lock_anchor_retrofit_DRAFT.sql` and its sequential test were executed on BAOTRI-Mini-Test inside a transaction ending in ROLLBACK. All seven writer paths were exercised using an active Admin fixture: acquire, heartbeat, apply, identical replay, release, import existing identity, legacy update, archive/restore, release. The Settings statement trigger was exercised by authenticated zero-row UPDATE.
+Draft `supabase/drafts/M021_asset_lock_anchor_retrofit_DRAFT.sql` and `supabase/drafts/M021_asset_lock_anchor_retrofit_TEST_DRAFT.sql` were executed on BAOTRI-Mini-Test inside a transaction ending in ROLLBACK. The manual two-physical-session protocol is prepared at `supabase/drafts/M021_TWO_SESSION_TEST_PROTOCOL_DRAFT.md` but has not been run. All seven writer paths were exercised using an active Admin fixture: acquire, heartbeat, apply, identical replay, release, import existing identity, legacy update, archive/restore, release. The Settings statement trigger was exercised by authenticated zero-row UPDATE.
 
 Within the transaction, observed: authenticated Asset DELETE false; authenticated/service_role allocator EXECUTE false; private schema USAGE false to authenticated; acquire RPC EXECUTE remained true; Asset anchor two-int lock, Settings shared + exclusive locks, and mutation-ID bigint locks were present. After rollback, private schema/trigger were absent, authenticated Asset DELETE and allocator EXECUTE returned to baseline true, fixture Lease count was zero and no P0/M021 test Receipt remained.
 
