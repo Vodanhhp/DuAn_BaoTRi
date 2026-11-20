@@ -48,7 +48,7 @@ where organization_id='00000000-0000-0000-0000-000000000000'::uuid;
 do $test$
 declare
   v_org uuid := 'dfb443ec-a1ee-496b-842c-0bef3f50b8ce';
-  v_asset_id uuid;
+  v_asset_id uuid := '872077a8-9b75-402d-908a-93fa5bcd9749';
   v_asset public.assets;
   v_lease jsonb;
   v_token uuid;
@@ -65,17 +65,10 @@ begin
     raise exception 'M021 Test Admin fixture lacks required permissions';
   end if;
 
-  select a.id into v_asset_id
-  from public.assets a
-  where a.organization_id=v_org
-    and not exists (
-      select 1 from public.asset_edit_locks l
-      where l.organization_id=a.organization_id and l.asset_id=a.id
-        and l.expires_at>pg_catalog.clock_timestamp()
-    )
-  order by a.created_at,a.id
-  limit 1;
-  if v_asset_id is null then raise exception 'No unlocked Asset fixture found'; end if;
+  -- Fixed disposable Test fixture; never read the internal Lease table as authenticated.
+  if not exists(select 1 from public.assets where organization_id=v_org and id=v_asset_id) then
+    raise exception 'M021 Asset fixture missing';
+  end if;
 
   select * into v_asset from public.assets where organization_id=v_org and id=v_asset_id;
 
