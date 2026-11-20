@@ -537,3 +537,15 @@ Người dùng xác nhận:
 
 - `authenticated` hiện có quyền SQL `INSERT` trên `public.maintenance_logs`; RLS policy `maintenance_logs_insert_permission` cho phép INSERT khi `has_org_permission(organization_id, 'logs.create')` đúng. Vì vậy đây không chỉ là giả thuyết về service-role/RPC: một thành viên có quyền tạo Log có thể đi qua Data API trực tiếp, và các FK hiện tại chưa chặn liên kết Task/Checklist khác thiết bị trong cùng tenant.
 - Xếp finding này là **Cloud integrity/security gap cần ưu tiên xử lý trước khi mở rộng quyền tạo Log Cloud**. Local guard không thay thế được kiểm tra ở DB. Không thử INSERT khai thác, không thay đổi grants/policies hay schema trong lượt này.
+
+
+## 20. Rà soát đường ghi trực tiếp Log/Checklist trên Cloud (20/11/2026)
+
+- Truy vấn chỉ đọc trên `BAOTRI-Mini-Test` xác nhận `authenticated` có SQL privilege `INSERT` trên `maintenance_logs` và `checklist_results`. RLS tương ứng chỉ kiểm tra `logs.create` hoặc `checklist.result.create` theo `organization_id`; không tự kiểm tra Asset/Task/Checklist reference cùng thiết bị.
+- `maintenance_tasks` hiện cấp INSERT/UPDATE/DELETE cho `authenticated`, RLS kiểm tra lần lượt `maintenance.create/update/delete`. Checklist templates và versions có INSERT; template có UPDATE; kết quả Checklist và Log chỉ có INSERT/SELECT theo chính sách append-only.
+- Không tìm thấy trigger nghiệp vụ trên `maintenance_logs`, `checklist_results` hoặc `maintenance_tasks`; chỉ có trigger cập nhật `updated_at` trên `maintenance_tasks` và `checklist_templates`. Truy vấn các hàm PostgreSQL thường trong schema public/app_private theo tên/nội dung liên quan Log/Task/Checklist không trả về RPC ghi nghiệp vụ phù hợp.
+- Đối chiếu repository: `syncLocalDatabase()` chỉ được định nghĩa trong legacy `src/lib/cloudSync.ts`, không có caller runtime; README và audit hiện hành xác nhận module này không được bật. Inventory/Maintenance/Checklist hiện ghi Dexie + syncQueue; không tìm thấy Cloud writer runtime cho Log hoặc Checklist. `syncMapping.ts` chỉ là pure mapping, không gọi Supabase.
+- Vì vậy quyền INSERT hiện hữu là bề mặt API có thể bị gọi trực tiếp bởi client authenticated đủ permission, nhưng không phải bằng chứng ứng dụng hiện đang đẩy Log/Checklist lên Cloud. Không được nhầm quyền DB với một luồng đồng bộ đang hoạt động.
+- Truy vấn preflight dữ liệu hiện hữu trên Test cho kết quả: 0 Log có Task khác Asset; 0 Log có ChecklistResult khác Asset; 0 orphan Task/Checklist reference; 0 Task/Checklist thiếu Asset. Đây chỉ là ảnh chụp dữ liệu hiện tại, không đóng được lỗ hổng ghi mới.
+- Không thay đổi grants/RLS/schema/dữ liệu; không gọi INSERT/UPDATE/DELETE hoặc RPC ghi. Chưa tạo migration vì cần triển khai đồng bộ RPC tạo Log/Checklist và thu hồi direct INSERT theo một cutover an toàn; không được revoke trước khi có đường ghi thay thế được test.
+- Finding mở: bổ sung FK ghép để bảo đảm cùng Asset ở tầng DB; thiết kế RPC có kiểm tra active membership/permission, tenant boundary và idempotency; sau khi RPC được triển khai/test mới thu hồi direct INSERT phù hợp. Với Task CRUD, cần rà soát riêng quyền xóa và mô hình history trước khi mở worker.
