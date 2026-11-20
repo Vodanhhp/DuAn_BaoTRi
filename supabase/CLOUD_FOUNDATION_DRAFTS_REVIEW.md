@@ -2231,3 +2231,21 @@ Phạm vi: chỉ các writer/caller Cloud hiện có hoặc DB capability có th
 - Dùng hai session DB độc lập, barrier đồng bộ tại điểm ngay trước RPC/statement; ghi lại begin/lock wait/commit/SQLSTATE và kiểm tra invariant sau mỗi race.
 - Deadlock được ghi nhận theo SQLSTATE 40P01; serialization/unique/lease conflict phải phân biệt, không gom thành “test fail” chung.
 - Không chạy khi chưa có phê duyệt rõ ràng cho test có ghi dữ liệu. Checkpoint này chỉ chốt kịch bản và winner semantics.
+
+## 83. Existing Asset SQL test coverage vs true concurrency – 20/11/2026
+
+Đã đọc hai test scripts hiện có:
+- `20261118000200_asset_edit_lock_lease_test.sql`: kiểm tra acquire/deny live lease, heartbeat, wrong-token release, direct UPDATE bị chặn, archive/restore qua Lease, release/transfer, expiry/takeover và stale token. Script chạy các bước tuần tự trong một transaction; không mở hai DB session đồng thời.
+- `20261118000300_asset_mutation_receipts_test.sql`: kiểm tra receipt replay cùng mutation, payload khác bị từ chối, actor khác không replay, stale expected version, wrong token và archive payload. Cũng là kiểm thử tuần tự trong một transaction; không chứng minh race hai transaction.
+- Migration 018 chỉ sửa điều kiện validate payload bằng cách thay biểu thức kiểm tra object length; không bổ sung concurrency harness.
+
+### Coverage còn thiếu trước khi gọi là concurrency-tested
+1. Hai session cùng acquire khi Lease hết hạn và cùng acquire khi chưa có Lease.
+2. Hai session apply cùng mutation ID/payload và cùng mutation ID nhưng payload khác; xác minh chỉ một transaction tạo receipt.
+3. Mutation ↔ heartbeat, mutation ↔ release và mutation ↔ takeover Lease bằng barrier thật.
+4. Asset DELETE ↔ mutation/heartbeat/acquire. Test này đặc biệt quan trọng vì authenticated vẫn có DELETE privilege + RLS `assets.delete`, trong khi Lease FK cascade từ Asset.
+5. Import khác mutation ID cùng category; import ↔ allocator; hai import trùng UUID/code.
+6. Settings update ↔ import/allocator khi reader không khóa Settings.
+
+### Kết luận
+Các test hiện tại chứng minh nhiều invariant logic ở đường tuần tự, không phải concurrent interleaving. Không được ghi trạng thái P0/P1 là PASS chỉ dựa trên hai script này. Cần harness hai session độc lập, barrier đồng bộ, thu SQLSTATE/lock wait và kiểm tra invariant sau commit/rollback. Chưa chạy test, không ghi dữ liệu.
