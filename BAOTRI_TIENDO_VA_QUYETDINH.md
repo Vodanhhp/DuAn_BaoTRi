@@ -5319,3 +5319,35 @@ Vì vậy không thể chạy nguyên trạng toàn bộ các test này sau M021
 - [ ] Chưa promotion/apply M021, chưa chạy sequential hoặc concurrency tests.
 
 **Bước tiếp theo:** audit đầy đủ direct DML/service_role call-sites trong Edge Functions và source; xác minh các grants còn lại; sau đó đề xuất bản chỉnh M021 + bộ test tương thích. Giữ nguyên M021 ở trạng thái draft cho đến khi các điểm này được xử lý.
+
+
+## 118. Mở rộng audit direct DML service_role – Asset và Settings – 20/11/2026
+
+Tiếp tục caller audit theo §117. Đối chiếu effective table grants trên Test và tìm kiếm source/Edge Functions trong repo. Chỉ đọc, không thay đổi database.
+
+### Kết quả privilege thực tế
+- 'service_role' hiện có INSERT, UPDATE, DELETE trên 'public.assets' (ngoài SELECT và các privilege khác). 'authenticated' có SELECT + DELETE; không có INSERT/UPDATE.
+- 'service_role' hiện có DELETE, INSERT, UPDATE trên 'public.organization_settings'; 'authenticated' có SELECT, INSERT, UPDATE nhưng không có DELETE.
+- M021 chỉ revoke DELETE trên assets khỏi authenticated; không thu hẹp INSERT/UPDATE/DELETE của service_role. Vì vậy, kể cả sau M021, service_role vẫn có thể trực tiếp INSERT/UPDATE/DELETE Asset mà không lấy Asset anchor, bypass RPC/Lease/Receipt. Đây là lỗ hổng protocol nếu service_role được xem là một writer thuộc cùng mô hình bảo đảm.
+- Settings bridge M021 bao phủ INSERT/UPDATE, không bao phủ DELETE. service_role vẫn có thể DELETE organization_settings mà không lấy Settings lock.
+
+### Caller audit source
+- Search repository không tìm thấy direct '.from(assets).insert/update/delete' writer trong Edge Functions hoặc app; Cloud Asset operations đang dùng RPC, còn App chỉ đọc Cloud Asset.
+- Settings direct writer đang có thật: 'src/lib/assetsCloud.ts' dùng PostgREST INSERT/UPDATE trên 'organization_settings' cho cấu hình mã thiết bị. Đây là lý do phải giữ statement trigger bridge trong compatibility window.
+- Chưa tìm thấy runtime Settings DELETE hoặc direct Asset DML qua service_role. Không coi việc chưa tìm thấy caller là bằng chứng privilege không thể bị sử dụng.
+
+### Kết luận review
+- M021 hiện chưa đóng hết bề mặt direct writer của service_role. Cần chọn rõ một trong hai contract trước khi promotion:
+  1. Cloud business writer duy nhất là RPC: revoke trực tiếp INSERT/UPDATE/DELETE trên assets khỏi service_role (giữ SELECT cần thiết), và revoke Settings DELETE khỏi service_role nếu không có use case; hoặc
+  2. Cho phép một số backend service_role writer: phải đưa từng writer vào cùng Asset/Settings lock + validation + Receipt protocol, có caller inventory và test riêng.
+- Khuyến nghị theo kiến trúc đã thống nhất: contract 1, vì không tìm thấy runtime caller trực tiếp và không có nhu cầu hard-delete Asset; tuy nhiên phải rà service_role call-sites toàn repo lần cuối trước khi chốt.
+- M021 sequential test cần thêm assertion service_role không còn direct Asset INSERT/UPDATE/DELETE và không còn Settings DELETE (nếu chọn contract 1). Kiểm tra cả effective privilege, không chỉ ACL trực tiếp.
+
+### Trạng thái
+- [x] Xác minh service_role direct DML grants trên assets và organization_settings.
+- [x] Tìm thấy Settings INSERT/UPDATE writer hiện hành trong assetsCloud.ts.
+- [x] Chưa tìm thấy runtime direct Asset DML hoặc Settings DELETE caller.
+- [ ] Chưa sửa M021 privilege block/test; chưa thu hồi grants.
+- [ ] Chưa chốt chính sách service_role writer; chưa apply M021.
+
+**Bước tiếp theo:** kiểm tra kỹ toàn bộ Edge Function và các helper Cloud liên quan để xác nhận service_role không có đường Asset/Settings DML nào khác; sau đó cập nhật M021 theo contract privilege được chốt, cập nhật test suite tương thích và tiếp tục review trước khi chạy bất kỳ migration nào.
