@@ -502,3 +502,11 @@ Người dùng xác nhận:
 - Nếu khác nhau (bao gồm trường hợp một tab khác vừa tạo Template trong lúc tab này đang mở), transaction trả `conflict`, không ghi Template/Version và không queue mutation. UI yêu cầu đóng trình sửa và mở lại dữ liệu mới nhất.
 - Nếu không có thay đổi cạnh tranh, việc tính version tiếp theo, ghi Template, thêm Version và queue vẫn diễn ra trong cùng transaction.
 - Bổ sung static regression contract. Chưa chạy Node test hoặc browser multi-tab runtime; chưa tuyên bố PASS.
+
+## 16. Chống tạo trùng Phiếu YC từ cùng một Checklist không đạt (20/11/2026)
+
+- `saveLog()` khi lưu phiếu có `checklistResultId` nay đọc phiếu Checklist nguồn trong cùng Dexie readwrite transaction.
+- Từ chối lưu nếu phiếu nguồn không tồn tại hoặc `assetId` không khớp với phiếu sửa chữa.
+- Tra cứu Log đã liên kết bằng index `logs.checklistResultId`; nếu một Log khác đã liên kết cùng kết quả Checklist thì từ chối ghi. Trường hợp đang sửa chính Log đã liên kết vẫn được phép.
+- Kiểm tra nguồn, kiểm tra trùng, ghi Log và queue mutation nằm trong cùng transaction; ngăn hai tab tạo hai yêu cầu từ một kết quả Checklist.
+- Không thêm schema/migration, tận dụng index đã có từ DB v4. Bổ sung static regression contract; chưa chạy runtime test hoặc multi-tab browser test.
