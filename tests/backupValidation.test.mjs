@@ -60,6 +60,7 @@ test('rejects malformed optional inventory location settings', () => {
 
 test('accepts a well-formed pending sync queue entry', () => {
   const backup = validBackup()
+  backup.assets = [{ id: 'asset-1' }]
   backup.syncQueue = [{
     id: 'assets:asset-1', tableName: 'assets', recordId: 'asset-1', operation: 'upsert',
     queuedAt: '2026-11-20T10:00:00.000Z', status: 'pending', attempts: 0,
@@ -92,6 +93,22 @@ test('rejects malformed or unsupported sync queue entries before restore', () =>
     deviceId: 'device-1'
   }]
   assert.equal(isValidBackupV3(missingMutationId), false)
+
+  const orphanedUpsert = validBackup()
+  orphanedUpsert.syncQueue = [{
+    id: 'assets:missing-asset', tableName: 'assets', recordId: 'missing-asset', operation: 'upsert',
+    queuedAt: '2026-11-20T10:00:00.000Z', status: 'pending', attempts: 0,
+    deviceId: 'device-1', mutationId: 'mutation-1'
+  }]
+  assert.equal(isValidBackupV3(orphanedUpsert), false)
+
+  const validDelete = validBackup()
+  validDelete.syncQueue = [{
+    id: 'assets:deleted-asset', tableName: 'assets', recordId: 'deleted-asset', operation: 'delete',
+    queuedAt: '2026-11-20T10:00:00.000Z', status: 'pending', attempts: 0,
+    deviceId: 'device-1', mutationId: 'mutation-2'
+  }]
+  assert.equal(isValidBackupV3(validDelete), true)
 })
 
 test('rejects missing tables and unsupported backup versions', () => {
