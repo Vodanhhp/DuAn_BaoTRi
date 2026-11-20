@@ -57,6 +57,13 @@ export function isValidBackupV3(value: unknown): value is Record<string, unknown
   if (typeof value.exportedAt !== 'string' || !value.exportedAt.trim()) return false
   if (!tableKeys.every(key => hasValidRows(value[key]))) return false
   if (!hasValidSyncQueue(value.syncQueue)) return false
+  // An upsert queue entry must point to a record included in this snapshot.
+  // Otherwise restoring it could later upload an ID-only placeholder to Cloud.
+  for (const item of value.syncQueue as Array<Record<string, unknown>>) {
+    if (item.operation === 'delete') continue
+    const rows = value[item.tableName as string] as Array<Record<string, unknown>>
+    if (!rows.some(row => row.id === item.recordId)) return false
+  }
   if (!Array.isArray(value.customAssetCategories)) return false
   // Inventory locations were added after the original v3 format. Keep older
   // v3 backups valid, but validate the fields when they are present.
