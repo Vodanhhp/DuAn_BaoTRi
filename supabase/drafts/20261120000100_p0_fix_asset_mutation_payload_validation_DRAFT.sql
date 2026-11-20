@@ -5,8 +5,8 @@
 -- Target: BAOTRI-Mini-Test only, after explicit user approval.
 -- Replaces the complete apply_asset_mutation_with_lock function definition.
 -- Does not modify Migration 017, Migration 018, or the Asset lock retrofit.
--- Version/timestamp intentionally not assigned: the Test database has no
--- discoverable migration ledger, so applied-history reconciliation is required.
+-- Proposed timestamp follows the confirmed Test sequence through Migration 019.
+-- Deployment remains manual; this draft must be reviewed and approved before promotion.
 --
 -- Required payload contract: exactly 13 keys; rejects SQL NULL, JSON null,
 -- scalar, array, missing keys, and unsupported extra keys with SQLSTATE 22023.
