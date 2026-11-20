@@ -15,7 +15,9 @@ test('checklist template version is resolved from current IndexedDB state inside
   const writeVersion = handler.indexOf('db.checklistVersions.add(', transaction)
   assert.ok(transaction >= 0 && lookup > transaction, 'template lookup must happen inside transaction')
   assert.ok(writeTemplate > lookup && writeVersion > writeTemplate, 'template and version writes must follow current-state lookup')
-  assert.match(handler, /const nextVersion=\(latestTemplate\?\.currentVersion \?\? 0\)\+1/)
+  const versionHistoryRead = handler.indexOf("db.checklistVersions.where('templateId').equals(templateId).toArray()", transaction)
+  assert.ok(versionHistoryRead > lookup, 'version history must be read inside transaction')
+  assert.match(handler, /const nextVersion=highestVersion\+1/)
 })
 
 test('task completion re-reads current state and refuses a second completion Log', () => {
