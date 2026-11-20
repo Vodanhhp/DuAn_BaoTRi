@@ -24,6 +24,29 @@ const hasValidRows = (value: unknown): value is Array<Record<string, unknown>> =
   return true
 }
 
+const syncCollections = new Set([
+  'assets', 'inventory', 'tasks', 'logs', 'movements', 'maintenancePlans',
+  'checklistTemplates', 'checklistVersions', 'checklistResults'
+])
+
+const hasValidSyncQueue = (value: unknown): value is Array<Record<string, unknown>> => {
+  if (!Array.isArray(value)) return false
+  const keys = new Set<string>()
+  for (const item of value) {
+    if (!isRecord(item) || typeof item.tableName !== 'string' || !syncCollections.has(item.tableName) ||
+        typeof item.recordId !== 'string' || !item.recordId.trim() ||
+        item.id !== `${item.tableName}:${item.recordId}` || keys.has(`${item.tableName}:${item.recordId}`) ||
+        !['upsert', 'delete'].includes(String(item.operation)) ||
+        typeof item.queuedAt !== 'string' || !item.queuedAt.trim() ||
+        !['pending', 'processing', 'failed'].includes(String(item.status)) ||
+        !Number.isInteger(item.attempts) || (item.attempts as number) < 0 ||
+        typeof item.deviceId !== 'string' || !item.deviceId.trim() ||
+        typeof item.mutationId !== 'string' || !item.mutationId.trim()) return false
+    keys.add(`${item.tableName}:${item.recordId}`)
+  }
+  return true
+}
+
 /**
  * Validate the complete current backup format before any destructive restore.
  * A valid empty database is allowed, but every table must be explicitly present.
@@ -33,6 +56,7 @@ export function isValidBackupV3(value: unknown): value is Record<string, unknown
   if (value.backupVersion !== 3 || value.database !== 'baotri-local-v1') return false
   if (typeof value.exportedAt !== 'string' || !value.exportedAt.trim()) return false
   if (!tableKeys.every(key => hasValidRows(value[key]))) return false
+  if (!hasValidSyncQueue(value.syncQueue)) return false
   if (!Array.isArray(value.customAssetCategories)) return false
   // Inventory locations were added after the original v3 format. Keep older
   // v3 backups valid, but validate the fields when they are present.
