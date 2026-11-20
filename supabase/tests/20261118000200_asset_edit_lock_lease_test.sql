@@ -1,4 +1,5 @@
 -- BAOTRI Mini Migration 016: per-asset edit lease tests.
+-- PRE-M021 ONLY: calls legacy update_asset_with_lock, whose client EXECUTE is revoked by M021.
 -- RUN ONLY on BAOTRI-Mini-Test, after Migration 016 has been applied.
 -- Uses the known active Admin and Technician in the test organization.
 -- All fixture rows and lease mutations are rolled back.
