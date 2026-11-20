@@ -913,10 +913,19 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
   }
   const saveLog = async (entry: Log) => {
     if (blockViewer('tạo hoặc cập nhật phiếu bảo dưỡng – sửa chữa')) return
-    const value = await db.transaction('rw', [db.logs, db.syncQueue], async () => {
+    const value = await db.transaction('rw', [db.logs, db.checklistResults, db.syncQueue], async () => {
       // Re-read the latest Log inside the write transaction so an older tab
       // cannot erase a newer completion history or edit-history entry.
       const existing = await db.logs.get(entry.id)
+      // A Checklist result may produce at most one linked maintenance/repair request.
+      // Validate the source and uniqueness atomically to prevent stale or parallel tabs
+      // from creating duplicate requests for the same failed Checklist.
+      if (entry.checklistResultId) {
+        const sourceResult = await db.checklistResults.get(entry.checklistResultId)
+        if (!sourceResult || sourceResult.assetId !== entry.assetId) return null
+        const linkedLog = await db.logs.where('checklistResultId').equals(entry.checklistResultId).first()
+        if (linkedLog && linkedLog.id !== entry.id) return null
+      }
       if (existing && existing.updatedAt !== entry.updatedAt) return null
       const revertedCompletion = Boolean(existing?.result && !entry.result)
       const editHistory = revertedCompletion
