@@ -142,6 +142,7 @@ export interface Log {
   id: string; assetId: string; taskId?: string; checklistResultId?: string; date: string; dueDate?: string; kind: string
   description: string; parts: string; readings: string; requestedBy?: string; result?: 'Đạt' | 'Không đạt' | ''; completedAt?: string; performedBy: string
   editHistory?: LogEditHistory[]
+  updatedAt?: string
 }
 export interface Movement {
   id: string; itemId: string; date: string; type: 'Nhập' | 'Xuất' | 'Điều chỉnh'
