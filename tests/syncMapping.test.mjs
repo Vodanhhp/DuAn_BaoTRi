@@ -35,11 +35,27 @@ test('asset mapping preserves UUID and business fields but never sends local ima
   assert.equal(row.organization_id, org)
   assert.equal(row.code, asset.code)
   assert.equal(row.transferred_from_other_facility, true)
+  assert.equal(row.created_by_user_id, null)
+  assert.equal(row.created_by_label, null)
   assert.equal('images' in row, false)
   const restored = mapping.fromCloudAssetRow(row)
   assert.equal(restored.id, asset.id)
   assert.equal(restored.code, asset.code)
   assert.deepEqual(restored.images, [])
+})
+
+test('Asset mapping preserves Local creator UUID and label through Cloud row round-trip', () => {
+  const withCreator = {
+    ...asset,
+    createdByUserId: '90000000-0000-4000-8000-000000000009',
+    createdByLabel: 'Kỹ thuật viên A'
+  }
+  const row = mapping.toCloudAssetRow(withCreator, org)
+  assert.equal(row.created_by_user_id, withCreator.createdByUserId)
+  assert.equal(row.created_by_label, withCreator.createdByLabel)
+  const restored = mapping.fromCloudAssetRow(row)
+  assert.equal(restored.createdByUserId, withCreator.createdByUserId)
+  assert.equal(restored.createdByLabel, withCreator.createdByLabel)
 })
 
 test('every mapper rejects a missing organization scope', () => {
