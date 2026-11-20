@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Asset } from '../db'
+import { toCloudAssetRow } from './syncMapping'
 
 /**
  * Cloud repository for the Assets vertical slice.
@@ -204,6 +205,9 @@ export async function importCloudAssetPreservingIdentity(
   if (!organizationId) throw new Error('Thiếu tổ chức đang hoạt động.')
   if (!asset.id) throw new Error('Thiếu UUID thiết bị Local.')
   if (!asset.code || !asset.code.trim()) throw new Error('Thiếu mã quản lý thiết bị Local.')
+  // Enforce the same no-data-loss contract as the reviewed mapper: reject draft IDs
+  // and creator metadata that the current Cloud schema cannot preserve.
+  toCloudAssetRow(asset, organizationId)
 
   const { data, error } = await client.rpc('import_asset_preserving_identity', {
     p_organization_id: organizationId,
