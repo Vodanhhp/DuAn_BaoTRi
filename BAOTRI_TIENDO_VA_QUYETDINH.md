@@ -4945,3 +4945,26 @@ Chi tiết riêng:
 - Production chưa được xác minh có cùng schema/grants như Test.
 
 **Kết luận:** đã xác định danh sách function cần retrofit và function read-only/legacy. Chưa viết migration, chưa sửa RPC/grants/code, chưa chạy concurrency tests. Bước thiết kế tiếp theo là rà lock order giữa Asset anchor, mutation-ID advisory, Counter và Settings, sau đó lập test matrix deterministic trước khi đề xuất migration.
+
+## 103. Refinement lock namespace và ma trận kiểm thử Asset – 20/11/2026
+
+Đã rà tiếp miền khóa Counter/Settings và cách tách advisory lock.
+
+### Refinement về advisory key
+- Import hiện dùng `pg_advisory_xact_lock(bigint)` để serialize cùng organization + mutation ID.
+- PostgreSQL có hai key space advisory không chồng lấn: bigint 64-bit và cặp integer 32-bit. Candidate nên dùng overload hai integer cho Asset anchor, giữ bigint hiện tại cho mutation-ID lock. Nguồn: https://www.postgresql.org/docs/15/functions-admin.html#FUNCTIONS-ADVISORY-LOCKS
+- Key pair Asset phải ổn định từ organization_id + asset_id; dùng transaction-level lock. Hash collision chỉ gây serialize thừa, không thay authorization.
+- Thứ tự mục tiêu: Auth/authorization precheck → Asset anchor → mutation-ID advisory nếu có → Settings → Counter → Lease → Asset → Receipt/ledger/dependency.
+
+### Phát hiện miền Settings
+- Create allocator và import đều đọc `organization_settings.asset_code_config`; import có thể reconcile Counter; cả hai UPSERT `asset_code_counters` theo organization/category.
+- Runtime `saveCloudAssetCodeConfig()` ghi Settings trực tiếp qua PostgREST INSERT/UPDATE, RLS yêu cầu `settings.manage`; writer này không tham gia advisory lock.
+- Create/import hiện đọc Settings không khóa. Asset anchor và Counter không bảo đảm một operation dùng cấu hình nhất quán khi Settings được sửa đồng thời.
+- Candidate riêng nếu cần: chuyển Settings write sang RPC lấy organization-scoped advisory lock độc quyền; create/import lấy shared lock cùng key trước khi đọc cấu hình. Cần xử lý row Settings chưa tồn tại vì SELECT FOR SHARE không khóa được hàng vắng mặt. Chưa thiết kế/triển khai.
+
+### Ma trận kiểm thử deterministic cần chuẩn bị
+A1 acquire/delete khi Lease chưa tồn tại; A2 acquire/takeover/delete khi Lease đã tồn tại; A3 mutation/delete; A4 heartbeat/release/delete; A5 import/delete; A6 allocator/import cùng UUID; A7 cùng mutation ID nhưng khác Asset; A8 create/import khác Asset cùng category; A9 Settings update/create/import; A10 FK reference INSERT/delete; A11 legacy update/archive/delete; A12 direct PostgREST DELETE bị privilege chặn.
+
+Mỗi case cần hai connection vật lý, xác định winner semantics, ghi wait graph/SQLSTATE/commit-rollback và kiểm tra invariant cuối. Chưa chạy test.
+
+**Kết luận:** Asset anchor không phải khóa duy nhất của toàn hệ thống. Cần giữ riêng ba miền: Asset serialization, mutation idempotency và organization Settings/Counter. Chưa thay đổi RPC, code, grants, migration hoặc Supabase.
