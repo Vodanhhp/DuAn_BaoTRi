@@ -246,3 +246,16 @@ Ran the current rollback-only sequential regression file against Test. It return
 Security advisor after apply: the SECURITY DEFINER warning count fell from 12 to 10, consistent with revoking the two legacy RPCs. Existing INFO findings for RLS-enabled internal tables without policies and the Auth leaked-password-protection warning remain; they are not newly introduced by M021.
 
 **Not yet verified:** the physical two-session lock-contention and RPC interleaving protocol. The available Supabase SQL tool exposes one-shot SQL execution and does not provide persistent independently controlled sessions/READY barriers, so sequential requests cannot honestly prove contention. M021 remains Test-only; do not promote to Production until the external two-session protocol passes.
+
+
+## 24. App import guard CI verification — 20/11/2026
+
+The Local→Cloud Asset import no-data-loss guard is committed in `src/lib/assetsCloud.ts` and the Cloud panel preview. CI run `44725449267` for commit `3ae693d56bbca917e74246c00f798b4d6cfda5b7` completed with conclusion **success**:
+- all regression suites passed;
+- new `test:cloud-asset-import`: 2/2 passed;
+- template validation passed;
+- production TypeScript/Vite build passed (`vite v6.4.6`, built in 6.76s).
+
+The preceding CI failure was a stale test assertion in `localConcurrencyContracts.test.mjs`: transaction now includes `db.tasks` in addition to Checklist tables. Updated assertion and reran; no application runtime defect was indicated by that failure.
+
+Still pending: physical two-session M021 protocol and browser-level Local PC → Cloud import/edit verification on Test. No generic sync activation and no Production changes.
