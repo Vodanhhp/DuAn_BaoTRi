@@ -2983,3 +2983,16 @@ No migration, RPC invocation, or SQL write was performed during this investigati
 - Sau rollback xác nhận không có cột row_version nào được lưu trên sáu bảng. Chưa apply migration.
 
 **Kết luận:** Draft 015 chưa thấy lỗi trong logic trigger qua static review và thử nghiệm rollback. Tuy nhiên đây chỉ là version counter, chưa tự tạo optimistic concurrency. Mọi RPC update vẫn phải dùng `WHERE row_version = p_expected_version` và bảo đảm chỉ một UPDATE cho mỗi business row trong logical mutation. Chưa promotion vì thứ tự migration sau Migration 020 cần được điều phối lại và Inventory RPC/Shared Receipt chưa hoàn tất.
+
+## 12. Re-test Shared Receipt deferred guard — 20/11/2026
+
+Đã chỉnh thiết kế trong `supabase/drafts/020_organization_mutations_receipt_DRAFT.sql` theo hướng role kỹ thuật tối thiểu:
+
+- Tạo `baotri_receipt_guard` với NOLOGIN, NOBYPASSRLS, NOINHERIT; role chỉ có USAGE schema và SELECT trên `organization_mutations`.
+- RLS policy SELECT chỉ áp dụng cho role guard. `anon`, `authenticated`, `service_role` không là member của role guard và không có SELECT trên Receipt.
+- Deferred assertion là SECURITY DEFINER, `search_path = ''`, owner là `baotri_receipt_guard`; bỏ `row_security = off` để policy RLS riêng cho guard thực sự được áp dụng.
+- Supabase quản lý role membership qua `supabase_admin`; membership guard → postgres được giữ để thực hiện ownership transfer, nhưng không cấp membership cho client roles. Guard không có INSERT/UPDATE/DELETE.
+- Đã chạy toàn bộ DDL draft trong transaction rollback trên BAOTRI-Mini-Test cùng probe business RPC SECURITY DEFINER: Receipt final commit được chấp nhận; pending Receipt bị deferred trigger chặn; authenticated không đọc được Receipt. Kiểm tra owner, role flags và grants đều đúng.
+- Sau rollback xác nhận bảng `organization_mutations` và role guard không tồn tại; migration history không đổi.
+
+**Trạng thái:** phương án quyền deferred trigger đã qua kiểm thử cô lập trên Test; Shared Receipt vẫn là DRAFT, chưa apply. Còn phải review replay race/lock ordering, membership/org authorization trong từng business RPC, retention, và các concurrency tests trước promotion. Tên draft `020` chỉ là nhãn lịch sử; phải gán lại version migration vì Migration 020 P0 đã được áp dụng.
