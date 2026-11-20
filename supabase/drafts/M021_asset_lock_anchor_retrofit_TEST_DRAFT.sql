@@ -2,6 +2,7 @@
 -- Run only after the matching M021 migration is applied to BAOTRI-Mini-Test.
 -- This script uses one dedicated Test organization and rolls back all DML.
 -- M021 revokes the legacy full-snapshot update RPC; the historical lease test that calls it is pre-M021 only.
+-- M021 revokes the legacy full-snapshot update RPC; the historical lease test that calls it is pre-M021 only.
 -- It is not a substitute for the separate two-physical-session concurrency suite.
 
 begin;
