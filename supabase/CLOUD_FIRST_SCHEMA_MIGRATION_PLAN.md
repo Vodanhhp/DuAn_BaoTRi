@@ -194,3 +194,12 @@ Repository search refinement: `updateAssetWithEditLock` and `setAssetArchivedWit
 No code/runtime caller was silently removed. Legacy EXECUTE policy remains a promotion decision: keeping the RPCs preserves compatibility but retains full-snapshot stale-write risk; revoking is consistent with current in-repo call graph but must account for external clients. The sequential test currently assumes they remain executable and must be edited if revocation is chosen.
 
 No SQL writes or RPC calls were made; no schema/grants/data changed; M021 remains draft; Production untouched.
+
+
+## 19. M021 private-helper ACL coverage and trigger-function test correction — 20/11/2026
+
+Further static review found the sequential security block checked schema USAGE and EXECUTE only for `private.lock_asset_anchor`, although M021 creates five private functions. Expanded the test to assert authenticated/anon/service_role have no EXECUTE on all five: `lock_two_int`, `lock_asset_anchor`, Settings shared/exclusive helpers, and `guard_settings_global_write`. GitHub fetch-back verified the change.
+
+Also corrected the two-session protocol's trigger-wrapper test: a PostgreSQL trigger function must not be invoked as an ordinary SQL function. The protocol now checks its EXECUTE ACL via `has_function_privilege`; direct invocation of the ordinary Asset helper remains the permission-denied probe. Indirect trigger execution through permitted Settings DML remains tested separately.
+
+These are test-quality improvements only. No SQL was executed; M021 remains draft; no database schema/data/grants changed; Production untouched.
