@@ -45,7 +45,7 @@ set local role authenticated;
 insert into public.organization_settings (organization_id, asset_categories)
 values ('dfb443ec-a1ee-496b-842c-0bef3f50b8ce'::uuid, '[]'::jsonb)
 on conflict (organization_id) do update
-set asset_categories=public.organization_settings.asset_categories;
+set asset_categories=organization_settings.asset_categories;
 
 -- BEFORE STATEMENT must lock even when no Settings row matches.
 update public.organization_settings
