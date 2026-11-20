@@ -2765,3 +2765,34 @@ Dùng pg_catalog.hashtextextended(text, bigint) với:
 - Compatibility window: chỉ dùng global Settings key cho trigger, Settings RPC, Asset create/import readers.
 - Sau khi revoke direct Settings writes: bỏ trigger bridge, chuyển mọi caller trong một migration/release đồng bộ sang org-scoped Settings key.
 - Không để một reader lấy global shared trong khi writer chỉ lấy org exclusive; như vậy hai luồng không còn đồng bộ với nhau.
+
+## 96. Đối chiếu advisory lock hiện có và implementation contract cho M019
+
+### Inventory source hiện tại
+GitHub source search + fetch migration 20261118000100 cho thấy:
+- Đã có một call-site advisory lock được tìm thấy: import mutation dùng bigint overload với hashtextextended(organization_id || ':' || mutation_id, seed 0).
+- Chưa tìm thấy call-site hai-int advisory lock hoặc session-level advisory lock trong source được index.
+- Import hiện lấy mutation-ID lock trước ledger lookup, rồi đọc organization_settings mà chưa có Settings shared lock. Khi retrofit, phải thêm Asset anchor trước mutation-ID lock theo lock order đã chốt, rồi Settings shared lock sau mutation-ID lock và trước SELECT Settings.
+- Search index không chứng minh toàn catalog không có call-site khác; Phase 0 vẫn phải query pg_proc/pg_get_functiondef và grep toàn migration/source trước khi dùng namespace hai-int.
+
+### Contract implementation M019
+- Internal key derivation helper: SECURITY INVOKER, owner postgres, schema private, fully-qualified pg_catalog.hashtextextended. Chỉ owner có schema USAGE/EXECUTE; không grant cho client roles.
+- Lock wrapper helper cũng SECURITY INVOKER, transaction-scoped; caller SECURITY DEFINER nghiệp vụ đang chạy với current_user owner nên gọi được.
+- Statement trigger wrapper riêng: SECURITY DEFINER owner postgres, search_path rỗng, chỉ gọi global Settings exclusive lock helper. Trigger không đọc/ghi business data.
+- Chỉ helper trigger cần SECURITY DEFINER vì direct authenticated DML phải gọi trigger wrapper; function không được expose qua PostgREST. Không cấp EXECUTE cho authenticated/anon.
+- Không đặt helper trong public; private schema phải không exposed qua Data API. Revoke default PUBLIC EXECUTE trên từng function ngay khi tạo.
+- Không tạo helper nhận key int32 tùy ý từ client; domain/key phải được derive bên server từ UUID đã validate.
+
+### Pseudocode key split (chưa phải migration SQL)
+Với h = hashtextextended(domain_input, fixed_seed):
+- high_u = (h >> 32) & 4294967295
+- low_u = h & 4294967295
+- high_i = high_u >= 2147483648 ? high_u - 4294967296 : high_u
+- low_i = low_u >= 2147483648 ? low_u - 4294967296 : low_u
+- dùng (high_i::integer, low_i::integer) với pg_advisory_xact_lock hoặc shared variant.
+Cần kiểm tra kỹ cast và operator type resolution bằng PostgreSQL 17.12; không lưu key vào bảng.
+
+### M019 scope boundary
+M019 chỉ thêm schema/helper/trigger bridge và grants cần thiết. Không retrofit business RPC, không revoke direct writes, không thay frontend. M019 rollback được nếu chưa có caller phụ thuộc; nếu đã deploy caller thì rollback theo forward-compatible plan, không drop helper đang được dùng.
+
+Chưa thực thi truy vấn catalog, chưa sinh vector, chưa tạo migration.
