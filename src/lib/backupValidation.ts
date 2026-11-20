@@ -24,6 +24,15 @@ const hasValidRows = (value: unknown): value is Array<Record<string, unknown>> =
   return true
 }
 
+const hasValidCustomAssetCategories = (value: unknown): boolean =>
+  Array.isArray(value) && value.every(group =>
+    isRecord(group) && typeof group.label === 'string' && Boolean(group.label.trim()) &&
+    Array.isArray(group.items) && group.items.length > 0 && group.items.every(item =>
+      isRecord(item) && typeof item.name === 'string' && Boolean(item.name.trim()) &&
+      typeof item.code === 'string' && Boolean(item.code.trim())
+    )
+  )
+
 const syncCollections = new Set([
   'assets', 'inventory', 'tasks', 'logs', 'movements', 'maintenancePlans',
   'checklistTemplates', 'checklistVersions', 'checklistResults'
@@ -64,7 +73,7 @@ export function isValidBackupV3(value: unknown): value is Record<string, unknown
     const rows = value[item.tableName as string] as Array<Record<string, unknown>>
     if (!rows.some(row => row.id === item.recordId)) return false
   }
-  if (!Array.isArray(value.customAssetCategories)) return false
+  if (!hasValidCustomAssetCategories(value.customAssetCategories)) return false
   // Inventory locations were added after the original v3 format. Keep older
   // v3 backups valid, but validate the fields when they are present.
   if ('inventoryLocations' in value && (!Array.isArray(value.inventoryLocations) ||
