@@ -1397,7 +1397,8 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
       // Older v3 backups do not contain these optional fields; leave the
       // current browser settings untouched when restoring such a backup.
       if (Array.isArray(data.inventoryLocations)) {
-        const restoredLocations = [...new Set(data.inventoryLocations.map((item: string) => item.trim()).filter(Boolean))]
+        const sourceLocations = data.inventoryLocations as string[]
+        const restoredLocations: string[] = Array.from(new Set<string>(sourceLocations.map(item => item.trim()).filter(Boolean)))
           .sort((left, right) => left.localeCompare(right, 'vi'))
         setInventoryLocations(restoredLocations)
         try { localStorage.setItem('baotri-inventory-locations', JSON.stringify(restoredLocations)) }
