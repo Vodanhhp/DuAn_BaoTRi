@@ -8,8 +8,8 @@
 -- SAFETY
 --   * This file belongs under supabase/drafts/, not supabase/migrations/.
 --   * Do NOT run on BAOTRI-Mini-Test or Production.
---   * This DDL creates no business RPC and does not change existing grants,
---     RLS policies, Asset Receipt behavior, row_version, or change feed.
+--   * This DDL creates no business RPC and does not change grants/RLS on
+--     existing business tables, Asset Receipt behavior, row_version, or change feed.
 --   * No pgcrypto/hash extension is assumed. request_fingerprint is canonical
 --     server-built JSONB and must never be accepted as an authoritative client
 --     hash. RPCs must build it from allowlisted, normalized inputs.
@@ -65,7 +65,7 @@ create table public.organization_mutations (
     primary key (organization_id, mutation_id),
 
   constraint organization_mutations_operation_not_blank
-    check (char_length(btrim(operation)) between 1 and 120),
+    check (operation ~ '[^[:space:]]' and char_length(operation) between 1 and 120),
 
   constraint organization_mutations_fingerprint_object
     check (jsonb_typeof(request_fingerprint) = 'object'),
