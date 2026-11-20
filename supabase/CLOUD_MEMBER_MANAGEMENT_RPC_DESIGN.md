@@ -2885,3 +2885,9 @@ Rollout: trigger + helper → retrofit create/import shared lock → deploy Sett
 - Mỗi phase cần migration test, privilege test, concurrency test và catalog diff trước khi sang phase tiếp theo.
 
 Chưa tạo migration hoặc triển khai bất kỳ phase nào.
+
+## 84. Điều chỉnh gate direct DELETE và legacy allocator
+
+Direct `DELETE public.assets` phải bị revoke khỏi authenticated trong **cùng transaction Phase 2** với retrofit toàn bộ Asset/Lease writers, không đợi Phase 4. Preflight phải chứng minh không có runtime/client caller trực tiếp xóa; chuyển các thao tác cần thiết sang archive/Thanh lý trước. Khi commit, RPC writers mới và privilege revoke có hiệu lực đồng thời.
+
+`create_asset_with_code` cũ thiếu idempotency và chưa có runtime caller: candidate revoke EXECUTE authenticated cùng Phase 2; không bật lại cho đến khi allocator receipt/idempotent RPC sẵn sàng. Phase 4 chỉ đóng direct Settings writes sau compatibility window.
