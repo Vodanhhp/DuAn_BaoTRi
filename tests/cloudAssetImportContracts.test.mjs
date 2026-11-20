@@ -11,7 +11,9 @@ test('Local Asset import enforces the reviewed no-data-loss mapper before callin
   const handler = assetsCloud.slice(start)
   const guard = handler.indexOf('toCloudAssetRow(asset, organizationId)')
   const rpc = handler.indexOf("client.rpc('import_asset_preserving_identity'")
-  assert.ok(guard >= 0 && rpc > guard, 'draft identity and unsupported creator metadata must be rejected before the Cloud write')
+  assert.ok(guard >= 0 && rpc > guard, 'draft identity and unsupported fields must be rejected before the Cloud write')
+  assert.ok(handler.includes('created_by_user_id: asset.createdByUserId ?? null'), 'import RPC payload must preserve the creator UUID')
+  assert.ok(handler.includes('created_by_label: asset.createdByLabel ?? null'), 'import RPC payload must preserve the creator label')
 })
 
 test('Local Asset import preview rejects unsupported fields before reading Cloud rows', () => {
@@ -22,4 +24,6 @@ test('Local Asset import preview rejects unsupported fields before reading Cloud
   const guard = handler.indexOf('toCloudAssetRow(asset, organizationId)')
   const cloudRead = handler.indexOf("client.from('assets')")
   assert.ok(guard >= 0 && cloudRead > guard, 'preview must validate every Local Asset before any Cloud lookup')
+  assert.ok(handler.includes('createdByUserId: asset.createdByUserId ?? null'), 'preview snapshot must detect creator UUID changes')
+  assert.ok(handler.includes('createdByLabel: asset.createdByLabel ?? null'), 'preview snapshot must detect creator label changes')
 })
