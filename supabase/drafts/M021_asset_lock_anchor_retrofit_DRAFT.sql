@@ -739,7 +739,7 @@ begin
   if p_asset_id is null then
     raise exception 'Asset edit lease is missing' using errcode = '55000';
   end if;
-  if nullif(btrim(p_name), '') is null;
+  if nullif(btrim(p_name), '') is null then
     raise exception 'Asset name is required' using errcode = '22023';
   end if;
   if p_status not in ('Đang hoạt động', 'Đang sửa chữa', 'Ngừng sử dụng', 'Thanh lý') then
