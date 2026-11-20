@@ -1,6 +1,6 @@
 -- BAOTRI Mini — M022 creator metadata for Cloud Assets
--- DRAFT ONLY. Target: BAOTRI-Mini-Test after explicit approval.
--- Production is out of scope. This file is not an instruction to apply.
+-- APPLIED to BAOTRI-Mini-Test as migration 20261120111828; canonical migration is in supabase/migrations/20261120111828_m022_asset_creator_metadata.sql.
+-- Production remains untouched and out of scope.
 -- Purpose: preserve Local Asset creator metadata during selective Local -> Cloud import.
 -- Existing Cloud rows remain NULL; no historical creator is fabricated.
 -- Cloud-origin creates stamp auth.uid() and JWT email (fallback UUID text).
