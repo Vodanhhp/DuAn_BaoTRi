@@ -283,3 +283,18 @@ Postflight verified:
 Application mapping is now updated to preserve creator metadata in both directions, the selective import RPC payload, preview snapshot and existing-row equality check. Existing Cloud rows remain NULL; no historical creator is fabricated.
 
 Next: CI verification of the mapper/import changes, then controlled browser-level Local PC → Cloud import/edit verification on Test. Physical two-session M021 concurrency protocol remains separately pending. No generic full sync and no Production changes.
+
+
+## 26. M022 App mapper and CI verification — 20/11/2026
+
+The Local → Cloud Asset boundary now preserves creator metadata end-to-end:
+- `CloudAssetRow` and `toCloudAssetRow/fromCloudAssetRow` map both nullable creator fields.
+- `assetsCloud.ts` includes both columns in reads and sends both fields to `import_asset_preserving_identity`.
+- Cloud import preview snapshots creator metadata and compares it when an Asset with the same identity already exists; changed creator metadata is not silently treated as an identical row.
+- Mapping round-trip and import contract regression tests were updated.
+
+GitHub Actions run `44727152880` for commit `e79fb1c059cdfb61d7c9f44185f2ecad5f2e9709` completed with conclusion **success**: all regression tests passed, template validation passed, and TypeScript/Vite production build passed. Two preceding CI attempts exposed stale assertions after the schema contract changed; those assertions were updated, and the successful run includes the corrected tests.
+
+Post-M022 advisors: health findings 0. Security advisor remains at 4 INFO findings for internal RLS-enabled tables without policies, 10 existing SECURITY DEFINER warnings, and 1 leaked-password-protection warning. No new warning category/count was introduced by M022; the RPCs retain their existing auth/permission checks and hardened function settings. Review links: https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable and https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection.
+
+Still pending: physical two-session M021 concurrency protocol and browser-level Local PC → Cloud Asset import/edit verification on Test. No generic sync activation and no Production changes.
