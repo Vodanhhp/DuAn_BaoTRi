@@ -220,3 +220,16 @@ Reconciled the preflight checklist with the finalized policy in §20: `update_as
 A final sequential-test wording pass removed a duplicated header comment and corrected the stale description “legacy update/archive writers” to “archive/restore RPC”; the actual test already exercised archive + restore and asserted the full-snapshot update EXECUTE denial. Both checklist and test were fetched back and matched the submitted content.
 
 This is documentation/test clarity only. No SQL was executed; M021 remains Draft; no Supabase schema/data/grants changed; Production untouched.
+
+## 22. M021 final static review and fresh Test preflight — 20/11/2026
+
+Re-read the full M021 migration, sequential rollback test, two-session protocol and preflight checklist. The draft contract and test expectations are aligned for the main privilege boundary: revoke the legacy full-snapshot update RPC; retain token-validated archive/restore; revoke authenticated Asset DELETE, service_role direct Asset INSERT/UPDATE/DELETE, service_role Settings DELETE, and client access to the private helper schema/functions. The sequential test checks the corresponding effective privilege matrix and keeps archive/restore coverage.
+
+Fresh read-only preflight on BAOTRI-Mini-Test (project `oyzhxgzltpdebpymuicb`) confirms the expected pre-M021 starting state:
+- authenticated Asset DELETE = true;
+- service_role Asset INSERT/UPDATE/DELETE = true;
+- service_role Settings DELETE = true;
+- private schema absent;
+- candidate migration version `20261120050000` absent from the migration tracker.
+
+These are baseline values, not defects in the current database; M021 is intended to change them. The absence of the private schema and candidate version clears two preconditions but does not authorize or constitute an application. Remaining evidence gates are SQL regression, effective postflight catalog checks, and the physical two-session/RPC interleaving suite. No database writes or RPC calls were made; M021 remains Draft; Production untouched.
