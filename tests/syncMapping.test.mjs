@@ -153,3 +153,15 @@ test('Cloud mapping refuses creator snapshots until the SQL schema can preserve 
     createdByLabel: 'Admin'
   }, org), /chưa có trường người tạo InventoryItem/)
 })
+
+test('Checklist Cloud sync dependency order places every parent before its child', () => {
+  const order = mapping.CLOUD_SYNC_ORDER
+  const position = table => order.indexOf(table)
+  assert.ok(position('assets') >= 0)
+  assert.ok(position('checklist_templates') > position('assets'))
+  assert.ok(position('checklist_template_versions') > position('checklist_templates'))
+  assert.ok(position('checklist_results') > position('checklist_templates'))
+  assert.ok(position('checklist_results') > position('checklist_template_versions'))
+  assert.ok(position('maintenance_logs') > position('checklist_results'))
+  assert.ok(position('maintenance_logs') > position('maintenance_tasks'))
+})
