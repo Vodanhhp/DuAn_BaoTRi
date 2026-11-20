@@ -149,7 +149,7 @@ The helper-only scenarios above prove lock primitive behavior but are not suffic
 
 ### 8.2 Mutation vs import on same Asset
 - Provision a disposable Asset and a valid lease. A executes `apply_asset_mutation_with_lock` with valid payload/expected version and holds the transaction open after obtaining the receipt.
-- B executes `import_asset_preserving_identity` with the same UUID/code and canonical payload in a separate session. B must wait at the Asset anchor; after A commit, B must return the documented already-present/idempotent result without overwriting the committed mutation or creating duplicate Asset/receipt/import rows.
+- B executes `import_asset_preserving_identity` with the same UUID/code and canonical payload in a separate session. B must wait at the Asset anchor; after A commit, if import payload matches the now-current Asset, expect already-present; if stale/different, expect documented payload conflict. In either case it must not overwrite committed mutation or create duplicate Asset/receipt/import rows.
 - Reverse order (A import, B apply mutation) and record expected winner semantics; verify version/payload/receipt/import ledger after rollback/commit.
 
 ### 8.3 Same mutation ID, different Asset anchors
@@ -157,8 +157,8 @@ The helper-only scenarios above prove lock primitive behavior but are not suffic
 - Verify lock order (Asset anchor first, bigint mutation ID second), no deadlock, and exactly one receipt.
 
 ### 8.4 Legacy update/archive writers
-- A invokes `update_asset_with_lock` or `set_asset_archived_with_lock` with valid lease and keeps transaction open. B invokes `apply_asset_mutation_with_lock` on same Asset; B must block on the shared anchor and then observe expected version/lease semantics after A commits.
-- Repeat reverse order. Verify archived/status/payload and lease state; no lost update.
+- Source audit found the legacy `update_asset_with_lock` and `set_asset_archived_with_lock` wrappers have no runtime callers in the current repository; App's active linked-Asset writer uses `apply_asset_mutation_with_lock`. If these legacy RPCs remain EXECUTE-accessible, test both orderings against apply mutation and record that they have no expected-version/receipt protection: after serialization, a stale legacy full-snapshot update may still overwrite fields. Do not interpret the Asset anchor as conflict detection.
+- Promotion review should decide whether to revoke these unused legacy RPCs from authenticated/service_role (preferred RPC-only/idempotent contract) or retain them temporarily with a compatibility risk documented. Do not change grants without explicit approval. If retained, test token validity, archived/status/payload and stale-write ordering; no claim of “no lost update” absent version guard.
 
 ### 8.5 Hard-delete/FK cases superseded
 - Do not test delete-vs-anchor, FK insert-vs-delete, or legacy writer-vs-delete as executable concurrency cases: M021 contract revokes direct DELETE from authenticated and service_role and adds no delete RPC. Verify effective DELETE privileges denied instead. Owner-level maintenance deletion is outside this application protocol and is not covered.
