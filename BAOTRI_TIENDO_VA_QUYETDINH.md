@@ -4864,3 +4864,14 @@ Chỉ đọc migration/test source và cập nhật thiết kế tài liệu. Ch
 **Cách làm gọn:** một runbook chung gồm preflight read-only, hai connection vật lý, barrier, ghi PID/txid/wait graph/SQLSTATE, commit hoặc rollback, đọc invariant cuối, cleanup. P0 chạy trước; P1 chỉ chạy sau. Không dùng pg_sleep làm barrier.
 
 **Trạng thái:** đã rà source và cập nhật thiết kế; chưa tạo runner/fixture, chưa chạy SQL ghi dữ liệu, chưa thay đổi RPC, DDL, grants, Auth hoặc Supabase. Các test hiện tại vẫn chỉ chứng minh logic tuần tự.
+
+
+## 99. Kiểm tra khả năng harness hiện có – 20/11/2026
+
+Đã đọc package.json trên main:
+
+- Các script hiện có chỉ gồm Vite build/dev và Node test cho sync mapping, local identity, template release.
+- Dependencies hiện có không gồm PostgreSQL driver như pg; không thấy script concurrency runner.
+- Vì vậy không thể gọi các test Node hiện hữu là DB concurrency harness. Cũng không nên thêm PostgreSQL client vào dependencies của ứng dụng trình duyệt BAOTRI Mini chỉ để chạy kiểm thử DB.
+- Hướng phù hợp khi được phép thực thi: dùng psql với hai process/connection độc lập, hoặc một runner kiểm thử riêng ngoài runtime ứng dụng; connection string/credential chỉ lấy từ môi trường bảo mật, không ghi vào GitHub, tài liệu hoặc log.
+- Chưa tạo runner, chưa thêm dependency, chưa sửa package.json và chưa truy cập secret. Đây là kết quả rà soát read-only.
