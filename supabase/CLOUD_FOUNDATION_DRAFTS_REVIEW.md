@@ -2972,3 +2972,14 @@ No migration, RPC invocation, or SQL write was performed during this investigati
 - Kiểm tra sau rollback: cột `quantity_delta` không tồn tại trên bảng thật, `inventory_movements` vẫn 0 dòng, migration history không đổi. Không có thay đổi schema/data tồn tại.
 
 **Trạng thái:** lỗi cú pháp và các lỗ hổng constraint vừa nêu đã xử lý trong DRAFT; chưa apply migration. Còn phải kiểm tra duplicate mutation IDs trước unique index trên môi trường có dữ liệu, giữ yêu cầu expected_item_version và numeric input validation ở RPC contract, rồi mới promotion sau khi Shared Receipt/row_version và RPC sẵn sàng.
+
+## 11. Re-check Draft 015 — 20/11/2026
+
+Đã đối chiếu draft 015 với catalog BAOTRI-Mini-Test:
+
+- Cả sáu bảng mục tiêu đều tồn tại; chưa bảng nào có cột `row_version`; chưa tồn tại `set_business_row_version()`.
+- Mỗi bảng có trigger `*_set_updated_at`; trigger `*_set_row_version` được đặt tên để chạy trước theo thứ tự alphabetic PostgreSQL. Asset hiện dùng `assets_set_updated_at` gọi `set_asset_updated_at()`.
+- Đã chạy thử toàn bộ DDL draft trong transaction rollback. Test trên temp table với đúng trigger function xác nhận: INSERT bỏ qua row_version client và lưu 1; business UPDATE tăng 1; timestamp-only UPDATE không tăng; no-op UPDATE không tăng; client cố ghi row_version không được tin.
+- Sau rollback xác nhận không có cột row_version nào được lưu trên sáu bảng. Chưa apply migration.
+
+**Kết luận:** Draft 015 chưa thấy lỗi trong logic trigger qua static review và thử nghiệm rollback. Tuy nhiên đây chỉ là version counter, chưa tự tạo optimistic concurrency. Mọi RPC update vẫn phải dùng `WHERE row_version = p_expected_version` và bảo đảm chỉ một UPDATE cho mỗi business row trong logical mutation. Chưa promotion vì thứ tự migration sau Migration 020 cần được điều phối lại và Inventory RPC/Shared Receipt chưa hoàn tất.
