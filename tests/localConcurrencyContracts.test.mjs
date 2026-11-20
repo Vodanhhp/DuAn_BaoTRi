@@ -72,6 +72,7 @@ test('maintenance plan saves reject stale revisions before bulk write', () => {
   const write = handler.indexOf('db.maintenancePlans.bulkPut(values)', guard)
   assert.ok(transaction >= 0 && reads > transaction, 'current plans must be read inside transaction')
   assert.ok(guard > reads && write > guard, 'stale plan must be rejected before bulk write')
+  assert.match(handler, /editingPlan\?\.id === value\.id && !currentPlans\[index\]/, 'an edited plan deleted in another tab must not be recreated')
 })
 
 test('maintenance plan deletion checks revision inside transaction', () => {
