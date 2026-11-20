@@ -2996,3 +2996,45 @@ No migration, RPC invocation, or SQL write was performed during this investigati
 - Sau rollback xác nhận bảng `organization_mutations` và role guard không tồn tại; migration history không đổi.
 
 **Trạng thái:** phương án quyền deferred trigger đã qua kiểm thử cô lập trên Test; Shared Receipt vẫn là DRAFT, chưa apply. Còn phải review replay race/lock ordering, membership/org authorization trong từng business RPC, retention, và các concurrency tests trước promotion. Tên draft `020` chỉ là nhãn lịch sử; phải gán lại version migration vì Migration 020 P0 đã được áp dụng.
+
+## 101. M021 lock-anchor retrofit — catalog preflight and rollback verification — 20/11/2026
+
+### Rebase migration sequence
+
+Migration 020 P0 payload fix is now applied on BAOTRI-Mini-Test. The older plan's candidate M019 lock primitive/Settings bridge and candidate M020 Asset writer retrofit can no longer use those historical versions. They are combined into one atomic **candidate Migration 021** so no committed state exists with only half of the lock protocol.
+
+### Read-only catalog/source preflight
+
+- Public Asset writer inventory: `acquire_asset_edit_lock`, `heartbeat_asset_edit_lock`, `release_asset_edit_lock`, `apply_asset_mutation_with_lock`, `import_asset_preserving_identity`, `update_asset_with_lock`, `set_asset_archived_with_lock`. `list_asset_edit_locks` is read-only; `set_asset_updated_at` is timestamp-only.
+- All seven writer functions are SECURITY DEFINER, owner postgres, `search_path=''`, `row_security=off`; existing EXECUTE grants for authenticated/service_role are preserved.
+- Only `import_asset_preserving_identity` currently uses advisory locks, through the bigint mutation-ID overload. No two-int or session-level advisory call exists in non-system function catalog.
+- PostgreSQL 17.12 provides `hashtextextended(text,bigint)`, two-int `pg_advisory_xact_lock`, shared two-int overload, and bigint overload.
+- `private` schema does not exist on Test. The proposed private schema is revoked from PUBLIC/anon/authenticated/service_role; authenticated has no USAGE or helper EXECUTE.
+- Effective Test grants: authenticated has Asset DELETE; authenticated has no Asset INSERT/UPDATE. authenticated and service_role can currently EXECUTE `create_asset_with_code`; authenticated can INSERT/UPDATE Settings. service_role can DELETE Asset and write Settings. No Cloud direct Asset DELETE caller was found in repository search; `archiveAsset`/`restoreAsset`/Thanh lý are lifecycle updates, and permanent delete UI is disabled.
+- `createCloudAsset()`/allocator has a helper definition but no runtime caller found. Candidate M021 revokes allocator EXECUTE from authenticated and service_role, retaining the function owner-only.
+
+### Lock contract in M021 draft
+
+- Private two-int transaction key uses `hashtextextended(seed=0)` with versioned domain prefixes. Asset anchor input is `baotri:asset-anchor:v1:<org>:<asset>`; Settings compatibility key is `baotri:settings-global:v1`. Existing mutation-ID bigint key remains separate.
+- Asset anchor is taken after auth/permission prechecks and before Asset/Lease/Receipt access in all seven writer paths. `apply_asset_mutation_with_lock` takes anchor → mutation-ID bigint lock before fast Receipt replay. Import takes anchor → existing mutation-ID lock → ledger replay → Settings shared → Counter → Asset.
+- A BEFORE INSERT OR UPDATE FOR EACH STATEMENT trigger on `organization_settings` takes Settings global exclusive, including zero-row statements. Import takes shared before reading config. This is a temporary compatibility bridge for the live direct PostgREST Settings writer.
+- Release remains auth + exact holder/token cleanup; no new `assets.update` requirement. Null-input behavior is preserved where practical.
+- Direct authenticated Asset DELETE privilege is revoked in the same transaction as all writer retrofits. The RLS permission policy is retained. No hard-delete RPC is introduced.
+
+### PostgreSQL 17.12 key vectors
+
+| Domain/input | Hash | Two-int key |
+|---|---:|---:|
+| Asset A `dfb443ec…:872077a8…` | `6961243932038087064` | `(1620790905, 1408844184)` |
+| Asset B `dfb443ec…:11111111…` | `-7513077300520779810` | `(-1749274624, 1281916894)` |
+| Settings global | `-7126684273450888515` | `(-1659310487, 2123944637)` |
+
+The Test pg_locks probe observed two-int keys with `objsubid=2` and mutation-ID bigint keys with `objsubid=1`, confirming overload/keyspace separation for the exercised calls.
+
+### Rollback-only DDL and sequential runtime test
+
+Draft `supabase/drafts/M021_asset_lock_anchor_retrofit_DRAFT.sql` and its sequential test were executed on BAOTRI-Mini-Test inside a transaction ending in ROLLBACK. All seven writer paths were exercised using an active Admin fixture: acquire, heartbeat, apply, identical replay, release, import existing identity, legacy update, archive/restore, release. The Settings statement trigger was exercised by authenticated zero-row UPDATE.
+
+Within the transaction, observed: authenticated Asset DELETE false; authenticated/service_role allocator EXECUTE false; private schema USAGE false to authenticated; acquire RPC EXECUTE remained true; Asset anchor two-int lock, Settings shared + exclusive locks, and mutation-ID bigint locks were present. After rollback, private schema/trigger were absent, authenticated Asset DELETE and allocator EXECUTE returned to baseline true, fixture Lease count was zero and no P0/M021 test Receipt remained.
+
+**Status:** M021 is still DRAFT ONLY and has not been applied. Sequential/DDL behavior passes rollback testing. Two-physical-session concurrency tests A1–A11, lock wait graphs, deadlock regression, search_path poisoning, and full existing SQL regression suite remain mandatory gates. No production access/change.
