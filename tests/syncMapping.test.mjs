@@ -158,10 +158,14 @@ test('Cloud mapping refuses draft identities and draft foreign keys', () => {
   }, org), /bản nháp Local/)
 })
 
-test('Cloud mapping refuses creator snapshots until the SQL schema can preserve them', () => {
-  assert.throws(() => mapping.toCloudAssetRow({
+test('Asset creator snapshots are preserved while unsupported Inventory creator metadata remains guarded', () => {
+  const assetWithCreator = {
     ...asset, createdByLabel: 'Admin', createdByUserId: '90000000-0000-4000-8000-000000000001'
-  }, org), /chưa có trường người tạo Asset/)
+  }
+  const assetRow = mapping.toCloudAssetRow(assetWithCreator, org)
+  assert.equal(assetRow.created_by_label, 'Admin')
+  assert.equal(assetRow.created_by_user_id, assetWithCreator.createdByUserId)
+  assert.equal(mapping.fromCloudAssetRow(assetRow).createdByLabel, 'Admin')
   assert.throws(() => mapping.toCloudInventoryBaselineRow({
     id: '20000000-0000-4000-8000-000000000001', code: 'VT-02', name: 'Bóng LED',
     group: 'Điện', unit: 'cái', quantity: 0, minQuantity: 0, location: '',
