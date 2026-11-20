@@ -5125,3 +5125,27 @@ M019 contract:
 - M019 chỉ tạo helper/trigger bridge; chưa sửa business RPC, grants trực tiếp hoặc frontend.
 
 Chưa chạy catalog query, chưa sinh vectors, chưa tạo migration.
+
+## 111. Thiết kế harness hai session và test matrix M019 – 20/11/2026
+
+Thiết kế test deterministic, chưa chạy:
+
+- Hai process psql, hai physical connections; mỗi session có application_name/PID/txid riêng.
+- Đồng bộ bằng READY barrier bên ngoài, không dùng pg_sleep.
+- Có lock_timeout/harness timeout; trước khi cancel phải thu pg_stat_activity, pg_locks, pg_blocking_pids và SQLSTATE.
+- Fixture organization/Asset riêng; DML test rollback cả hai session; không dùng production data hoặc log credentials.
+
+### Nhóm test
+1. Shared/shared không block; shared/exclusive, exclusive/shared và exclusive/exclusive phải block đúng cho tới khi transaction owner COMMIT/ROLLBACK.
+2. Transaction-level lock tự nhả sau COMMIT và ROLLBACK; không còn lock sót qua pooled connection.
+3. Asset cùng key block; key khác có thể chạy đồng thời.
+4. BEFORE STATEMENT trigger vẫn lấy global exclusive lock với UPDATE zero-row; INSERT/UPDATE giữ global lock trước row-level processing.
+5. Direct UPDATE first ↔ Settings RPC và RPC first ↔ direct UPDATE: bên đến sau phải chờ advisory lock trước row lock; không có SQLSTATE 40P01.
+6. Settings reader shared ↔ writer exclusive phải tuần tự đúng hai chiều.
+7. Helper bị từ chối khi gọi trực tiếp bằng authenticated/anon; poisoned search_path không đổi object resolution; RLS/permission check nghiệp vụ vẫn hoạt động.
+8. UPSERT/ON CONFLICT và multi-row statement chỉ kiểm tra nếu runtime writer thực tế dùng các dạng đó.
+
+### Tiêu chí PASS
+Không có deadlock; blocker đúng theo timeline; zero-row trigger vẫn lấy lock; transaction kết thúc thì lock nhả; helper private; search_path an toàn; fixture rollback sạch. SQLSTATE 55P03 là timeout cần phân tích, không tự động kết luận deadlock. Đây là test plan, chưa có kết quả PASS.
+
+Chỉ chạy concurrency test ghi dữ liệu trên BAOTRI-Mini-Test sau phê duyệt rõ ràng.
