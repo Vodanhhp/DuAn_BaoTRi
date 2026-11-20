@@ -911,10 +911,13 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
   }
   const saveItem = async (i: InventoryItem) => {
     if (blockViewer('thêm hoặc sửa vật tư')) return
-    // Preserve the latest stock balance inside the same write transaction.
-    // A movement in another tab must not be overwritten by this form's stale snapshot.
+    const editingExisting = Boolean(editingItem?.code)
+    // Preserve the latest stock balance and reject stale metadata edits inside
+    // the same write transaction. A deleted row must not be recreated by an old form.
     const saved = await db.transaction('rw', [db.inventory, db.syncQueue], async () => {
       const existing = await db.inventory.get(i.id)
+      if (editingExisting && !existing) return { outcome: 'missing' as const }
+      if (existing && (!editingExisting || existing.updatedAt !== i.updatedAt)) return { outcome: 'conflict' as const }
       const value: InventoryItem = {
         ...i, quantity: existing?.quantity ?? 0,
         minQuantity: isAdmin ? i.minQuantity : (existing?.minQuantity ?? 0),
@@ -925,8 +928,10 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
       }
       await db.inventory.put(value)
       await queueChange('inventory', value.id)
-      return { value, existed: Boolean(existing) }
+      return { outcome: 'saved' as const, existed: Boolean(existing) }
     })
+    if (saved.outcome === 'missing') { flash('Vật tư không còn tồn tại. Hãy tải lại danh sách kho trước khi sửa.'); return }
+    if (saved.outcome === 'conflict') { flash('Vật tư đã được thay đổi ở nơi khác. Hãy đóng và mở lại biểu mẫu trước khi lưu.'); return }
     setModal(null); setEditingItem(null); flash(saved.existed ? 'Đã cập nhật thông tin vật tư' : 'Đã thêm vật tư (tồn ban đầu = 0)')
   }
   const saveTask = async (t: Task) => {
