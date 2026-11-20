@@ -136,4 +136,33 @@ Under `SET ROLE authenticated`, direct calls to `private.lock_asset_anchor` and 
 - Post-commit/rollback verification of Asset, Lease, Receipt, import ledger, Settings and Counter snapshots.
 - No credentials, JWTs, API keys or connection strings in logs.
 
+
+## 8. Actual RPC integration interleavings (additional gate)
+
+The helper-only scenarios above prove lock primitive behavior but are not sufficient to prove each business RPC acquires the anchor in the correct position. Before promotion, use dedicated disposable Asset fixtures with valid Admin JWT claims and record the following interleavings. Do not use hard DELETE: M021 closes that path.
+
+### 8.1 Acquire/heartbeat/release against same Asset
+- A calls `acquire_asset_edit_lock` for the fixture and keeps the transaction open after receiving the token.
+- B calls `heartbeat_asset_edit_lock` for the same Asset/token, same holder, in a separate transaction; B must block at the Asset anchor while A is open.
+- Commit A; B proceeds and renews the lease. Repeat with A rollback; B must proceed after rollback. Record token ownership and expiry.
+- Release test: A calls `release_asset_edit_lock` and holds transaction open; B attempts acquire same Asset and waits, then proceeds after A ends.
+
+### 8.2 Mutation vs import on same Asset
+- Provision a disposable Asset and a valid lease. A executes `apply_asset_mutation_with_lock` with valid payload/expected version and holds the transaction open after obtaining the receipt.
+- B executes `import_asset_preserving_identity` with the same UUID/code and canonical payload in a separate session. B must wait at the Asset anchor; after A commit, B must return the documented already-present/idempotent result without overwriting the committed mutation or creating duplicate Asset/receipt/import rows.
+- Reverse order (A import, B apply mutation) and record expected winner semantics; verify version/payload/receipt/import ledger after rollback/commit.
+
+### 8.3 Same mutation ID, different Asset anchors
+- A applies mutation ID M to Asset A and holds transaction open; B applies same organization + mutation ID M to Asset B with valid lease/payload. B is expected to wait on the bigint mutation-ID lock, then reject/replay according to receipt identity contract; it must not apply M to a second Asset.
+- Verify lock order (Asset anchor first, bigint mutation ID second), no deadlock, and exactly one receipt.
+
+### 8.4 Legacy update/archive writers
+- A invokes `update_asset_with_lock` or `set_asset_archived_with_lock` with valid lease and keeps transaction open. B invokes `apply_asset_mutation_with_lock` on same Asset; B must block on the shared anchor and then observe expected version/lease semantics after A commits.
+- Repeat reverse order. Verify archived/status/payload and lease state; no lost update.
+
+### 8.5 Hard-delete/FK cases superseded
+- Do not test delete-vs-anchor, FK insert-vs-delete, or legacy writer-vs-delete as executable concurrency cases: M021 contract revokes direct DELETE from authenticated and service_role and adds no delete RPC. Verify effective DELETE privileges denied instead. Owner-level maintenance deletion is outside this application protocol and is not covered.
+
+For each integration case, use explicit READY checkpoints (A has already invoked the RPC and is still inside the transaction), Observer evidence, lock_timeout as a safety bound only, and post-state verification. These are not PASS until performed with two physical sessions.
+
 **Pass criteria:** intended blocker is observed; the waiting transaction proceeds only after the blocker ends; no 40P01; no unexpected 55P03; state invariants hold after rollback; transaction locks are released. This document is a protocol, not a test result.
