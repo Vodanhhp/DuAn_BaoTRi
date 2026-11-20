@@ -5647,3 +5647,67 @@ Tạo `supabase/drafts/M021_PREFLIGHT_CHECKLIST_DRAFT.md` để gom execution ga
 - Trạng thái: [x] SQL regression trong phạm vi nêu trên; [x] UI lock contention và release PC/Mobile; [ ] các interleaving mở rộng trong protocol hai-session nếu vẫn được yêu cầu trước promotion.
 
 **Bước tiếp theo:** tiếp tục browser-level Local PC → Cloud Asset import/edit verification theo protocol M022; chỉ mở rộng M021 two-session interleavings nếu checklist promotion yêu cầu. Không bật full sync, không chạm Production.
+
+
+---
+
+## BỔ SUNG TIẾN ĐỘ 20/11/2026 – TẠM DỪNG XỬ LÝ GITHUB PAGES / CUSTOM DOMAIN
+
+### 1. Hiện tượng
+- Website BAOTRI Mini tại `https://baotri.vieclamhp247.com` không truy cập được; trình duyệt trên PC và điện thoại (Brave) đều nhận 404.
+- Đã gửi lại các liên kết làm việc:
+  - Website: https://baotri.vieclamhp.com
+  - Repository: https://github.com/Vodanhhp/DuAn_BaoTRi
+  - Workflow run đã kiểm tra: https://github.com/Vodanhhp/DuAn_BaoTRi/actions/runs/44064036081
+- Lưu ý: đường dẫn website đúng theo cấu hình CNAME trong repository là `baotri.vieclamhp247.com`; đường dẫn ở danh sách trên chỉ là liên kết đã gửi trong trao đổi, không dùng làm căn cứ xác nhận domain.
+
+### 2. Kết quả kiểm tra GitHub Actions
+- Workflow: `Deploy BAOTRI Mini to GitHub Pages`.
+- Run #919, commit `5929143`, ngày 20/11/2026 khoảng 19:50 (giờ Việt Nam), trạng thái **failed**.
+- Job build đã chạy qua 12 bước kiểm thử/build trước khi dừng ở bước `Configure Pages`.
+- Log lỗi chính:
+  ```text
+  Get Pages site failed.
+  Please verify that the repository has Pages enabled
+  and configured to build using GitHub Actions.
+  Error: Not Found
+  ```
+- Vì `Configure Pages` thất bại nên bước upload Pages artifact bị bỏ qua; job deploy không chạy. Do đó run #919 chưa tạo deployment mới.
+- Repository đang public, nhánh mặc định `main`, metadata trả về `has_pages: true`. Điều này chưa đủ để kết luận Pages đã được cấu hình đúng nguồn triển khai GitHub Actions.
+- Workflow hiện tại nằm ở `.github/workflows/deploy-pages.yml`, dùng `actions/configure-pages@v5`, `actions/upload-pages-artifact@v3`, `actions/deploy-pages@v4`. Không có bằng chứng cho thấy lỗi nằm trong mã ứng dụng hoặc các bước test/build; điểm lỗi quan sát được là truy vấn Pages site tại bước Configure Pages.
+
+### 3. Cấu hình repository đã quan sát
+- File `CNAME` ở root repository có nội dung `baotri.vieclamhp247.com`.
+- Có file workflow triển khai Pages tùy chỉnh ở `.github/workflows/deploy-pages.yml`.
+- Chưa đọc được trực tiếp cấu hình cụ thể trong Settings → Pages và chưa xác minh DNS tại nhà cung cấp tên miền.
+- Với custom GitHub Actions workflow, không thể chỉ dựa vào việc có file `CNAME` trong repository để kết luận custom domain đã được liên kết trong Pages settings.
+
+### 4. Nhận định hiện tại – chưa kết luận nguyên nhân cuối cùng
+- Lỗi 404 trên cả PC và điện thoại phù hợp với tình trạng chưa có deployment Pages hợp lệ hoặc domain chưa được gắn đúng với Pages site.
+- Chưa đủ dữ liệu để kết luận DNS sai, cũng chưa đủ dữ liệu để kết luận chỉ cần sửa DNS.
+- Không coi lỗi Brave/cache là nguyên nhân chính vì nhiều thiết bị/trình duyệt đều gặp hiện tượng tương tự.
+- Chưa xác nhận website đã hoạt động; không được thông báo deployment thành công khi chưa có workflow run xanh và deployment hoàn tất.
+
+### 5. Việc cần làm khi tiếp tục
+**Bước 1 – kiểm tra Settings → Pages trước:**
+Mở https://github.com/Vodanhhp/DuAn_BaoTRi/settings/pages và kiểm tra:
+- `Build and deployment` → `Source` phải là **GitHub Actions**.
+- Mục `Custom domain` phải có đúng `baotri.vieclamhp247.com` và đã lưu.
+- Chụp ảnh toàn màn hình trang này để đối chiếu nếu cần. Đây là bước đang chờ người dùng thực hiện; chưa nhận được ảnh/chưa xác nhận trạng thái cấu hình.
+
+**Bước 2 – chỉ khi Pages settings đã đúng:**
+- Kiểm tra DNS tại nơi quản lý tên miền. Với subdomain `baotri`, đối chiếu bản ghi CNAME có trỏ tới `vodanhhp.github.io` hay không.
+- Không tự suy đoán hoặc thay DNS khi chưa xem bản ghi thực tế.
+
+**Bước 3 – chạy lại deployment sau khi cấu hình được xác nhận:**
+- Vào Actions → `Deploy BAOTRI Mini to GitHub Pages` → `Run workflow` trên nhánh `main`.
+- Kiểm tra lần lượt Configure Pages, Upload Pages artifact và Deploy Pages.
+- Chỉ kiểm tra lại website và kết luận đã khôi phục sau khi workflow chạy thành công, deployment hoàn tất và domain truy cập được.
+
+### 6. Phạm vi thay đổi trong phiên này
+- Chỉ đọc repository, workflow run và log để chẩn đoán.
+- **Không sửa mã nguồn, SQL, workflow, DNS hoặc Settings → Pages.**
+- **Không tạo commit sửa lỗi triển khai trong phiên này.**
+- Công việc được tạm dừng theo yêu cầu người dùng ngày 20/11/2026.
+
+**Điểm tiếp tục chính xác:** bắt đầu bằng việc mở Settings → Pages và kiểm tra/chụp ảnh hai mục `Build and deployment` và `Custom domain`. Không làm lại các bước chẩn đoán workflow đã hoàn thành ở trên, trừ khi có dữ liệu mới.
