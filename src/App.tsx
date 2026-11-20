@@ -23,6 +23,7 @@ type Page = 'dashboard' | 'checklist' | 'assets' | 'inventory' | 'planning' | 't
 
 // Chỉ bật trong giai đoạn thử nghiệm. Khi nghiệm thu Checklist, đổi duy nhất thành false để bắt buộc quét QR.
 const CHECKLIST_TEST_MODE = false
+const TEST_RESET_ORGANIZATION_ID = 'dfb443ec-a1ee-496b-842c-0bef3f50b8ce'
 const xmlEntities: Record<string, string> = {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}
 const xmlText = (value: string) => value.replace(/[&<>"']/g, ch => xmlEntities[ch] ?? ch)
 const htmlEscape = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch] ?? ch))
@@ -315,6 +316,7 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
   const [editingLog, setEditingLog] = useState<Log | null>(null)
   const [selectedLogIds, setSelectedLogIds] = useState<string[]>([])
   const [notice, setNotice] = useState('')
+  const [resetCheckReady, setResetCheckReady] = useState(false)
   const [mobileMore, setMobileMore] = useState(false)
   const assets = useLiveQuery(() => db.assets.orderBy('name').toArray(), []) ?? []
   const activeAssets = assets.filter(a => !a.archivedAt)
@@ -610,6 +612,72 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
   const lowStock = inventory.filter(i => i.quantity <= i.minQuantity)
 
   const flash = (s: string) => { setNotice(s); setTimeout(() => setNotice(''), 2800) }
+
+  // Test reset epoch: every browser clears its own Local database after the Test Admin resets Cloud.
+  useEffect(() => {
+    if (organizationId !== TEST_RESET_ORGANIZATION_ID) {
+      setResetCheckReady(true)
+      return
+    }
+    let active = true
+    let checking = false
+    const checkResetEpoch = async () => {
+      if (!active || checking) return
+      if (!navigator.onLine) {
+        setResetCheckReady(true)
+        return
+      }
+      checking = true
+      try {
+        const { data, error } = await cloudClient.rpc('get_baotri_data_reset_epoch', {
+          p_organization_id: organizationId
+        })
+        if (error) throw error
+        const epoch = typeof data === 'string' ? data : null
+        if (epoch) {
+          const markerKey = 'baotri-data-reset-epoch:' + organizationId
+          if (localStorage.getItem(markerKey) !== epoch) {
+            await db.transaction('rw', [
+              db.assets, db.inventory, db.tasks, db.logs, db.movements, db.maintenancePlans,
+              db.checklistTemplates, db.checklistVersions, db.checklistResults, db.syncQueue,
+              db.assetCloudLinks, db.assetMutations
+            ], async () => {
+              await Promise.all([
+                db.assets.clear(), db.inventory.clear(), db.tasks.clear(), db.logs.clear(),
+                db.movements.clear(), db.maintenancePlans.clear(), db.checklistTemplates.clear(),
+                db.checklistVersions.clear(), db.checklistResults.clear(), db.syncQueue.clear(),
+                db.assetCloudLinks.clear(), db.assetMutations.clear()
+              ])
+            })
+            localStorage.removeItem('baotri-custom-asset-categories')
+            localStorage.removeItem('baotri-inventory-locations')
+            setCustomAssetCategories([])
+            setInventoryLocations([])
+            localStorage.setItem(markerKey, epoch)
+            setNotice('Cloud Test đã reset. Dữ liệu Local trên thiết bị này đã được xóa an toàn.')
+          }
+        }
+      } catch (error) {
+        console.error('Không thể xác nhận trạng thái reset Cloud Test:', error)
+        setNotice('Chưa xác nhận được trạng thái reset Cloud. Hãy kết nối Internet và tải lại trước khi thao tác dữ liệu.')
+      } finally {
+        checking = false
+        if (active) setResetCheckReady(true)
+      }
+    }
+    const resumeCheck = () => {
+      if (!checking) setResetCheckReady(false)
+      void checkResetEpoch()
+    }
+    void checkResetEpoch()
+    window.addEventListener('focus', resumeCheck)
+    window.addEventListener('online', resumeCheck)
+    return () => {
+      active = false
+      window.removeEventListener('focus', resumeCheck)
+      window.removeEventListener('online', resumeCheck)
+    }
+  }, [cloudClient, organizationId])
   const blockViewer = (action: string) => {
     if (!isViewer) return false
     flash(`Tài khoản Viewer chỉ có quyền xem, không được phép ${action}.`)
@@ -1340,6 +1408,12 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
     ['reports','Báo cáo',BarChart3],
     ['settings','Cài đặt',Settings]
   ] as const
+
+  if (!resetCheckReady) {
+    return <div className={`app-shell ${theme} ${compact ? 'compact-mode' : ''}`}>
+      <main className="main"><section className="panel"><h2>Đang kiểm tra trạng thái dữ liệu Cloud…</h2><p className="muted">BAOTRI đang xác nhận xem môi trường Test có yêu cầu reset Local hay không.</p></section></main>
+    </div>
+  }
 
   return <div className={`app-shell ${theme} ${compact ? 'compact-mode' : ''}`}>
     <aside className="sidebar">
