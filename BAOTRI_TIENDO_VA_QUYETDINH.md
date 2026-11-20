@@ -5078,3 +5078,9 @@ Lưu ý: UPDATE có thể giữ row tuple lock khi trigger chờ advisory; creat
 - Không bật hard-delete trong phạm vi này.
 
 **Trạng thái:** kế hoạch rollout/rollback đã được lập. Chưa viết SQL migration, chưa sửa code, chưa thay grants/RPC/Supabase và chưa chạy concurrency test.
+
+## 108. Điều chỉnh thứ tự đóng direct DELETE
+
+Điều chỉnh kế hoạch §107: direct `DELETE public.assets` không chờ Phase 4. Nếu preflight xác nhận không có runtime/client caller, revoke DELETE privilege khỏi authenticated trong cùng transaction Phase 2 với việc retrofit tất cả Asset/Lease writer. Hai thay đổi phải commit atomically để không có cửa sổ protocol nửa vời.
+
+Allocator cũ `create_asset_with_code` thiếu receipt idempotency, chưa thấy runtime caller; candidate revoke EXECUTE authenticated cùng Phase 2, chỉ mở lại qua RPC idempotent ở Phase 4 nếu có use case. Phase 4 còn lại chỉ revoke direct Settings INSERT/UPDATE sau compatibility window. Nếu phát hiện client cũ phụ thuộc direct DELETE/allocator, dừng rollout và chuyển đổi client trước.
