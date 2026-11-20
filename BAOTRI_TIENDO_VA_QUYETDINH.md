@@ -4968,3 +4968,38 @@ A1 acquire/delete khi Lease chưa tồn tại; A2 acquire/takeover/delete khi Le
 Mỗi case cần hai connection vật lý, xác định winner semantics, ghi wait graph/SQLSTATE/commit-rollback và kiểm tra invariant cuối. Chưa chạy test.
 
 **Kết luận:** Asset anchor không phải khóa duy nhất của toàn hệ thống. Cần giữ riêng ba miền: Asset serialization, mutation idempotency và organization Settings/Counter. Chưa thay đổi RPC, code, grants, migration hoặc Supabase.
+
+## 104. Rà sâu Settings/Counter và quyết định với RPC legacy – 20/11/2026
+
+Đã đọc function definitions trực tiếp từ catalog PostgreSQL Test, kiểm tra index/unique constraints và tìm call-site trong source.
+
+### Settings
+- `organization_settings` có PK `organization_id`, RLS INSERT/UPDATE yêu cầu `settings.manage`.
+- Runtime writer tìm thấy duy nhất: `saveCloudAssetCodeConfig()` trong `src/lib/assetsCloud.ts`, hiện SELECT rồi PostgREST INSERT/UPDATE trực tiếp.
+- `create_asset_with_code` và `import_asset_preserving_identity` đọc `asset_code_config` không khóa.
+- Candidate: chuyển Settings write sang RPC lấy exclusive transaction advisory lock theo organization; create/import lấy shared lock cùng key trước khi đọc config. Dùng namespace two-int riêng cho Settings, tách Asset anchor; advisory lock xử lý được cả trường hợp row chưa tồn tại. Sau chuyển đổi phải đóng direct INSERT/UPDATE paths. RLS vẫn giữ vai trò authorization.
+
+### Counter
+- Counter PK: `(organization_id, category_code)`; unique Asset code: `(organization_id, code)`.
+- Create allocator UPSERT Counter bằng `greatest(last_value, MAX lịch sử)+1`; import nhận dạng mã thì UPSERT `greatest(last_value, imported sequence)`. Cùng category được serialize trên Counter row.
+- Asset anchor không thay Counter. Mọi writer tạo mã phải dùng Counter; code import không nhận dạng được vẫn giữ nguyên nhưng cần review theo policy.
+- Create đọc MAX trước khi UPSERT Counter; khi chờ Counter, MAX có thể cũ, nhưng UPSERT greatest() với counter hiện hành vẫn cấp sequence tiếp theo.
+
+### Allocator idempotency
+`create_asset_with_code` chưa có mutation ID/receipt, p_id optional, chưa thấy caller runtime. Không nên bật helper này trước khi có stable client UUID + mutation ID + receipt/replay. Retry cùng request phải trả kết quả cũ, không tăng sequence; cùng ID khác payload phải bị từ chối.
+
+### Hai RPC legacy
+- `update_asset_with_lock` và `set_asset_archived_with_lock` còn EXECUTE authenticated; helper tương ứng còn export trong source.
+- Static search không thấy caller UI/runtime. Phân loại đúng: helper tương thích còn export nhưng không quan sát thấy call-site; chưa đủ cơ sở để DROP/revoke ngay.
+- Candidate: giữ tạm, retrofit cùng Asset anchor, đánh dấu deprecated, không dùng cho luồng mới. Revoke EXECUTE bằng migration riêng sau full call-site audit + compatibility window. Nếu vẫn để EXECUTE thì bắt buộc cùng protocol.
+
+### Lock order tổng hợp
+- Acquire/heartbeat/release: Asset anchor → Lease.
+- Apply mutation: Asset anchor → receipt replay/recheck → Lease → Asset → Receipt.
+- Import: Asset anchor → mutation-ID advisory bigint → ledger replay → Settings shared → Counter → Asset → import ledger.
+- Allocator: Asset anchor → Settings shared → Counter → Asset (chỉ sau khi có idempotency).
+- Settings save: Settings exclusive → Settings DML; không lấy Asset anchor sau đó.
+- Legacy update/archive: Asset anchor → Lease → Asset.
+- Future hard delete: Asset anchor → Lease/Asset/dependency checks; direct DELETE phải bị thu hồi.
+
+**Kết luận:** tách riêng ba miền Asset, Settings và Counter, đồng thời giữ mutation-ID idempotency độc lập. Chưa tạo migration, chưa sửa code/RPC/grants/Supabase và chưa chạy concurrency test. Bước tiếp theo là thiết kế RPC Settings + allocator receipt, rồi gom toàn bộ thay đổi thành một kế hoạch migration có thứ tự triển khai và rollback.
