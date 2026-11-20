@@ -2917,3 +2917,17 @@ Trong compatibility window dùng global Settings key + BEFORE INSERT/UPDATE FOR 
 Determinism/vector trên PostgreSQL 17.12; domain separation; shared/shared coexist; exclusive waits; commit/rollback release; statement trigger order kể cả zero-row; direct UPDATE ↔ RPC deadlock regression; malicious search_path; authenticated/anon không gọi helper; two-int namespace inventory.
 
 Không tự tạo vector bằng suy đoán; chưa chạy SQL, chưa tạo migration.
+
+## 86. Inventory advisory lock hiện có và contract M019
+
+Source search/fetch tìm thấy một call-site hai thành phần: import mutation đang dùng pg_advisory_xact_lock(bigint) với hashtextextended(org || ':' || mutation_id, 0). Chưa thấy call-site two-int hoặc session-level trong source được index; vẫn phải kiểm tra toàn catalog PostgreSQL trong preflight.
+
+Khi retrofit import: Asset anchor → mutation-ID bigint lock → ledger replay → Settings shared lock → Settings read → Counter. Không đổi thứ tự mutation-ID lock hiện tại trước ledger replay.
+
+M019 contract:
+- private schema, không exposed.
+- Key derivation/lock helper SECURITY INVOKER, owner postgres; trigger wrapper riêng SECURITY DEFINER, owner postgres, search_path rỗng, chỉ lấy global Settings lock.
+- Revoke default PUBLIC EXECUTE; không grant helper cho anon/authenticated; trigger vẫn chạy qua direct DML nhưng không mở API callable.
+- Domain-versioned input và fixed seed; hash bigint split thành hai signed int32 đúng range; không expose raw key input từ client.
+- M019 chỉ thêm primitives/statement trigger; chưa thay business RPC, grants direct DML hoặc frontend.
+- Chưa query catalog, sinh vectors hay tạo migration.
