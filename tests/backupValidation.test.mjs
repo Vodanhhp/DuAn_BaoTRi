@@ -62,3 +62,9 @@ test('rejects missing custom categories and wrong database identity', () => {
   wrongDatabase.database = 'another-database'
   assert.equal(isValidBackupV3(wrongDatabase), false)
 })
+
+test('rejects duplicate primary keys within a table', () => {
+  const duplicate = validBackup()
+  duplicate.assets = [{ id: 'same-id' }, { id: 'same-id' }]
+  assert.equal(isValidBackupV3(duplicate), false)
+})
