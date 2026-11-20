@@ -582,3 +582,12 @@ Người dùng xác nhận:
 - Assets: không có direct INSERT/UPDATE authenticated trong quyền bảng hiện tại; hard-delete còn mở cho Admin nhưng bị permission + FK RESTRICT giới hạn.
 - Inventory: direct balance mutation là finding ưu tiên cao, vì có thể tạo lệch giữa số dư và sổ movement. Cloud Inventory phải tiếp tục ở trạng thái chưa bật worker cho đến khi transaction RPC và quyền ghi được khóa đúng.
 - Tất cả truy vấn trong mục này là read-only trên `BAOTRI-Mini-Test`; không thay đổi Test hoặc Production.
+
+
+## 23. Kiểm tra RPC đã cài đặt trên Test: Asset có, Inventory chưa có (20/11/2026)
+
+- Đã truy vấn `pg_proc` trên `BAOTRI-Mini-Test` cho các function public liên quan asset/inventory/movement, kèm EXECUTE privilege của authenticated/anon/service_role và phần định nghĩa function.
+- Có các RPC Asset: `create_asset_with_code`, `import_asset_preserving_identity`, `acquire_asset_edit_lock`, `heartbeat_asset_edit_lock`, `release_asset_edit_lock`, `list_asset_edit_locks`, `update_asset_with_lock`, `apply_asset_mutation_with_lock`, `set_asset_archived_with_lock`. Các RPC nghiệp vụ đều SECURITY DEFINER, `search_path = ''`, `row_security = off` và authenticated EXECUTE; anon không có EXECUTE. Body kiểm tra auth.uid() và permission tương ứng. Trigger helper `set_asset_updated_at` không phải RPC nghiệp vụ.
+- Chưa tìm thấy bất kỳ RPC Inventory/Movement nào được cài đặt trên Test. Điều này khớp trạng thái thiết kế trong repository: Cloud Inventory RPC design vẫn là tài liệu, chưa có migration triển khai. Vì vậy direct INSERT/UPDATE inventory_items hiện không có đường RPC thay thế để thực hiện balance + movement atomic.
+- Kết luận triển khai: không bật Cloud Inventory worker và không revoke direct writes trước khi có migration RPC + test SQL trên Test. Khi thiết kế RPC phải giữ allowlist metadata không chứa quantity; tạo item + opening movement atomic; post/adjust phải khóa item, so expected row_version, tính balance phía server, ghi movement + receipt/idempotency + event trong một transaction. Sau test mới thu hồi direct INSERT/UPDATE của authenticated theo kế hoạch cutover.
+- Không gọi RPC có ghi, không thực hiện DML, không thay đổi schema/grants. Chỉ đọc catalog và định nghĩa function trên Test.
