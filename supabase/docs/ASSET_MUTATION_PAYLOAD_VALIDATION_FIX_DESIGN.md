@@ -32,7 +32,7 @@ This rejects SQL NULL, JSON null, scalar, array, missing keys, and unsupported e
 
 ## 3. Forward migration draft
 
-The following is the complete function definition copied from the current canonical Migration 017 source. The corrective migration must wrap this definition and the grants/comments below in a transaction. Before assigning a timestamp/version, inspect the repository migration inventory and the target project's migration ledger; do not assume the next number is 019 merely from conversation history.
+The following is the complete function definition copied from the current canonical Migration 017 source. The corrective migration must wrap this definition and the grants/comments below in a transaction. Version assignment was checked against the repository migration inventory and the confirmed BAOTRI-Mini-Test sequence through Migration 019. The target has no migration ledger table/tooling; the user confirmed no migration SQL was applied after Migration 019. The proposed next version is Migration 020 (`20261120000100`).
 
 ```sql
 begin;
@@ -281,4 +281,8 @@ After applying the approved migration on Test:
 
 ## 7. Current status
 
-This document is a design artifact only. No migration file has been created, no SQL has been executed, no RPC has been invoked, and Supabase has not been changed.
+- This document remains a design/review artifact; it is not execution approval.
+- A versioned SQL draft exists at `supabase/drafts/20261120000100_p0_fix_asset_mutation_payload_validation_DRAFT.sql`; it is not in `supabase/migrations/`.
+- The regression test draft exists at `supabase/drafts/P0_ASSET_MUTATION_PAYLOAD_VALIDATION_REGRESSION_TEST_DRAFT.sql`. Its helper-call argument count was corrected in commit `8e08dc79b2a2d4cf4b46d18d667047c16d568335`.
+- Proposed Migration 020 has not been promoted to the migrations directory.
+- No SQL has been executed, no RPC has been invoked, and Supabase has not been changed.
