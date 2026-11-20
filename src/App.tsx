@@ -840,17 +840,23 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
   }
   const saveItem = async (i: InventoryItem) => {
     if (blockViewer('thêm hoặc sửa vật tư')) return
-    const existing = await db.inventory.get(i.id)
-    // Tồn kho chỉ thay đổi qua Nhập/Xuất; tồn tối thiểu chỉ Admin được cập nhật.
-    const value: InventoryItem = {
-      ...i, quantity: existing?.quantity ?? 0,
-      minQuantity: isAdmin ? i.minQuantity : (existing?.minQuantity ?? 0),
-      location: inventoryLocationEnabled ? i.location : '', updatedAt: now(),
-      identityStatus: existing?.identityStatus ?? 'legacy',
-      createdByLabel: existing?.createdByLabel ?? (!existing ? (userName.trim() || userEmail) : undefined),
-      createdByUserId: existing?.createdByUserId ?? (!existing ? userId : undefined)
-    }
-    await putAndQueue(db.inventory, 'inventory', value); setModal(null); setEditingItem(null); flash(existing ? 'Đã cập nhật thông tin vật tư' : 'Đã thêm vật tư (tồn ban đầu = 0)')
+    // Preserve the latest stock balance inside the same write transaction.
+    // A movement in another tab must not be overwritten by this form's stale snapshot.
+    const saved = await db.transaction('rw', [db.inventory, db.syncQueue], async () => {
+      const existing = await db.inventory.get(i.id)
+      const value: InventoryItem = {
+        ...i, quantity: existing?.quantity ?? 0,
+        minQuantity: isAdmin ? i.minQuantity : (existing?.minQuantity ?? 0),
+        location: inventoryLocationEnabled ? i.location : '', updatedAt: now(),
+        identityStatus: existing?.identityStatus ?? 'legacy',
+        createdByLabel: existing?.createdByLabel ?? (!existing ? (userName.trim() || userEmail) : undefined),
+        createdByUserId: existing?.createdByUserId ?? (!existing ? userId : undefined)
+      }
+      await db.inventory.put(value)
+      await queueChange('inventory', value.id)
+      return { value, existed: Boolean(existing) }
+    })
+    setModal(null); setEditingItem(null); flash(saved.existed ? 'Đã cập nhật thông tin vật tư' : 'Đã thêm vật tư (tồn ban đầu = 0)')
   }
   const saveTask = async (t: Task) => {
     if (blockViewer('thêm hoặc sửa công việc')) return
