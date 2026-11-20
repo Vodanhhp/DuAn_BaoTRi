@@ -5493,3 +5493,27 @@ M021 test draft được bổ sung thêm:
 - M021 vẫn draft. Sequential test và concurrency A1–A11 chưa chạy; Production untouched.
 
 **Next:** rà soát toàn bộ test M021 assertions và lock protocol để lập checklist execution rõ ràng; chỉ chạy trên Test sau approval, không thay đổi Production.
+
+
+## 126. Two-session protocol coverage gap + legacy writer risk – 20/11/2026
+
+Review protocol M021 cho thấy bản cũ mới kiểm tra lock primitives/manual lock, Settings và transaction release; chưa mô tả đủ actual business RPC interleavings. Đã bổ sung Section 8 vào `M021_TWO_SESSION_TEST_PROTOCOL_DRAFT.md`:
+- acquire ↔ heartbeat/release cùng Asset;
+- mutation ↔ import same Asset, phân biệt identical payload (already-present) và stale/different payload (conflict), không giả định import luôn replay;
+- cùng mutation ID ở hai Asset anchor khác nhau;
+- legacy update/archive ↔ apply mutation, nếu legacy RPC còn được giữ.
+- Hard-delete/FK-vs-delete concurrency bị loại khỏi executable protocol vì contract M021 revoke DELETE authenticated/service_role, không có delete RPC; chỉ privilege assertions.
+
+### Legacy writer finding
+- Search call-sites cho `updateAssetWithEditLock`, `setAssetArchivedWithEditLock` và `update_asset_with_lock`/`set_asset_archived_with_lock` không thấy caller runtime ngoài exported helper definitions, migration/tests.
+- App active linked Asset write dùng `applyAssetMutationWithEditLock`; đây là RPC có expected Cloud version + receipt.
+- Legacy update RPC full-snapshot không nhận expected version/receipt. Anchor chỉ serialize, không tự giải quyết stale-write conflict; legacy call có thể ghi đè sau mutation nếu vẫn EXECUTE-accessible.
+- Promotion review cần chốt: revoke EXECUTE legacy update/archive cho authenticated/service_role (khuyến nghị nếu không có client caller), hoặc giữ compatibility nhưng ghi nhận risk và test stale-write ordering. Chưa thay đổi grants hoặc DB.
+
+### Status
+- [x] Bổ sung actual RPC integration scenarios, chỉnh expected semantics mutation/import.
+- [x] Ghi rõ legacy writer conflict-detection gap và không khẳng định anchor ngăn lost update.
+- [ ] Chưa chốt legacy RPC grant policy; chưa apply M021.
+- [ ] Two-session physical tests chưa chạy.
+
+**Next:** final review M021 privilege contract (allocator/direct table DML/Settings DELETE + legacy update/archive), rà các migration/test lịch sử tương thích, sau đó tạo preflight checklist. Execution chỉ Test và cần approval; Production out of scope.
