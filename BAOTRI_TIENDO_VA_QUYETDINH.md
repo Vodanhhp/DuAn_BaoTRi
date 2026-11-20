@@ -5595,9 +5595,12 @@ Tạo `supabase/drafts/M021_PREFLIGHT_CHECKLIST_DRAFT.md` để gom execution ga
 3. Proceed with controlled Test data Local→Cloud Asset import/edit verification. Do not enable generic full sync or touch Production.
 
 
-## 132. Quyết định lưu metadata người tạo Asset trên Cloud — 20/11/2026
+## 132. Quyết định và áp dụng metadata người tạo Asset trên Cloud — 20/11/2026
 
-- Chốt phương án: lưu cả created_by_user_id và created_by_label trên Cloud, không loại bỏ metadata khi nhập Asset Local.
-- Đã tạo draft supabase/drafts/M022_asset_creator_metadata_DRAFT.sql; commit fc5d2b6e92805c9e7741715ea1938b5a4f8c5c7c. Draft thêm hai cột nullable, FK user với ON DELETE SET NULL (giữ nhãn người tạo), ghi nhận actor cho Asset tạo trực tiếp trên Cloud và mở rộng RPC import để giữ metadata Local cùng idempotency payload.
-- Đã fetch lại file và kiểm tra tĩnh các điểm: add columns, Cloud create, import allowlist/type validation, canonical payload, so sánh Asset đã tồn tại và INSERT. Chưa chạy migration, chưa thay đổi Test/Production.
-- Việc tiếp theo: review SQL M022 kỹ hơn; sau khi người dùng phê duyệt mới áp dụng trên BAOTRI-Mini-Test. Sau đó cập nhật mapper/AssetRow/import payload và chạy CI + browser verification. Không full sync, không Production.
+- Chốt lưu cả created_by_user_id và created_by_label trên Cloud.
+- Người dùng đã xác nhận áp dụng M022. Migration m022_asset_creator_metadata đã chạy thành công trên BAOTRI-Mini-Test, version 20261120111828. Production không bị truy cập/thay đổi.
+- File migration chuẩn: supabase/migrations/20261120111828_m022_asset_creator_metadata.sql. Draft lịch sử: supabase/drafts/M022_asset_creator_metadata_DRAFT.sql.
+- Postflight PASS: hai cột nullable tồn tại; FK created_by_user_id → auth.users(id) ON DELETE SET NULL; RPC tạo Asset ghi actor; RPC import giữ metadata trong validation, payload idempotency, so sánh và INSERT. Hai RPC vẫn SECURITY DEFINER, search_path rỗng, row_security=off. Quyền trực tiếp bị M021 khóa vẫn nguyên.
+- Code đã cập nhật: syncMapping.ts, assetsCloud.ts, CloudAssetsPanel.tsx; mapping hai chiều, RPC import payload, preview snapshot và so sánh Asset Cloud hiện có đều giữ creator fields. Test mapping và contract test đã bổ sung.
+- Đã fetch lại các file code và xác minh nội dung commit trên GitHub. CI chưa chạy xong ở thời điểm ghi mục này.
+- Tiếp theo: theo dõi CI, sau đó browser-level Local PC → Cloud import/edit verification trên Test. Physical two-session M021 vẫn pending. Không bật full sync, không Production.
