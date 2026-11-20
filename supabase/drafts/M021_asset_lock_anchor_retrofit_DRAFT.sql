@@ -1,5 +1,7 @@
 -- BAOTRI Mini — DRAFT ONLY: M021 Asset/Lease lock-anchor retrofit.
 -- Current applied baseline on BAOTRI-Mini-Test: Migration 020 P0 payload fix.
+-- Candidate version if promoted: 20261120050000 (must re-check migration history).
+-- STATUS: DRAFT ONLY; NOT APPLIED. Production is out of scope.
 -- This candidate combines the former lock primitive/Settings bridge and all
 -- Asset writer retrofits in ONE transaction to avoid a committed mixed protocol.
 -- Do not apply to Production. Two-session concurrency gates remain mandatory.
