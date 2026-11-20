@@ -2570,3 +2570,25 @@ Bảng `asset_creation_mutations` unique `(organization_id, mutation_id)`; cần
 - Các receipt chỉ phục vụ idempotency/audit; không thay thế authorization.
 
 Chưa tạo bảng/function, chưa sửa frontend hoặc grants. Contract cần được review cùng policy retention, payload canonicalization và test matrix trước khi thành migration.
+
+## 92. Transitional Settings guard trigger – bảo vệ client cũ trong giai đoạn chuyển đổi
+
+Refinement: không nhất thiết phải để direct PostgREST Settings writer bypass lock trong thời gian rollout. Có thể dùng database trigger như lớp compatibility tạm thời.
+
+Candidate:
+- Tạo một BEFORE INSERT OR UPDATE trigger trên `organization_settings` gọi cùng helper lấy **Settings exclusive transaction advisory lock** theo organization.
+- RPC Settings save cũng dùng cùng key; create/import lấy shared lock trước khi đọc config.
+- Trigger không cấp quyền và không thay RLS; request vẫn phải thỏa `settings.manage`.
+- Trigger phải dùng transaction-level lock, không session lock. DELETE Settings hiện không phải runtime path; nếu tương lai cho phép DELETE thì phải có policy/lock semantics riêng.
+- Với UPDATE, PostgreSQL có thể đã khóa tuple trước khi BEFORE trigger chờ advisory lock. Điều này không tạo vòng khóa với create/import nếu các reader chỉ giữ shared advisory lock và SELECT Settings không FOR UPDATE; create/import không cần tuple lock Settings. Khi reader commit, Settings writer lấy exclusive lock và hoàn tất. Phải xác minh bằng concurrency test thật trước khi áp dụng.
+- Với INSERT khi row chưa tồn tại, trigger vẫn lấy được advisory lock, xử lý race row-absent; PK organization_id vẫn là hàng rào cuối cho duplicate insert.
+
+Rollout an toàn hơn:
+1. Thêm helper lock + trigger guard trước, giữ nguyên PostgREST RLS writer để client cũ không gãy.
+2. Retrofit create/import để lấy Settings shared lock.
+3. Triển khai Settings RPC + frontend stable mutation ID/expected version.
+4. Chờ compatibility window, kiểm tra telemetry/call-site và minimum client version.
+5. Revoke direct INSERT/UPDATE grants (hoặc loại policy tương ứng) trong migration riêng; giữ trigger như defense-in-depth hoặc gỡ khi mọi writer đã đi qua RPC.
+6. Chỉ sau khi khóa/permission/test pass mới coi Settings protocol hoàn chỉnh.
+
+Trigger là cầu nối, không thay receipt/idempotency của Settings RPC và không bảo đảm payload validation nếu không bổ sung validation server-side. Chưa viết/áp dụng trigger.
