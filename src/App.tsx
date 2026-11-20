@@ -961,7 +961,7 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
       if (current.status === 'Hoàn thành') return 'already-completed' as const
       const completedAt = now()
       const completed = { ...current, status: 'Hoàn thành' as const, completedAt, updatedAt: completedAt }
-      const log: Log = { id: uid(), assetId: current.assetId, taskId: current.id, date: today(), kind: 'Bảo dưỡng định kỳ', description: current.title, parts: '', readings: current.readings, requestedBy: userName, result: 'Đạt', completedAt, performedBy: userName }
+      const log: Log = { id: uid(), assetId: current.assetId, taskId: current.id, date: today(), kind: 'Bảo dưỡng định kỳ', description: current.title, parts: '', readings: current.readings, requestedBy: userName, result: 'Đạt', completedAt, performedBy: userName, updatedAt: completedAt }
       await db.tasks.put(completed)
       await db.logs.add(log)
       await queueChange('tasks', current.id)
