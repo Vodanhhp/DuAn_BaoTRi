@@ -2931,3 +2931,28 @@ M019 contract:
 - Domain-versioned input và fixed seed; hash bigint split thành hai signed int32 đúng range; không expose raw key input từ client.
 - M019 chỉ thêm primitives/statement trigger; chưa thay business RPC, grants direct DML hoặc frontend.
 - Chưa query catalog, sinh vectors hay tạo migration.
+
+## 87. M019 two-session test matrix và tiêu chí PASS
+
+Dùng hai process psql/physical connections, READY barrier ở harness, không dùng pg_sleep. Mỗi test có fixture riêng, application_name/PID/txid, lock_timeout; khi timeout thu pg_locks + pg_blocking_pids trước khi cancel. DML test transaction rollback; không log secrets.
+
+| Test | Session A | Session B | Kỳ vọng |
+|---|---|---|---|
+| Shared/shared | Giữ global shared | Lấy cùng shared | B không block |
+| Shared/exclusive | Giữ shared | Xin exclusive | B block tới khi A kết thúc |
+| Exclusive/shared | Giữ exclusive | Xin shared | B block tới khi A kết thúc |
+| Exclusive/exclusive | Giữ exclusive | Xin exclusive | B block tới khi A kết thúc |
+| Commit/rollback | Giữ transaction lock | Quan sát lock | Lock tự nhả ở cả COMMIT và ROLLBACK |
+| Asset key | Giữ key Asset A | Xin key Asset B/cùng A | Key khác đồng thời; cùng key block |
+| Trigger zero-row | UPDATE không match row | Xin shared | Trigger vẫn giữ global exclusive |
+| Trigger INSERT/UPDATE | Direct DML | Xin shared | Reader chờ statement writer |
+| Direct-first race | Direct UPDATE lấy trigger lock | Settings RPC | RPC chờ trước row lock |
+| RPC-first race | RPC lấy exclusive | Direct UPDATE | Trigger chờ trước row lock |
+| Reader/writer | create/import lấy shared | Settings writer exclusive | Tuần tự đúng hai chiều |
+| Security | authenticated/anon gọi helper | — | Permission denied |
+| Search path | Poison schema rồi gọi RPC | — | Vẫn resolve object đúng |
+| RLS | Actor thiếu membership | RPC nghiệp vụ | Bị từ chối |
+
+Pass: không có 40P01; blocker/wait đúng; zero-row trigger lấy lock; transaction release đúng; helper không callable từ client; không có business state còn lại sau rollback. 55P03 là timeout cần điều tra, không tự động là deadlock.
+
+Chưa chạy test. Cần phê duyệt rõ ràng trước mọi concurrency test có ghi dữ liệu.
