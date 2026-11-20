@@ -857,6 +857,19 @@ comment on function private.guard_settings_global_write() is
 
 commit;
 
+-- PostgreSQL 17.12 / hashtextextended(seed=0) Test vectors:
+-- Asset A input:
+-- baotri:asset-anchor:v1:dfb443ec-a1ee-496b-842c-0bef3f50b8ce:872077a8-9b75-402d-908a-93fa5bcd9749
+-- hash=6961243932038087064 => two-int (1620790905, 1408844184).
+-- Asset B input:
+-- baotri:asset-anchor:v1:dfb443ec-a1ee-496b-842c-0bef3f50b8ce:11111111-2222-4333-8444-555555555555
+-- hash=-7513077300520779810 => two-int (-1749274624, 1281916894).
+-- Settings global input:
+-- baotri:settings-global:v1
+-- hash=-7126684273450888515 => two-int (-1659310487, 2123944637).
+-- pg_locks represents two-int keys with objsubid=2 and bigint mutation
+-- keys with objsubid=1; the keyspaces are disjoint PostgreSQL overloads.
+
 -- REQUIRED TESTS BEFORE PROMOTION/APPLY:
 -- 1. Re-run all existing Asset Lease and Asset mutation SQL tests.
 -- 2. Sequential: acquire, heartbeat, release, mutation replay, payload rejection,
