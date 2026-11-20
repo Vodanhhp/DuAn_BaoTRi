@@ -259,3 +259,12 @@ The Local→Cloud Asset import no-data-loss guard is committed in `src/lib/asset
 The preceding CI failure was a stale test assertion in `localConcurrencyContracts.test.mjs`: transaction now includes `db.tasks` in addition to Checklist tables. Updated assertion and reran; no application runtime defect was indicated by that failure.
 
 Still pending: physical two-session M021 protocol and browser-level Local PC → Cloud import/edit verification on Test. No generic sync activation and no Production changes.
+
+
+## 25. Asset creator metadata — M022 draft decision (20/11/2026)
+
+Decision: preserve both Local Asset creator fields in Cloud (created_by_user_id, created_by_label); do not drop audit metadata during selective import.
+
+Draft created: supabase/drafts/M022_asset_creator_metadata_DRAFT.sql (GitHub commit 08e2965862d582366863cfc97998b5a961b569e0; blob SHA 352023bea0ffaf97f3674add837fc8e6ca0b1f63). It adds nullable creator columns, references auth.users(id) with ON DELETE SET NULL while retaining the label, stamps Cloud-origin creates from the authenticated actor, and extends the identity-preserving import RPC to validate, compare, store, and return creator metadata.
+
+Static read-back checks confirmed both creator fields are present in the schema alteration, Cloud create path, import validation, canonical idempotency payload, existing-row comparison, and INSERT. This is a draft review only: NOT applied to Test or Production. Existing Cloud rows remain NULL; no creator identity is fabricated. App mapping and browser verification must follow only after the Test migration is separately approved and applied.
