@@ -12,7 +12,8 @@
     "test:template-release": "node --test tests/templateRelease.test.mjs",
     "validate:template": "node scripts/validate-template-release.mjs templates/HOTEL_SMALL_BASIC/1.0.0.json",
     "test:date-utils": "node --test tests/dateUtils.test.mjs",
-    "test:backup-validation": "node --test tests/backupValidation.test.mjs"
+    "test:backup-validation": "node --test tests/backupValidation.test.mjs",
+    "test:local-concurrency": "node --test tests/localConcurrencyContracts.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.119.0",
