@@ -14,10 +14,15 @@ const tableKeys = [
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
-const hasValidRows = (value: unknown): value is Array<Record<string, unknown>> =>
-  Array.isArray(value) && value.every(row =>
-    isRecord(row) && typeof row.id === 'string' && row.id.trim().length > 0
-  )
+const hasValidRows = (value: unknown): value is Array<Record<string, unknown>> => {
+  if (!Array.isArray(value)) return false
+  const ids = new Set<string>()
+  for (const row of value) {
+    if (!isRecord(row) || typeof row.id !== 'string' || !row.id.trim() || ids.has(row.id)) return false
+    ids.add(row.id)
+  }
+  return true
+}
 
 /**
  * Validate the complete current backup format before any destructive restore.
