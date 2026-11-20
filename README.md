@@ -80,6 +80,7 @@ npm run test:local-identity
 npm run test:template-release
 npm run test:date-utils
 npm run test:backup-validation
+npm run test:local-concurrency
 npm run build
 ```
 
