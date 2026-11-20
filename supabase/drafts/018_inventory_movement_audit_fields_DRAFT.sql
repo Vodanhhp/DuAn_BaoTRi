@@ -62,7 +62,7 @@ alter table public.inventory_movements
         and balance_after is not null
         and created_by_user_id is not null
         and mutation_id is not null
-        and btrim(reason) <> ''
+        and reason ~ '[^[:space:]]'
         and balance_after = balance_before + quantity_delta
         and quantity = abs(quantity_delta)
         and (
