@@ -459,3 +459,11 @@ Người dùng xác nhận:
 - Không sửa Cloud/Production, schema, RPC hoặc dữ liệu hiện có.
 
 - Bổ sung bảo vệ khi `currentVersion` không khớp lịch sử: trong transaction, `saveTemplate()` đọc các version đã lưu và lấy số lớn nhất giữa lịch sử với `currentVersion`, sau đó mới tăng phiên bản. Tránh tái sử dụng số phiên bản nếu metadata bị lệch.
+
+
+## 15. Bảo toàn lịch sử Phiếu YC khi sửa đồng thời (20/11/2026)
+
+- `saveLog()` trước đây đọc Log hiện tại bên ngoài transaction; khi tab khác vừa ghi nhận hoàn thành hoặc thêm `editHistory`, tab cũ có thể ghi đè lịch sử mới.
+- Đã chuyển thao tác đọc Log, xác định chuyển trạng thái Hoàn thành → Chưa hoàn thành, hợp nhất `editHistory`, ghi Log và queue vào cùng Dexie readwrite transaction. Lịch sử đã lưu mới nhất được ưu tiên; chỉ dùng lịch sử từ form khi bản ghi chưa có lịch sử.
+- Bổ sung kiểm tra source contract cho luồng này trong `tests/localConcurrencyContracts.test.mjs`, chạy cùng script `test:local-concurrency`.
+- Chưa có kiểm thử browser đa tab thực tế và chưa có xác nhận CI; không tuyên bố test/build PASS.
