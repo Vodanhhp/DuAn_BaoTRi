@@ -37,6 +37,27 @@ test('accepts a complete valid empty backup', () => {
   assert.equal(isValidBackupV3(validBackup()), true)
 })
 
+test('accepts legacy v3 backups without inventory location settings', () => {
+  assert.equal(isValidBackupV3(validBackup()), true)
+})
+
+test('accepts valid inventory location settings in v3 backups', () => {
+  const backup = validBackup()
+  backup.inventoryLocations = ['Kho cơ điện', 'Kho phụ tùng']
+  backup.inventoryLocationEnabled = false
+  assert.equal(isValidBackupV3(backup), true)
+})
+
+test('rejects malformed optional inventory location settings', () => {
+  const invalidLocations = validBackup()
+  invalidLocations.inventoryLocations = ['Kho cơ điện', '   ']
+  assert.equal(isValidBackupV3(invalidLocations), false)
+
+  const invalidToggle = validBackup()
+  invalidToggle.inventoryLocationEnabled = 'false'
+  assert.equal(isValidBackupV3(invalidToggle), false)
+})
+
 test('rejects missing tables and unsupported backup versions', () => {
   const missingTable = validBackup()
   delete missingTable.logs
