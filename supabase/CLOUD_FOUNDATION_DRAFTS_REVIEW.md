@@ -2692,3 +2692,16 @@ Migration candidate 022:
 - Chưa kiểm tra production parity/client compatibility.
 - Chưa có quyết định retention cho các receipt mới.
 - Chưa có quyết định triển khai hard-delete; đề xuất hiện tại là không cung cấp hard-delete.
+
+
+## 94. Điều chỉnh rollout: đóng direct Asset DELETE cùng atomic retrofit
+
+Làm rõ thứ tự an toàn: không chờ Phase 4 mới revoke direct DELETE. Vì direct PostgREST DELETE không lấy Asset anchor, quyền này phải được đóng **trong cùng migration transaction với Phase 2 retrofit toàn bộ Asset writers**. Khi transaction commit, cả nhóm RPC mới và revoke DELETE cùng có hiệu lực; không có cửa sổ committed state mà một nửa protocol đã bật nhưng direct DELETE vẫn mở.
+
+Trong preflight Phase 0 phải xác nhận không có runtime/client caller trực tiếp xóa Asset. Nếu phát hiện caller, phải chuyển sang archive/Thanh lý trước. Nếu không có caller:
+- Phase 2 transaction đầu tiên revoke DELETE trên public.assets khỏi authenticated.
+- Trong cùng transaction thay definitions của toàn bộ Asset/Lease writers và legacy writer giữ lại.
+- Xử lý allocator legacy `create_asset_with_code`: do chưa có caller runtime và thiếu idempotency receipt, candidate là revoke EXECUTE authenticated trong cùng transaction; chỉ bật allocator idempotent ở Phase 4 nếu có use case được phê duyệt.
+- Commit atomically; postflight xác nhận privilege effective, function definitions, grants và app smoke tests.
+
+Phase 4 chỉ revoke direct Settings INSERT/UPDATE sau compatibility window; không lặp lại Asset DELETE revoke. Nếu preflight tìm thấy client phụ thuộc DELETE hoặc allocator cũ, không chạy migration cho tới khi client được chuyển đổi.
