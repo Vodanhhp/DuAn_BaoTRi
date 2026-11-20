@@ -2592,3 +2592,103 @@ Rollout an toàn hơn:
 6. Chỉ sau khi khóa/permission/test pass mới coi Settings protocol hoàn chỉnh.
 
 Trigger là cầu nối, không thay receipt/idempotency của Settings RPC và không bảo đảm payload validation nếu không bổ sung validation server-side. Chưa viết/áp dụng trigger.
+
+## 93. Kế hoạch migration thống nhất Asset / Settings / Counter – rollout và rollback
+
+Đây là kế hoạch triển khai candidate, không phải migration đã tạo hoặc được áp dụng. Không thực hiện ghi database ở bước lập kế hoạch.
+
+### Nguyên tắc rollout
+
+- Không hard-delete Asset trong đợt triển khai này. Archive/Thanh lý tiếp tục là lifecycle mặc định.
+- Không có trạng thái mixed-writer: mọi RPC có khả năng ghi Asset/Lease phải cùng tuân thủ Asset anchor trước khi bật protocol.
+- Mỗi migration DB là một transaction atomic nếu PostgreSQL hỗ trợ; các migration có thay đổi frontend phải triển khai theo expand → deploy → contract.
+- Không rollback một phần lock protocol bằng cách phục hồi một RPC writer cũ không lấy anchor. Nếu phải rollback, ưu tiên forward-fix; nếu buộc rollback thì đưa toàn bộ writer về một phiên bản tương thích cùng lúc.
+- Giữ RLS/permission checks; advisory locks không phải authorization.
+- Production chỉ được triển khai sau khi Test pass đủ matrix, backup/restore path và xác nhận migration parity.
+
+### Phase 0 – Baseline và preflight (read-only)
+
+1. Chốt Git commit/tag của source và snapshot migration list.
+2. Đối chiếu Test/Production: function signatures/definitions, grants, RLS policies, triggers, constraints/indexes, FK actions, table columns.
+3. Tìm toàn repo và các bản client được phân phối: call-site cho legacy helpers, direct table writes/deletes, RPC wrappers.
+4. Ghi baseline số lượng Assets, Leases, Receipts, Import mutations, Counter rows, Settings rows; kiểm tra orphan/mismatch và uniqueness.
+5. Chuẩn bị backup/restore và maintenance window. Không ghi secret/connection string vào repo hoặc log.
+
+**Gate 0:** không triển khai nếu schema drift chưa giải thích, chưa biết minimum client version, hoặc có writer chưa được inventory.
+
+### Phase 1 – Expand-only lock primitives và Settings bridge
+
+Migration candidate 019:
+- Thêm helper SQL nội bộ tạo Asset anchor key ổn định từ organization UUID + Asset UUID; dùng transaction-level advisory lock pair (two-int namespace).
+- Thêm helper Settings key riêng; không dùng chung namespace Asset.
+- Thêm transitional BEFORE INSERT/UPDATE trigger cho organization_settings để mọi direct PostgREST writer cũ lấy Settings exclusive lock.
+- Chưa revoke direct Settings grants, chưa thay frontend.
+- Helper phải có search_path an toàn, schema-qualified object references, EXECUTE chỉ cho function owner/nhóm cần thiết; không expose helper như API PostgREST.
+- Kiểm tra hash/key mapping có deterministic test vectors và namespace collision isolation.
+
+**Gate 1:** migration test pass; RLS/permission smoke test pass; hai-session Settings direct UPDATE/INSERT race pass; không có client regression.
+
+### Phase 2 – Retrofit toàn bộ Asset writer trong một release DB atomic
+
+Migration candidate 020:
+- Thay function definitions hiện hành cho acquire, heartbeat, release, apply mutation, import.
+- Retrofit cả update_asset_with_lock và set_asset_archived_with_lock nếu còn EXECUTE; đánh dấu legacy/deprecated nhưng giữ signature tương thích.
+- Không đưa create_asset_with_code legacy vào luồng mới; nếu function còn EXECUTE thì phải hoặc retrofit an toàn hoặc revoke EXECUTE trong cùng migration sau khi xác minh caller. Không để writer allocator bỏ qua Asset/Settings protocol.
+- Lock order nhất quán: authorization precheck → Asset anchor → mutation-ID lock (nếu có) → Settings shared (nếu đọc config) → Counter row → Lease row → Asset row → Receipt/ledger.
+- Riêng acquire/heartbeat/release không lấy Settings/Counter; Asset anchor phải lấy trước Lease.
+- Apply mutation phải lấy Asset anchor trước receipt fast replay; giữ nguyên payload validation, token ownership, expiry, expected version và receipt replay semantics.
+- Import: Asset anchor trước mutation-ID advisory; Settings shared trước khi đọc config; Counter UPSERT giữ nguyên semantics.
+- Legacy update/archive: cùng Asset anchor → Lease → Asset.
+- Tất cả function dùng transaction-level locks; không session-level lock.
+- Không thay đổi quyền release thành assets.update; không nới permission check nào.
+
+**Gate 2:** toàn bộ sequential SQL tests hiện có pass; hai-session deterministic A1–A8/A10/A11 pass; không deadlock; không orphan Lease/Receipt/ledger; không sai Counter; kiểm tra trực tiếp tất cả RPC signatures/grants. Chưa bật hard-delete.
+
+### Phase 3 – Settings RPC + client compatibility
+
+Migration candidate 021:
+- Tạo receipt table Settings với unique (organization_id, mutation_id), actor, request payload, result snapshot, applied_at.
+- Tạo Settings save RPC: permission settings.manage → mutation ID lock → receipt replay check → Settings exclusive lock → optimistic updated_at check → write → receipt.
+- Chưa revoke direct PostgREST INSERT/UPDATE; transitional trigger giữ direct client cũ tham gia exclusive lock.
+- Triển khai frontend gửi mutation UUID ổn định, expected_updated_at, xử lý conflict bằng refetch/review; retry cùng mutation ID.
+- Server-side validate JSON config; canonicalize payload để so sánh replay.
+
+**Gate 3:** test replay/mismatch/stale version/first insert; Settings RPC và old direct writer không thể ghi đồng thời qua lock; UI retry sau network timeout không tạo config update kép.
+
+### Phase 4 – Allocator idempotency và đóng direct write
+
+Migration candidate 022:
+- Tạo creation receipt table + RPC allocator idempotent, bắt buộc Asset UUID + mutation UUID.
+- Replay matching request trả snapshot cũ, không tăng Counter; mismatched actor/Asset/payload reject.
+- Không chuyển Local-first create sang Cloud. Chỉ dùng allocator nếu một use case Cloud API được phê duyệt rõ.
+- Sau compatibility window và kiểm tra minimum client version, revoke direct Settings INSERT/UPDATE cho authenticated; giữ RLS policy nếu cần làm defense-in-depth nhưng privilege phải đóng.
+- Revoke direct DELETE privilege trên public.assets authenticated; không xóa RLS policy permission-based nếu vẫn cần ghi nhận business permission, nhưng privilege là lớp chặn đường PostgREST. Xác minh service_role/owner behavior và không vô tình ảnh hưởng maintenance/admin tooling.
+- Không tạo hard-delete RPC trong đợt này.
+
+**Gate 4:** test privilege thực tế qua PostgREST role authenticated; Settings direct write và Asset direct DELETE bị chặn; app flows hiện tại không gọi hai đường đã đóng; create/import Counter invariants pass.
+
+### Phase 5 – Production rollout
+
+1. Backup và snapshot catalog.
+2. Chạy migration theo thứ tự đã test, xác minh mỗi migration checksum/version.
+3. Deploy frontend đúng compatibility order.
+4. Smoke test acquire/save/heartbeat/release/import/Settings save; không test destructive DELETE.
+5. Theo dõi SQLSTATE conflict, lock wait, timeout, receipt replay mismatch, Counter collision và client version.
+6. Giữ rollback window; không bật hard-delete.
+
+### Rollback và phục hồi
+
+- Phase 1: có thể gỡ trigger/helper nếu chưa có reader/writer phụ thuộc; nếu trigger đã được dùng, chỉ rollback khi toàn bộ Settings writer quay về trạng thái trước đó và không còn reader lấy shared lock.
+- Phase 2: không rollback riêng từng RPC. Rollback phải thay cả nhóm writer cùng transaction sang một phiên bản tương thích; trong mọi trường hợp vẫn giữ hard-delete privilege bị revoke. Nếu không chứng minh được lock compatibility, forward-fix.
+- Phase 3: frontend có thể quay về UI cũ khi transitional trigger vẫn còn; không drop receipt table hoặc helper đã chứa dữ liệu. Giữ RPC mới tương thích.
+- Phase 4: không tự động GRANT lại Settings direct write hoặc Asset DELETE khi rollback app. Re-grant làm mở lại bypass protocol; chỉ được thực hiện trong quyết định bảo mật riêng sau đánh giá rủi ro.
+- Receipt/ledger không xóa khi rollback; đó là audit/idempotency history.
+- Nếu migration lỗi giữa transaction, xác minh rollback tự động và catalog không ở trạng thái nửa vời; nếu migration nhiều transaction, phải có checkpoint phục hồi cụ thể.
+
+### Các điều kiện chưa được phép tiến hành
+
+- Chưa chốt implementation của key derivation/hash và test vectors.
+- Chưa có harness hai-session thực thi trên Test.
+- Chưa kiểm tra production parity/client compatibility.
+- Chưa có quyết định retention cho các receipt mới.
+- Chưa có quyết định triển khai hard-delete; đề xuất hiện tại là không cung cấp hard-delete.
