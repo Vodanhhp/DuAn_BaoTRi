@@ -234,7 +234,7 @@ begin
   v_created_at := (p_asset ->> 'created_at')::timestamptz;
   v_updated_at := (p_asset ->> 'updated_at')::timestamptz;
   v_created_by_user_id := nullif(p_asset ->> 'created_by_user_id', '')::uuid;
-  v_created_by_label := coalesce(p_asset ->> 'created_by_label', '');
+  v_created_by_label := p_asset ->> 'created_by_label';
 
   if nullif(btrim(v_name), '') is null or nullif(btrim(v_category), '') is null then
     raise exception 'Asset name and category are required' using errcode = '22023';
