@@ -5590,6 +5590,6 @@ Tạo `supabase/drafts/M021_PREFLIGHT_CHECKLIST_DRAFT.md` để gom execution ga
 - CI run `44725449267` for commit `3ae693d5` completed successfully: all regression tests (including the new import contract test), template validation, and production build PASS. The first completed CI attempt exposed a stale assertion in `localConcurrencyContracts.test.mjs` (test expected an older Dexie transaction table list); corrected it to include `db.tasks`, then reran successfully.
 
 ### Next
-1. Wait for CI run `44725303717` and resolve only actual failures.
+1. CI run `44725449267` has passed; no outstanding CI failure.
 2. Run physical two-session M021 protocol externally; do not simulate it with sequential execute_sql calls.
-3. After CI, proceed with controlled Test data Local→Cloud Asset import/edit verification. Do not enable generic full sync or touch Production.
+3. Proceed with controlled Test data Local→Cloud Asset import/edit verification. Do not enable generic full sync or touch Production.
