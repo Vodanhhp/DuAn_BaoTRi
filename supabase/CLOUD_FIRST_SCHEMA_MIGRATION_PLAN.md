@@ -172,3 +172,14 @@ Drafts:
 Rollback-only Test execution verified helper/trigger/function DDL, all seven Asset/Lease writer paths sequentially, mutation replay, import with Settings shared lock, and authenticated zero-row Settings UPDATE with global exclusive trigger lock. Effective privileges changed as intended inside the transaction and reverted after ROLLBACK. Key vectors were generated from PostgreSQL 17.12; two-int locks appear with `objsubid=2`, existing mutation bigint locks with `objsubid=1`.
 
 M021 remains DRAFT ONLY. Mandatory remaining gates: external two-physical-session concurrency A1–A11, blocker/wait graph and deadlock regression, search_path poisoning, all existing Asset/Lease/import SQL tests, frontend smoke tests, and final catalog/privilege postflight. Do not promote/apply until these gates pass. Production is out of scope.
+
+
+## 17. M021 sequential test assertion correction — 20/11/2026
+
+Static cross-review found the sequential rollback test performed Settings INSERT/UPDATE first (the statement trigger takes the global Settings key exclusively), then called import (which requests the same key shared), and finally required separate granted ExclusiveLock and ShareLock rows for that key in the same transaction. That simultaneous-row assertion was invalid for a transaction that already holds the stronger lock.
+
+Updated `supabase/drafts/M021_asset_lock_anchor_retrofit_TEST_DRAFT.sql`: it now verifies the global Settings advisory key remains held without demanding a second ShareLock row. The test comment explicitly assigns clean shared-only acquisition verification to the independent physical two-session protocol. This removes a false-negative; it does not prove the shared-lock concurrency behavior by itself.
+
+GitHub update was fetched back and verified. No SQL was executed; M021 remains draft; no Supabase data/schema/permissions changed; Production untouched.
+
+Next: continue static review of exact RPC signatures and grant matrix, test transaction assumptions, then close the remaining legacy RPC policy decision. Do not apply M021 until explicit approval and required concurrency evidence.
