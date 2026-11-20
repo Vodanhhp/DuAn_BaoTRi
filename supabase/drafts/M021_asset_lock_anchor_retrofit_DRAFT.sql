@@ -891,9 +891,10 @@ commit;
 -- 5. Settings: direct PostgREST INSERT/UPDATE statement trigger takes global
 --    exclusive even for zero-row UPDATE; import reader takes global shared;
 --    test both interleavings with two physical sessions.
--- 6. Effective privileges: authenticated cannot DELETE assets; authenticated
---    and service_role cannot EXECUTE create_asset_with_code; all seven retained
---    writers remain callable by the expected roles; anon/PUBLIC remain denied.
+-- 6. Effective privilege matrix: authenticated cannot DELETE assets; service_role
+--    cannot direct Asset INSERT/UPDATE/DELETE or Settings DELETE; authenticated and
+--    service_role cannot EXECUTE the legacy allocator; retained RPC EXECUTE matrix
+--    is preserved for authenticated/service_role and denied to anon/PUBLIC.
 -- 7. Search-path poisoning: private helpers and pg_catalog lock functions
 --    resolve only through fully-qualified names and empty search_path.
 -- 8. Postflight: no missing trigger/function, no schema USAGE/EXECUTE to client,
