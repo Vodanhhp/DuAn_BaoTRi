@@ -18,6 +18,12 @@ create temporary table asset_import_test_results (
   passed boolean
 );
 
+create temporary table asset_import_counter_expectation (
+  organization_id uuid,
+  category_code text,
+  imported_sequence bigint
+);
+
 do $grant_temp$
 declare v_temp_schema text;
 begin
@@ -52,6 +58,7 @@ declare
   v_next_sequence bigint;
 begin
   v_code := 'MNA-HP01-' || v_sequence::text || '-01-05-26';
+  insert into pg_temp.asset_import_counter_expectation values (v_org, 'MNA', v_sequence);
   v_payload := pg_catalog.jsonb_build_object(
     'name', 'Asset import identity test',
     'category', 'Máy nén khí',
@@ -195,27 +202,56 @@ begin
     ('No organization membership import denied', 'denied',
       case when v_blocked then 'denied' else 'allowed' end, v_blocked);
 
-  -- Admin creates a new asset after import; allocator must advance beyond imported sequence.
-  perform set_config('request.jwt.claim.sub', v_admin::text, true);
-  perform set_config('request.jwt.claims',
-    pg_catalog.jsonb_build_object('sub', v_admin, 'role', 'authenticated', 'aud', 'authenticated')::text, true);
-  select * into strict v_next
-  from public.create_asset_with_code(
-    p_organization_id => v_org,
-    p_name => 'Asset after import',
-    p_category => 'Máy nén khí',
-    p_location => 'Phòng máy nén khí',
-    p_commissioned_at => date '2026-05-01'
-  );
-  v_next_sequence := (regexp_match(v_next.code, '^MNA-HP01-([0-9]+)-'))[1]::bigint;
-  insert into pg_temp.asset_import_test_results values
-    ('Allocator continues after import', (v_sequence + 1)::text,
-      v_next_sequence::text, v_next_sequence > v_sequence);
+  -- Pre-M021: allocator advances after import. Post-M021: allocator is revoked;
+  -- counter reconciliation is inspected by owner after RESET ROLE below.
+  if has_function_privilege('authenticated','public.create_asset_with_code(uuid,text,text,text,uuid,text,text,text,date,text,text,date,boolean,text,text)','EXECUTE') then
+    perform set_config('request.jwt.claim.sub', v_admin::text, true);
+    perform set_config('request.jwt.claims',
+      pg_catalog.jsonb_build_object('sub', v_admin, 'role', 'authenticated', 'aud', 'authenticated')::text, true);
+    select * into strict v_next
+    from public.create_asset_with_code(
+      p_organization_id => v_org,
+      p_name => 'Asset after import',
+      p_category => 'Máy nén khí',
+      p_location => 'Phòng máy nén khí',
+      p_commissioned_at => date '2026-05-01'
+    );
+    v_next_sequence := (regexp_match(v_next.code, '^MNA-HP01-([0-9]+)-'))[1]::bigint;
+    insert into pg_temp.asset_import_test_results values
+      ('Allocator continues after import', (v_sequence + 1)::text,
+        v_next_sequence::text, v_next_sequence > v_sequence);
+  else
+    insert into pg_temp.asset_import_test_results values
+      ('Allocator revoked after M021', 'EXECUTE denied', 'EXECUTE denied',
+        not has_function_privilege('authenticated','public.create_asset_with_code(uuid,text,text,text,uuid,text,text,text,date,text,text,date,boolean,text,text)','EXECUTE'));
+  end if;
 
 end
 $test$;
 
 reset role;
+
+-- After M021, verify import reconciled the sequence under owner privileges,
+-- without relying on the now-revoked allocator RPC. Pre-M021 this is an
+-- additional invariant check; the allocator continuation test above also runs.
+do $counter_check$
+declare
+  v_org uuid;
+  v_category text;
+  v_imported bigint;
+  v_counter bigint;
+begin
+  select organization_id, category_code, imported_sequence
+    into strict v_org, v_category, v_imported
+  from pg_temp.asset_import_counter_expectation;
+  select last_value into v_counter from public.asset_code_counters
+    where organization_id=v_org and category_code=v_category;
+  insert into pg_temp.asset_import_test_results values
+    ('Import reconciles counter', 'last_value >= imported sequence',
+      coalesce(v_counter::text,'missing') || ' >= ' || v_imported::text,
+      v_counter is not null and v_counter >= v_imported);
+end
+$counter_check$;
 
 -- Anonymous callers cannot execute the import RPC at all.
 do $grant_anon_temp$
