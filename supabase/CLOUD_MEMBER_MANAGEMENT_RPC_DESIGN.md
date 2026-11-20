@@ -2891,3 +2891,29 @@ Chưa tạo migration hoặc triển khai bất kỳ phase nào.
 Direct `DELETE public.assets` phải bị revoke khỏi authenticated trong **cùng transaction Phase 2** với retrofit toàn bộ Asset/Lease writers, không đợi Phase 4. Preflight phải chứng minh không có runtime/client caller trực tiếp xóa; chuyển các thao tác cần thiết sang archive/Thanh lý trước. Khi commit, RPC writers mới và privilege revoke có hiệu lực đồng thời.
 
 `create_asset_with_code` cũ thiếu idempotency và chưa có runtime caller: candidate revoke EXECUTE authenticated cùng Phase 2; không bật lại cho đến khi allocator receipt/idempotent RPC sẵn sàng. Phase 4 chỉ đóng direct Settings writes sau compatibility window.
+
+## 85. Advisory lock primitive – key derivation, grants và Settings bridge deadlock fix
+
+### Settings bridge correction
+Không dùng row-level BEFORE trigger để lấy org advisory lock: direct UPDATE có thể giữ tuple lock rồi chờ advisory lock, trong khi RPC lấy advisory lock trước rồi chờ tuple FOR UPDATE, tạo deadlock cycle.
+
+Trong compatibility window dùng global Settings key + BEFORE INSERT/UPDATE FOR EACH STATEMENT:
+- Trigger lấy global exclusive transaction lock trước row processing.
+- Settings RPC cũng lấy global exclusive trước row lock/write.
+- Asset create/import lấy global shared trước khi đọc Settings.
+- Chấp nhận serialize giữa các organization tạm thời.
+- Sau khi revoke direct Settings writes, drop trigger và chuyển đồng bộ mọi reader/writer sang org-scoped Settings key.
+- Hai-session test bắt buộc xác nhận không deadlock; statement ảnh hưởng 0 row cũng phải tham gia bridge.
+
+### Key derivation candidate
+- Derive cặp int32 từ pg_catalog.hashtextextended(domain_versioned_input, fixed_bigint_seed), split bigint thành high/low 32-bit; chuyển unsigned sang signed bằng subtract 4294967296 nếu >=2147483648 trước cast integer.
+- Domain input phân biệt baotri:asset-anchor:v1, baotri:settings-global:v1, baotri:settings-org:v1.
+- Dùng pg_advisory_xact_lock(int,int) / _shared(int,int); không dùng session lock.
+- Hash collision chỉ làm serialize thừa; không phải authorization. Audit toàn bộ consumer two-int advisory namespace trước rollout. Bigint mutation-ID lock thuộc keyspace khác.
+- Key mapping phụ thuộc PostgreSQL hash implementation/version; major upgrade hoặc đổi seed/prefix phải là protocol migration có drain và cập nhật đồng bộ mọi caller.
+- Helper private, not exposed; search_path=''; schema-qualified calls; revoke EXECUTE PUBLIC/anon/authenticated. Trigger function SECURITY DEFINER owner tin cậy, chỉ làm lock; RLS và permission checks vẫn nằm ở RPC nghiệp vụ.
+
+### Primitive test matrix
+Determinism/vector trên PostgreSQL 17.12; domain separation; shared/shared coexist; exclusive waits; commit/rollback release; statement trigger order kể cả zero-row; direct UPDATE ↔ RPC deadlock regression; malicious search_path; authenticated/anon không gọi helper; two-int namespace inventory.
+
+Không tự tạo vector bằng suy đoán; chưa chạy SQL, chưa tạo migration.
