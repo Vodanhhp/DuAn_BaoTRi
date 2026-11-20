@@ -119,6 +119,12 @@ reset role;
 do $security$
 begin
   if has_table_privilege('authenticated','public.assets','DELETE') then raise exception 'Authenticated still has direct Asset DELETE'; end if;
+  if has_table_privilege('service_role','public.assets','INSERT') then raise exception 'service_role still has direct Asset INSERT'; end if;
+  if has_table_privilege('service_role','public.assets','UPDATE') then raise exception 'service_role still has direct Asset UPDATE'; end if;
+  if has_table_privilege('service_role','public.assets','DELETE') then raise exception 'service_role still has direct Asset DELETE'; end if;
+  if has_table_privilege('service_role','public.organization_settings','DELETE') then raise exception 'service_role still has Settings DELETE'; end if;
+  if not has_table_privilege('authenticated','public.organization_settings','INSERT') then raise exception 'Authenticated lost Settings INSERT compatibility privilege'; end if;
+  if not has_table_privilege('authenticated','public.organization_settings','UPDATE') then raise exception 'Authenticated lost Settings UPDATE compatibility privilege'; end if;
   if has_function_privilege('authenticated','public.create_asset_with_code(uuid,text,text,text,uuid,text,text,text,date,text,text,date,boolean,text,text)','EXECUTE') then raise exception 'Authenticated can still execute legacy allocator'; end if;
   if has_function_privilege('service_role','public.create_asset_with_code(uuid,text,text,text,uuid,text,text,text,date,text,text,date,boolean,text,text)','EXECUTE') then raise exception 'service_role can still execute legacy allocator'; end if;
   if has_schema_privilege('authenticated','private','USAGE') then raise exception 'Authenticated can access private schema'; end if;
