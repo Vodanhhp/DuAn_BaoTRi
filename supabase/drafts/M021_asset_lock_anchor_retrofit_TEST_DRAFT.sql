@@ -22,6 +22,22 @@ begin
 end;
 $preflight$;
 
+-- PostgreSQL 17.12 / hashtextextended(seed=0) known vector for the Test fixture.
+do $vector$
+begin
+  perform private.lock_asset_anchor(
+    'dfb443ec-a1ee-496b-842c-0bef3f50b8ce'::uuid,
+    '872077a8-9b75-402d-908a-93fa5bcd9749'::uuid
+  );
+  if not exists(
+    select 1 from pg_locks
+    where locktype='advisory' and pid=pg_backend_pid()
+      and classid::bigint=1620790905 and objid::bigint=1408844184
+      and objsubid=2 and mode='ExclusiveLock' and granted
+  ) then raise exception 'Asset anchor known vector mismatch'; end if;
+end;
+$vector$;
+
 set local role authenticated;
 
 -- BEFORE STATEMENT must lock even when no Settings row matches.
@@ -127,6 +143,16 @@ begin
   end if;
   if not exists(select 1 from pg_locks where locktype='advisory' and pid=pg_backend_pid() and objsubid=1 and granted) then
     raise exception 'No bigint mutation-ID advisory transaction lock observed';
+  end if;
+  if not exists(select 1 from pg_locks where locktype='advisory' and pid=pg_backend_pid()
+      and classid::bigint=2635656809 and objid::bigint=2123944637
+      and objsubid=2 and mode='ExclusiveLock' and granted) then
+    raise exception 'Settings statement trigger did not hold global exclusive lock';
+  end if;
+  if not exists(select 1 from pg_locks where locktype='advisory' and pid=pg_backend_pid()
+      and classid::bigint=2635656809 and objid::bigint=2123944637
+      and objsubid=2 and mode='ShareLock' and granted) then
+    raise exception 'Import did not hold global Settings shared lock';
   end if;
 end;
 $locks$;
