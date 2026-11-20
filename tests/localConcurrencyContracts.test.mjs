@@ -136,7 +136,7 @@ test('Checklist-derived repair requests validate source and prevent duplicate li
   assert.ok(transaction >= 0 && sourceRead > transaction, 'source Checklist result must be read inside transaction')
   assert.ok(sourceGuard > sourceRead && duplicateRead > sourceGuard, 'source existence and asset ownership must be checked before duplicate lookup')
   assert.ok(duplicateGuard > duplicateRead && write > duplicateGuard, 'duplicate linked request must be rejected before Log write')
-  assert.match(handler, /db\.checklistResults, db\.syncQueue/, 'source validation must share the atomic write transaction')
+  assert.match(handler, /db\.checklistResults, db\.tasks, db\.syncQueue/, 'source validation must share the atomic write transaction')
 })
 
 test('maintenance Log validates optional Task ownership inside the atomic write transaction', () => {
