@@ -234,6 +234,9 @@ begin
   if p_lock_token is null then
     raise exception 'Lock token is required' using errcode = '22023';
   end if;
+  if p_asset_id is null then
+    return jsonb_build_object('renewed', false, 'reason', 'lease_missing_expired_or_replaced');
+  end if;
 
   perform private.lock_asset_anchor(p_organization_id, p_asset_id);
 
@@ -733,7 +736,10 @@ begin
   if p_lock_token is null then
     raise exception 'Lock token is required' using errcode = '22023';
   end if;
-  if nullif(btrim(p_name), '') is null then
+  if p_asset_id is null then
+    raise exception 'Asset edit lease is missing' using errcode = '55000';
+  end if;
+  if nullif(btrim(p_name), '') is null;
     raise exception 'Asset name is required' using errcode = '22023';
   end if;
   if p_status not in ('Đang hoạt động', 'Đang sửa chữa', 'Ngừng sử dụng', 'Thanh lý') then
@@ -800,6 +806,9 @@ begin
   end if;
   if p_lock_token is null or p_archived is null then
     raise exception 'Lock token and archived state are required' using errcode = '22023';
+  end if;
+  if p_asset_id is null then
+    raise exception 'Asset edit lease is missing' using errcode = '55000';
   end if;
 
   perform private.lock_asset_anchor(p_organization_id, p_asset_id);
