@@ -32,3 +32,17 @@ test('task completion re-reads current state and refuses a second completion Log
   assert.ok(transaction >= 0 && lookup > transaction, 'task must be re-read inside transaction')
   assert.ok(guard > lookup && logInsert > guard, 'already-completed guard must precede Log insertion')
 })
+
+test('Log edits preserve the latest stored edit history inside the write transaction', () => {
+  const start = source.indexOf('const saveLog = async')
+  const end = source.indexOf('const createRequestFromChecklist', start)
+  assert.ok(start >= 0 && end > start, 'saveLog handler must exist')
+  const handler = source.slice(start, end)
+  const transaction = handler.indexOf("db.transaction('rw'")
+  const lookup = handler.indexOf('db.logs.get(entry.id)', transaction)
+  const historyMerge = handler.indexOf('existing?.editHistory ?? entry.editHistory', lookup)
+  const write = handler.indexOf('db.logs.put(next)', historyMerge)
+  const queue = handler.indexOf("queueChange('logs', next.id)", write)
+  assert.ok(transaction >= 0 && lookup > transaction, 'latest Log must be read inside transaction')
+  assert.ok(historyMerge > lookup && write > historyMerge && queue > write, 'history must be merged before atomic Log and queue writes')
+})
