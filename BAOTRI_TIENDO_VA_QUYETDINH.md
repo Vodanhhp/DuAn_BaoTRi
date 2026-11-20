@@ -5613,3 +5613,11 @@ Tạo `supabase/drafts/M021_PREFLIGHT_CHECKLIST_DRAFT.md` để gom execution ga
 - GitHub Actions run 44727152880, commit e79fb1c059cdfb61d7c9f44185f2ecad5f2e9709: **SUCCESS** — toàn bộ regression tests PASS, template validation PASS, TypeScript/Vite production build PASS.
 - Supabase advisors sau M022: Health 0 findings; Security giữ 4 INFO (internal tables bật RLS nhưng không có policy), 10 SECURITY DEFINER warnings hiện hữu và 1 cảnh báo leaked-password protection. Không phát sinh nhóm/cấp cảnh báo mới do M022.
 - Còn pending: physical two-session M021 concurrency và browser-level Local PC → Cloud Asset import/edit trên Test. Không full sync, không Production.
+
+
+## 134. Chuẩn bị kiểm thử trình duyệt M022 — 20/11/2026
+
+- Đã tạo `supabase/drafts/M022_BROWSER_LOCAL_TO_CLOUD_TEST_PROTOCOL.md` (commit `e595c41a1c2810d3b72e4e9d1753a6705e024ffc`).
+- Quy trình yêu cầu Chrome profile riêng, IndexedDB trống, xác minh Supabase project Test `oyzhxgzltpdebpymuicb`, chỉ tạo đúng một Asset thử nghiệm, preview 1 Local / 1 Cloud mới / 1 link, xác nhận rồi đọc lại UUID, mã thiết bị, created_by_user_id và created_by_label; sau đó reload và thử sửa Asset theo luồng lock hiện có.
+- Không nhập dữ liệu Local đang sử dụng, không đụng Production. Tài liệu là protocol chuẩn bị; chưa thực thi browser test và chưa đánh dấu PASS. Cần phiên trình duyệt thật trên máy người dùng.
+- Physical two-session M021 concurrency vẫn pending.
