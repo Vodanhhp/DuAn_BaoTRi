@@ -1,7 +1,7 @@
 -- BAOTRI Mini — proposed Migration 020: P0 Asset mutation payload validation
 -- Proposed version: 20261120000100
--- Intended final path: supabase/migrations/20261120000100_p0_fix_asset_mutation_payload_validation.sql
--- STATUS: REVIEW DRAFT ONLY. Not approved for execution. Do NOT run.
+-- STATUS: SUPERSEDED REVIEW SNAPSHOT. Do NOT execute this file.
+-- Canonical file: supabase/migrations/20261120000100_p0_fix_asset_mutation_payload_validation.sql
 -- Target: BAOTRI-Mini-Test only, after explicit user approval.
 -- Replaces the complete apply_asset_mutation_with_lock function definition.
 -- Does not modify Migration 017, Migration 018, or the Asset lock retrofit.
