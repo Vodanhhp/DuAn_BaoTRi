@@ -942,20 +942,29 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
   const addMovement = async (item: InventoryItem, type: 'Nhập'|'Xuất', qty: number, note = '') => {
     if (blockViewer('nhập hoặc xuất kho')) return
     if (!Number.isFinite(qty) || qty <= 0) { flash('Số lượng phải lớn hơn 0'); return }
-    if (type === 'Xuất' && qty > item.quantity) { flash('Số lượng xuất vượt tồn kho'); return }
-    const timestamp = now()
-    const next = { ...item, quantity: item.quantity + (type === 'Nhập' ? qty : -qty), updatedAt: timestamp }
-    const movement: Movement = {
-      id: uid(), itemId: item.id, date: today(), type, quantity: qty,
-      reason: note.trim(), note: note.trim(), performedBy: userName.trim() || 'Tài khoản'
+    try {
+      const movement = await db.transaction('rw', [db.inventory, db.movements, db.syncQueue], async () => {
+        // Always validate and calculate against the latest row inside the write transaction.
+        // The Inventory modal may hold a stale quantity when another tab changes stock.
+        const current = await db.inventory.get(item.id)
+        if (!current) throw new Error('Vật tư không còn tồn tại. Hãy tải lại danh sách kho.')
+        if (type === 'Xuất' && qty > current.quantity) throw new Error('Số lượng xuất vượt tồn kho hiện tại.')
+        const timestamp = now()
+        const next = { ...current, quantity: current.quantity + (type === 'Nhập' ? qty : -qty), updatedAt: timestamp }
+        const entry: Movement = {
+          id: uid(), itemId: current.id, date: today(), type, quantity: qty,
+          reason: note.trim(), note: note.trim(), performedBy: userName.trim() || 'Tài khoản'
+        }
+        await db.inventory.put(next)
+        await db.movements.add(entry)
+        await queueChange('inventory', current.id)
+        await queueChange('movements', entry.id)
+        return entry
+      })
+      flash('Đã ' + type.toLowerCase() + ' ' + qty + ' ' + item.unit + '; đã lưu lịch sử kho')
+    } catch (error) {
+      flash(error instanceof Error ? error.message : 'Không thể ghi nhận giao dịch kho. Vui lòng thử lại.')
     }
-    await db.transaction('rw', [db.inventory, db.movements, db.syncQueue], async () => {
-      await db.inventory.put(next)
-      await db.movements.add(movement)
-      await queueChange('inventory', item.id)
-      await queueChange('movements', movement.id)
-    })
-    flash('Đã ' + type.toLowerCase() + ' ' + qty + ' ' + item.unit + '; đã lưu lịch sử kho')
   }
   const exportRows = async (rows: Record<string, string | number>[], filename: string, title: string, sheetName: string, headers: string[], orientation: 'portrait' | 'landscape' = 'landscape') => {
     if (blockViewer('xuất Excel')) return
