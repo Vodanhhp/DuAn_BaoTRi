@@ -104,11 +104,11 @@ begin
   else
     -- M021 contract: allocator is closed to authenticated; do not invoke it.
     insert into pg_temp.allocator_results values
-      ('Admin allocator revoked', 'EXECUTE denied', 'EXECUTE denied', not has_function_privilege('authenticated','public.create_asset_with_code(uuid,text,text,text,uuid,text,text,date,text,text,date,boolean,text,text)','EXECUTE'));
+      ('Admin allocator revoked', 'EXECUTE denied', 'EXECUTE denied', not has_function_privilege('authenticated','public.create_asset_with_code(uuid,text,text,text,uuid,text,text,text,date,text,text,date,boolean,text,text)','EXECUTE'));
     insert into pg_temp.allocator_results values
-      ('Technician allocator revoked', 'EXECUTE denied', 'EXECUTE denied', not has_function_privilege('authenticated','public.create_asset_with_code(uuid,text,text,text,uuid,text,text,date,text,text,date,boolean,text,text)','EXECUTE'));
+      ('Technician allocator revoked', 'EXECUTE denied', 'EXECUTE denied', not has_function_privilege('authenticated','public.create_asset_with_code(uuid,text,text,text,uuid,text,text,text,date,text,text,date,boolean,text,text)','EXECUTE'));
     insert into pg_temp.allocator_results values
-      ('service_role allocator revoked', 'EXECUTE denied', 'EXECUTE denied', not has_function_privilege('service_role','public.create_asset_with_code(uuid,text,text,text,uuid,text,text,date,text,text,date,boolean,text,text)','EXECUTE'));
+      ('service_role allocator revoked', 'EXECUTE denied', 'EXECUTE denied', not has_function_privilege('service_role','public.create_asset_with_code(uuid,text,text,text,uuid,text,text,text,date,text,text,date,boolean,text,text)','EXECUTE'));
   end if;
 end
 $test$;
