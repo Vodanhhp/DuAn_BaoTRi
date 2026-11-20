@@ -2,7 +2,7 @@
 
 **Target:** BAOTRI-Mini-Test only.  
 **Prerequisite:** M021 lock-anchor draft has been reviewed and applied to Test.  
-**Status:** Protocol prepared; no two-session concurrency test has been run yet.
+**Status:** M021 has been applied to BAOTRI-Mini-Test and the rollback-only sequential regression completed without SQL error. Protocol prepared; no physical two-session concurrency test has been run yet.
 
 ## Harness rules
 
