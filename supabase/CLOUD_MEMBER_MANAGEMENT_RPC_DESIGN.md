@@ -2747,3 +2747,14 @@ Không có test nào được chạy ở checkpoint này. Chưa ghi dữ liệu,
 - Thứ tự chạy: preflight fixture → race hai session → commit/rollback theo case → đọc invariant sau commit → cleanup có kiểm tra. Mỗi case chạy hai hướng winner, nhiều interleaving; baseline và target protocol báo cáo riêng.
 - Các nhóm đầu tiên: Lease acquire/takeover; mutation/mutation và Receipt replay; mutation/heartbeat/release; Asset DELETE/cascade Lease; import/counter/UUID-code; Settings update/import.
 - Đây là hợp đồng thiết kế, không phải harness đã triển khai hoặc test đã PASS. Không chạy SQL ghi, không tạo fixture, không thay đổi RPC/DDL/grants/Auth/data hoặc Supabase.
+
+
+## 75. Runbook thực thi concurrency – barrier, wait graph và cleanup
+
+- Chia harness thành 6 bước: preflight read-only → hai connection vật lý READY → barrier/interleaving → commit/rollback có log → đọc invariant sau race → cleanup riêng.
+- Gắn application_name riêng cho từng session; lưu backend PID, txid, thời điểm gửi statement, thời điểm bắt đầu chờ/được giải phóng, pg_blocking_pids, pg_locks, SQLSTATE và kết quả commit.
+- Race deadlock có thể dựng có chủ đích: A giữ Lease FOR UPDATE; B DELETE Asset và chờ cascade xóa Lease; sau khi xác nhận B bị block, A UPDATE Asset. Vòng Lease → Asset và Asset → Lease có thể khiến PostgreSQL chọn một transaction làm victim 40P01. Chỉ chạy trên fixture disposable khi có phê duyệt.
+- Không dùng pg_sleep để giả lập barrier. Nếu không thể dừng đúng điểm bên trong RPC bằng lock bên ngoài, không tự thêm trigger/hook; đánh dấu case chưa có cách điều khiển deterministic.
+- Phân biệt 40P01 deadlock, 55P03 lock timeout, 23505 unique collision, 40001 serialization failure và 55000 lease conflict. Đánh giá cả SQLSTATE lẫn trạng thái cuối/Receipt/ledger; JSON response đơn lẻ chưa đủ.
+- Chạy P0 trước; P1 import/allocator/settings sau. Vì allocator helper chưa có runtime caller, kết quả của nó chỉ chứng minh RPC capability, không chứng minh UI flow.
+- Chưa có runner/fixture và chưa chạy concurrency. Không được đánh dấu PASS trước khi có log hai session và kiểm tra invariant sau commit/rollback.
