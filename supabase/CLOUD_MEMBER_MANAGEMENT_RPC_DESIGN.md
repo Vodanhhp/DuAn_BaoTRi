@@ -2809,3 +2809,14 @@ Không có test nào được chạy ở checkpoint này. Chưa ghi dữ liệu,
 - Direct DELETE PostgREST vẫn nằm ngoài protocol cho tới khi DELETE privilege được thu hồi.
 
 Đây là ma trận retrofit candidate, không phải migration đã viết/áp dụng. Chưa có concurrency test thực tế.
+
+## 79. Refinement advisory namespace và test matrix Asset
+
+- Import hiện dùng transaction advisory lock overload bigint cho organization + mutation ID. Candidate Asset anchor nên dùng overload hai integer; PostgreSQL xác nhận key space cặp int32 và key bigint không chồng lấn. Tham chiếu: https://www.postgresql.org/docs/15/functions-admin.html#FUNCTIONS-ADVISORY-LOCKS
+- Key pair phải ổn định từ organization_id + asset_id, dùng transaction-level lock; hash collision chỉ được phép gây serialize thừa. Không dùng advisory lock thay authorization.
+- Lock order candidate: Auth/authorization precheck → Asset anchor (two-int) → mutation-ID advisory bigint nếu có → Settings → Counter → Lease → Asset → Receipt/ledger/dependency.
+- Import phải lấy Asset anchor trước mutation-ID lock hiện có. Allocator lấy Asset anchor trước Settings/Counter. Không đảo thứ tự này giữa các function.
+- Settings writer hiện là PostgREST INSERT/UPDATE trực tiếp từ `saveCloudAssetCodeConfig()`, được RLS `settings.manage` bảo vệ nhưng không tham gia advisory lock. Create/import đọc Settings không khóa. Asset anchor và Counter không giải quyết race này.
+- Nếu cần serialization cấu hình, candidate là chuyển Settings write sang RPC dùng organization-scoped exclusive advisory lock; create/import dùng shared lock cùng key trước khi đọc config. Phải xử lý trường hợp Settings row chưa tồn tại; FOR SHARE không khóa được hàng vắng mặt.
+- Test matrix cần gồm acquire/delete khi Lease absent/present; mutation/delete; heartbeat/release/delete; import/delete; allocator/import cùng UUID; cùng mutation ID khác Asset; create/import cùng category; Settings update ↔ create/import; FK reference insert ↔ delete; legacy RPC ↔ delete; direct DELETE bị chặn.
+- Chưa chạy concurrency tests, chưa tạo migration, chưa thay đổi Settings writer hoặc Supabase.
