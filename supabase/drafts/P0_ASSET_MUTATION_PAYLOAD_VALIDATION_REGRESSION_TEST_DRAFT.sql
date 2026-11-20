@@ -17,24 +17,14 @@
 
 begin;
 
--- Fixture inputs (replace placeholders before execution)
-do $fixture_check$
-begin
-  if '<ACTOR_UUID>' = '<ACTOR_UUID>'
-     or '<ORGANIZATION_UUID>' = '<ORGANIZATION_UUID>'
-     or '<ASSET_UUID>' = '<ASSET_UUID>'
-     or '<LEASE_TOKEN_UUID>' = '<LEASE_TOKEN_UUID>' then
-    raise exception 'Replace all four fixture placeholders before running this test.';
-  end if;
-end
-$fixture_check$;
+-- Fixture placeholders intentionally remain invalid UUID strings until replaced.
+-- PostgreSQL will reject the script before tests begin if any placeholder remains.
 
 -- Helper asserts an invalid payload is rejected with exactly 22023 and no writes.
 create or replace function pg_temp.assert_invalid_asset_payload(
   p_organization_id uuid,
   p_asset_id uuid,
   p_lock_token uuid,
-  p_actor_id uuid,
   p_expected_updated_at timestamptz,
   p_payload jsonb,
   p_case_name text
@@ -183,7 +173,7 @@ begin
   end if;
 
   if (select a.name from public.assets a where a.organization_id = v_org and a.id = v_asset)
-       <> v_payload->>'name' then
+       <> (v_payload->>'name') then
     raise exception 'FAIL P01: expected Asset name was not applied';
   end if;
 
@@ -191,7 +181,7 @@ begin
 
   -- Invalid payload suite uses the post-P01 version timestamp and separate mutation IDs.
   perform pg_temp.assert_invalid_asset_payload(
-    v_org, v_asset, v_token, v_actor, v_expected_updated_at,
+    v_org, v_asset, v_token, v_expected_updated_at,
     v_payload - 'serial', 'P02 missing required key (serial)'
   );
 
