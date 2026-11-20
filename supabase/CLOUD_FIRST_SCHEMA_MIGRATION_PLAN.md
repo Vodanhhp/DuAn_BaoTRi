@@ -139,3 +139,11 @@ Bảng hiện tại `inventory_movements` có `quantity > 0`, type Nhập/Xuất
 - Claim/replay algorithm được ghi trong comment của draft: kiểm tra membership trước; tra Receipt trước write permission; nếu Receipt tồn tại thì replay read-only cùng actor/fingerprint; nếu chưa có mới kiểm tra write permission và claim bằng unique key. Request cạnh tranh đọc Receipt sau khi `ON CONFLICT DO NOTHING` hoàn tất.
 - Không giả định pgcrypto; không tạo generic callable claim RPC; không thay đổi Asset-specific Receipt/Lease, không dual-write.
 - Draft chưa được áp dụng; chưa có business RPC hoặc read-replay RPC, chưa chạy SQL và chưa thay đổi Supabase.
+
+## 13. Re-review Draft 018 — 20/11/2026
+
+Draft 018 đã được sửa lỗi literal `\\n` trong ALTER TABLE. Bổ sung CHECK từ chối `NaN` ở quantity hiện hữu và các audit numeric fields; reason mới phải có ít nhất một ký tự không-whitespace.
+
+Đã kiểm tra DDL/constraints trên BAOTRI-Mini-Test trong transaction rollback: legacy Movement, Nhập, Xuất và Điều chỉnh về 0 hợp lệ; NaN, delta 0, reason chỉ whitespace, thiếu actor trong audit snapshot và số dư âm bị từ chối. Sau rollback xác nhận schema, dữ liệu và migration history không thay đổi.
+
+Draft vẫn chưa được apply. Trước promotion còn cần duplicate preflight cho `(organization_id, mutation_id)`, bảo đảm RPC enforce expected_item_version và kiểm tra numeric scale/range, đồng bộ với row_version + Shared Receipt, và kiểm thử vertical slice Inventory.
