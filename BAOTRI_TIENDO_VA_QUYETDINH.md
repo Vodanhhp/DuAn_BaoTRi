@@ -5414,3 +5414,31 @@ Tiếp tục caller audit theo §117. Đối chiếu effective table grants trê
 - [ ] Chưa apply M021 lên Test; Production không chạm.
 
 **Bước tiếp theo:** sửa draft/test theo các finding đã nêu (chỉ file GitHub draft, không database), rồi đọc lại diff độc lập và kiểm tra các test lịch sử tương thích trước khi đề nghị execution gate.
+
+
+## 121. M021 draft privilege contract + test matrix updated – 20/11/2026
+
+Theo caller audit §119 và static review §120, đã cập nhật **draft SQL và draft test trên GitHub**, không đụng database:
+
+- Migration draft: thêm `REVOKE INSERT, UPDATE, DELETE ON public.assets FROM service_role`; giữ SELECT nếu cần. Thêm `REVOKE DELETE ON public.organization_settings FROM service_role`, giữ INSERT/UPDATE compatibility writer và statement trigger.
+- Sequential test draft: thêm effective privilege assertions cho service_role direct Asset INSERT/UPDATE/DELETE, Settings DELETE; kiểm tra authenticated vẫn có Settings INSERT/UPDATE bridge privileges.
+- Mở rộng EXECUTE matrix cho 7 retained RPCs và read-only list locks: authenticated/service_role được giữ quyền, anon bị deny; private schema/helper không cho authenticated/service_role/anon USAGE/EXECUTE. Allocator EXECUTE bị revoke cho authenticated/service_role.
+- Migration test gate comment được cập nhật theo contract mới.
+
+### Files updated
+- `supabase/drafts/M021_asset_lock_anchor_retrofit_DRAFT.sql`
+- `supabase/drafts/M021_asset_lock_anchor_retrofit_TEST_DRAFT.sql`
+
+### Verification
+- Đã fetch lại source draft trước mỗi update và update bằng SHA; GitHub trả commit lần lượt cho privilege migration, test assertions, test RPC matrix, và test gate comment.
+- Chưa chạy SQL (draft test cần migration áp dụng); chưa apply M021, chưa có database write; Production untouched.
+- Đây là static test design. Two-session concurrency tests vẫn bắt buộc.
+
+### Remaining before execution gate
+- [ ] Review toàn bộ test matrix, SQL syntax/identity signatures và postflight query list độc lập.
+- [ ] Chỉnh các SQL tests lịch sử phụ thuộc allocator/direct DELETE để chạy tương thích sau M021.
+- [ ] Xác nhận caller audit / grants contract cuối cùng và chuẩn bị preflight.
+- [ ] Chạy sequential test trên Test sau approval; hai-session A1–A11 riêng biệt.
+- [ ] Chỉ promotion/apply sau khi review/test gate đạt; không chạm Production.
+
+**Bước tiếp theo:** review độc lập các test assertions vừa thêm, sau đó tìm và cập nhật test lịch sử phụ thuộc allocator/delete theo thứ tự; giữ migration/test ở draft.
