@@ -5587,7 +5587,7 @@ Tạo `supabase/drafts/M021_PREFLIGHT_CHECKLIST_DRAFT.md` để gom execution ga
 - Fixed import boundary: `assetsCloud.ts` now calls `toCloudAssetRow(asset, organizationId)` before the import RPC; Cloud panel preview performs the same validation before Cloud lookup. Unsupported fields now fail early rather than being silently lost.
 - Added `tests/cloudAssetImportContracts.test.mjs`, npm script `test:cloud-asset-import`, and CI invocation in `.github/workflows/ci.yml`.
 - Commits: `31b03480` (import boundary guard), `b79d2db3` (preview guard), `95404389` (contract test), `d9fa38fa` (npm script), `98034efe` (CI integration). All changed files were fetched again and SHA/content verified.
-- CI run for commit `98034efe` is in progress at time of this note; no PASS claimed yet. Earlier runs were cancelled by subsequent pushes.
+- CI run `44725449267` for commit `3ae693d5` completed successfully: all regression tests (including the new import contract test), template validation, and production build PASS. The first completed CI attempt exposed a stale assertion in `localConcurrencyContracts.test.mjs` (test expected an older Dexie transaction table list); corrected it to include `db.tasks`, then reran successfully.
 
 ### Next
 1. Wait for CI run `44725303717` and resolve only actual failures.
