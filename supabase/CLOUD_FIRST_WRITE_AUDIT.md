@@ -427,3 +427,5 @@ Người dùng xác nhận:
 - Backup database hợp lệ nhưng rỗng vẫn được chấp nhận nếu cấu trúc v3 đầy đủ; chỉ chặn file thiếu cấu trúc/không đúng phiên bản.
 - Đã thêm `tests/backupValidation.test.mjs`, script `npm run test:backup-validation`, và cập nhật README.
 - Chưa chạy test/build runtime; cần xác minh trên Node trước khi coi là nghiệm thu.
+
+- Bổ sung: trì hoãn thu hồi Blob URL của file backup 1 giây sau khi kích hoạt tải xuống, tránh thu hồi URL quá sớm khi trình duyệt chưa bắt đầu đọc Blob.
