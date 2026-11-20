@@ -64,3 +64,5 @@
 - The M021 sequential test currently expects legacy update/archive EXECUTE retained for authenticated/service_role and exercises both functions. If the final policy is revoke, both the test calls and EXECUTE assertions must be changed to expect denial; the historical lease test must be marked pre-M021 or adapted.
 
 - [ ] Verify no EXECUTE for authenticated/anon/service_role on every private helper, including `lock_two_int`, both Settings lock helpers, and the Settings trigger wrapper; trigger wrapper ACL must be inspected via `has_function_privilege`, not invoked as a normal function.
+- [ ] Verify `update_asset_with_lock` EXECUTE is revoked from PUBLIC/anon/authenticated/service_role; keep `set_asset_archived_with_lock` EXECUTE only if lease-token and archive/restore tests pass.
+- [ ] Confirm historical lease test is pre-M021 only because it calls revoked `update_asset_with_lock`; use the M021 sequential draft for post-M021 coverage.
