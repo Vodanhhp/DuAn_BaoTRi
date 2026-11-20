@@ -78,6 +78,7 @@ Chạy kiểm tra:
 npm run test:sync-mapping
 npm run test:local-identity
 npm run test:template-release
+npm run test:date-utils
 npm run build
 ```
 
