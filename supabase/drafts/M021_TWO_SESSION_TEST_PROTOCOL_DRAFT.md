@@ -125,7 +125,7 @@ A acquires an Asset anchor and commits. A second session must then acquire the s
 
 In a rollback-only transaction, create an attacker-controlled schema/function with the same unqualified name as a lock primitive, set a hostile `search_path`, and call the private helper. It must still resolve `pg_catalog.hashtextextended` and `pg_catalog.pg_advisory_xact_lock` because helper functions set an empty path and qualify all objects.
 
-Under `SET ROLE authenticated`, direct calls to `private.lock_asset_anchor` and the trigger wrapper must fail with permission denied. A permitted direct Settings INSERT/UPDATE still invokes the trigger indirectly and acquires the lock.
+Under `SET ROLE authenticated`, direct invocation of `private.lock_asset_anchor` must fail because the client has no `private` schema USAGE/EXECUTE. For the trigger wrapper, do not invoke it as an ordinary SQL function (PostgreSQL trigger functions are only callable by triggers); instead assert `has_function_privilege('authenticated', 'private.guard_settings_global_write()', 'EXECUTE') = false` and the same for `anon`/`service_role`. A permitted direct Settings INSERT/UPDATE still invokes the trigger indirectly and acquires the lock.
 
 ## Evidence required for each test
 
