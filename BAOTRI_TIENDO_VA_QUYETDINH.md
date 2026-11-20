@@ -5558,3 +5558,13 @@ Tạo `supabase/drafts/M021_PREFLIGHT_CHECKLIST_DRAFT.md` để gom execution ga
 - [ ] Production untouched.
 
 **Next:** tiếp tục review checklist/drafts, xác nhận SHA/contents sau commit; execution vẫn dừng tại approval gate.
+
+
+## 129. Source caller audit + M021 version tracker preflight — 20/11/2026
+
+- GitHub source search `createCloudAsset(` found only its exported definition in `src/lib/assetsCloud.ts` and audit docs; no app handler caller. `create_asset_with_code` remains a legacy allocator with no caller in current UI. This corroborates the proposed revoke EXECUTE from authenticated/service_role, but external compatibility is still a decision gate.
+- Read-only Supabase migration tracker currently returns only version `20261120042433` (Migration 020 P0). Candidate M021 `20261120050000` is absent from this tracker response. Marked candidate version check completed; recheck immediately before apply because tracker completeness is not assumed.
+- Test currently has no `private` schema; read-only catalog preflight confirms it is absent, so M021 create-schema precondition currently appears clear.
+- No migration or data changes made; Production untouched.
+
+**Next:** perform static cross-review of draft test privilege assumptions and RPC signatures, including caller impacts; leave migration execution gated.
