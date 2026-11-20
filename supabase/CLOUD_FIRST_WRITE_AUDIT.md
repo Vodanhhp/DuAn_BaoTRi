@@ -418,3 +418,12 @@ Người dùng xác nhận:
 - [x] Thêm kiểm thử hồi quy ngày địa phương và script package.
 - [ ] Chưa thực thi `npm run test:date-utils`, các test hiện có hoặc `npm run build`; không báo PASS runtime.
 - [ ] Chưa thực hiện kiểm thử đồng thời nhiều tab/browser thật cho giao dịch tồn kho.
+
+
+## 11. Ngăn khôi phục từ JSON không phải backup hợp lệ (20/11/2026)
+
+- Phát hiện bộ đọc backup trước đây chỉ kiểm tra các trường bảng nếu chúng xuất hiện; file `{}` hoặc JSON thiếu toàn bộ bảng vẫn được chấp nhận. Khi xác nhận, `applyRestore()` sẽ clear các bảng Local rồi nạp mảng rỗng, có nguy cơ mất toàn bộ dữ liệu.
+- Đã thêm `src/lib/backupValidation.ts` và yêu cầu đúng `backupVersion: 3`, `database: baotri-local-v1`, `exportedAt`, đầy đủ 10 mảng bảng, mọi record có `id` không rỗng, cùng `customAssetCategories` dạng mảng.
+- Backup database hợp lệ nhưng rỗng vẫn được chấp nhận nếu cấu trúc v3 đầy đủ; chỉ chặn file thiếu cấu trúc/không đúng phiên bản.
+- Đã thêm `tests/backupValidation.test.mjs`, script `npm run test:backup-validation`, và cập nhật README.
+- Chưa chạy test/build runtime; cần xác minh trên Node trước khi coi là nghiệm thu.
