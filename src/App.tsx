@@ -1303,7 +1303,7 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
           database: 'baotri-local-v1',
           assets, inventory, tasks, logs, movements, maintenancePlans,
           checklistTemplates, checklistVersions, checklistResults, syncQueue,
-          customAssetCategories
+          customAssetCategories, inventoryLocations, inventoryLocationEnabled
         }
       })
       const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' })
@@ -1385,17 +1385,36 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
       // The database transaction has committed. Clear the pending dialog before
       // touching localStorage, which can fail independently (quota/private mode).
       setPendingRestore(null)
-      let categoryWarning = ''
+      let settingsWarning = ''
       if (Array.isArray(data.customAssetCategories)) {
-        try {
-          localStorage.setItem('baotri-custom-asset-categories', JSON.stringify(data.customAssetCategories))
-          setCustomAssetCategories(data.customAssetCategories)
-        } catch (storageError) {
+        setCustomAssetCategories(data.customAssetCategories)
+        try { localStorage.setItem('baotri-custom-asset-categories', JSON.stringify(data.customAssetCategories)) }
+        catch (storageError) {
           console.error('Đã khôi phục dữ liệu nhưng không thể lưu danh mục thiết bị tùy chỉnh:', storageError)
-          categoryWarning = ' Dữ liệu danh mục thiết bị tùy chỉnh chưa được lưu vào trình duyệt.'
+          settingsWarning += ' Danh mục thiết bị tùy chỉnh chưa được lưu bền vững trên trình duyệt.'
         }
       }
-      flash('Đã khôi phục dữ liệu sao lưu.' + categoryWarning)
+      // Older v3 backups do not contain these optional fields; leave the
+      // current browser settings untouched when restoring such a backup.
+      if (Array.isArray(data.inventoryLocations)) {
+        const restoredLocations = [...new Set(data.inventoryLocations.map((item: string) => item.trim()).filter(Boolean))]
+          .sort((left, right) => left.localeCompare(right, 'vi'))
+        setInventoryLocations(restoredLocations)
+        try { localStorage.setItem('baotri-inventory-locations', JSON.stringify(restoredLocations)) }
+        catch (storageError) {
+          console.error('Đã khôi phục dữ liệu nhưng không thể lưu danh mục vị trí kho:', storageError)
+          settingsWarning += ' Danh mục vị trí kho chưa được lưu bền vững trên trình duyệt.'
+        }
+      }
+      if (typeof data.inventoryLocationEnabled === 'boolean') {
+        setInventoryLocationEnabled(data.inventoryLocationEnabled)
+        try { localStorage.setItem('baotri-inventory-location-enabled', String(data.inventoryLocationEnabled)) }
+        catch (storageError) {
+          console.error('Đã khôi phục dữ liệu nhưng không thể lưu thiết lập vị trí kho:', storageError)
+          settingsWarning += ' Thiết lập vị trí kho chưa được lưu bền vững trên trình duyệt.'
+        }
+      }
+      flash('Đã khôi phục dữ liệu sao lưu.' + settingsWarning)
     } catch (error) {
       flash(error instanceof Error ? error.message : 'Không thể khôi phục file sao lưu; dữ liệu Local được giữ nguyên nếu giao dịch chưa hoàn tất')
     }
