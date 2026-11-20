@@ -4906,3 +4906,42 @@ Chưa thay đổi grants, migration, RPC hoặc Supabase. Đây là đề xuất
 - Phải retrofit toàn bộ writer, rà legacy RPC, đóng direct PostgREST DELETE và test race với INSERT FK tham chiếu Asset. Hash collision của advisory key chỉ được phép gây serialize thừa; không bao giờ thay thế authorization.
 - Chưa triển khai advisory lock, chưa tạo delete RPC, chưa chạy concurrency test. Đây là candidate để review và kiểm chứng, không phải quyết định cuối cùng.
 
+
+
+## 102. Rà inventory RPC Asset và ma trận retrofit advisory anchor – 20/11/2026
+
+Đã đối chiếu catalog PostgreSQL hiện tại của BAOTRI-Mini-Test với migration và source GitHub. Chỉ đọc, không thay đổi database.
+
+### Kết quả inventory
+
+- **Runtime writer cần retrofit:** `acquire_asset_edit_lock` (mở editor/UPSERT Lease), `heartbeat_asset_edit_lock` (gia hạn Lease), `release_asset_edit_lock` (giải phóng Lease), `apply_asset_mutation_with_lock` (lưu Asset linked + Receipt), `import_asset_preserving_identity` (import Local → Cloud theo batch).
+- **RPC có khả năng ghi nhưng chưa thấy caller runtime:** `create_asset_with_code` (allocator) – vẫn có EXECUTE authenticated; nếu tiếp tục giữ API thì cũng phải lấy Asset anchor trước Settings/Counter/INSERT.
+- **Legacy RPC còn bề mặt EXECUTE:** `update_asset_with_lock` và `set_asset_archived_with_lock`. Wrapper/helper còn trong source nhưng chưa thấy bằng chứng là đường save/archive hiện hành. Không tự revoke; phải kiểm tra client cũ và backward compatibility.
+- **Không cần anchor:** `list_asset_edit_locks` (read-only). `set_asset_updated_at()` là trigger timestamp, không phải writer API; writer gọi UPDATE phải lấy anchor trước đó.
+
+Catalog xác nhận các RPC nghiệp vụ là SECURITY DEFINER, owner postgres, search_path rỗng, row_security=off; authenticated có EXECUTE, anon không có. Function còn EXECUTE vẫn là bề mặt gọi trực tiếp dù UI chưa dùng.
+
+### Lock order mục tiêu khi retrofit
+
+1. Auth + kiểm tra membership/permission hiện hành.
+2. Advisory transaction anchor theo organization_id + asset_id.
+3. Lease row (nếu có).
+4. Asset row khi cần khóa/cập nhật.
+5. Receipt/ledger/dependency và mutation theo từng function.
+
+Chi tiết riêng:
+- Acquire: anchor → xác nhận Asset → Lease UPSERT.
+- Heartbeat/release: anchor → Lease UPDATE/DELETE đúng token. Release hiện không yêu cầu assets.update; không tự đổi permission contract.
+- Apply mutation: anchor trước cả receipt fast replay → Lease FOR UPDATE → Asset FOR UPDATE → UPDATE + Receipt.
+- Import: Asset anchor → advisory mutation-ID hiện có → ledger replay → Settings → Counter → Asset → import ledger. Không đảo thứ tự hai advisory lock.
+- Allocator: xác định/generate Asset UUID → anchor → Settings/aggregate → Counter → INSERT Asset. Counter vẫn là serialization point theo organization/category.
+- Legacy update/archive: anchor → Lease FOR UPDATE → Asset FOR UPDATE nếu tiếp tục giữ.
+
+### Ranh giới chưa giải quyết
+
+- Asset anchor không thay thế authorization lock, không giải quyết membership/permission revoke race.
+- Không giải quyết Settings update ↔ import/allocator; cũng không thay Counter lock.
+- Direct PostgREST DELETE không lấy anchor cho đến khi DELETE privilege được thu hồi.
+- Production chưa được xác minh có cùng schema/grants như Test.
+
+**Kết luận:** đã xác định danh sách function cần retrofit và function read-only/legacy. Chưa viết migration, chưa sửa RPC/grants/code, chưa chạy concurrency tests. Bước thiết kế tiếp theo là rà lock order giữa Asset anchor, mutation-ID advisory, Counter và Settings, sau đó lập test matrix deterministic trước khi đề xuất migration.
