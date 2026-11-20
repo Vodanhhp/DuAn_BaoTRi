@@ -38,6 +38,7 @@ jobs:
           npm run test:template-release
           npm run test:date-utils
           npm run test:backup-validation
+          npm run test:local-concurrency
 
       - name: Validate template release
         run: npm run validate:template
