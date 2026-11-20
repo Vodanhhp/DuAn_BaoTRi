@@ -2315,7 +2315,9 @@ function AssetChecklist({asset,userName,allowActions,scheduledFor,isMakeup,creat
       // two tabs opening the first-time builder from creating two templates.
       const latestTemplate=await db.checklistTemplates.where('assetId').equals(asset.id).first()
       const templateId=latestTemplate?.id ?? uid()
-      const nextVersion=(latestTemplate?.currentVersion ?? 0)+1
+      const existingVersions=latestTemplate ? await db.checklistVersions.where('templateId').equals(templateId).toArray() : []
+      const highestVersion=Math.max(latestTemplate?.currentVersion ?? 0,...existingVersions.map(version=>version.version))
+      const nextVersion=highestVersion+1
       const versionId=uid()
       const nextTemplate={id:templateId,assetId:asset.id,title:draftTitle.trim(),description:draftDescription,currentVersion:nextVersion,active:true,createdAt:latestTemplate?.createdAt??timestamp,updatedAt:timestamp}
       await db.checklistTemplates.put(nextTemplate)
