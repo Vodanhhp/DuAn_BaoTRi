@@ -138,3 +138,17 @@ test('Checklist-derived repair requests validate source and prevent duplicate li
   assert.ok(duplicateGuard > duplicateRead && write > duplicateGuard, 'duplicate linked request must be rejected before Log write')
   assert.match(handler, /db\.checklistResults, db\.syncQueue/, 'source validation must share the atomic write transaction')
 })
+
+test('maintenance Log validates optional Task ownership inside the atomic write transaction', () => {
+  const start = source.indexOf('const saveLog = async')
+  const end = source.indexOf('const createRequestFromChecklist', start)
+  assert.ok(start >= 0 && end > start, 'saveLog handler must exist')
+  const handler = source.slice(start, end)
+  const transaction = handler.indexOf("db.transaction('rw'")
+  const taskRead = handler.indexOf('db.tasks.get(entry.taskId)', transaction)
+  const taskGuard = handler.indexOf('sourceTask.assetId !== entry.assetId', taskRead)
+  const logWrite = handler.indexOf('db.logs.put(next)', taskGuard)
+  assert.ok(transaction >= 0 && taskRead > transaction, 'Task source must be read inside the write transaction')
+  assert.ok(taskGuard > taskRead && logWrite > taskGuard, 'Task ownership must be validated before writing Log')
+  assert.match(handler, /db\.checklistResults, db\.tasks, db\.syncQueue/, 'Task and Checklist validation must share the Log transaction')
+})
