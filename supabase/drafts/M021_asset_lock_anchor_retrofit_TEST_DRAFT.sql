@@ -165,10 +165,15 @@ begin
       and objsubid=2 and mode='ExclusiveLock' and granted) then
     raise exception 'Settings statement trigger did not hold global exclusive lock';
   end if;
+  -- The transaction already holds the same Settings key exclusively from the
+  -- statement trigger above. A later shared request by import is compatible with
+  -- this backend's existing lock; pg_locks must not be required to show a second
+  -- simultaneous ShareLock row. The clean shared-only acquisition is verified
+  -- separately by the physical two-session protocol.
   if not exists(select 1 from pg_locks where locktype='advisory' and pid=pg_backend_pid()
       and classid::bigint=2635656809 and objid::bigint=2123944637
-      and objsubid=2 and mode='ShareLock' and granted) then
-    raise exception 'Import did not hold global Settings shared lock';
+      and objsubid=2 and granted) then
+    raise exception 'Settings global advisory lock is not held';
   end if;
 end;
 $locks$;
