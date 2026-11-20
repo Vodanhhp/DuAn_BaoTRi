@@ -41,6 +41,8 @@ declare
   v_seq_2 bigint;
   v_blocked boolean := false;
 begin
+  if has_function_privilege('authenticated','public.create_asset_with_code(uuid,text,text,text,uuid,text,text,text,date,text,text,date,boolean,text,text)','EXECUTE') then
+  -- Pre-M021 compatibility test: Admin/Technician allocator RPC behavior.
   -- Admin creates first asset and the supplied UUID is preserved.
   perform set_config('request.jwt.claim.sub', '08f0f750-3361-4ae0-b6ed-9dc4a5b41244', true);
   perform set_config('request.jwt.claims',
@@ -99,6 +101,15 @@ begin
   insert into pg_temp.allocator_results values
     ('Viewer create denied', '42501 / denied',
       case when v_blocked then '42501 / denied' else 'not denied' end, v_blocked);
+  else
+    -- M021 contract: allocator is closed to authenticated; do not invoke it.
+    insert into pg_temp.allocator_results values
+      ('Admin allocator revoked', 'EXECUTE denied', 'EXECUTE denied', not has_function_privilege('authenticated','public.create_asset_with_code(uuid,text,text,text,uuid,text,text,date,text,text,date,boolean,text,text)','EXECUTE'));
+    insert into pg_temp.allocator_results values
+      ('Technician allocator revoked', 'EXECUTE denied', 'EXECUTE denied', not has_function_privilege('authenticated','public.create_asset_with_code(uuid,text,text,text,uuid,text,text,date,text,text,date,boolean,text,text)','EXECUTE'));
+    insert into pg_temp.allocator_results values
+      ('service_role allocator revoked', 'EXECUTE denied', 'EXECUTE denied', not has_function_privilege('service_role','public.create_asset_with_code(uuid,text,text,text,uuid,text,text,date,text,text,date,boolean,text,text)','EXECUTE'));
+  end if;
 end
 $test$;
 
