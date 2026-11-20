@@ -5242,3 +5242,36 @@ Không tạo migration, không gọi RPC, không ghi DB hoặc thay đổi Supab
 - P0 payload validation không còn là việc đang chờ sửa.
 - Quay lại rollout Asset lock protocol theo §107–§112: hoàn tất preflight read-only, kiểm tra M019/M020 lock primitive và Settings bridge, inventory advisory lock toàn catalog, xác minh version/client compatibility, chuẩn bị deterministic two-session harness.
 - Chưa áp dụng migration lock retrofit, chưa chạy concurrency test ghi dữ liệu, chưa thay grants/RPC hoặc Production. Chỉ chuyển sang execution sau khi preflight/test gate đạt và có phê duyệt rõ ràng.
+
+
+## 116. Preflight read-only M021 Asset lock-anchor retrofit – 20/11/2026
+
+Đã tiếp tục từ §115, đọc lại TIEN DO và đối chiếu draft M021 với catalog BAOTRI-Mini-Test. Không chạy migration, không gọi RPC nghiệp vụ, không ghi dữ liệu.
+
+### Baseline Test hiện tại
+- Migration history xác nhận baseline mới nhất là Migration 020, version '20261120042433'.
+- Catalog hiện chưa có schema 'private'; chưa có trigger Settings statement-level. Trigger duy nhất trên 'organization_settings' hiện là 'organization_settings_set_updated_at'.
+- Catalog-wide read-only inventory các function nghiệp vụ có gọi advisory lock hiện chỉ tìm thấy 'public.import_asset_preserving_identity', dùng bigint mutation-ID lock hiện hữu. Không thấy Asset two-int anchor hoặc Settings lock bridge đã triển khai.
+- Do đó M021 vẫn là draft, chưa áp dụng vào Test.
+
+### Đối chiếu M021 draft
+- 'supabase/drafts/M021_asset_lock_anchor_retrofit_DRAFT.sql': một transaction gộp private lock helpers, Settings BEFORE STATEMENT trigger, retrofit các Asset/Lease writers, import/allocator compatibility, revoke EXECUTE allocator legacy và revoke direct DELETE trên assets.
+- 'supabase/drafts/M021_asset_lock_anchor_retrofit_TEST_DRAFT.sql': test tuần tự, deterministic key vector, lease/mutation/import/legacy RPC, privilege và rollback.
+- 'supabase/drafts/M021_TWO_SESSION_TEST_PROTOCOL_DRAFT.md': protocol riêng cho hai physical sessions; chính tài liệu xác nhận chưa chạy. Các tình huống cần kiểm chứng gồm Asset anchor contention, Settings shared/exclusive, direct Settings statement trigger zero-row, mutation-ID bigint tách namespace, delete/FK race, legacy writer/delete và transaction lock release.
+
+### Ranh giới và rủi ro chưa được coi là giải quyết
+- M021 draft không tạo hard-delete RPC; direct Asset DELETE bị revoke. Đây phù hợp quyết định mặc định archive/retirement, không bật hard-delete.
+- M021 draft không tạo shared Organization/Membership serialization cho permission revocation. TOCTOU candidate đã nêu ở §112 vẫn là rủi ro riêng; không được tuyên bố M021 tự giải quyết race giữa thu hồi quyền và Asset write.
+- Test tuần tự không thay thế hai-session concurrency suite. Chưa có bằng chứng PASS cho A1–A11; không được áp dụng M021 chỉ dựa vào việc test tuần tự chạy được.
+- Cần review lại migration draft cùng current catalog/grants và kiểm tra các deterministic key vectors trên đúng PostgreSQL Test trước khi xem xét promotion.
+
+### Trạng thái và bước tiếp theo
+- [x] Đối chiếu Migration 020 baseline với migration history và active catalog.
+- [x] Xác nhận M021 chưa được áp dụng; private schema/Settings bridge chưa tồn tại trên Test.
+- [x] Đọc draft migration, sequential test và two-session protocol.
+- [ ] Chưa hoàn tất review từng function/privilege trong M021 so với catalog hiện hành.
+- [ ] Chưa chạy sequential test M021.
+- [ ] Chưa chạy two-physical-session concurrency A1–A11.
+- [ ] Chưa tạo migration canonical M021, chưa áp dụng Test, chưa thay đổi grants/RPC hoặc Production.
+
+**Bước tiếp theo:** hoàn tất static diff từng function trong M021 với catalog BAOTRI-Mini-Test và source main; rà lock order, signature, grants, helper security, compatibility với Settings writer hiện tại và các test. Chỉ sau review mới chạy sequential fixture test; concurrency test vẫn cần hai kết nối vật lý và phê duyệt rõ ràng trước khi ghi dữ liệu.
