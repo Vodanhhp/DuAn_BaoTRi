@@ -298,3 +298,10 @@ GitHub Actions run `44727152880` for commit `e79fb1c059cdfb61d7c9f44185f2ecad5f2
 Post-M022 advisors: health findings 0. Security advisor remains at 4 INFO findings for internal RLS-enabled tables without policies, 10 existing SECURITY DEFINER warnings, and 1 leaked-password-protection warning. No new warning category/count was introduced by M022; the RPCs retain their existing auth/permission checks and hardened function settings. Review links: https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable and https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection.
 
 Still pending: physical two-session M021 concurrency protocol and browser-level Local PC → Cloud Asset import/edit verification on Test. No generic sync activation and no Production changes.
+
+
+## 27. M022 browser verification protocol prepared — 20/11/2026
+
+Added `supabase/drafts/M022_BROWSER_LOCAL_TO_CLOUD_TEST_PROTOCOL.md` (commit `e595c41a1c2810d3b72e4e9d1753a6705e024ffc`). The protocol requires a separate browser profile with an empty IndexedDB, verified Test project ID `oyzhxgzltpdebpymuicb`, one disposable Local Asset only, preview counts 1/1/1, explicit confirmation, and read-back of UUID/code/creator metadata followed by reload and a supported edit/lock test. It explicitly prohibits importing the user's normal Local dataset and says not to mark browser verification PASS before a real session is observed.
+
+This browser protocol is prepared but not executed: no browser-control session is available in this work context. The user's local browser session is required. Physical two-session M021 concurrency remains pending.
