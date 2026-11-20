@@ -2796,3 +2796,47 @@ Cần kiểm tra kỹ cast và operator type resolution bằng PostgreSQL 17.12;
 M019 chỉ thêm schema/helper/trigger bridge và grants cần thiết. Không retrofit business RPC, không revoke direct writes, không thay frontend. M019 rollback được nếu chưa có caller phụ thuộc; nếu đã deploy caller thì rollback theo forward-compatible plan, không drop helper đang được dùng.
 
 Chưa thực thi truy vấn catalog, chưa sinh vector, chưa tạo migration.
+
+## 97. M019 deterministic two-session test protocol (thiết kế, chưa chạy)
+
+### Harness contract
+- Dùng hai process psql độc lập, hai physical DB connections; mỗi session đặt application_name riêng và ghi PID/txid_current().
+- Không dùng pg_sleep làm đồng bộ. Dùng READY barrier ở harness bên ngoài; session báo READY sau khi đã lấy lock/đến đúng checkpoint. Harness chỉ cho session kia chạy khi nhận READY.
+- Mỗi test có timeout phía harness/lock_timeout để tránh treo vô hạn; timeout không được diễn giải nhầm thành deadlock. Khi timeout, thu pg_stat_activity, pg_locks, pg_blocking_pids(pid), query, wait_event, transaction age trước khi hủy.
+- Dữ liệu fixture chỉ dùng organization/Asset thử nghiệm chuyên biệt. Test DML chạy trong transaction và ROLLBACK cả hai session; verify state sau rollback. Không dùng production data.
+- Lưu log không chứa credentials/connection URI/token; chỉ lưu test ID, PID, txid, SQLSTATE, lock modes, blocking graph và kết quả invariant.
+
+### A. Primitive lock semantics
+1. **Shared/shared:** Session A lấy Settings global shared lock rồi READY; Session B lấy cùng shared lock phải hoàn tất trước khi A release. Xác minh cả hai cùng nắm shared lock qua pg_locks.
+2. **Shared/exclusive:** A giữ shared; B yêu cầu global exclusive. B phải ở trạng thái chờ và pg_blocking_pids(B) phải chỉ ra A. A COMMIT; B mới hoàn tất.
+3. **Exclusive/shared:** A giữ exclusive; B yêu cầu shared. B chờ A; sau COMMIT A, B hoàn tất.
+4. **Exclusive/exclusive:** A giữ exclusive; B chờ A; sau COMMIT A, B hoàn tất.
+5. **Transaction release:** kiểm tra release sau COMMIT và ROLLBACK; không dùng session-level lock. Kiểm tra không còn advisory lock của transaction sau kết thúc.
+6. **Asset isolation:** hai Asset key khác nhau trong cùng org có thể giữ lock đồng thời; cùng Asset key phải block. Đây là kiểm tra vector cụ thể, không chứng minh collision không thể xảy ra.
+7. **Namespace:** xác nhận mutation-ID bigint overload và Asset two-int overload được PostgreSQL phân biệt; audit catalog/source trước khi chốt namespace.
+
+### B. Statement trigger ordering
+8. **Zero-row statement:** Session A chạy UPDATE organization_settings WHERE organization_id = UUID fixture không tồn tại; dù affected rows = 0, BEFORE STATEMENT trigger vẫn phải lấy global exclusive lock. A báo READY khi statement hoàn tất nhưng chưa COMMIT; Session B shared reader phải block tới khi A kết thúc transaction.
+9. **INSERT path:** A INSERT Settings fixture mới, trigger lấy exclusive trước row operation; B shared reader phải block. ROLLBACK A và xác nhận row không tồn tại.
+10. **UPDATE path:** A UPDATE Settings row hiện hữu; trigger phải nắm exclusive trước khi row tuple lock được yêu cầu. Dùng pg_locks/blocking graph và checkpoint; không chỉ đo elapsed time.
+11. **UPSERT/ON CONFLICT:** kiểm tra statement trigger INSERT/UPDATE event theo semantics PostgreSQL; trigger có thể được gọi cho cả hai event. Reentrant transaction advisory lock cùng key phải không làm thay đổi kết quả. Chỉ test nếu có writer dùng UPSERT.
+12. **Multiple rows:** một statement tác động nhiều organization vẫn chỉ lấy một global key, không tạo thứ tự khóa theo row và không phát sinh lock-order cycle.
+
+### C. Deadlock regression – direct writer và Settings RPC
+13. **Direct writer first:** Session A chạy direct UPDATE; BEFORE STATEMENT trigger lấy global exclusive trước khi row lock. A READY và giữ transaction mở. Session B chạy Settings RPC; B phải chờ global lock, chưa được giữ Settings row lock. A COMMIT; B tiếp tục và hoàn tất.
+14. **RPC first:** Session A chạy Settings RPC, lấy global exclusive trước SELECT FOR UPDATE/write và giữ transaction tới commit. B chạy direct UPDATE; statement trigger phải chờ trước khi B lấy row lock. A COMMIT; B tiếp tục.
+15. **Settings reader race:** A create/import path lấy global shared trước SELECT config; B Settings writer lấy global exclusive. B phải chờ A kết thúc; đảo chiều cũng phải chứng minh reader mới chờ writer.
+16. **Deadlock evidence:** cả hai chiều không có SQLSTATE 40P01; nếu lock_timeout xảy ra thì phải kiểm tra blocker và checkpoint, không kết luận protocol deadlock chỉ từ 55P03.
+
+### D. Security / search_path
+17. **Client helper denial:** SET ROLE authenticated và anon, thử gọi trực tiếp helper; phải bị permission denied. Test trigger gián tiếp qua direct DML chỉ khi role có quyền DML phù hợp và RLS policy cho phép; trigger wrapper chạy đúng owner.
+18. **Search path poisoning:** session tạo object cùng tên trong schema attacker-controlled, SET search_path tới schema đó, gọi RPC/trigger. Function vẫn resolve private helper và pg_catalog object đúng nhờ search_path rỗng + fully qualified names.
+19. **RLS separation:** helper chỉ lấy lock, không đọc tenant data và không bypass RLS; RPC nghiệp vụ vẫn reject actor thiếu membership/permission.
+
+### E. Pass criteria và artifacts
+- Mọi lock contention có blocker đúng, thứ tự đúng, không có 40P01; transaction kết thúc thì lock được giải phóng.
+- Zero-row statement vẫn có exclusive lock; direct writer không thể giữ tuple trước khi chờ global lock.
+- Authenticated/anon không gọi được helper; poisoned search_path không đổi resolution.
+- Sau rollback, fixture rows và business state không đổi; không có orphan receipt/counter/lease.
+- Lưu hai-session timeline theo monotonic timestamp, PID, txid, SQLSTATE và blocking graph. Không dùng thời gian chờ cố định làm bằng chứng ordering.
+- Đây là thiết kế test, không phải kết quả PASS. Chỉ chạy trên BAOTRI-Mini-Test sau phê duyệt rõ ràng cho test DML/concurrency.
