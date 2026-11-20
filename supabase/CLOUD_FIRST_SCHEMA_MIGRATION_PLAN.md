@@ -159,3 +159,15 @@ Draft vẫn chưa apply. Trước promotion cần điều phối timestamp migra
 Draft Shared Receipt đã được chỉnh theo phương án role NOLOGIN/NOBYPASSRLS/NOINHERIT, chỉ SELECT Receipt qua RLS policy riêng; deferred assertion SECURITY DEFINER do role này sở hữu, `search_path = ''`, không dùng `row_security = off`. DDL và probe RPC đã pass trên BAOTRI-Mini-Test trong transaction rollback: final Receipt pass, pending Receipt bị chặn, authenticated không SELECT được Receipt; role/table không tồn tại sau rollback.
 
 Shared Receipt vẫn chưa apply. Còn phải hoàn tất review lock ordering/replay race và business RPC contracts. Draft mang nhãn 020 cũ phải được gán lại migration version vì Migration 020 P0 đã được áp dụng.
+
+## 16. M021 Asset lock-anchor retrofit — rebase and test status — 20/11/2026
+
+Migration 020 is now occupied by the applied P0 payload fix. The former planned M019 lock primitives/Settings bridge and M020 Asset writer retrofit are combined as one atomic candidate Migration 021 to prevent a mixed committed protocol.
+
+Drafts:
+- `supabase/drafts/M021_asset_lock_anchor_retrofit_DRAFT.sql`
+- `supabase/drafts/M021_asset_lock_anchor_retrofit_TEST_DRAFT.sql`
+
+Rollback-only Test execution verified helper/trigger/function DDL, all seven Asset/Lease writer paths sequentially, mutation replay, import with Settings shared lock, and authenticated zero-row Settings UPDATE with global exclusive trigger lock. Effective privileges changed as intended inside the transaction and reverted after ROLLBACK. Key vectors were generated from PostgreSQL 17.12; two-int locks appear with `objsubid=2`, existing mutation bigint locks with `objsubid=1`.
+
+M021 remains DRAFT ONLY. Mandatory remaining gates: external two-physical-session concurrency A1–A11, blocker/wait graph and deadlock regression, search_path poisoning, all existing Asset/Lease/import SQL tests, frontend smoke tests, and final catalog/privilege postflight. Do not promote/apply until these gates pass. Production is out of scope.
