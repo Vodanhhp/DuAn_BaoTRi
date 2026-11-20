@@ -2960,3 +2960,15 @@ Important correction: the hotfix guard would abort if run against the current re
 - Apply only to the approved disposable Test environment, then inspect `pg_get_functiondef` and run the regression test. Production remains out of scope.
 
 No migration, RPC invocation, or SQL write was performed during this investigation.
+
+## 10. Re-review Draft 018 — 20/11/2026
+
+Đã sửa và kiểm thử lại draft `018_inventory_movement_audit_fields_DRAFT.sql` trên BAOTRI-Mini-Test theo transaction rollback:
+
+- Đã thay literal backslash + `n` bằng newline SQL thật trong ALTER TABLE.
+- Bổ sung CHECK loại `NaN` cho `inventory_movements.quantity`, `quantity_delta`, `balance_before`, `balance_after` và `counted_quantity`. PostgreSQL numeric có thể so sánh NaN lớn hơn số thường, vì vậy chỉ dùng `>= 0`/`> 0` là chưa đủ.
+- Reason của movement mới dùng regex `reason ~ '[^[:space:]]'` để từ chối chuỗi chỉ gồm whitespace, kể cả tab/newline.
+- DDL được chạy thử trong transaction kết thúc bằng ROLLBACK; temp table dùng LIKE schema thật để kiểm tra constraint. Legacy row, Nhập, Xuất và Điều chỉnh về tồn 0 được chấp nhận; NaN, delta 0, reason whitespace-only, audit snapshot thiếu actor và số dư âm đều bị từ chối.
+- Kiểm tra sau rollback: cột `quantity_delta` không tồn tại trên bảng thật, `inventory_movements` vẫn 0 dòng, migration history không đổi. Không có thay đổi schema/data tồn tại.
+
+**Trạng thái:** lỗi cú pháp và các lỗ hổng constraint vừa nêu đã xử lý trong DRAFT; chưa apply migration. Còn phải kiểm tra duplicate mutation IDs trước unique index trên môi trường có dữ liệu, giữ yêu cầu expected_item_version và numeric input validation ở RPC contract, rồi mới promotion sau khi Shared Receipt/row_version và RPC sẵn sàng.
