@@ -2840,3 +2840,74 @@ Chưa thực thi truy vấn catalog, chưa sinh vector, chưa tạo migration.
 - Sau rollback, fixture rows và business state không đổi; không có orphan receipt/counter/lease.
 - Lưu hai-session timeline theo monotonic timestamp, PID, txid, SQLSTATE và blocking graph. Không dùng thời gian chờ cố định làm bằng chứng ordering.
 - Đây là thiết kế test, không phải kết quả PASS. Chỉ chạy trên BAOTRI-Mini-Test sau phê duyệt rõ ràng cho test DML/concurrency.
+
+## 98. Catalog audit Test – exact M020 writer inventory and blockers
+
+Read-only catalog audit on BAOTRI-Mini-Test (PostgreSQL 17.12), cross-checked with GitHub source search/fetch. No SQL writes or RPC invocations were performed.
+
+### A. Exact public function inventory
+
+| Function | Classification | Current behavior / M020 disposition |
+|---|---|---|
+| acquire_asset_edit_lock | Runtime writer | UPSERT Lease; retrofit Asset anchor before Asset existence read and Lease UPSERT |
+| heartbeat_asset_edit_lock | Runtime writer | UPDATE Lease; retrofit Asset anchor before Lease UPDATE |
+| release_asset_edit_lock | Runtime writer | DELETE Lease scoped by auth.uid + token; retrofit Asset anchor before Lease DELETE; preserve cleanup semantics |
+| apply_asset_mutation_with_lock | Runtime writer | Receipt replay + Lease FOR UPDATE + Asset FOR UPDATE + update + receipt; retrofit Asset anchor and mutation-ID lock before receipt |
+| import_asset_preserving_identity | Runtime writer | Existing bigint mutation lock, Settings read, Counter UPSERT, Asset FOR UPDATE/INSERT, import ledger; add Asset anchor before mutation lock and global Settings shared before Settings read |
+| update_asset_with_lock | Legacy callable RPC | No runtime caller found; exported compatibility helper remains. Keep and retrofit Asset anchor → Lease → Asset; mark deprecated |
+| set_asset_archived_with_lock | Legacy callable RPC | No runtime caller found; exported compatibility helper remains. Keep and retrofit Asset anchor → Lease → Asset; mark deprecated |
+| create_asset_with_code | Legacy allocator capability | Authenticated + service_role EXECUTE; source helper createCloudAsset exported but no caller found. Ordinary Asset creation is Local-first. Candidate revoke authenticated and service_role EXECUTE in M020; retain owner-only, do not expose a non-idempotent Cloud allocator |
+| list_asset_edit_locks | Read-only RPC | No anchor required; preserve assets.view authorization |
+| set_asset_updated_at | Trigger helper | BEFORE UPDATE timestamp-only trigger on assets; not a business writer, no Asset anchor logic required inside trigger |
+
+All eight SECURITY DEFINER business RPCs have owner postgres, empty search_path, row_security=off, and EXECUTE authenticated/service_role; anon and PUBLIC are denied. set_asset_updated_at is SECURITY INVOKER with empty search_path. Preserve each permission check and signature unless a separate approved change requires otherwise.
+
+### B. Effective table privileges and RLS
+
+- public.assets: authenticated SELECT and DELETE true; INSERT and UPDATE false. RLS enabled; DELETE policy requires assets.delete. Direct DELETE therefore remains an actual bypass of Asset anchor even though RLS permission is checked.
+- public.organization_settings: authenticated SELECT/INSERT/UPDATE true; INSERT/UPDATE policies require settings.manage. saveCloudAssetCodeConfig() is a live direct PostgREST writer in CloudAssetsPanel.
+- asset_edit_locks, asset_mutation_receipts, asset_import_mutations, asset_code_counters: authenticated has no direct SELECT/INSERT/UPDATE/DELETE privileges in effective privilege checks; RPCs access them under SECURITY DEFINER.
+- RLS is enabled on all six tables; FORCE ROW LEVEL SECURITY is false. Internal tables have no client DML grants.
+- Existing triggers: assets BEFORE UPDATE ROW timestamp trigger; organization_settings BEFORE UPDATE ROW updated_at trigger. No trigger currently exists on asset_edit_locks. M019 statement-level Settings bridge is not yet in catalog.
+
+### C. Constraints relevant to lock protocol
+
+- asset_edit_locks PK (organization_id, asset_id), FK to assets(organization_id,id) ON DELETE CASCADE, and FK to auth.users ON DELETE CASCADE.
+- asset_mutation_receipts PK (organization_id, mutation_id); actor FK and organization FK are ON DELETE RESTRICT; asset_id is not an FK.
+- asset_import_mutations PK (organization_id, mutation_id); actor and organization FKs are ON DELETE RESTRICT.
+- asset_code_counters PK (organization_id, category_code); organization FK ON DELETE RESTRICT.
+- assets unique (organization_id,id) and (organization_id,code); primary key id.
+- Counter UPSERT remains its own per-org/category serialization point.
+
+### D. Important P0 preflight finding – active apply RPC payload condition
+
+The active catalog definition of apply_asset_mutation_with_lock currently contains:
+'OR (p_payload - v_required_keys) <> '{}'::jsonb' followed by 'false then' with no visible boolean operator before false.
+
+The forward hotfix migration 20261119000100_fix_asset_mutation_payload_validation.sql replaces the old text 'or jsonb_object_length(p_payload) <> cardinality(v_required_keys)' with the string 'false'. That replacement appears to remove the 'or' token and produce the suspicious active definition above.
+
+This has not been runtime-invoked or compiled by plpgsql_check (extension is not installed). Treat as a P0 blocker: before M020, create a separate minimal forward fix that preserves valid boolean syntax, then validate the function with a real call-path regression/test and confirm exact pg_get_functiondef. Do not bury this correction inside the Asset lock retrofit; isolate the root cause and its test evidence. Existing historical PASS notes do not override the current catalog text.
+
+### E. M020 lock order after M019 bridge exists
+
+1. acquire: auth + assets.update → Asset anchor → Asset existence read → Lease UPSERT.
+2. heartbeat: auth + assets.update → Asset anchor → Lease UPDATE.
+3. release: auth + actor/token scope → Asset anchor → Lease DELETE. Preserve release as a cleanup operation; do not add a new permission requirement casually.
+4. apply mutation: auth + assets.update → Asset anchor → mutation-ID bigint advisory lock → receipt replay/recheck → Lease FOR UPDATE → Asset FOR UPDATE → Asset UPDATE → receipt INSERT. Keep the current permission-before-replay semantics pending a separate decision on replay after permission revocation.
+5. import: auth + assets.import → Asset anchor → existing mutation-ID bigint lock → import ledger replay → global Settings shared lock → Settings read → Counter UPSERT → Asset FOR UPDATE/INSERT → import ledger INSERT.
+6. legacy update/archive: auth + assets.update → Asset anchor → Lease FOR UPDATE → Asset UPDATE.
+7. list locks: read-only; no anchor.
+8. create_asset_with_code: candidate retire client/service_role EXECUTE in same M020 transaction because no runtime caller was found and Local-first creation is authoritative. If future evidence requires keeping it, stop and redesign it with anchor, Settings shared lock, Counter and idempotency before retaining access.
+
+### F. Atomic M020 contents and gates
+
+M020 must commit together:
+- Replace all seven retained Asset/Lease writer RPC definitions with anchor-aware versions (five runtime + two legacy).
+- Add mutation-ID advisory serialization to apply before receipt replay.
+- Retrofit import with Asset anchor and global Settings shared reader lock.
+- Revoke authenticated and service_role EXECUTE on create_asset_with_code after caller audit; keep owner-only.
+- Revoke DELETE on public.assets from authenticated in the same transaction.
+- Do not revoke direct Settings INSERT/UPDATE yet; M019 statement trigger protects compatibility until later contract phase.
+- Keep list_asset_edit_locks and set_asset_updated_at unchanged.
+
+Preflight must fail closed if any client caller for direct Asset DELETE or allocator is found. Postflight checks effective privileges, exact function definitions/grants, RLS policies, no missing function signature, and current frontend smoke tests. No SQL has been applied as part of this audit.
