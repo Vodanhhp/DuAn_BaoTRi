@@ -4847,3 +4847,20 @@ Hai test SQL hiện tại chỉ chạy tuần tự trong một transaction; chú
 
 ### Trạng thái an toàn
 Chỉ đọc migration/test source và cập nhật thiết kế tài liệu. Chưa tạo runner, test fixture, test function/trigger; chưa chạy concurrency test, SQL ghi dữ liệu hoặc thay đổi Supabase.
+
+
+## 98. Runbook concurrency – giảm thao tác nhưng tăng bằng chứng – 20/11/2026
+
+Đã rà lại source migration trực tiếp và gom cách kiểm thử thành một runbook thay vì tạo thêm nhiều test tuần tự:
+
+- apply_asset_mutation_with_lock: đọc Receipt, khóa Lease FOR UPDATE, đọc lại Receipt sau khi chờ, khóa Asset FOR UPDATE, cập nhật Asset rồi insert Receipt. Thứ tự khóa chính là **Lease → Asset → Receipt**.
+- import_asset_preserving_identity: advisory transaction lock theo organization + mutation ID, đọc ledger, đọc Settings, reconcile Counter bằng UPSERT nếu mã nhận diện được, khóa Asset FOR UPDATE, rồi ghi Asset/ledger. Thứ tự chính là **advisory → Settings read → Counter → Asset → ledger**.
+- create_asset_with_code: đọc Settings, đọc MAX code hiện có, UPSERT Counter, INSERT Asset. Tuy nhiên helper chưa có caller runtime được tìm thấy.
+- Settings writer là PostgREST UPDATE trực tiếp; không có shared lock protocol với các reader import/allocator. Chưa được tự đặt winner semantics cho race này.
+- Direct Asset DELETE vẫn có RLS policy assets_delete_permission; Lease có FK ON DELETE CASCADE. Đây là capability DB cần kiểm thử riêng dù chưa thấy UI caller.
+
+**Phát hiện quan trọng:** có thể dựng candidate deadlock theo thứ tự khóa đối nghịch: Session A giữ Lease row; Session B DELETE Asset và chờ cascade xóa Lease; A tiếp tục UPDATE Asset và chờ B. PostgreSQL có thể phát hiện vòng chờ và trả 40P01. Đây mới là phân tích từ lock order, chưa phải deadlock đã tái hiện.
+
+**Cách làm gọn:** một runbook chung gồm preflight read-only, hai connection vật lý, barrier, ghi PID/txid/wait graph/SQLSTATE, commit hoặc rollback, đọc invariant cuối, cleanup. P0 chạy trước; P1 chỉ chạy sau. Không dùng pg_sleep làm barrier.
+
+**Trạng thái:** đã rà source và cập nhật thiết kế; chưa tạo runner/fixture, chưa chạy SQL ghi dữ liệu, chưa thay đổi RPC, DDL, grants, Auth hoặc Supabase. Các test hiện tại vẫn chỉ chứng minh logic tuần tự.
