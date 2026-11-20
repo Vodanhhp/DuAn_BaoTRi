@@ -2303,3 +2303,21 @@ Không tạo test function/trigger/hook, không sửa migration/RPC, không SQL 
 P0 chạy trước: acquire/takeover; mutation/mutation; mutation/heartbeat/release; direct DELETE ↔ mutation. P1 chỉ chạy sau: import retry/collision; import ↔ allocator; Settings update ↔ import. Allocator chưa có caller runtime nên kết quả P1 phải ghi là kiểm thử capability/RPC, không phải kiểm thử luồng UI đang hoạt động.
 
 Chưa tạo runner, fixture hoặc chạy SQL ghi dữ liệu. Đây là runbook thiết kế, không phải kết quả kiểm thử.
+
+
+## 86. Quyết định thiết kế đề xuất – đóng direct Asset DELETE trước hard-delete RPC
+
+### Bằng chứng schema
+- assets hiện có DELETE table privilege cho authenticated từ business schema; migration permission-based tạo policy assets_delete_permission dựa trên assets.delete. Hai lớp cùng cho phép PostgREST DELETE khi caller đủ quyền.
+- asset_edit_locks tham chiếu Asset bằng FK ON DELETE CASCADE.
+- Các bảng nghiệp vụ có FK ON DELETE RESTRICT tới Asset gồm maintenance_tasks, maintenance_plans, checklist_templates, checklist_results, maintenance_logs, inventory_movements.linked_asset_id và asset_images. Vì vậy hard-delete Asset đã có lịch sử/liên kết thường bị FK chặn; không nên cascade xóa nghiệp vụ.
+- asset_mutation_receipts và asset_import_mutations giữ asset_id dạng scalar, không FK tới Asset. Đây là điểm cần tính trong retention/audit khi thiết kế hard-delete.
+
+### Đề xuất theo giai đoạn
+1. **Đóng đường DELETE trực tiếp:** migration riêng có thể REVOKE DELETE ON TABLE public.assets FROM authenticated. Policy RLS có thể giữ để thể hiện business permission, nhưng SQL privilege không còn cho phép PostgREST DELETE. Đây là đề xuất cần kiểm thử quyền hiệu lực trên Test trước khi triển khai; chưa chạy.
+2. **Luồng nghiệp vụ mặc định:** giữ hồ sơ, dùng trạng thái nghiệp vụ (ví dụ Thanh lý) và/hoặc archive. Archive không đồng nghĩa xóa vật lý; cần giữ nguyên lịch sử bảo trì, checklist, ảnh và dấu vết nhập/sửa.
+3. **Hard-delete trong tương lai:** chưa tạo RPC ngay. Chỉ thiết kế sau khi chốt một lock protocol chung cho acquire, mutation, heartbeat/release và delete. RPC phải xác thực active membership + assets.delete, kiểm tra Lease còn hiệu lực và dependency/retention, từ chối nếu còn lịch sử cần giữ, và ghi audit theo chính sách đã duyệt.
+4. **Không tự chọn Lease → Asset làm thứ tự cho delete RPC:** SELECT FOR UPDATE Lease không khóa được trường hợp Lease row chưa tồn tại; đồng thời acquire có thể tạo Lease qua INSERT/UPSERT và FK. Cần một serialization anchor tồn tại ổn định cho mọi thao tác (ví dụ Asset row hoặc advisory key) và mọi writer phải tuân cùng thứ tự. Hiện mutation đang Lease → Asset, vì vậy đổi riêng delete RPC là chưa đủ để chứng minh không deadlock.
+
+### Kết luận
+Khuyến nghị an toàn nhất hiện tại là **không cung cấp hard-delete Asset từ client**; ưu tiên archive/Thanh lý và giữ lịch sử. Thu hồi DELETE privilege là bước hardening nhỏ, nhưng vẫn phải rà lại quyền hiệu lực và UI caller trước khi triển khai. Không sửa migration/RPC/grants ở checkpoint này.
