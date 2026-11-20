@@ -467,3 +467,10 @@ Người dùng xác nhận:
 - Đã chuyển thao tác đọc Log, xác định chuyển trạng thái Hoàn thành → Chưa hoàn thành, hợp nhất `editHistory`, ghi Log và queue vào cùng Dexie readwrite transaction. Lịch sử đã lưu mới nhất được ưu tiên; chỉ dùng lịch sử từ form khi bản ghi chưa có lịch sử.
 - Bổ sung kiểm tra source contract cho luồng này trong `tests/localConcurrencyContracts.test.mjs`, chạy cùng script `test:local-concurrency`.
 - Chưa có kiểm thử browser đa tab thực tế và chưa có xác nhận CI; không tuyên bố test/build PASS.
+
+
+## 16. Chặn ghi đè Task từ biểu mẫu cũ (20/11/2026)
+
+- `saveTask()` trước đây ghi trực tiếp snapshot từ form. Nếu Task được hoàn thành hoặc sửa ở tab khác trong lúc form cũ vẫn mở, thao tác lưu từ form cũ có thể ghi đè trạng thái/nội dung mới.
+- Đã chuyển đọc Task hiện tại, so sánh `updatedAt` của bản đang lưu với revision mở form, ghi Task và queue vào cùng transaction. Nếu revision đã thay đổi, từ chối ghi và yêu cầu người dùng mở lại biểu mẫu; không tự merge mù các trường nghiệp vụ.
+- Bổ sung source contract test cho trường hợp stale revision trong `test:local-concurrency`.
