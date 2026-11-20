@@ -2780,3 +2780,32 @@ Không có test nào được chạy ở checkpoint này. Chưa ghi dữ liệu,
 - Các thao tác INSERT FK tham chiếu Asset không lấy advisory lock vẫn được Asset row lock + FK kiểm soát; cần test reference-insert ↔ delete và giữ ON DELETE RESTRICT cho lịch sử.
 - Đây là candidate design, chưa triển khai. Cần concurrency tests thật trước khi chốt.
 
+
+
+## 78. Ma trận RPC Asset cần retrofit theo advisory anchor – 20/11/2026
+
+Đối chiếu catalog PostgreSQL Test và GitHub source: các function nghiệp vụ có EXECUTE authenticated, không có EXECUTE anon; đều SECURITY DEFINER, search_path rỗng và row_security=off.
+
+| Function | Caller/trạng thái | Yêu cầu nếu áp dụng anchor |
+|---|---|---|
+| `acquire_asset_edit_lock` | App gọi khi mở editor | Anchor trước Asset existence check và Lease UPSERT |
+| `heartbeat_asset_edit_lock` | App gọi định kỳ | Anchor trước Lease UPDATE |
+| `release_asset_edit_lock` | App gọi khi đóng editor/hoàn tất | Anchor trước Lease DELETE; giữ đúng user + token |
+| `apply_asset_mutation_with_lock` | App gọi khi lưu Asset linked | Anchor trước fast receipt replay, Lease FOR UPDATE, Asset FOR UPDATE và Receipt insert |
+| `import_asset_preserving_identity` | CloudAssetsPanel import batch | Asset anchor trước advisory mutation-ID hiện có; sau đó ledger → Settings → Counter → Asset |
+| `create_asset_with_code` | Helper có trong repository, chưa thấy caller runtime | Nếu giữ API: xác định UUID trước, anchor trước Settings/Counter/Asset INSERT |
+| `update_asset_with_lock` | Legacy wrapper/helper còn source, chưa thấy đường save hiện hành | Retrofit nếu giữ; nếu bỏ, deprecate/revoke sau khi xác minh client cũ |
+| `set_asset_archived_with_lock` | Legacy wrapper/helper còn source, chưa thấy caller archive hiện hành | Retrofit nếu giữ; nếu bỏ, deprecate/revoke sau khi xác minh client cũ |
+| `list_asset_edit_locks` | Read-only | Không cần anchor |
+| `set_asset_updated_at()` | Trigger timestamp, không phải API | Writer phải lấy anchor trước UPDATE |
+
+### Lưu ý thiết kế
+
+- Anchor phải được lấy trước mọi thao tác Lease/Asset, kể cả fast receipt replay nếu muốn nhất quán với delete.
+- Import có advisory lock organization + mutation ID; thứ tự cố định là Asset anchor → mutation-ID advisory → ledger → Settings → Counter → Asset.
+- Allocator giữ Counter lock organization/category; Asset anchor không thay thế Counter và không giải quyết Settings update race.
+- Release hiện chỉ yêu cầu authenticated user + đúng token/holder, không kiểm tra assets.update; không thay đổi permission contract một cách vô tình.
+- Legacy update/archive vẫn có EXECUTE authenticated dù chưa thấy runtime caller. Chưa revoke; cần kiểm tra backward compatibility.
+- Direct DELETE PostgREST vẫn nằm ngoài protocol cho tới khi DELETE privilege được thu hồi.
+
+Đây là ma trận retrofit candidate, không phải migration đã viết/áp dụng. Chưa có concurrency test thực tế.
