@@ -5473,3 +5473,13 @@ Static review vừa phát hiện bảng temp `asset_import_counter_expectation` 
 
 - Đây là correction của test draft, không phải database change.
 - Chưa thực thi SQL; vẫn cần kiểm tra syntax và behavior trên Test.
+
+
+## 124. M021 Settings compatibility test positive-path + column ACL audit – 20/11/2026
+
+M021 test draft được bổ sung thêm:
+- Settings compatibility positive-path: authenticated Admin chạy `INSERT ... ON CONFLICT DO UPDATE` trên Settings fixture (no-op update asset_categories), trong transaction rollback, để thực sự đi qua statement trigger; giữ zero-row UPDATE test riêng.
+- Direct service_role Asset DML privilege assertion bổ sung kiểm tra column-level INSERT/UPDATE grants qua `has_column_privilege`, ngoài table-level `has_table_privilege`.
+- Sửa qualified target reference trong ON CONFLICT thành `organization_settings.asset_categories`.
+
+Đã fetch/update từng draft bằng SHA. Đây là static test design, chưa thực thi; cần validate syntax/permissions khi Test execution gate được duyệt.
