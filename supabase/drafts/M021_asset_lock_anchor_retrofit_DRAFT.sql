@@ -212,8 +212,7 @@ begin
     'expires_at', v_lock.expires_at
   );
 end;
-$function$
-
+$function$;
 
 CREATE OR REPLACE FUNCTION public.heartbeat_asset_edit_lock(p_organization_id uuid, p_asset_id uuid, p_lock_token uuid)
  RETURNS jsonb
@@ -256,8 +255,7 @@ begin
 
   return jsonb_build_object('renewed', true, 'expires_at', v_expires_at);
 end;
-$function$
-
+$function$;
 
 CREATE OR REPLACE FUNCTION public.release_asset_edit_lock(p_organization_id uuid, p_asset_id uuid, p_lock_token uuid)
  RETURNS boolean
@@ -285,8 +283,7 @@ begin
 
   return found;
 end;
-$function$
-
+$function$;
 
 CREATE OR REPLACE FUNCTION public.apply_asset_mutation_with_lock(p_organization_id uuid, p_asset_id uuid, p_lock_token uuid, p_mutation_id uuid, p_expected_cloud_updated_at timestamp with time zone, p_payload jsonb)
  RETURNS jsonb
@@ -464,8 +461,7 @@ begin
     'applied_at', v_applied_at
   );
 end;
-$function$
-
+$function$;
 
 CREATE OR REPLACE FUNCTION public.import_asset_preserving_identity(p_organization_id uuid, p_id uuid, p_code text, p_asset jsonb, p_mutation_id uuid)
  RETURNS jsonb
@@ -713,8 +709,7 @@ begin
 
   return v_result;
 end;
-$function$
-
+$function$;
 
 CREATE OR REPLACE FUNCTION public.update_asset_with_lock(p_organization_id uuid, p_asset_id uuid, p_lock_token uuid, p_name text, p_brand text, p_model text, p_serial text, p_location text, p_commissioned_at date, p_power text, p_cycle text, p_cycle_started_at date, p_transferred_from_other_facility boolean, p_status text, p_notes text)
  RETURNS assets
@@ -784,8 +779,7 @@ begin
 
   return v_asset;
 end;
-$function$
-
+$function$;
 
 CREATE OR REPLACE FUNCTION public.set_asset_archived_with_lock(p_organization_id uuid, p_asset_id uuid, p_lock_token uuid, p_archived boolean)
  RETURNS assets
@@ -838,8 +832,7 @@ begin
 
   return v_asset;
 end;
-$function$
-
+$function$;
 
 -- The legacy allocator has no observed runtime caller and is not idempotent.
 -- Keep its function definition for compatibility, but close both client roles.
