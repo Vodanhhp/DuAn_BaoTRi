@@ -1,5 +1,7 @@
--- BAOTRI Mini: authenticated asset CRUD/RLS test after atomic allocator.
--- Run only on BAOTRI-Mini-Test after Migration 012. All changes roll back.
+-- HISTORICAL / PRE-M021 ONLY: authenticated Asset CRUD/RLS regression after allocator.
+-- Do not run after M021: the allocator RPC and direct Asset DELETE are intentionally revoked.
+-- M021's sequential test supersedes these allocator/delete expectations and checks the new privilege contract.
+-- Run only on BAOTRI-Mini-Test. All changes roll back.
 begin;
 
 insert into public.organization_settings (organization_id, asset_code_config)
