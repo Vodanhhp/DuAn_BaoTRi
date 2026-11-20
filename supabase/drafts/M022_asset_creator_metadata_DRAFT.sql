@@ -114,8 +114,7 @@ begin
 
   return v_asset;
 end;
-$function$
-
+$function$;
 
 CREATE OR REPLACE FUNCTION public.import_asset_preserving_identity(p_organization_id uuid, p_id uuid, p_code text, p_asset jsonb, p_mutation_id uuid)
  RETURNS jsonb
@@ -376,7 +375,6 @@ begin
 
   return v_result;
 end;
-$function$
-
+$function$;
 
 commit;
