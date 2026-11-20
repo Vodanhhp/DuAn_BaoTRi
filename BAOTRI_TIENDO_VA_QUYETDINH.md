@@ -5604,3 +5604,12 @@ Tạo `supabase/drafts/M021_PREFLIGHT_CHECKLIST_DRAFT.md` để gom execution ga
 - Code đã cập nhật: syncMapping.ts, assetsCloud.ts, CloudAssetsPanel.tsx; mapping hai chiều, RPC import payload, preview snapshot và so sánh Asset Cloud hiện có đều giữ creator fields. Test mapping và contract test đã bổ sung.
 - Đã fetch lại các file code và xác minh nội dung commit trên GitHub. CI chưa chạy xong ở thời điểm ghi mục này.
 - Tiếp theo: theo dõi CI, sau đó browser-level Local PC → Cloud import/edit verification trên Test. Physical two-session M021 vẫn pending. Không bật full sync, không Production.
+
+
+## 133. M022 code mapping, CI và security advisor — 20/11/2026
+
+- Đã cập nhật mapper hai chiều Asset để giữ created_by_user_id/created_by_label; Cloud Asset reads, import RPC payload, preview snapshot và kiểm tra nội dung Asset đã tồn tại đều bao gồm hai trường.
+- Regression tests cập nhật cho round-trip creator metadata và import contract. Hai lần CI đầu phát hiện assertion cũ sau thay đổi schema; đã sửa đúng test, không thay đổi nghiệp vụ để làm xanh test.
+- GitHub Actions run 44727152880, commit e79fb1c059cdfb61d7c9f44185f2ecad5f2e9709: **SUCCESS** — toàn bộ regression tests PASS, template validation PASS, TypeScript/Vite production build PASS.
+- Supabase advisors sau M022: Health 0 findings; Security giữ 4 INFO (internal tables bật RLS nhưng không có policy), 10 SECURITY DEFINER warnings hiện hữu và 1 cảnh báo leaked-password protection. Không phát sinh nhóm/cấp cảnh báo mới do M022.
+- Còn pending: physical two-session M021 concurrency và browser-level Local PC → Cloud Asset import/edit trên Test. Không full sync, không Production.
