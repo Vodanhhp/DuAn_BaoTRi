@@ -886,22 +886,28 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
   }
   const saveLog = async (entry: Log) => {
     if (blockViewer('tạo hoặc cập nhật phiếu bảo dưỡng – sửa chữa')) return
-    const existing = await db.logs.get(entry.id)
-    const revertedCompletion = Boolean(existing?.result && !entry.result)
-    const editHistory = revertedCompletion
-      ? [...(existing?.editHistory ?? []), {
-          id: uid(),
-          editedAt: now(),
-          editedBy: userName,
-          action: 'Chuyển trạng thái Hoàn thành → Chưa hoàn thành',
-          previousResult: (existing!.result || '') as NonNullable<Log['result']>,
-          previousCompletedAt: existing!.completedAt,
-          previousPerformedBy: existing!.performedBy || ''
-        }]
-      : entry.editHistory ?? existing?.editHistory
-    const completedAt = entry.result ? entry.completedAt || existing?.completedAt || now() : undefined
-    const value: Log = { ...entry, dueDate: entry.dueDate || undefined, requestedBy: entry.requestedBy?.trim() || userName, performedBy: entry.result ? (entry.performedBy.trim() || userName) : entry.performedBy.trim(), result: entry.result || '', completedAt, editHistory }
-    await putAndQueue(db.logs, 'logs', value)
+    const value = await db.transaction('rw', [db.logs, db.syncQueue], async () => {
+      // Re-read the latest Log inside the write transaction so an older tab
+      // cannot erase a newer completion history or edit-history entry.
+      const existing = await db.logs.get(entry.id)
+      const revertedCompletion = Boolean(existing?.result && !entry.result)
+      const editHistory = revertedCompletion
+        ? [...(existing?.editHistory ?? []), {
+            id: uid(),
+            editedAt: now(),
+            editedBy: userName,
+            action: 'Chuyển trạng thái Hoàn thành → Chưa hoàn thành',
+            previousResult: (existing!.result || '') as NonNullable<Log['result']>,
+            previousCompletedAt: existing!.completedAt,
+            previousPerformedBy: existing!.performedBy || ''
+          }]
+        : existing?.editHistory ?? entry.editHistory
+      const completedAt = entry.result ? entry.completedAt || existing?.completedAt || now() : undefined
+      const next: Log = { ...entry, dueDate: entry.dueDate || undefined, requestedBy: entry.requestedBy?.trim() || userName, performedBy: entry.result ? (entry.performedBy.trim() || userName) : entry.performedBy.trim(), result: entry.result || '', completedAt, editHistory }
+      await db.logs.put(next)
+      await queueChange('logs', next.id)
+      return next
+    })
     setModal(null); setEditingLog(null)
     flash(value.result ? 'Đã lưu Phiếu YC hoàn thành' : 'Đã lưu Phiếu YC, đang chờ xử lý')
   }
