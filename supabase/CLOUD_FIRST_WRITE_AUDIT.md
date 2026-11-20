@@ -482,3 +482,5 @@ Người dùng xác nhận:
 - Đã đọc các bản hiện tại trong cùng transaction, so sánh `updatedAt` với revision lúc mở form và từ chối toàn bộ batch nếu phát hiện xung đột; không ghi một phần batch.
 - `deleteMaintenancePlan()` trước đây xóa theo ID mà không kiểm tra revision. Đã chuyển đọc, so sánh revision, xóa và tạo queue delete vào cùng transaction. Bản ghi đã đổi ở nơi khác sẽ không bị xóa bởi thao tác cũ.
 - Bổ sung source contract tests cho cả save và delete trong `test:local-concurrency`.
+
+- Bổ sung trường hợp bản kế hoạch đang sửa bị xóa ở tab khác: form cũ không được `bulkPut()` tạo lại bản ghi đã mất; thao tác bị báo xung đột. Các kế hoạch mới trong luồng tạo nhiều thiết bị vẫn được phép thêm.
