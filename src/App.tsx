@@ -913,10 +913,15 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
   }
   const saveLog = async (entry: Log) => {
     if (blockViewer('tạo hoặc cập nhật phiếu bảo dưỡng – sửa chữa')) return
-    const value = await db.transaction('rw', [db.logs, db.checklistResults, db.syncQueue], async () => {
+    const value = await db.transaction('rw', [db.logs, db.checklistResults, db.tasks, db.syncQueue], async () => {
       // Re-read the latest Log inside the write transaction so an older tab
       // cannot erase a newer completion history or edit-history entry.
       const existing = await db.logs.get(entry.id)
+      // Optional Task links must point to a Task belonging to the same Asset.
+      if (entry.taskId) {
+        const sourceTask = await db.tasks.get(entry.taskId)
+        if (!sourceTask || sourceTask.assetId !== entry.assetId) return null
+      }
       // A Checklist result may produce at most one linked maintenance/repair request.
       // Validate the source and uniqueness atomically to prevent stale or parallel tabs
       // from creating duplicate requests for the same failed Checklist.
@@ -946,7 +951,7 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
       return next
     })
     if (!value) {
-      flash('Phiếu đã được thay đổi ở nơi khác. Hãy đóng và mở lại biểu mẫu trước khi lưu.')
+      flash('Liên kết thiết bị/Task/Checklist không hợp lệ hoặc Phiếu đã được thay đổi ở nơi khác. Hãy tải lại dữ liệu trước khi lưu.')
       return
     }
     setModal(null); setEditingLog(null)
