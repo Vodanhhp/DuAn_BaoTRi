@@ -5381,3 +5381,36 @@ Tiếp tục caller audit theo §117. Đối chiếu effective table grants trê
 - [ ] Chưa chạy M021 sequential test hoặc two-session concurrency suite.
 
 **Bước tiếp theo:** review chi tiết remainder M021 (function signatures, EXECUTE grants, trigger bridge, lock-order và các test assertions) rồi cập nhật draft/test để phản ánh contract; không thay đổi database cho tới khi review hoàn tất và được duyệt.
+
+
+## 120. Static review M021 remainder: privilege boundary, trigger and sequential test – 20/11/2026
+
+Đọc hết phần còn lại của migration draft (894 lines) và test draft; chỉ static review.
+
+### Review migration structure
+- M021 tạo schema `private`, lock helpers và Settings statement trigger, sau đó CREATE OR REPLACE bảy retained public Asset writers trong cùng transaction; cuối transaction revoke legacy allocator và authenticated direct Asset DELETE. Cách gói một transaction tránh trạng thái protocol nửa cũ/nửa mới nếu migration thực sự được áp dụng.
+- Private helper/trigger EXECUTE và schema USAGE được revoke khỏi PUBLIC/anon/authenticated/service_role; public business RPCs được thay body nhưng CREATE OR REPLACE giữ ACL hiện có. Cần kiểm tra catalog postflight thực tế sau migration; static source không chứng minh ACL effective.
+- Trigger chỉ cover INSERT/UPDATE Settings; contract đề xuất revoke service_role DELETE nếu không dùng. Không thêm DELETE trigger vì dự kiến privilege đóng.
+- Migration không idempotent (CREATE SCHEMA/function/trigger không IF NOT EXISTS; trigger tạo mới). Phải preflight migration history/schema, apply một lần, không retry blind.
+
+### Sequential test review
+- Script dùng transaction + rollback, role authenticated và fixture Asset cố định; thực hiện Settings zero-row UPDATE, acquire/heartbeat/apply/replay/release, import preserving identity, legacy update/archive, rồi kiểm tra lock/privileges. Đây là test candidate; chưa chạy.
+- Các kiểm tra lock trong cùng transaction/session chỉ chứng minh lock hiện diện ở thời điểm kiểm tra; không chứng minh contention/interleaving, do đó two-session protocol là gate bắt buộc.
+- Test security block hiện chỉ kiểm tra authenticated Asset DELETE và allocator EXECUTE revoked; còn thiếu effective privileges service_role direct Asset INSERT/UPDATE/DELETE, service_role Settings DELETE (nếu contract được chốt), authenticated/private schema và helper EXECUTE của service_role, plus Settings bridge write-path positive check.
+- Test chưa khẳng định service_role vẫn có/không có quyền EXECUTE từng RPC business writer theo contract. Cần matrix effective privilege explicit cho authenticated, service_role, anon và PUBLIC.
+
+### Đề nghị cập nhật draft/test trước promotion
+1. Thêm REVOKE direct Asset INSERT, UPDATE, DELETE FROM service_role; giữ SELECT nếu runtime cần.
+2. Revoke DELETE organization_settings FROM service_role nếu audit xác nhận không có delete use-case; không ảnh hưởng Settings INSERT/UPDATE bridge.
+3. Bổ sung test has_table_privilege cho cả authenticated/service_role và Settings DELETE; test Settings INSERT/UPDATE bridge trong fixture riêng hoặc chứng minh statement trigger khóa cả zero-row statements, không sửa dữ liệu thật.
+4. Assert schema private USAGE và helper EXECUTE không có cho anon/authenticated/service_role; assert EXECUTE matrix cho retained RPCs.
+5. Sau khi chỉnh, review lại privilege matrix, test fixture compatibility và two-session protocol; chưa apply.
+
+### Trạng thái
+- [x] Đọc toàn bộ phần migration remainder và sequential test.
+- [x] Ghi nhận migration là one-shot/non-idempotent; postflight cần xác minh ACL effective.
+- [x] Phân biệt sequential lock presence với concurrency correctness.
+- [ ] Chưa chỉnh draft/test theo contract; chưa chạy test.
+- [ ] Chưa apply M021 lên Test; Production không chạm.
+
+**Bước tiếp theo:** sửa draft/test theo các finding đã nêu (chỉ file GitHub draft, không database), rồi đọc lại diff độc lập và kiểm tra các test lịch sử tương thích trước khi đề nghị execution gate.
