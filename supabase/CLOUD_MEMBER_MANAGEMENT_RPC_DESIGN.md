@@ -2848,3 +2848,9 @@ Không có test nào được chạy ở checkpoint này. Chưa ghi dữ liệu,
 - Asset ID đã tồn tại nhưng không có matching receipt thì conflict; không tự tạo mã mới.
 - Import/allocator cùng dùng Settings shared và Counter row; Settings save dùng Settings exclusive.
 - Đây là contract thiết kế, chưa có DDL/RPC/frontend change.
+
+## 82. Compatibility bridge cho Settings direct writer
+
+Đề xuất transitional BEFORE INSERT/UPDATE trigger trên `organization_settings` lấy cùng Settings exclusive advisory transaction lock. Nhờ đó PostgREST writer cũ vẫn tham gia serialization trong thời gian frontend rollout; RLS `settings.manage` vẫn bắt buộc. Create/import lấy shared lock trước SELECT config. UPDATE có thể giữ tuple lock trong lúc chờ advisory, nhưng reader chỉ SELECT không FOR UPDATE nên không tạo chu trình chờ theo lock order hiện tại; cần chứng minh bằng test hai session. INSERT row-absent được advisory lock bảo vệ, PK là lớp chống duplicate cuối.
+
+Rollout: trigger + helper → retrofit create/import shared lock → deploy Settings RPC/client → compatibility window → revoke direct writes ở migration riêng. Trigger không thay idempotency receipt hay server-side payload validation. Chưa triển khai.
