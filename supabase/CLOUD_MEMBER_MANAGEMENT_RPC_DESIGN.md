@@ -2971,3 +2971,9 @@ Read-only Test catalog confirms the M020 scope:
 Important P0: active catalog apply_asset_mutation_with_lock payload validation shows 'or (p_payload - v_required_keys) <> '{}'::jsonb' immediately followed by 'false then'. Migration 20261119000100 replaces the old 'or jsonb_object_length(...)' substring with 'false', apparently dropping the boolean OR. No function call/compile test was run and plpgsql_check is not installed. Isolate and fix this syntax concern in a forward migration and regression test before M020.
 
 M020 lock order: Asset anchor precedes every Lease/Asset row lock; apply additionally takes mutation-ID bigint lock before receipt lookup; import takes Asset anchor before existing mutation lock, then global Settings shared before Settings read, then Counter and Asset. Revoke direct Asset DELETE and allocator EXECUTE in the same M020 transaction as the retained writer definitions. No migration has been created or applied.
+
+## 89. P0 payload validation – source/catalog discrepancy
+
+Full active definition shows the invalid IF condition: the JSONB subtraction check is followed by a standalone `false` before `then`, with no boolean operator. The base migration on main uses the JSONB subtraction check; the hotfix instead searches for an older `or jsonb_object_length(...)` fragment and replaces that whole fragment (including `or`) with `false`. Current GitHub source and deployed function therefore do not reproduce one another cleanly.
+
+The existing receipt test calls the RPC using valid payloads but does not explicitly test missing keys, extra keys, or non-object JSON. Historical PASS is not proof of the active definition after the hotfix. Design-only minimal correction: remove the dangling `false`, retain the JSONB subtraction validation, then add valid/missing/extra/non-object cases in an approved disposable Test run. No function call, migration, or SQL write was made.
