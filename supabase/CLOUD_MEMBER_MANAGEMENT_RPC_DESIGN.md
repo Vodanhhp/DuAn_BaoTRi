@@ -2831,3 +2831,20 @@ Không có test nào được chạy ở checkpoint này. Chưa ghi dữ liệu,
 - Allocator chưa có mutation ID/receipt và p_id optional. Chưa có runtime caller; không đưa vào UI trước khi bổ sung stable UUID + idempotent receipt/replay. Retry cùng request không được cấp sequence mới.
 - Hai RPC legacy update/archive còn EXECUTE authenticated và helper exported trong source nhưng không thấy runtime caller. Candidate: giữ tạm, retrofit cùng Asset anchor, đánh dấu deprecated; revoke EXECUTE chỉ trong migration riêng sau call-site audit và compatibility window. Không DROP ngay.
 - Chưa triển khai RPC Settings, chưa đổi frontend writer, chưa tạo migration, chưa chạy concurrency test.
+
+## 81. Contract candidate cho Settings save và allocator replay
+
+### Settings save
+- RPC candidate `save_asset_code_config_with_receipt(org_id, mutation_id, expected_updated_at, config)`.
+- Auth + `settings.manage`; mutation-ID advisory bigint → receipt replay check → Settings exclusive advisory lock theo organization → Settings row FOR UPDATE/optimistic updated_at check → INSERT/UPDATE → receipt.
+- Receipt table candidate `organization_settings_mutations`, unique (organization_id, mutation_id), lưu actor, request payload và result snapshot.
+- Client phải giữ mutation UUID qua retry; stale `updated_at` trả conflict 40001, không silent overwrite. Expected version NULL chỉ hợp lệ khi row Settings chưa tồn tại.
+- Settings RPC là writer duy nhất; đóng PostgREST direct write.
+
+### Asset allocator
+- RPC candidate `create_asset_with_code_idempotent`, bắt buộc stable Asset UUID + mutation UUID.
+- Asset anchor → mutation-ID advisory → receipt replay → Settings shared → Counter UPSERT → Asset INSERT → creation receipt.
+- Receipt table candidate `asset_creation_mutations`; replay cùng actor/Asset/payload trả snapshot ban đầu, không tăng Counter. ID/payload khác phải reject.
+- Asset ID đã tồn tại nhưng không có matching receipt thì conflict; không tự tạo mã mới.
+- Import/allocator cùng dùng Settings shared và Counter row; Settings save dùng Settings exclusive.
+- Đây là contract thiết kế, chưa có DDL/RPC/frontend change.
