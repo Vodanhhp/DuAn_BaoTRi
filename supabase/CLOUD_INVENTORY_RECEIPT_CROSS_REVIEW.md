@@ -153,3 +153,11 @@ Cấu trúc Receipt phù hợp để tiếp tục. Trước khi promote cần:
 - Không coi migration trong GitHub là bằng chứng migration đã được apply trên database.
 
 Tài liệu này thống nhất cách hiểu giữa các thiết kế; mọi thay đổi SQL thực thi, code hoặc dữ liệu vẫn cần phê duyệt riêng.
+
+## 6. Re-review Draft 018 — 20/11/2026
+
+Finding về literal `\\n` trong ALTER TABLE đã được sửa trong `supabase/drafts/018_inventory_movement_audit_fields_DRAFT.sql`. Re-review bổ sung guard `NaN` cho các cột numeric (kể cả quantity cũ) và dùng regex để reason không thể chỉ chứa whitespace.
+
+Đã chạy thử DDL + constraint trên BAOTRI-Mini-Test trong transaction rollback với temp table LIKE schema thật. Legacy row, Nhập, Xuất, Điều chỉnh về 0 pass; NaN, delta 0, whitespace-only reason, partial audit snapshot và balance âm đều bị reject. Sau rollback xác nhận không có cột mới, không có Movement row và migration history không đổi.
+
+Draft vẫn là DRAFT ONLY. Chưa apply schema. Các điều kiện còn lại: preflight duplicate `(organization_id, mutation_id)` trên dataset thực, RPC bắt buộc expected_item_version cho Item đã tồn tại, kiểm tra numeric scale/range tại RPC, và đồng bộ với Shared Receipt + row_version trước cutover.
