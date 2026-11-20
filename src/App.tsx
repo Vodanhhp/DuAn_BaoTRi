@@ -1145,24 +1145,42 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
   }
   const backup = async () => {
     if (blockViewer('sao lưu dữ liệu')) return
-    const data = {
-      backupVersion: 3,
-      exportedAt: now(),
-      database: 'baotri-local-v1',
-      assets: await db.assets.toArray(),
-      inventory: await db.inventory.toArray(),
-      tasks: await db.tasks.toArray(),
-      logs: await db.logs.toArray(),
-      movements: await db.movements.toArray(),
-      maintenancePlans: await db.maintenancePlans.toArray(),
-      checklistTemplates: await db.checklistTemplates.toArray(),
-      checklistVersions: await db.checklistVersions.toArray(),
-      checklistResults: await db.checklistResults.toArray(),
-      syncQueue: await db.syncQueue.toArray(),
-      customAssetCategories: customAssetCategories
+    try {
+      // Read all tables in one readonly transaction so the backup represents
+      // one consistent database snapshot rather than a mix of different moments.
+      const snapshot = await db.transaction('r', [
+        db.assets, db.inventory, db.tasks, db.logs, db.movements, db.maintenancePlans,
+        db.checklistTemplates, db.checklistVersions, db.checklistResults, db.syncQueue
+      ], async () => {
+        const [
+          assets, inventory, tasks, logs, movements, maintenancePlans,
+          checklistTemplates, checklistVersions, checklistResults, syncQueue
+        ] = await Promise.all([
+          db.assets.toArray(), db.inventory.toArray(), db.tasks.toArray(), db.logs.toArray(),
+          db.movements.toArray(), db.maintenancePlans.toArray(), db.checklistTemplates.toArray(),
+          db.checklistVersions.toArray(), db.checklistResults.toArray(), db.syncQueue.toArray()
+        ])
+        return {
+          backupVersion: 3,
+          exportedAt: now(),
+          database: 'baotri-local-v1',
+          assets, inventory, tasks, logs, movements, maintenancePlans,
+          checklistTemplates, checklistVersions, checklistResults, syncQueue,
+          customAssetCategories
+        }
+      })
+      const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `backup-baotri-day-du-${today()}.json`
+      a.click()
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+      flash('Đã tạo bản sao lưu dữ liệu Local')
+    } catch (error) {
+      console.error('Không thể tạo bản sao lưu:', error)
+      flash('Sao lưu thất bại. Dữ liệu Local hiện tại không bị thay đổi.')
     }
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `backup-baotri-day-du-${today()}.json`; a.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
   const restore = async (file: File) => {
     if (blockViewer('khôi phục dữ liệu từ bản sao lưu')) return
