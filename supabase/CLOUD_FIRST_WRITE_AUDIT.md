@@ -474,3 +474,11 @@ Người dùng xác nhận:
 - `saveTask()` trước đây ghi trực tiếp snapshot từ form. Nếu Task được hoàn thành hoặc sửa ở tab khác trong lúc form cũ vẫn mở, thao tác lưu từ form cũ có thể ghi đè trạng thái/nội dung mới.
 - Đã chuyển đọc Task hiện tại, so sánh `updatedAt` của bản đang lưu với revision mở form, ghi Task và queue vào cùng transaction. Nếu revision đã thay đổi, từ chối ghi và yêu cầu người dùng mở lại biểu mẫu; không tự merge mù các trường nghiệp vụ.
 - Bổ sung source contract test cho trường hợp stale revision trong `test:local-concurrency`.
+
+
+## 17. Chặn ghi đè/xóa nhầm kế hoạch bảo trì từ snapshot cũ (20/11/2026)
+
+- `saveMaintenancePlans()` trước đây `bulkPut()` trực tiếp các bản kế hoạch từ form; một form cũ có thể ghi đè bản cập nhật ở tab khác.
+- Đã đọc các bản hiện tại trong cùng transaction, so sánh `updatedAt` với revision lúc mở form và từ chối toàn bộ batch nếu phát hiện xung đột; không ghi một phần batch.
+- `deleteMaintenancePlan()` trước đây xóa theo ID mà không kiểm tra revision. Đã chuyển đọc, so sánh revision, xóa và tạo queue delete vào cùng transaction. Bản ghi đã đổi ở nơi khác sẽ không bị xóa bởi thao tác cũ.
+- Bổ sung source contract tests cho cả save và delete trong `test:local-concurrency`.
