@@ -619,12 +619,14 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
       setResetCheckReady(true)
       return
     }
+    // Fail closed in Test until the server reset epoch has been checked successfully.
+    setResetCheckReady(false)
     let active = true
     let checking = false
     const checkResetEpoch = async () => {
       if (!active || checking) return
       if (!navigator.onLine) {
-        setResetCheckReady(true)
+        setNotice('Môi trường Test cần Internet để xác nhận trạng thái reset Cloud. Hãy kết nối mạng rồi tải lại ứng dụng.')
         return
       }
       checking = true
@@ -633,6 +635,7 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
           p_organization_id: organizationId
         })
         if (error) throw error
+        if (!active) return
         const epoch = typeof data === 'string' ? data : null
         if (epoch) {
           const markerKey = 'baotri-data-reset-epoch:' + organizationId
@@ -657,16 +660,16 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
             setNotice('Cloud Test đã reset. Dữ liệu Local trên thiết bị này đã được xóa an toàn.')
           }
         }
+        setResetCheckReady(true)
       } catch (error) {
         console.error('Không thể xác nhận trạng thái reset Cloud Test:', error)
-        setNotice('Chưa xác nhận được trạng thái reset Cloud. Hãy kết nối Internet và tải lại trước khi thao tác dữ liệu.')
+        setNotice('Chưa xác nhận được trạng thái reset Cloud. Ứng dụng Test đang khóa thao tác Local để tránh đồng bộ dữ liệu cũ. Hãy kết nối Internet và tải lại.')
       } finally {
         checking = false
-        if (active) setResetCheckReady(true)
       }
     }
     const resumeCheck = () => {
-      if (!checking) setResetCheckReady(false)
+      setResetCheckReady(false)
       void checkResetEpoch()
     }
     void checkResetEpoch()
@@ -1411,7 +1414,7 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
 
   if (!resetCheckReady) {
     return <div className={`app-shell ${theme} ${compact ? 'compact-mode' : ''}`}>
-      <main className="main"><section className="panel"><h2>Đang kiểm tra trạng thái dữ liệu Cloud…</h2><p className="muted">BAOTRI đang xác nhận xem môi trường Test có yêu cầu reset Local hay không.</p></section></main>
+      <main className="main"><section className="panel"><h2>Đang kiểm tra trạng thái dữ liệu Cloud…</h2><p className="muted">Ứng dụng Test tạm khóa thao tác Local cho đến khi xác nhận được reset epoch từ Cloud. Hãy kiểm tra Internet và tải lại trang nếu quá trình chưa hoàn tất.</p>{notice && <p className="form-hint warning-hint" role="alert">{notice}</p>}</section></main>
     </div>
   }
 
