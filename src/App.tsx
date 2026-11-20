@@ -884,7 +884,7 @@ function AppWorkspace({ userId, userName, userEmail, profile, onSaveProfile, onS
     const values = plans.map(plan => ({ ...plan, title: plan.title.trim(), contractor: plan.contractor.trim(), notes: plan.notes.trim(), updatedAt: timestamp }))
     const outcome = await db.transaction('rw', [db.maintenancePlans, db.syncQueue], async () => {
       const currentPlans = await Promise.all(values.map(value => db.maintenancePlans.get(value.id)))
-      if (values.some((value, index) => currentPlans[index] && currentPlans[index]!.updatedAt !== plans.find(plan => plan.id === value.id)?.updatedAt)) return 'conflict' as const
+      if (values.some((value, index) => (currentPlans[index] && currentPlans[index]!.updatedAt !== plans.find(plan => plan.id === value.id)?.updatedAt) || (editingPlan?.id === value.id && !currentPlans[index]))) return 'conflict' as const
       await db.maintenancePlans.bulkPut(values)
       await Promise.all(values.map(value => queueChange('maintenancePlans', value.id)))
       return 'saved' as const
