@@ -4894,3 +4894,15 @@ Chỉ đọc migration/test source và cập nhật thiết kế tài liệu. Ch
 4. Hard-delete chỉ xem xét sau khi chốt retention/audit, dependency checks, quyền active membership + assets.delete, và lock protocol chung.
 
 Chưa thay đổi grants, migration, RPC hoặc Supabase. Đây là đề xuất kiến trúc, không phải hardening đã triển khai.
+
+
+## 101. Candidate lock protocol chung cho Asset – 20/11/2026
+
+Đào sâu điểm yếu của phương án chỉ khóa Lease trước khi xóa:
+
+- Lease row không tồn tại với mọi Asset; SELECT FOR UPDATE không thể khóa hàng chưa có. Acquire hiện tạo/đổi Lease bằng INSERT ... ON CONFLICT có điều kiện hết hạn. Vì vậy delete RPC khóa Lease rồi Asset vẫn có khe race với acquire khi Lease chưa tồn tại.
+- Candidate giải pháp: advisory transaction lock theo organization_id + asset_id làm anchor ổn định. Tất cả RPC acquire, mutation/archive, heartbeat, release và future delete phải lấy cùng anchor trước mọi Lease/Asset row lock.
+- Lock order mục tiêu: xác thực membership/permission → advisory anchor → Lease row nếu có → Asset row → mutation/Receipt hoặc dependency check.
+- Phải retrofit toàn bộ writer, rà legacy RPC, đóng direct PostgREST DELETE và test race với INSERT FK tham chiếu Asset. Hash collision của advisory key chỉ được phép gây serialize thừa; không bao giờ thay thế authorization.
+- Chưa triển khai advisory lock, chưa tạo delete RPC, chưa chạy concurrency test. Đây là candidate để review và kiểm chứng, không phải quyết định cuối cùng.
+
