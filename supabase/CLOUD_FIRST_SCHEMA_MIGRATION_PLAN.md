@@ -147,3 +147,9 @@ Draft 018 đã được sửa lỗi literal `\\n` trong ALTER TABLE. Bổ sung C
 Đã kiểm tra DDL/constraints trên BAOTRI-Mini-Test trong transaction rollback: legacy Movement, Nhập, Xuất và Điều chỉnh về 0 hợp lệ; NaN, delta 0, reason chỉ whitespace, thiếu actor trong audit snapshot và số dư âm bị từ chối. Sau rollback xác nhận schema, dữ liệu và migration history không thay đổi.
 
 Draft vẫn chưa được apply. Trước promotion còn cần duplicate preflight cho `(organization_id, mutation_id)`, bảo đảm RPC enforce expected_item_version và kiểm tra numeric scale/range, đồng bộ với row_version + Shared Receipt, và kiểm thử vertical slice Inventory.
+
+## 14. Re-check Draft 015 — 20/11/2026
+
+Draft 015 đã được chạy thử DDL trong transaction rollback trên BAOTRI-Mini-Test. Trigger function pass các trường hợp INSERT ép version về 1, business UPDATE tăng version, timestamp-only UPDATE không tăng, no-op UPDATE không tăng và client không thể ép row_version. Sau rollback, sáu bảng mục tiêu không có cột row_version; không thay đổi schema/data/migration history.
+
+Draft vẫn chưa apply. Trước promotion cần điều phối timestamp migration sau Migration 020 và phải triển khai RPC expected-version cùng release nghiệp vụ; row_version đơn lẻ không chặn lost update.
