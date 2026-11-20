@@ -2989,3 +2989,17 @@ Git history proves the causal sequence:
 Correction to the previous note: Migration 018's guard would abort against the revised current Migration 017 body; it was designed to match the old deployed body. The root cause is migration immutability drift plus a hotfix replacement that removes the Boolean operator.
 
 Fix plan only: preserve migrations 017/018 as history; add a new forward-only migration replacing the complete RPC body with the correct three-part JSONB predicate. Add tests for valid, missing, extra and non-object payloads and verify SQLSTATE 22023 with no Asset/Receipt changes. The SQL-visible project has no `supabase_migrations` schema/table, so recorded migration versions must be checked using deployment migration tooling before rollout. No migration or function call has been executed.
+
+## 91. M021 lock-anchor retrofit — exact implementation and current Test evidence
+
+Migration 020 P0 payload fix is applied on BAOTRI-Mini-Test. The former candidate M019 lock primitive/Settings bridge and M020 Asset writer retrofit are rebased into one atomic candidate Migration 021.
+
+Current catalog confirms seven retained Asset/Lease writers and only one existing advisory call site: `import_asset_preserving_identity` uses bigint mutation-ID lock. No two-int advisory/session lock call or `private` schema exists. The two-int and bigint PostgreSQL overloads are available.
+
+M021 draft: `supabase/drafts/M021_asset_lock_anchor_retrofit_DRAFT.sql`. Test draft: `supabase/drafts/M021_asset_lock_anchor_retrofit_TEST_DRAFT.sql`.
+
+The draft creates private versioned two-int Asset anchor and global Settings keys; adds a BEFORE STATEMENT Settings exclusive bridge; retrofits all seven writer paths; adds mutation-ID bigint serialization before apply Receipt replay; adds Settings shared lock before import config read; revokes authenticated Asset DELETE and allocator EXECUTE from authenticated/service_role. It preserves release's token-only cleanup authorization and existing RPC signatures/grants for retained writers.
+
+Rollback-only execution on BAOTRI-Mini-Test passed DDL creation, sequential writer calls (acquire/heartbeat/release/apply/replay/import/legacy update/archive), and zero-row Settings statement trigger under authenticated. Effective privilege checks inside the transaction matched the contract. pg_locks showed Asset/Settings two-int keys (`objsubid=2`) and mutation bigint keys (`objsubid=1`). After ROLLBACK, schema/trigger/Lease/Receipt changes were absent and original grants were restored.
+
+**Not applied.** Two-session concurrency A1–A11, lock ordering/blocker graphs, deadlock regression, search_path poisoning and full existing SQL test suite remain required before promoting/applying M021. Production is out of scope.
