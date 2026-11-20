@@ -5621,3 +5621,29 @@ Tạo `supabase/drafts/M021_PREFLIGHT_CHECKLIST_DRAFT.md` để gom execution ga
 - Quy trình yêu cầu Chrome profile riêng, IndexedDB trống, xác minh Supabase project Test `oyzhxgzltpdebpymuicb`, chỉ tạo đúng một Asset thử nghiệm, preview 1 Local / 1 Cloud mới / 1 link, xác nhận rồi đọc lại UUID, mã thiết bị, created_by_user_id và created_by_label; sau đó reload và thử sửa Asset theo luồng lock hiện có.
 - Không nhập dữ liệu Local đang sử dụng, không đụng Production. Tài liệu là protocol chuẩn bị; chưa thực thi browser test và chưa đánh dấu PASS. Cần phiên trình duyệt thật trên máy người dùng.
 - Physical two-session M021 concurrency vẫn pending.
+
+## 135. M021 SQL regression + kiểm thử khóa chỉnh sửa PC/Mobile — 20/11/2026
+
+### Kiểm thử SQL trên BAOTRI-Mini-Test
+- Hoàn tất kiểm tra acquire/release tuần tự: A acquire thành công; B bị từ chối khi lease A còn hiệu lực và nhận holder info; token release sai bị từ chối; release đúng thành công; B acquire được sau khi A release. Query cuối không còn row trong `asset_edit_locks`.
+- Kiểm tra hai lệnh acquire được gọi đồng thời bằng hai backend PID độc lập: chỉ một bên acquire thành công, bên còn lại nhận trạng thái đang có holder. Đây là concurrent invocation, không phải bài test transaction interleaving có READY barrier kéo dài.
+- Kiểm tra token sai với heartbeat, update, archive và mutation RPC: heartbeat không renew; các RPC ghi bị từ chối; không tạo receipt thử nghiệm.
+- Kiểm tra mutation lần đầu/replay cùng payload, cùng mutation ID nhưng payload khác bị từ chối; ép rollback và xác minh không còn receipt/lock thử nghiệm, dữ liệu Asset M022 giữ nguyên.
+- Các lời gọi SQL dùng cấu hình JWT claims trong session để kiểm tra logic RPC; không tuyên bố đây là kiểm thử HTTP/JWT thật.
+- Kết quả các assertion SQL nêu trên: PASS. Không thay đổi dữ liệu nghiệp vụ Asset M022; không còn lock/receipt do test tạo.
+
+### Kiểm thử giao diện hai tài khoản, hai thiết bị
+- Chrome trên PC đăng nhập Admin (A), mở sửa Asset M022 và giữ màn hình chỉnh sửa.
+- Mobile đăng nhập KTV (B), sau khi tải đúng Asset M022 từ Cloud về Local để hai thiết bị có cùng bản ghi, thử mở sửa cùng Asset.
+- Mobile hiển thị thông báo Asset đang bị khóa bởi tài khoản trên PC; KTV không vào được luồng chỉnh sửa khi Admin đang giữ khóa.
+- Admin thoát màn hình sửa bằng Hủy/Quay lại, không lưu thay đổi. KTV thử lại trên Mobile và mở được màn hình sửa.
+- Kết quả giao diện: PASS cho tranh chấp khóa giữa PC và Mobile, hiển thị holder và giải phóng khóa sau khi Admin thoát.
+- Không lưu thay đổi nghiệp vụ vào M022; không thực hiện lưu kho/khôi phục hoặc thao tác đồng bộ đại trà.
+
+### Kết luận và phạm vi
+- M021 đạt PASS trong phạm vi các SQL regression đã chạy và kịch bản UI thực tế Admin-PC ↔ KTV-Mobile nêu trên, trên BAOTRI-Mini-Test.
+- Kết quả này bổ sung bằng chứng physical UI contention còn thiếu ở mục 130/133; tuy nhiên không đánh đồng với toàn bộ protocol interleaving mở rộng (heartbeat/release/mutation/import và legacy writer) trong `M021_TWO_SESSION_TEST_PROTOCOL_DRAFT.md`. Các interleaving mở rộng chưa được xác nhận chỉ bởi lượt UI này.
+- Production không được truy cập hoặc thay đổi. Không tuyên bố đã kiểm thử HTTP/JWT thật.
+- Trạng thái: [x] SQL regression trong phạm vi nêu trên; [x] UI lock contention và release PC/Mobile; [ ] các interleaving mở rộng trong protocol hai-session nếu vẫn được yêu cầu trước promotion.
+
+**Bước tiếp theo:** tiếp tục browser-level Local PC → Cloud Asset import/edit verification theo protocol M022; chỉ mở rộng M021 two-session interleavings nếu checklist promotion yêu cầu. Không bật full sync, không chạm Production.
