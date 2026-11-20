@@ -2854,3 +2854,34 @@ Không có test nào được chạy ở checkpoint này. Chưa ghi dữ liệu,
 Đề xuất transitional BEFORE INSERT/UPDATE trigger trên `organization_settings` lấy cùng Settings exclusive advisory transaction lock. Nhờ đó PostgREST writer cũ vẫn tham gia serialization trong thời gian frontend rollout; RLS `settings.manage` vẫn bắt buộc. Create/import lấy shared lock trước SELECT config. UPDATE có thể giữ tuple lock trong lúc chờ advisory, nhưng reader chỉ SELECT không FOR UPDATE nên không tạo chu trình chờ theo lock order hiện tại; cần chứng minh bằng test hai session. INSERT row-absent được advisory lock bảo vệ, PK là lớp chống duplicate cuối.
 
 Rollout: trigger + helper → retrofit create/import shared lock → deploy Settings RPC/client → compatibility window → revoke direct writes ở migration riêng. Trigger không thay idempotency receipt hay server-side payload validation. Chưa triển khai.
+
+## 83. Migration rollout gates và rollback policy cho Asset/Settings protocol
+
+### Thứ tự release candidate
+
+| Phase | DB / app change | Điều kiện chuyển phase |
+|---|---|---|
+| 0 | Read-only parity, inventory client, baseline | Không còn schema drift/writer chưa rõ |
+| 1 | Asset + Settings advisory helpers; Settings compatibility trigger | RLS tests + Settings two-session race pass |
+| 2 | Retrofit toàn bộ Asset/Lease writers cùng migration; legacy writers không bị bỏ sót | Sequential + deterministic concurrency A1–A8/A10/A11 pass |
+| 3 | Settings receipt RPC + frontend mutation ID/expected version; vẫn giữ trigger bridge | Replay, mismatch, stale version, network retry pass |
+| 4 | Allocator idempotent API; revoke direct Settings writes và direct Asset DELETE | PostgREST privilege tests + caller audit + compatibility window |
+| 5 | Production rollout, smoke/monitoring, không bật hard-delete | Backup, parity và tất cả gates pass |
+
+### Migration boundaries
+- M019: helper/namespace + Settings trigger bridge (expand only).
+- M020: retrofit acquire/heartbeat/release/apply/import và legacy update/archive trong cùng release DB atomic; xử lý allocator legacy (retrofit hoặc revoke nếu chưa có caller).
+- M021: Settings mutation receipt + RPC; frontend triển khai sau DB expand.
+- M022: allocator receipt + idempotent RPC; đóng direct Settings INSERT/UPDATE và direct Asset DELETE sau compatibility window.
+- Các số migration chỉ là tên dự kiến, phải kiểm tra lịch sử migration thực tế trước khi chọn số.
+- Không tạo hard-delete RPC trong nhóm migration này.
+
+### Rollback policy
+- Không rollback một phần RPC lock protocol. Phase 2 rollback phải đưa tất cả writer về một nhóm definition tương thích trong một transaction; forward-fix được ưu tiên.
+- Không GRANT lại direct Asset DELETE hoặc Settings direct write theo rollback ứng dụng thông thường.
+- Giữ receipt/ledger/audit data; không DROP bảng có dữ liệu khi rollback UI.
+- Phase 1 trigger chỉ được gỡ khi không còn shared-lock reader và toàn bộ writer đã thống nhất.
+- Phase 3 app có thể rollback về client cũ trong compatibility window vì trigger bridge còn hoạt động.
+- Mỗi phase cần migration test, privilege test, concurrency test và catalog diff trước khi sang phase tiếp theo.
+
+Chưa tạo migration hoặc triển khai bất kỳ phase nào.
