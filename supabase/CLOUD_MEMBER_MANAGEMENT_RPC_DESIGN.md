@@ -2977,3 +2977,15 @@ M020 lock order: Asset anchor precedes every Lease/Asset row lock; apply additio
 Full active definition shows the invalid IF condition: the JSONB subtraction check is followed by a standalone `false` before `then`, with no boolean operator. The base migration on main uses the JSONB subtraction check; the hotfix instead searches for an older `or jsonb_object_length(...)` fragment and replaces that whole fragment (including `or`) with `false`. Current GitHub source and deployed function therefore do not reproduce one another cleanly.
 
 The existing receipt test calls the RPC using valid payloads but does not explicitly test missing keys, extra keys, or non-object JSON. Historical PASS is not proof of the active definition after the hotfix. Design-only minimal correction: remove the dangling `false`, retain the JSONB subtraction validation, then add valid/missing/extra/non-object cases in an approved disposable Test run. No function call, migration, or SQL write was made.
+
+## 90. Corrected root cause – Migration 017 was edited in place before Migration 018
+
+Git history proves the causal sequence:
+- Parent of commit 74a27b4 has the old Migration 017 predicate ending with `or jsonb_object_length(p_payload) <> cardinality(v_required_keys)`.
+- Commit 74a27b4 edits Migration 017 in place, removing that old line and using `IS DISTINCT FROM` for JSON object validation.
+- Commit 6d38f25 adds Migration 018. Its guard expects the old fragment and then replaces the entire fragment, including its leading `or`, with `false`.
+- A database that had already applied the old Migration 017 still has the old body; Migration 018 therefore matches it and creates the exact active malformed condition now seen in PostgreSQL. Editing Migration 017 on GitHub does not retroactively update a migrated database.
+
+Correction to the previous note: Migration 018's guard would abort against the revised current Migration 017 body; it was designed to match the old deployed body. The root cause is migration immutability drift plus a hotfix replacement that removes the Boolean operator.
+
+Fix plan only: preserve migrations 017/018 as history; add a new forward-only migration replacing the complete RPC body with the correct three-part JSONB predicate. Add tests for valid, missing, extra and non-object payloads and verify SQLSTATE 22023 with no Asset/Receipt changes. The SQL-visible project has no `supabase_migrations` schema/table, so recorded migration versions must be checked using deployment migration tooling before rollout. No migration or function call has been executed.
