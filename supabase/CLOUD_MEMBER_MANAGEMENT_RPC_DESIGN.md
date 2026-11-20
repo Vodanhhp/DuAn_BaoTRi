@@ -2758,3 +2758,14 @@ Không có test nào được chạy ở checkpoint này. Chưa ghi dữ liệu,
 - Phân biệt 40P01 deadlock, 55P03 lock timeout, 23505 unique collision, 40001 serialization failure và 55000 lease conflict. Đánh giá cả SQLSTATE lẫn trạng thái cuối/Receipt/ledger; JSON response đơn lẻ chưa đủ.
 - Chạy P0 trước; P1 import/allocator/settings sau. Vì allocator helper chưa có runtime caller, kết quả của nó chỉ chứng minh RPC capability, không chứng minh UI flow.
 - Chưa có runner/fixture và chưa chạy concurrency. Không được đánh dấu PASS trước khi có log hai session và kiểm tra invariant sau commit/rollback.
+
+
+## 76. Asset deletion policy – đề xuất hardening, chưa triển khai
+
+- Business schema cấp DELETE privilege cho authenticated; migration permission-based có RLS DELETE policy assets_delete_permission kiểm tra assets.delete. Cả SQL privilege lẫn RLS phải pass thì direct PostgREST DELETE mới chạy.
+- FK asset_edit_locks → Asset dùng ON DELETE CASCADE; các bảng maintenance_tasks, maintenance_plans, checklist_templates, checklist_results, maintenance_logs, inventory_movements.linked_asset_id, asset_images dùng ON DELETE RESTRICT. Hard-delete Asset có liên kết lịch sử thường bị chặn; không đổi lịch sử sang CASCADE.
+- Đề xuất hardening: revoke DELETE privilege của authenticated trên public.assets, giữ RLS policy làm mô tả quyền nghiệp vụ, và dùng archive/Thanh lý làm luồng mặc định. Đây là migration đề xuất, cần kiểm tra effective grants + caller trước khi apply.
+- Chưa tạo hard-delete RPC. Một RPC chỉ khóa Lease rồi Asset không đủ chứng minh an toàn vì Lease row có thể chưa tồn tại; acquire có thể INSERT/UPSERT Lease. Cần serialization anchor ổn định mà acquire, mutation, heartbeat/release và delete cùng tuân theo. Mutation hiện theo Lease → Asset nên không được tự ý triển khai delete theo thứ tự khác.
+- Hard-delete về sau phải kiểm tra active membership, assets.delete, Lease hợp lệ, FK/dependency, retention và audit; từ chối khi lịch sử phải giữ. Receipts/import ledger hiện giữ asset_id scalar, không FK, nên cần chính sách audit/retention rõ ràng.
+- Trạng thái: thiết kế đề xuất; chưa sửa SQL, grants, RPC hoặc Supabase.
+
