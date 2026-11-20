@@ -58,6 +58,42 @@ test('rejects malformed optional inventory location settings', () => {
   assert.equal(isValidBackupV3(invalidToggle), false)
 })
 
+test('accepts a well-formed pending sync queue entry', () => {
+  const backup = validBackup()
+  backup.syncQueue = [{
+    id: 'assets:asset-1', tableName: 'assets', recordId: 'asset-1', operation: 'upsert',
+    queuedAt: '2026-11-20T10:00:00.000Z', status: 'pending', attempts: 0,
+    deviceId: 'device-1', mutationId: 'mutation-1'
+  }]
+  assert.equal(isValidBackupV3(backup), true)
+})
+
+test('rejects malformed or unsupported sync queue entries before restore', () => {
+  const invalidCollection = validBackup()
+  invalidCollection.syncQueue = [{
+    id: 'profiles:user-1', tableName: 'profiles', recordId: 'user-1', operation: 'upsert',
+    queuedAt: '2026-11-20T10:00:00.000Z', status: 'pending', attempts: 0,
+    deviceId: 'device-1', mutationId: 'mutation-1'
+  }]
+  assert.equal(isValidBackupV3(invalidCollection), false)
+
+  const invalidOperation = validBackup()
+  invalidOperation.syncQueue = [{
+    id: 'assets:asset-1', tableName: 'assets', recordId: 'asset-1', operation: 'truncate',
+    queuedAt: '2026-11-20T10:00:00.000Z', status: 'pending', attempts: 0,
+    deviceId: 'device-1', mutationId: 'mutation-1'
+  }]
+  assert.equal(isValidBackupV3(invalidOperation), false)
+
+  const missingMutationId = validBackup()
+  missingMutationId.syncQueue = [{
+    id: 'assets:asset-1', tableName: 'assets', recordId: 'asset-1', operation: 'upsert',
+    queuedAt: '2026-11-20T10:00:00.000Z', status: 'pending', attempts: -1,
+    deviceId: 'device-1'
+  }]
+  assert.equal(isValidBackupV3(missingMutationId), false)
+})
+
 test('rejects missing tables and unsupported backup versions', () => {
   const missingTable = validBackup()
   delete missingTable.logs
