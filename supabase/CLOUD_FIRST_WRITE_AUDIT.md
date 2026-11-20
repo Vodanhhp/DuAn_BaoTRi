@@ -397,3 +397,24 @@ Người dùng xác nhận:
 - Claim algorithm ưu tiên tra Receipt trước khi yêu cầu write permission: Receipt cũ cùng actor/fingerprint được replay read-only sau kiểm tra Auth + active organization + active membership; snapshot phụ thuộc toàn bộ read permission hiện tại. Chỉ mutation mới mới cần write permission và claim unique key.
 - `pending` chỉ được tồn tại trong cùng transaction; deferred constraint trigger chặn commit chưa finalize. Trigger bảo vệ identity/fingerprint và chỉ cho phép finalize một lần.
 - Không giả định pgcrypto, không dual-write với Asset Receipt, không sửa Asset RPC/Lease. DDL chưa được áp dụng; chưa tạo business RPC, chưa chạy SQL, chưa đổi dữ liệu/quyền hoặc code.
+
+
+## 10. Rà soát lỗi thực tế và sửa an toàn (20/11/2026)
+
+### 10.1 Ngày lịch theo múi giờ thiết bị
+- Phát hiện `today()` trong `src/App.tsx` dùng `new Date().toISOString().slice(0, 10)`, tức ngày UTC. Với múi giờ Việt Nam, trong khoảng 00:00–06:59 giờ địa phương có thể trả về ngày hôm trước.
+- Đã thay bằng `formatLocalDate()` trong `src/lib/dateUtils.ts`, định dạng theo local timezone của thiết bị.
+- Đã thêm `tests/dateUtils.test.mjs` với hai ca hồi quy cho `Asia/Ho_Chi_Minh` và script `npm run test:date-utils`.
+- Chưa chạy Node test/build trong môi trường thực thi của lượt audit; cần chạy khi có checkout Node đầy đủ.
+
+### 10.2 Giao dịch nhập/xuất vật tư
+- Phát hiện `addMovement()` kiểm tra số lượng xuất và tính tồn mới từ `item.quantity` lấy từ UI trước khi mở Dexie transaction. Nếu tab khác đã thay đổi tồn kho, dữ liệu UI cũ có thể làm ghi đè số tồn mới hoặc cho xuất vượt tồn thực tế.
+- Đã chuyển việc đọc lại Inventory, kiểm tra số lượng xuất và tính tồn mới vào cùng read-write transaction chứa cập nhật Inventory, thêm Movement và queue hai thay đổi.
+- Lỗi thiếu vật tư hoặc không đủ tồn hiện được báo rõ; transaction rollback giữ nguyên cả tồn kho và lịch sử khi thao tác không hợp lệ.
+- Đây là gia cố tính nhất quán Local giữa các tab; chưa thay thế RPC atomic cần có khi triển khai Cloud-first.
+
+### 10.3 Trạng thái xác minh
+- [x] Sửa mã nguồn và kiểm tra lại nội dung file trên GitHub.
+- [x] Thêm kiểm thử hồi quy ngày địa phương và script package.
+- [ ] Chưa thực thi `npm run test:date-utils`, các test hiện có hoặc `npm run build`; không báo PASS runtime.
+- [ ] Chưa thực hiện kiểm thử đồng thời nhiều tab/browser thật cho giao dịch tồn kho.
