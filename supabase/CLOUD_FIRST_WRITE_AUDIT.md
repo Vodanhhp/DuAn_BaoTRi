@@ -457,3 +457,5 @@ Người dùng xác nhận:
 - Đã đọc lại Task trong transaction; nếu không tồn tại hoặc đã hoàn thành thì không tạo Log mới. Task, Log và queue vẫn commit nguyên tử trong cùng transaction.
 - Đã thêm `tests/localConcurrencyContracts.test.mjs`, script `test:local-concurrency`, đưa vào GitHub Actions và README. Đây là kiểm tra source contract; cần CI build/test thực thi để xác nhận cú pháp và chưa thay thế kiểm thử browser đa tab.
 - Không sửa Cloud/Production, schema, RPC hoặc dữ liệu hiện có.
+
+- Bổ sung bảo vệ khi `currentVersion` không khớp lịch sử: trong transaction, `saveTemplate()` đọc các version đã lưu và lấy số lớn nhất giữa lịch sử với `currentVersion`, sau đó mới tăng phiên bản. Tránh tái sử dụng số phiên bản nếu metadata bị lệch.
